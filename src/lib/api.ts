@@ -288,4 +288,104 @@ export const authApi = {
   }
 };
 
+// Onboarding API (for signup flow)
+export const onboardingApi = {
+  // Register merchant
+  async register(data: any) {
+    const response = await api.post('/merchant/onboarding/register', data);
+    return response.data;
+  },
+
+  // Check onboarding status
+  async getStatus(merchantId: string) {
+    const response = await api.get(`/merchant/onboarding/status/${merchantId}`);
+    return response.data;
+  },
+
+  // Submit KYB documents
+  async submitDocuments(merchantId: string, documents: any) {
+    const formData = new FormData();
+    Object.keys(documents).forEach(key => {
+      if (documents[key]) {
+        formData.append(key, documents[key]);
+      }
+    });
+    const response = await api.post(`/merchant/onboarding/${merchantId}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  },
+
+  // Alias for uploadDocuments (used by some components)
+  async uploadDocuments(merchantId: string, documents: any) {
+    return this.submitDocuments(merchantId, documents);
+  },
+
+  // Setup PSP - accepts merchant_id, psp_type, and api_key
+  async setupPSP(merchantId: string, pspType: string, apiKey: string) {
+    const response = await api.post('/merchant/onboarding/setup-psp', {
+      merchant_id: merchantId,
+      psp_type: pspType,
+      api_key: apiKey,
+      test_mode: true
+    });
+    return response.data;
+  },
+
+  // Complete onboarding
+  async complete(merchantId: string) {
+    const response = await api.post(`/merchant/onboarding/${merchantId}/complete`);
+    return response.data;
+  }
+};
+
+// Integrations API (for connecting external services)
+export const integrationsApi = {
+  // Start Shopify OAuth flow
+  async startShopifyOAuth(merchantId: string, shopDomain: string) {
+    const response = await api.post('/integrations/shopify/oauth/start', {
+      merchant_id: merchantId,
+      shop_domain: shopDomain
+    });
+    return response.data;
+  },
+
+  // Connect Shopify
+  async connectShopify(shopDomain: string, accessToken: string) {
+    const response = await api.post('/integrations/shopify/connect', {
+      shop_domain: shopDomain,
+      access_token: accessToken
+    });
+    return response.data;
+  },
+
+  // Connect WooCommerce
+  async connectWooCommerce(siteUrl: string, consumerKey: string, consumerSecret: string) {
+    const response = await api.post('/integrations/woocommerce/connect', {
+      site_url: siteUrl,
+      consumer_key: consumerKey,
+      consumer_secret: consumerSecret
+    });
+    return response.data;
+  },
+
+  // Test connection
+  async testConnection(platform: string) {
+    const response = await api.post(`/integrations/${platform}/test`);
+    return response.data;
+  },
+
+  // Get connected integrations
+  async getConnected() {
+    const response = await api.get('/integrations/connected');
+    return response.data.integrations || [];
+  },
+
+  // Disconnect integration
+  async disconnect(platform: string) {
+    const response = await api.delete(`/integrations/${platform}/disconnect`);
+    return response.data;
+  }
+};
+
 export default api;
