@@ -1,0 +1,12 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "framework": "nextjs",
+  "installCommand": "npm install",
+  "env": {
+    "NEXT_PUBLIC_API_URL": "https://web-production-fedb.up.railway.app",
+    "NEXT_PUBLIC_SITE_URL": "https://merchants.pivota.cc",
+    "NEXT_PUBLIC_MARKETING_SITE": "https://pivota.cc"
+  }
+}
+
