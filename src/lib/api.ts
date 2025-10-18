@@ -343,47 +343,71 @@ export const onboardingApi = {
 export const integrationsApi = {
   // Start Shopify OAuth flow
   async startShopifyOAuth(merchantId: string, shopDomain: string) {
-    const response = await api.post('/integrations/shopify/oauth/start', {
-      merchant_id: merchantId,
-      shop_domain: shopDomain
+    const response = await api.get('/integrations/shopify/oauth/start', {
+      params: {
+        merchant_id: merchantId,
+        shop: shopDomain
+      }
     });
     return response.data;
   },
 
-  // Connect Shopify
-  async connectShopify(shopDomain: string, accessToken: string) {
+  // Connect Shopify with credentials (supports multiple stores)
+  async connectShopify(merchantId: string, shopDomain: string, accessToken: string, storeName?: string) {
     const response = await api.post('/integrations/shopify/connect', {
+      merchant_id: merchantId,
       shop_domain: shopDomain,
-      access_token: accessToken
+      access_token: accessToken,
+      store_name: storeName || shopDomain // Allow custom naming for multiple stores
     });
     return response.data;
   },
 
-  // Connect WooCommerce
-  async connectWooCommerce(siteUrl: string, consumerKey: string, consumerSecret: string) {
-    const response = await api.post('/integrations/woocommerce/connect', {
-      site_url: siteUrl,
-      consumer_key: consumerKey,
-      consumer_secret: consumerSecret
+  // Connect Wix store (supports multiple stores)
+  async connectWix(merchantId: string, apiKey: string, siteId: string, storeName?: string) {
+    const response = await api.post('/integrations/wix/connect', {
+      merchant_id: merchantId,
+      api_key: apiKey,
+      site_id: siteId,
+      store_name: storeName || siteId
     });
     return response.data;
   },
 
-  // Test connection
-  async testConnection(platform: string) {
-    const response = await api.post(`/integrations/${platform}/test`);
+  // Add another store from same platform
+  async addAdditionalStore(merchantId: string, platform: string, credentials: any) {
+    const response = await api.post(`/integrations/${platform}/add-store`, {
+      merchant_id: merchantId,
+      ...credentials
+    });
     return response.data;
   },
 
-  // Get connected integrations
-  async getConnected() {
-    const response = await api.get('/integrations/connected');
+  // Sync products from Shopify
+  async syncShopifyProducts(merchantId: string) {
+    const response = await api.post(`/shopify/sync/products/${merchantId}`);
+    return response.data;
+  },
+
+  // Get connected stores
+  async getConnectedStores(merchantId: string) {
+    const response = await api.get(`/merchant/${merchantId}/integrations`);
     return response.data.integrations || [];
   },
 
-  // Disconnect integration
-  async disconnect(platform: string) {
-    const response = await api.delete(`/integrations/${platform}/disconnect`);
+  // Test store connection
+  async testStoreConnection(merchantId: string, platform: string) {
+    const response = await api.post(`/integrations/${platform}/test`, {
+      merchant_id: merchantId
+    });
+    return response.data;
+  },
+
+  // Disconnect store
+  async disconnectStore(merchantId: string, platform: string) {
+    const response = await api.delete(`/integrations/${platform}/disconnect`, {
+      data: { merchant_id: merchantId }
+    });
     return response.data;
   }
 };

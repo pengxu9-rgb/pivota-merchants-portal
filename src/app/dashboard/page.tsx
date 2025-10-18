@@ -32,7 +32,8 @@ import {
   settingsApi, 
   analyticsApi, 
   authApi,
-  onboardingApi 
+  onboardingApi,
+  integrationsApi 
 } from '../../lib/api';
 
 export default function MerchantDashboard() {
@@ -48,6 +49,7 @@ export default function MerchantDashboard() {
   const [psps, setPsps] = useState<any[]>([]);
   const [routingRules, setRoutingRules] = useState<any[]>([]);
   const [pspMetrics, setPspMetrics] = useState<any>(null);
+  const [connectedStores, setConnectedStores] = useState<any[]>([]);
   
   // UI states
   const [syncing, setSyncing] = useState(false);
@@ -132,6 +134,13 @@ export default function MerchantDashboard() {
           contactPhone: profile.contact_phone || '',
           storeUrl: profile.store_url || ''
         });
+      }
+
+      // Load connected stores
+      const merchantId = localStorage.getItem('merchant_id') || '';
+      if (merchantId) {
+        const stores = await integrationsApi.getConnectedStores(merchantId).catch(() => []);
+        setConnectedStores(stores);
       }
 
     } catch (error) {
@@ -299,6 +308,173 @@ export default function MerchantDashboard() {
         console.error('Failed to regenerate API key:', error);
         alert('Failed to regenerate API key. Please try again.');
       }
+    }
+  };
+
+  const handleConnectShopify = async (isAdditional = false) => {
+    const merchantId = localStorage.getItem('merchant_id') || '';
+    if (!merchantId) {
+      alert('Merchant ID not found. Please re-login.');
+      return;
+    }
+
+    const shopifyStoreCount = connectedStores.filter(s => s.platform === 'shopify').length;
+    
+    let storeName = '';
+    if (isAdditional || shopifyStoreCount > 0) {
+      storeName = prompt(
+        `Connect ${shopifyStoreCount > 0 ? 'Additional' : ''} Shopify Store\n\n` +
+        `Give this store a name (e.g., "US Store", "EU Store", "Wholesale"):`
+      ) || '';
+      if (!storeName && shopifyStoreCount > 0) {
+        alert('Please provide a name to identify this store.');
+        return;
+      }
+    }
+
+    const useOAuth = confirm(
+      'Connect Shopify Store\n\n' +
+      'Do you want to use OAuth (recommended)?\n\n' +
+      'Yes = Secure OAuth flow\n' +
+      'No = Manually enter credentials'
+    );
+
+    if (useOAuth) {
+      // OAuth flow
+      const shopDomain = prompt('Enter your Shopify store domain:', 'mystore.myshopify.com');
+      if (shopDomain) {
+        try {
+          const result = await integrationsApi.startShopifyOAuth(merchantId, shopDomain);
+          if (result.authorize) {
+            // Store the store name for after OAuth redirect
+            if (storeName) {
+              localStorage.setItem('pending_shopify_store_name', storeName);
+            }
+            // Redirect to Shopify authorization
+            window.location.href = result.authorize;
+          }
+        } catch (error) {
+          console.error('Failed to start OAuth:', error);
+          alert('Failed to start Shopify OAuth. Please try manual connection.');
+        }
+      }
+    } else {
+      // Manual credentials
+      const shopDomain = prompt('Enter your Shopify store domain:', 'mystore.myshopify.com');
+      const accessToken = prompt('Enter your Shopify Admin API access token:');
+      
+      if (shopDomain && accessToken) {
+        try {
+          setLoading(true);
+          const result = await integrationsApi.connectShopify(
+            merchantId, 
+            shopDomain, 
+            accessToken,
+            storeName
+          );
+          alert(
+            `✅ Shopify Store Connected!\n\n` +
+            `${storeName ? `Store Name: ${storeName}\n` : ''}` +
+            `Domain: ${shopDomain}\n` +
+            `Status: Connected\n\n` +
+            `You can now sync products from this store.`
+          );
+          await loadDashboardData();
+        } catch (error: any) {
+          console.error('Failed to connect Shopify:', error);
+          alert(`❌ Shopify Connection Failed\n\n${error.response?.data?.detail || error.message}`);
+        } finally {
+          setLoading(false);
+        }
+      }
+    }
+  };
+
+  const handleConnectWix = async (isAdditional = false) => {
+    const merchantId = localStorage.getItem('merchant_id') || '';
+    if (!merchantId) {
+      alert('Merchant ID not found. Please re-login.');
+      return;
+    }
+
+    const wixStoreCount = connectedStores.filter(s => s.platform === 'wix').length;
+    
+    let storeName = '';
+    if (isAdditional || wixStoreCount > 0) {
+      storeName = prompt(
+        `Connect ${wixStoreCount > 0 ? 'Additional' : ''} Wix Store\n\n` +
+        `Give this store a name (e.g., "Main Store", "Wholesale Site"):`
+      ) || '';
+      if (!storeName && wixStoreCount > 0) {
+        alert('Please provide a name to identify this store.');
+        return;
+      }
+    }
+
+    const apiKey = prompt(
+      'Connect Wix Store\n\n' +
+      'Enter your Wix API Key:\n' +
+      '(Find this in Wix Dashboard > Settings > API Keys)'
+    );
+    
+    const siteId = prompt('Enter your Wix Site ID:');
+    
+    if (apiKey && siteId) {
+      try {
+        setLoading(true);
+        const result = await integrationsApi.connectWix(merchantId, apiKey, siteId, storeName);
+        alert(
+          `✅ Wix Store Connected!\n\n` +
+          `${storeName ? `Store Name: ${storeName}\n` : ''}` +
+          `Site ID: ${siteId}\n` +
+          `Status: Connected\n\n` +
+          `You can now sync products from this store.`
+        );
+        await loadDashboardData();
+      } catch (error: any) {
+        console.error('Failed to connect Wix:', error);
+        alert(`❌ Wix Connection Failed\n\n${error.response?.data?.detail || error.message}`);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleDisconnectStore = async (storeId: string, platform: string, storeName: string) => {
+    if (confirm(`Disconnect ${storeName}?\n\nThis will stop syncing products from this store.`)) {
+      const merchantId = localStorage.getItem('merchant_id') || '';
+      try {
+        await integrationsApi.disconnectStore(merchantId, platform);
+        alert(`✅ ${storeName} disconnected successfully!`);
+        await loadDashboardData();
+      } catch (error: any) {
+        alert(`❌ Failed to disconnect\n\n${error.response?.data?.detail || error.message}`);
+      }
+    }
+  };
+
+  const handleTestStoreConnection = async (platform: string) => {
+    const merchantId = localStorage.getItem('merchant_id') || '';
+    try {
+      const result = await integrationsApi.testStoreConnection(merchantId, platform);
+      alert(`✅ ${platform} Connection Test Passed!\n\n${result.message || 'Store is connected and accessible.'}`);
+    } catch (error: any) {
+      alert(`❌ ${platform} Connection Test Failed\n\n${error.response?.data?.detail || error.message}`);
+    }
+  };
+
+  const handleSyncShopifyProducts = async () => {
+    const merchantId = localStorage.getItem('merchant_id') || '';
+    setSyncing(true);
+    try {
+      const result = await integrationsApi.syncShopifyProducts(merchantId);
+      alert(`✅ Products Synced from Shopify!\n\nSynced ${result.product_count || 0} products`);
+      await loadDashboardData();
+    } catch (error: any) {
+      console.error('Failed to sync products:', error);
+      alert(`❌ Sync Failed\n\n${error.response?.data?.detail || error.message}`);
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -656,19 +832,193 @@ export default function MerchantDashboard() {
           <div className="space-y-6">
             {/* Key Value Proposition */}
             <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg shadow-lg p-6">
-              <h2 className="text-2xl font-bold mb-2">Connect Your Own PSP Accounts</h2>
+              <h2 className="text-2xl font-bold mb-2">Complete Integration Hub</h2>
               <p className="text-blue-100 mb-4">
-                Use YOUR payment processor accounts. All funds go directly to you. Connect multiple PSPs for higher success rates.
+                Connect your store (Shopify/Wix) and payment processors. All under your control, funds go directly to you.
               </p>
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div>
-                  <p className="text-blue-200">✓ Your Own Accounts</p>
+                  <p className="text-blue-200">✓ Your Store Data</p>
+                </div>
+                <div>
+                  <p className="text-blue-200">✓ Your PSP Accounts</p>
                 </div>
                 <div>
                   <p className="text-blue-200">✓ Direct Settlement</p>
                 </div>
-                <div>
-                  <p className="text-blue-200">✓ Multi-PSP Routing</p>
+              </div>
+            </div>
+
+            {/* Store Connections */}
+            <div className="bg-white rounded-lg shadow">
+              <div className="px-6 py-4 border-b">
+                <h2 className="text-xl font-semibold">Store Connections</h2>
+                <p className="text-sm text-gray-600 mt-1">Connect your e-commerce platform to sync products</p>
+              </div>
+              <div className="p-6 space-y-4">
+                {/* Connected Stores */}
+                {connectedStores.length > 0 && (
+                  <div className="space-y-3 mb-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-700">Your Connected Stores ({connectedStores.length})</h3>
+                      <button
+                        onClick={() => {
+                          const choice = prompt(
+                            'Add Another Store\n\n' +
+                            'Which platform?\n' +
+                            '1 = Shopify\n' +
+                            '2 = Wix\n' +
+                            '3 = WooCommerce (coming soon)'
+                          );
+                          if (choice === '1') handleConnectShopify(true);
+                          else if (choice === '2') handleConnectWix(true);
+                        }}
+                        className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                      >
+                        + Add Another Store
+                      </button>
+                    </div>
+                    {connectedStores.map((store, index) => (
+                      <div key={`${store.platform}-${index}`} className="p-4 border-2 border-green-200 bg-green-50 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <Store className="w-8 h-8 text-blue-600" />
+                            <div>
+                              <div className="flex items-center space-x-2">
+                                <h4 className="font-medium text-gray-900">
+                                  {store.store_name || store.platform_name || store.platform}
+                                </h4>
+                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs uppercase">
+                                  {store.platform}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-600">{store.shop_domain || store.site_id}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs">
+                              ✓ Connected
+                            </span>
+                            <button
+                              onClick={() => handleTestStoreConnection(store.platform)}
+                              className="px-3 py-1 border rounded text-xs hover:bg-white"
+                            >
+                              Test
+                            </button>
+                            {store.platform === 'shopify' && (
+                              <button
+                                onClick={handleSyncShopifyProducts}
+                                disabled={syncing}
+                                className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                              >
+                                {syncing ? 'Syncing...' : 'Sync'}
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDisconnectStore(
+                                store.id || `${store.platform}-${index}`,
+                                store.platform,
+                                store.store_name || store.shop_domain || store.site_id
+                              )}
+                              className="text-red-600 hover:text-red-800 text-xs"
+                            >
+                              Disconnect
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Available Store Platforms */}
+                {connectedStores.length === 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-700 mb-3">Connect Your First Store</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Shopify */}
+                      <div className="p-4 border-2 border-green-200 rounded-lg hover:shadow-md transition-shadow">
+                        <div className="flex items-center space-x-3 mb-3">
+                          <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                            <Store className="w-7 h-7 text-green-600" />
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-gray-900">Shopify</h4>
+                            <p className="text-xs text-gray-600">Most popular</p>
+                          </div>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-3">
+                          Connect Shopify store to sync products and orders
+                        </p>
+                        <button
+                          onClick={() => handleConnectShopify(false)}
+                          disabled={loading}
+                          className="w-full px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+                        >
+                          Connect Shopify
+                        </button>
+                      </div>
+
+                      {/* Wix */}
+                      <div className="p-4 border-2 border-blue-200 rounded-lg hover:shadow-md transition-shadow">
+                        <div className="flex items-center space-x-3 mb-3">
+                          <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                            <Store className="w-7 h-7 text-blue-600" />
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-gray-900">Wix</h4>
+                            <p className="text-xs text-gray-600">Easy setup</p>
+                          </div>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-3">
+                          Connect Wix store to sync products and inventory
+                        </p>
+                        <button
+                          onClick={() => handleConnectWix(false)}
+                          disabled={loading}
+                          className="w-full px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                        >
+                          Connect Wix
+                        </button>
+                      </div>
+
+                      {/* WooCommerce */}
+                      <div className="p-4 border-2 border-gray-200 rounded-lg opacity-60">
+                        <div className="flex items-center space-x-3 mb-3">
+                          <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
+                            <Store className="w-7 h-7 text-gray-400" />
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-gray-900">WooCommerce</h4>
+                            <p className="text-xs text-gray-600">Coming soon</p>
+                          </div>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-3">
+                          WordPress plugin integration
+                        </p>
+                        <button
+                          disabled
+                          className="w-full px-3 py-2 bg-gray-300 text-gray-500 rounded text-sm cursor-not-allowed"
+                        >
+                          Coming Soon
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                  <h4 className="font-medium text-purple-900 mb-2">🏪 Multi-Store Support</h4>
+                  <p className="text-sm text-purple-800">
+                    Sell across multiple platforms? No problem! Connect multiple Shopify stores, Wix sites, 
+                    or mix different platforms. All products will be aggregated in one unified catalog for AI agents.
+                  </p>
+                  <ul className="mt-2 space-y-1 text-sm text-purple-800">
+                    <li>✓ Connect multiple stores from same platform (e.g., US + EU Shopify)</li>
+                    <li>✓ Mix different platforms (Shopify + Wix + WooCommerce)</li>
+                    <li>✓ Separate inventory tracking per store</li>
+                    <li>✓ Unified catalog for AI agents</li>
+                  </ul>
                 </div>
               </div>
             </div>
