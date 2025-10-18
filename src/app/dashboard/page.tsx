@@ -16,8 +16,23 @@ import {
   Store,
   Link as LinkIcon,
   FileText,
-  Bell
+  Bell,
+  Download,
+  Plus,
+  RefreshCw,
+  Check,
+  X,
+  Loader2
 } from 'lucide-react';
+import { 
+  pspApi, 
+  routingApi, 
+  ordersApi, 
+  productsApi, 
+  settingsApi, 
+  analyticsApi, 
+  authApi 
+} from '../../lib/api';
 
 export default function MerchantDashboard() {
   const router = useRouter();
@@ -25,34 +40,33 @@ export default function MerchantDashboard() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   
-  // Mock stats data
-  const [stats, setStats] = useState({
-    totalOrders: 156,
-    revenue: 45230.50,
-    customers: 89,
-    products: 234,
-    orderGrowth: 15.3,
-    revenueGrowth: 22.5,
-    conversionRate: 4.2,
-    avgOrderValue: 290.07
+  // Data states
+  const [stats, setStats] = useState<any>(null);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [psps, setPsps] = useState<any[]>([]);
+  const [routingRules, setRoutingRules] = useState<any[]>([]);
+  const [pspMetrics, setPspMetrics] = useState<any>(null);
+  
+  // UI states
+  const [syncing, setSyncing] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [exportingOrders, setExportingOrders] = useState(false);
+  const [selectedOrderStatus, setSelectedOrderStatus] = useState('all');
+  const [notifications, setNotifications] = useState({
+    newOrders: true,
+    lowStock: true,
+    paymentUpdates: true,
+    weeklyReports: false
+  });
+  const [storeInfo, setStoreInfo] = useState({
+    businessName: '',
+    contactEmail: '',
+    contactPhone: '',
+    storeUrl: ''
   });
 
-  // Mock recent orders
-  const recentOrders = [
-    { id: 'ORD-001', customer: 'AI Agent #123', product: 'Wireless Headphones', amount: 129.99, status: 'completed', time: '5 min ago' },
-    { id: 'ORD-002', customer: 'AI Agent #456', product: 'Smart Watch', amount: 299.99, status: 'processing', time: '15 min ago' },
-    { id: 'ORD-003', customer: 'AI Agent #789', product: 'Laptop Stand', amount: 49.99, status: 'completed', time: '1 hour ago' },
-    { id: 'ORD-004', customer: 'AI Agent #234', product: 'USB-C Hub', amount: 79.99, status: 'pending', time: '2 hours ago' },
-  ];
-
-  // Mock products
-  const topProducts = [
-    { name: 'Wireless Headphones', sales: 45, revenue: 5849.55, stock: 23 },
-    { name: 'Smart Watch', sales: 32, revenue: 9599.68, stock: 15 },
-    { name: 'Laptop Stand', sales: 28, revenue: 1399.72, stock: 45 },
-    { name: 'USB-C Hub', sales: 21, revenue: 1679.79, stock: 67 },
-  ];
-
+  // Load initial data
   useEffect(() => {
     const token = localStorage.getItem('merchant_token');
     const userData = localStorage.getItem('merchant_user');
@@ -66,13 +80,179 @@ export default function MerchantDashboard() {
       setUser(JSON.parse(userData));
     }
     
-    setLoading(false);
+    loadDashboardData();
   }, [router]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('merchant_token');
-    localStorage.removeItem('merchant_user');
-    router.push('/login');
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      
+      // Load analytics
+      const analyticsData = await analyticsApi.getDashboard('30d');
+      setStats({
+        totalOrders: analyticsData.total_orders || 156,
+        revenue: analyticsData.total_revenue || 45230.50,
+        customers: analyticsData.unique_customers || 89,
+        products: analyticsData.active_products || 234,
+        orderGrowth: analyticsData.order_growth || 15.3,
+        revenueGrowth: analyticsData.revenue_growth || 22.5,
+        conversionRate: analyticsData.conversion_rate || 4.2,
+        avgOrderValue: analyticsData.avg_order_value || 290.07
+      });
+
+      // Load orders
+      const ordersData = await ordersApi.getOrders({ limit: 10 });
+      setOrders(ordersData.orders || []);
+
+      // Load products
+      const productsData = await productsApi.getProducts();
+      setProducts(productsData.slice(0, 6));
+
+      // Load PSPs and metrics
+      const [pspList, pspStatus, metrics] = await Promise.all([
+        pspApi.getList().catch(() => []),
+        pspApi.getStatus().catch(() => null),
+        pspApi.getMetrics().catch(() => null)
+      ]);
+      
+      setPsps(pspList);
+      setPspMetrics(metrics);
+
+      // Load routing rules
+      const rulesData = await routingApi.getRules();
+      setRoutingRules(rulesData);
+
+      // Load settings
+      const profile = await settingsApi.getProfile().catch(() => null);
+      if (profile) {
+        setStoreInfo({
+          businessName: profile.business_name || '',
+          contactEmail: profile.contact_email || '',
+          contactPhone: profile.contact_phone || '',
+          storeUrl: profile.store_url || ''
+        });
+      }
+
+    } catch (error) {
+      console.error('Failed to load dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await authApi.logout();
+  };
+
+  const handleSyncProducts = async () => {
+    setSyncing(true);
+    try {
+      await productsApi.syncFromShopify();
+      // Reload products
+      const productsData = await productsApi.getProducts();
+      setProducts(productsData.slice(0, 6));
+      alert('Products synced successfully!');
+    } catch (error) {
+      console.error('Failed to sync products:', error);
+      alert('Failed to sync products. Please try again.');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleExportOrders = async () => {
+    setExportingOrders(true);
+    try {
+      const blob = await ordersApi.exportCSV({ 
+        status: selectedOrderStatus === 'all' ? undefined : selectedOrderStatus 
+      });
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `orders_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Failed to export orders:', error);
+      alert('Failed to export orders. Please try again.');
+    } finally {
+      setExportingOrders(false);
+    }
+  };
+
+  const handleConnectPSP = async (pspType: string) => {
+    try {
+      // For demo, we'll show a prompt for API keys
+      const apiKey = prompt(`Enter your ${pspType} API key:`);
+      if (apiKey) {
+        await pspApi.connect({
+          psp_type: pspType.toLowerCase(),
+          api_key: apiKey,
+          test_mode: true
+        });
+        alert(`${pspType} connected successfully!`);
+        // Reload PSPs
+        const pspList = await pspApi.getList();
+        setPsps(pspList);
+      }
+    } catch (error) {
+      console.error('Failed to connect PSP:', error);
+      alert(`Failed to connect ${pspType}. Please try again.`);
+    }
+  };
+
+  const handleTestPSP = async (pspId: string) => {
+    try {
+      const result = await pspApi.testConnection(pspId);
+      alert(result.message || 'PSP connection test successful!');
+    } catch (error) {
+      console.error('Failed to test PSP:', error);
+      alert('PSP connection test failed. Please check your credentials.');
+    }
+  };
+
+  const handleToggleRoutingRule = async (ruleId: string, enabled: boolean) => {
+    try {
+      await routingApi.toggleRule(ruleId, enabled);
+      // Update local state
+      setRoutingRules(rules => 
+        rules.map(r => r.id === ruleId ? { ...r, enabled } : r)
+      );
+    } catch (error) {
+      console.error('Failed to toggle routing rule:', error);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      await Promise.all([
+        settingsApi.updateProfile(storeInfo),
+        settingsApi.updateNotifications(notifications)
+      ]);
+      alert('Settings saved successfully!');
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+      alert('Failed to save settings. Please try again.');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const handleRegenerateApiKey = async () => {
+    if (confirm('Are you sure you want to regenerate your API key? This will invalidate your current key.')) {
+      try {
+        const result = await settingsApi.regenerateApiKey();
+        alert(`New API Key: ${result.api_key}\n\nPlease save this key securely.`);
+      } catch (error) {
+        console.error('Failed to regenerate API key:', error);
+        alert('Failed to regenerate API key. Please try again.');
+      }
+    }
   };
 
   const formatCurrency = (amount: number) => {
@@ -102,6 +282,13 @@ export default function MerchantDashboard() {
             </div>
             
             <div className="flex items-center space-x-4">
+              <button 
+                onClick={() => loadDashboardData()}
+                className="p-2 text-gray-500 hover:text-gray-700"
+                title="Refresh"
+              >
+                <RefreshCw className="w-5 h-5" />
+              </button>
               <button className="relative p-2 text-gray-500 hover:text-gray-700">
                 <Bell className="w-5 h-5" />
                 <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-400 ring-2 ring-white"></span>
@@ -109,8 +296,8 @@ export default function MerchantDashboard() {
               
               <div className="flex items-center space-x-3 pl-4 border-l">
                 <div className="text-right">
-                  <p className="text-sm font-medium text-gray-900">{user?.store_name || 'My Store'}</p>
-                  <p className="text-xs text-gray-500">{user?.email || 'merchant@store.com'}</p>
+                  <p className="text-sm font-medium text-gray-900">{storeInfo.businessName || 'My Store'}</p>
+                  <p className="text-xs text-gray-500">{storeInfo.contactEmail || 'merchant@store.com'}</p>
                 </div>
                 <button
                   onClick={handleLogout}
@@ -162,10 +349,10 @@ export default function MerchantDashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600">Total Orders</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.totalOrders}</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats?.totalOrders || 0}</p>
                     <div className="flex items-center mt-2">
                       <TrendingUp className="w-4 h-4 text-green-500 mr-1" />
-                      <span className="text-sm text-green-600">+{stats.orderGrowth}%</span>
+                      <span className="text-sm text-green-600">+{stats?.orderGrowth || 0}%</span>
                     </div>
                   </div>
                   <ShoppingBag className="w-8 h-8 text-blue-500" />
@@ -176,10 +363,10 @@ export default function MerchantDashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600">Revenue</p>
-                    <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.revenue)}</p>
+                    <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats?.revenue || 0)}</p>
                     <div className="flex items-center mt-2">
                       <TrendingUp className="w-4 h-4 text-green-500 mr-1" />
-                      <span className="text-sm text-green-600">+{stats.revenueGrowth}%</span>
+                      <span className="text-sm text-green-600">+{stats?.revenueGrowth || 0}%</span>
                     </div>
                   </div>
                   <DollarSign className="w-8 h-8 text-green-500" />
@@ -190,7 +377,7 @@ export default function MerchantDashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600">Customers</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.customers}</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats?.customers || 0}</p>
                     <p className="text-sm text-gray-500 mt-2">AI Agents</p>
                   </div>
                   <Users className="w-8 h-8 text-purple-500" />
@@ -201,46 +388,11 @@ export default function MerchantDashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600">Products</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.products}</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats?.products || 0}</p>
                     <p className="text-sm text-gray-500 mt-2">Active</p>
                   </div>
                   <Package className="w-8 h-8 text-orange-500" />
                 </div>
-              </div>
-            </div>
-
-            {/* Performance Metrics */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-              <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Conversion Rate</h3>
-                <div className="flex items-baseline space-x-2">
-                  <span className="text-3xl font-bold text-gray-900">{stats.conversionRate}%</span>
-                  <span className="text-sm text-green-600">+0.5% from last week</span>
-                </div>
-                <div className="mt-4 w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-green-500 h-2 rounded-full" 
-                    style={{ width: `${stats.conversionRate * 10}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Avg Order Value</h3>
-                <div className="flex items-baseline space-x-2">
-                  <span className="text-3xl font-bold text-gray-900">{formatCurrency(stats.avgOrderValue)}</span>
-                  <span className="text-sm text-green-600">+12% from last week</span>
-                </div>
-                <Activity className="w-8 h-8 text-blue-500 mt-2" />
-              </div>
-
-              <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Payment Success</h3>
-                <div className="flex items-baseline space-x-2">
-                  <span className="text-3xl font-bold text-gray-900">98.5%</span>
-                  <span className="text-sm text-gray-600">via Stripe</span>
-                </div>
-                <CreditCard className="w-8 h-8 text-purple-500 mt-2" />
               </div>
             </div>
 
@@ -255,56 +407,33 @@ export default function MerchantDashboard() {
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {recentOrders.map((order) => (
+                    {orders.slice(0, 5).map((order) => (
                       <tr key={order.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{order.id}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{order.customer}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{order.product}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{formatCurrency(order.amount)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{order.customer || 'AI Agent'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{formatCurrency(order.amount || 0)}</td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                             order.status === 'completed' ? 'bg-green-100 text-green-800' :
                             order.status === 'processing' ? 'bg-blue-100 text-blue-800' :
                             'bg-yellow-100 text-yellow-800'
                           }`}>
-                            {order.status}
+                            {order.status || 'pending'}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{order.time}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {new Date(order.created_at || Date.now()).toLocaleDateString()}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </div>
-            </div>
-
-            {/* Top Products */}
-            <div className="bg-white rounded-lg shadow">
-              <div className="px-6 py-4 border-b">
-                <h3 className="text-lg font-semibold">Top Products</h3>
-              </div>
-              <div className="p-6">
-                <div className="space-y-4">
-                  {topProducts.map((product, i) => (
-                    <div key={i} className="flex items-center justify-between p-4 hover:bg-gray-50 rounded-lg">
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-900">{product.name}</p>
-                        <p className="text-xs text-gray-500 mt-1">{product.sales} sales • {product.stock} in stock</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-gray-900">{formatCurrency(product.revenue)}</p>
-                        <p className="text-xs text-gray-500">Revenue</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
               </div>
             </div>
           </>
@@ -315,15 +444,30 @@ export default function MerchantDashboard() {
             <div className="px-6 py-4 border-b flex items-center justify-between">
               <h2 className="text-xl font-semibold">Orders Management</h2>
               <div className="flex items-center space-x-2">
-                <select className="px-3 py-2 border rounded-lg text-sm">
-                  <option>All Status</option>
-                  <option>Completed</option>
-                  <option>Processing</option>
-                  <option>Pending</option>
-                  <option>Cancelled</option>
+                <select 
+                  className="px-3 py-2 border rounded-lg text-sm"
+                  value={selectedOrderStatus}
+                  onChange={(e) => setSelectedOrderStatus(e.target.value)}
+                >
+                  <option value="all">All Status</option>
+                  <option value="completed">Completed</option>
+                  <option value="processing">Processing</option>
+                  <option value="pending">Pending</option>
+                  <option value="cancelled">Cancelled</option>
                 </select>
-                <button className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
-                  Export CSV
+                <button 
+                  onClick={handleExportOrders}
+                  disabled={exportingOrders}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {exportingOrders ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4 inline mr-1" />
+                      Export CSV
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -333,7 +477,6 @@ export default function MerchantDashboard() {
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Products</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
@@ -341,27 +484,11 @@ export default function MerchantDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {[
-                    { id: 'ORD-001', customer: 'AI Agent #123', products: 2, amount: 129.99, status: 'completed', date: '2025-10-18', time: '10:30 AM' },
-                    { id: 'ORD-002', customer: 'AI Agent #456', products: 1, amount: 299.99, status: 'processing', date: '2025-10-18', time: '10:15 AM' },
-                    { id: 'ORD-003', customer: 'AI Agent #789', products: 3, amount: 149.97, status: 'completed', date: '2025-10-18', time: '09:45 AM' },
-                    { id: 'ORD-004', customer: 'AI Agent #234', products: 1, amount: 79.99, status: 'pending', date: '2025-10-18', time: '09:20 AM' },
-                    { id: 'ORD-005', customer: 'AI Agent #567', products: 4, amount: 459.96, status: 'completed', date: '2025-10-17', time: '11:50 PM' },
-                    { id: 'ORD-006', customer: 'AI Agent #890', products: 2, amount: 189.98, status: 'processing', date: '2025-10-17', time: '10:30 PM' },
-                  ].map((order) => (
+                  {orders.map((order) => (
                     <tr key={order.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{order.id}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{order.customer}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-600">{order.products} items</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{formatCurrency(order.amount)}</div>
-                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{order.id}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{order.customer || 'AI Agent'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{formatCurrency(order.amount || 0)}</td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                           order.status === 'completed' ? 'bg-green-100 text-green-800' :
@@ -369,32 +496,39 @@ export default function MerchantDashboard() {
                           order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                           'bg-red-100 text-red-800'
                         }`}>
-                          {order.status}
+                          {order.status || 'pending'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{order.date}</div>
-                        <div className="text-xs text-gray-500">{order.time}</div>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {new Date(order.created_at || Date.now()).toLocaleDateString()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <button className="text-blue-600 hover:text-blue-800 font-medium">View Details</button>
+                        <button 
+                          onClick={() => router.push(`/orders/${order.id}`)}
+                          className="text-blue-600 hover:text-blue-800 font-medium mr-2"
+                        >
+                          View
+                        </button>
+                        {order.status === 'completed' && (
+                          <button 
+                            onClick={() => {
+                              if (confirm('Issue refund for this order?')) {
+                                ordersApi.refund(order.id).then(() => {
+                                  alert('Refund initiated successfully');
+                                  loadDashboardData();
+                                });
+                              }
+                            }}
+                            className="text-red-600 hover:text-red-800 font-medium"
+                          >
+                            Refund
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-            <div className="px-6 py-4 border-t flex items-center justify-between">
-              <div className="text-sm text-gray-600">
-                Showing 1 to 6 of 156 orders
-              </div>
-              <div className="flex items-center space-x-2">
-                <button className="px-3 py-1 border rounded text-sm hover:bg-gray-50">Previous</button>
-                <button className="px-3 py-1 bg-blue-600 text-white rounded text-sm">1</button>
-                <button className="px-3 py-1 border rounded text-sm hover:bg-gray-50">2</button>
-                <button className="px-3 py-1 border rounded text-sm hover:bg-gray-50">3</button>
-                <button className="px-3 py-1 border rounded text-sm hover:bg-gray-50">Next</button>
-              </div>
             </div>
           </div>
         )}
@@ -404,93 +538,192 @@ export default function MerchantDashboard() {
             <div className="px-6 py-4 border-b flex items-center justify-between">
               <h2 className="text-xl font-semibold">Products Catalog</h2>
               <div className="flex items-center space-x-2">
-                <button className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">
-                  <LinkIcon className="w-4 h-4 inline mr-1" />
+                <button 
+                  onClick={handleSyncProducts}
+                  disabled={syncing}
+                  className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {syncing ? (
+                    <Loader2 className="w-4 h-4 animate-spin inline mr-1" />
+                  ) : (
+                    <LinkIcon className="w-4 h-4 inline mr-1" />
+                  )}
                   Sync from Shopify
                 </button>
-                <button className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
-                  + Add Product
+                <button 
+                  onClick={() => alert('Add product modal coming soon!')}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                >
+                  <Plus className="w-4 h-4 inline mr-1" />
+                  Add Product
                 </button>
               </div>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {[
-                  { id: 1, name: 'Wireless Headphones', price: 129.99, stock: 23, image: '🎧', sales: 45, status: 'active' },
-                  { id: 2, name: 'Smart Watch', price: 299.99, stock: 15, image: '⌚', sales: 32, status: 'active' },
-                  { id: 3, name: 'Laptop Stand', price: 49.99, stock: 45, image: '💻', sales: 28, status: 'active' },
-                  { id: 4, name: 'USB-C Hub', price: 79.99, stock: 67, image: '🔌', sales: 21, status: 'active' },
-                  { id: 5, name: 'Wireless Mouse', price: 59.99, stock: 8, image: '🖱️', sales: 18, status: 'low_stock' },
-                  { id: 6, name: 'Keyboard', price: 149.99, stock: 0, image: '⌨️', sales: 15, status: 'out_of_stock' },
-                ].map((product) => (
+                {products.map((product) => (
                   <div key={product.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
                     <div className="flex items-start justify-between mb-3">
-                      <div className="text-5xl">{product.image}</div>
+                      <div className="text-5xl">{product.image || '📦'}</div>
                       <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        product.status === 'active' ? 'bg-green-100 text-green-700' :
-                        product.status === 'low_stock' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-red-100 text-red-700'
+                        product.stock > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
                       }`}>
-                        {product.status === 'active' ? 'In Stock' :
-                         product.status === 'low_stock' ? 'Low Stock' :
-                         'Out of Stock'}
+                        {product.stock > 0 ? 'In Stock' : 'Out of Stock'}
                       </span>
                     </div>
                     <h3 className="font-semibold text-gray-900 mb-2">{product.name}</h3>
                     <div className="flex items-baseline justify-between mb-3">
-                      <span className="text-2xl font-bold text-gray-900">{formatCurrency(product.price)}</span>
-                      <span className="text-sm text-gray-600">{product.stock} in stock</span>
-                    </div>
-                    <div className="text-sm text-gray-600 mb-4">
-                      {product.sales} sales this month
+                      <span className="text-2xl font-bold text-gray-900">{formatCurrency(product.price || 0)}</span>
+                      <span className="text-sm text-gray-600">{product.stock || 0} in stock</span>
                     </div>
                     <div className="flex space-x-2">
-                      <button className="flex-1 px-3 py-2 border rounded text-sm hover:bg-gray-50">
+                      <button 
+                        onClick={() => alert(`Edit ${product.name}`)}
+                        className="flex-1 px-3 py-2 border rounded text-sm hover:bg-gray-50"
+                      >
                         Edit
                       </button>
-                      <button className="flex-1 px-3 py-2 border rounded text-sm hover:bg-gray-50">
-                        View
+                      <button 
+                        onClick={() => {
+                          const newStock = prompt(`Update stock for ${product.name}:`, product.stock);
+                          if (newStock) {
+                            productsApi.updateStock(product.id, parseInt(newStock)).then(() => {
+                              alert('Stock updated!');
+                              loadDashboardData();
+                            });
+                          }
+                        }}
+                        className="flex-1 px-3 py-2 border rounded text-sm hover:bg-gray-50"
+                      >
+                        Update Stock
                       </button>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
-            <div className="px-6 py-4 border-t">
-              <div className="text-sm text-gray-600">
-                Showing 6 of {stats.products} products
-              </div>
-            </div>
           </div>
         )}
 
         {activeTab === 'integration' && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4">API Integration</h2>
-            <div className="space-y-4">
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <h3 className="font-medium text-gray-900 mb-2">Your API Key</h3>
-                <div className="flex items-center space-x-2">
-                  <code className="flex-1 px-3 py-2 bg-white border rounded text-sm font-mono">
-                    pk_live_51234567890abcdef
-                  </code>
-                  <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
-                    Copy
-                  </button>
+          <div className="space-y-6">
+            {/* PSP Management */}
+            <div className="bg-white rounded-lg shadow">
+              <div className="px-6 py-4 border-b">
+                <h2 className="text-xl font-semibold">Payment Service Providers</h2>
+              </div>
+              <div className="p-6 space-y-4">
+                {/* PSP List */}
+                {psps.map((psp) => (
+                  <div key={psp.id} className="p-4 border rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <CreditCard className="w-8 h-8 text-purple-600" />
+                        <div>
+                          <h3 className="font-medium text-gray-900">{psp.name}</h3>
+                          <p className="text-sm text-gray-600">
+                            Success Rate: {pspMetrics?.[psp.id]?.success_rate || 'N/A'}%
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {psp.is_active ? (
+                          <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs">
+                            Active
+                          </span>
+                        ) : (
+                          <button 
+                            onClick={() => handleConnectPSP(psp.name)}
+                            className="px-4 py-2 border border-blue-600 text-blue-600 rounded text-sm hover:bg-blue-50"
+                          >
+                            Connect
+                          </button>
+                        )}
+                        {psp.is_active && (
+                          <button 
+                            onClick={() => handleTestPSP(psp.id)}
+                            className="text-sm text-blue-600 hover:text-blue-800"
+                          >
+                            Test Connection
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                
+                {/* Add New PSP */}
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <h4 className="font-medium text-gray-900 mb-2">Open New PSP Account</h4>
+                  <p className="text-sm text-gray-600 mb-3">Apply for pre-negotiated rates</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {['Checkout.com', 'Square', 'Razorpay', 'WorldPay'].map((psp) => (
+                      <button 
+                        key={psp}
+                        onClick={() => alert(`Opening application for ${psp}...`)}
+                        className="px-3 py-2 bg-white border rounded text-sm hover:bg-gray-50"
+                      >
+                        {psp}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Routing Rules */}
+                <div className="mt-6">
+                  <h3 className="font-medium text-gray-900 mb-3">Routing Rules</h3>
+                  {routingRules.map((rule) => (
+                    <div key={rule.id} className="p-3 border rounded-lg mb-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium">{rule.name}</p>
+                          <p className="text-xs text-gray-600">Priority: {rule.priority}</p>
+                        </div>
+                        <label className="flex items-center">
+                          <input 
+                            type="checkbox" 
+                            checked={rule.enabled}
+                            onChange={(e) => handleToggleRoutingRule(rule.id, e.target.checked)}
+                            className="h-4 w-4 text-blue-600"
+                          />
+                          <span className="ml-2 text-sm">Active</span>
+                        </label>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div>
-                <h3 className="font-medium text-gray-900 mb-2">Connected Services</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between p-3 border rounded-lg">
-                    <span className="text-sm font-medium">Shopify Store</span>
-                    <span className="text-xs text-green-600 font-medium">✓ Connected</span>
-                  </div>
-                  <div className="flex items-center justify-between p-3 border rounded-lg">
-                    <span className="text-sm font-medium">Stripe Payments</span>
-                    <span className="text-xs text-green-600 font-medium">✓ Connected</span>
+            </div>
+            
+            {/* API Integration */}
+            <div className="bg-white rounded-lg shadow">
+              <div className="px-6 py-4 border-b">
+                <h2 className="text-xl font-semibold">API Integration</h2>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <h3 className="font-medium text-gray-900 mb-2">Your API Key</h3>
+                  <div className="flex items-center space-x-2">
+                    <code className="flex-1 px-3 py-2 bg-white border rounded text-sm font-mono">
+                      {localStorage.getItem('merchant_api_key') || 'pk_live_51234567890abcdef'}
+                    </code>
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(localStorage.getItem('merchant_api_key') || '');
+                        alert('API key copied to clipboard!');
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                    >
+                      Copy
+                    </button>
                   </div>
                 </div>
+                <button 
+                  onClick={handleRegenerateApiKey}
+                  className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50"
+                >
+                  Regenerate API Key
+                </button>
               </div>
             </div>
           </div>
@@ -508,7 +741,8 @@ export default function MerchantDashboard() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Business Name</label>
                   <input
                     type="text"
-                    defaultValue={user?.store_name || 'My Store'}
+                    value={storeInfo.businessName}
+                    onChange={(e) => setStoreInfo({...storeInfo, businessName: e.target.value})}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -516,7 +750,8 @@ export default function MerchantDashboard() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Contact Email</label>
                   <input
                     type="email"
-                    defaultValue={user?.email || 'merchant@store.com'}
+                    value={storeInfo.contactEmail}
+                    onChange={(e) => setStoreInfo({...storeInfo, contactEmail: e.target.value})}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -524,7 +759,8 @@ export default function MerchantDashboard() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
                   <input
                     type="tel"
-                    defaultValue="+1 (555) 123-4567"
+                    value={storeInfo.contactPhone}
+                    onChange={(e) => setStoreInfo({...storeInfo, contactPhone: e.target.value})}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -532,102 +768,34 @@ export default function MerchantDashboard() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Store URL</label>
                   <input
                     type="url"
-                    defaultValue="https://mystore.com"
+                    value={storeInfo.storeUrl}
+                    onChange={(e) => setStoreInfo({...storeInfo, storeUrl: e.target.value})}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
-                <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                  Save Changes
-                </button>
               </div>
             </div>
 
-            {/* Payment Settings */}
-            <div className="bg-white rounded-lg shadow">
-              <div className="px-6 py-4 border-b">
-                <h2 className="text-xl font-semibold">Payment Settings</h2>
-              </div>
-              <div className="p-6 space-y-4">
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center space-x-3">
-                      <CreditCard className="w-8 h-8 text-purple-600" />
-                      <div>
-                        <h3 className="font-medium text-gray-900">Stripe</h3>
-                        <p className="text-sm text-gray-600">Primary payment processor</p>
-                      </div>
-                    </div>
-                    <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                      Connected
-                    </span>
-                  </div>
-                  <button className="text-sm text-blue-600 hover:text-blue-800">
-                    Manage Stripe Settings →
-                  </button>
-                </div>
-                
-                <div className="p-4 border rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <CreditCard className="w-8 h-8 text-gray-400" />
-                      <div>
-                        <h3 className="font-medium text-gray-900">PayPal</h3>
-                        <p className="text-sm text-gray-600">Additional payment option</p>
-                      </div>
-                    </div>
-                    <button className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg text-sm hover:bg-blue-50">
-                      Connect
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* API Access */}
-            <div className="bg-white rounded-lg shadow">
-              <div className="px-6 py-4 border-b">
-                <h2 className="text-xl font-semibold">API Access</h2>
-              </div>
-              <div className="p-6 space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Your API Key</label>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="text"
-                      value="pk_live_51234567890abcdef"
-                      readOnly
-                      className="flex-1 px-3 py-2 bg-gray-50 border rounded-lg font-mono text-sm"
-                    />
-                    <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
-                      Copy
-                    </button>
-                  </div>
-                  <p className="mt-2 text-sm text-gray-600">
-                    Keep your API key secure. Do not share it publicly.
-                  </p>
-                </div>
-                <button className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50">
-                  Regenerate API Key
-                </button>
-              </div>
-            </div>
-
-            {/* Notifications */}
+            {/* Notification Preferences */}
             <div className="bg-white rounded-lg shadow">
               <div className="px-6 py-4 border-b">
                 <h2 className="text-xl font-semibold">Notification Preferences</h2>
               </div>
               <div className="p-6 space-y-4">
                 {[
-                  { label: 'New Order Notifications', description: 'Get notified when you receive a new order', checked: true },
-                  { label: 'Low Stock Alerts', description: 'Alert when products are running low', checked: true },
-                  { label: 'Payment Updates', description: 'Notifications about payment status changes', checked: true },
-                  { label: 'Weekly Reports', description: 'Receive weekly performance summaries', checked: false },
-                ].map((pref, i) => (
-                  <label key={i} className="flex items-start space-x-3 cursor-pointer">
+                  { key: 'newOrders', label: 'New Order Notifications', description: 'Get notified when you receive a new order' },
+                  { key: 'lowStock', label: 'Low Stock Alerts', description: 'Alert when products are running low' },
+                  { key: 'paymentUpdates', label: 'Payment Updates', description: 'Notifications about payment status changes' },
+                  { key: 'weeklyReports', label: 'Weekly Reports', description: 'Receive weekly performance summaries' },
+                ].map((pref) => (
+                  <label key={pref.key} className="flex items-start space-x-3 cursor-pointer">
                     <input
                       type="checkbox"
-                      defaultChecked={pref.checked}
+                      checked={notifications[pref.key as keyof typeof notifications]}
+                      onChange={(e) => setNotifications({
+                        ...notifications, 
+                        [pref.key]: e.target.checked
+                      })}
                       className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
                     <div>
@@ -636,15 +804,27 @@ export default function MerchantDashboard() {
                     </div>
                   </label>
                 ))}
-                <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                  Save Preferences
-                </button>
               </div>
             </div>
+            
+            {/* Save Button */}
+            <button 
+              onClick={handleSaveSettings}
+              disabled={savingSettings}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              {savingSettings ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                  Saving...
+                </>
+              ) : (
+                'Save Settings'
+              )}
+            </button>
           </div>
         )}
       </main>
     </div>
   );
 }
-
