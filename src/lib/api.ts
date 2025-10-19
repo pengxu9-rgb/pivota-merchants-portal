@@ -370,9 +370,8 @@ export const onboardingApi = {
 
   // Setup PSP - accepts merchant_id, psp_type, and api_key
   async setupPSP(merchantId: string, pspType: string, apiKey: string) {
-    const response = await api.post('/merchant/onboarding/setup-psp', {
-      merchant_id: merchantId,
-      psp_type: pspType,
+    const response = await api.post('/merchant/integrations/psp/connect', {
+      provider: pspType,
       api_key: apiKey,
       test_mode: true
     });
@@ -401,10 +400,10 @@ export const integrationsApi = {
 
   // Connect Shopify with credentials (supports multiple stores)
   async connectShopify(merchantId: string, shopDomain: string, accessToken: string, storeName?: string) {
-    const response = await api.post('/integrations/shopify/connect', {
-      merchant_id: merchantId,
-      shop_domain: shopDomain,
-      access_token: accessToken,
+    const response = await api.post('/merchant/integrations/store/connect', {
+      platform: 'shopify',
+      store_url: shopDomain,
+      api_key: accessToken,
       store_name: storeName || shopDomain // Allow custom naming for multiple stores
     });
     return response.data;
@@ -412,10 +411,10 @@ export const integrationsApi = {
 
   // Connect Wix store (supports multiple stores)
   async connectWix(merchantId: string, apiKey: string, siteId: string, storeName?: string) {
-    const response = await api.post('/integrations/wix/connect', {
-      merchant_id: merchantId,
+    const response = await api.post('/merchant/integrations/store/connect', {
+      platform: 'wix',
+      store_url: siteId,
       api_key: apiKey,
-      site_id: siteId,
       store_name: storeName || siteId
     });
     return response.data;
@@ -460,3 +459,4 @@ export const integrationsApi = {
 };
 
 export default api;
+

@@ -18,24 +18,26 @@ export default function MerchantLogin() {
 
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://web-production-fedb.up.railway.app';
-      const response = await fetch(`${API_URL}/api/auth/login`, {
+      const response = await fetch(`${API_URL}/auth/signin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json();
+      const success = data?.success ?? (data?.status === 'success');
+      const token = data?.token || data?.access_token;
 
-      if (data.success && data.token && data.user.role === 'merchant') {
-        localStorage.setItem('merchant_token', data.token);
+      if (success && token && data?.user?.role === 'merchant') {
+        localStorage.setItem('merchant_token', token);
         localStorage.setItem('merchant_user', JSON.stringify(data.user));
         localStorage.setItem('merchant_id', data.user.merchant_id || data.user.id);
         console.log('Login successful, stored token');
         router.push('/dashboard');
-      } else if (data.success) {
+      } else if (success) {
         setError('This portal is for Merchants only. Please use the correct portal for your role.');
       } else {
-        setError(data.detail || 'Invalid credentials');
+        setError(data.detail || data.message || 'Invalid credentials');
       }
     } catch (err) {
       setError('Login failed. Please try again.');
