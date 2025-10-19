@@ -26,8 +26,8 @@ export default function MerchantLogin() {
 
       const data = await response.json();
 
-      if (data.success && data.access_token && data.user.role === 'merchant') {
-        localStorage.setItem('merchant_token', data.access_token);
+      if (data.success && data.token && data.user.role === 'merchant') {
+        localStorage.setItem('merchant_token', data.token);
         localStorage.setItem('merchant_user', JSON.stringify(data.user));
         localStorage.setItem('merchant_id', data.user.merchant_id || data.user.id);
         console.log('Login successful, stored token');
