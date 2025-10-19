@@ -73,6 +73,15 @@ export const pspApi = {
   }
 };
 
+// Extend PSP API for disconnect support
+export const pspManagementApi = {
+  // Toggle/Disconnect PSP (disable)
+  async disconnect(pspId: string) {
+    const response = await api.post(`/admin/psp/${pspId}/toggle`, { enable: false });
+    return response.data;
+  }
+};
+
 // Routing Rules API
 export const routingApi = {
   // Get routing rules
@@ -247,6 +256,44 @@ export const analyticsApi = {
   async getRevenueMetrics() {
     const response = await api.get('/analytics/revenue');
     return response.data;
+  }
+};
+
+// Webhooks API (Merchant)
+export const webhookApi = {
+  async getConfig() {
+    const res = await api.get('/merchant/webhooks/config');
+    return res.data;
+  },
+
+  async getSecret() {
+    const res = await api.get('/merchant/webhooks/secret');
+    return res.data; // { secret_masked: 'whsec_***abcd' }
+  },
+
+  async updateConfig(config: { url: string; events: string[]; enabled?: boolean }) {
+    const res = await api.put('/merchant/webhooks/config', config);
+    return res.data;
+  },
+
+  async rotateSecret() {
+    const res = await api.post('/merchant/webhooks/secret/rotate');
+    return res.data; // { secret: 'whsec_***' }
+  },
+
+  async test(url?: string, event: string = 'order.created') {
+    const res = await api.post('/merchant/webhooks/test', { url, event });
+    return res.data;
+  },
+
+  async getDeliveries(params?: { limit?: number }) {
+    const res = await api.get('/merchant/webhooks/deliveries', { params });
+    return res.data.deliveries || [];
+  },
+
+  async replayDelivery(deliveryId: string) {
+    const res = await api.post(`/merchant/webhooks/deliveries/${deliveryId}/replay`);
+    return res.data;
   }
 };
 

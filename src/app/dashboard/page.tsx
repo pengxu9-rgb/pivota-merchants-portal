@@ -33,8 +33,11 @@ import {
   analyticsApi, 
   authApi,
   onboardingApi,
-  integrationsApi 
+  integrationsApi,
+  webhookApi,
+  pspManagementApi 
 } from '../../lib/api';
+import { useMemo } from 'react';
 
 export default function MerchantDashboard() {
   const router = useRouter();
@@ -90,43 +93,64 @@ export default function MerchantDashboard() {
     try {
       setLoading(true);
       
-      // Load analytics
-      const analyticsData = await analyticsApi.getDashboard('30d');
-      setStats({
-        totalOrders: analyticsData.total_orders || 156,
-        revenue: analyticsData.total_revenue || 45230.50,
-        customers: analyticsData.unique_customers || 89,
-        products: analyticsData.active_products || 234,
-        orderGrowth: analyticsData.order_growth || 15.3,
-        revenueGrowth: analyticsData.revenue_growth || 22.5,
-        conversionRate: analyticsData.conversion_rate || 4.2,
-        avgOrderValue: analyticsData.avg_order_value || 290.07
+      const merchantId = localStorage.getItem('merchant_id') || '';
+      console.log('Loading dashboard for merchant:', merchantId);
+
+      // Load analytics - use real data from backend
+      const analyticsData = await analyticsApi.getDashboard('30d').catch((e) => {
+        console.warn('Analytics API failed:', e);
+        return null;
       });
 
-      // Load orders
-      const ordersData = await ordersApi.getOrders({ limit: 10 });
-      setOrders(ordersData.orders || []);
+      setStats({
+        totalOrders: analyticsData?.total_orders || 0,
+        revenue: analyticsData?.total_revenue || 0,
+        customers: analyticsData?.unique_customers || 0,
+        products: analyticsData?.active_products || 0,
+        orderGrowth: analyticsData?.order_growth || 0,
+        revenueGrowth: analyticsData?.revenue_growth || 0,
+        conversionRate: analyticsData?.conversion_rate || 0,
+        avgOrderValue: analyticsData?.avg_order_value || 0
+      });
 
-      // Load products
-      const productsData = await productsApi.getProducts();
-      setProducts(productsData.slice(0, 6));
+      // Load orders - fetch real orders
+      const ordersData = await ordersApi.getOrders({ limit: 10 }).catch((e) => {
+        console.warn('Orders API failed:', e);
+        return { orders: [] };
+      });
+      setOrders(ordersData?.orders || []);
 
-      // Load PSPs and metrics
+      // Load products - use real merchant products
+      const productsData = await productsApi.getProducts(merchantId).catch((e) => {
+        console.warn('Products API failed:', e);
+        return [];
+      });
+      setProducts(Array.isArray(productsData) ? productsData.slice(0, 6) : []);
+
+      // Load PSPs and metrics - real data for this merchant
       const [pspList, pspStatus, metrics] = await Promise.all([
-        pspApi.getList().catch(() => []),
-        pspApi.getStatus().catch(() => null),
-        pspApi.getMetrics().catch(() => null)
+        pspApi.getList().catch((e) => { console.warn('PSP list failed:', e); return []; }),
+        pspApi.getStatus().catch((e) => { console.warn('PSP status failed:', e); return null; }),
+        pspApi.getMetrics().catch((e) => { console.warn('PSP metrics failed:', e); return null; })
       ]);
       
       setPsps(pspList);
       setPspMetrics(metrics);
+      console.log('Loaded PSPs:', pspList);
 
-      // Load routing rules
-      const rulesData = await routingApi.getRules();
+      // Load routing rules - real merchant routing config
+      const rulesData = await routingApi.getRules().catch((e) => {
+        console.warn('Routing rules failed:', e);
+        return [];
+      });
       setRoutingRules(rulesData);
+      console.log('Routing rules:', rulesData);
 
-      // Load settings
-      const profile = await settingsApi.getProfile().catch(() => null);
+      // Load settings - real merchant profile
+      const profile = await settingsApi.getProfile().catch((e) => {
+        console.warn('Profile failed:', e);
+        return null;
+      });
       if (profile) {
         setStoreInfo({
           businessName: profile.business_name || '',
@@ -135,12 +159,16 @@ export default function MerchantDashboard() {
           storeUrl: profile.store_url || ''
         });
       }
+      console.log('Profile loaded:', profile);
 
-      // Load connected stores
-      const merchantId = localStorage.getItem('merchant_id') || '';
+      // Load connected stores - REAL Shopify/Wix stores for this merchant (e.g., chydantest.myshopify.com)
       if (merchantId) {
-        const stores = await integrationsApi.getConnectedStores(merchantId).catch(() => []);
+        const stores = await integrationsApi.getConnectedStores(merchantId).catch((e) => {
+          console.warn('Connected stores failed:', e);
+          return [];
+        });
         setConnectedStores(stores);
+        console.log('Connected stores for', merchantId, ':', stores);
       }
 
     } catch (error) {
@@ -485,6 +513,155 @@ export default function MerchantDashboard() {
     }).format(amount);
   };
 
+  function WebhookSettings() {
+    const [url, setUrl] = useState('');
+    const [enabled, setEnabled] = useState(true);
+    const [events, setEvents] = useState<string[]>([
+      'order.created',
+      'payment.completed',
+      'payment.failed'
+    ]);
+    const [loadingCfg, setLoadingCfg] = useState(true);
+    const [savingCfg, setSavingCfg] = useState(false);
+    const [testing, setTesting] = useState(false);
+    const [deliveries, setDeliveries] = useState<any[]>([]);
+
+    useEffect(() => {
+      const load = async () => {
+        try {
+          setLoadingCfg(true);
+          const cfg = await webhookApi.getConfig().catch(() => null);
+          if (cfg) {
+            setUrl(cfg.url || '');
+            setEnabled(cfg.enabled ?? true);
+            if (Array.isArray(cfg.events)) setEvents(cfg.events);
+          }
+          const logs = await webhookApi.getDeliveries({ limit: 10 }).catch(() => []);
+          setDeliveries(logs);
+        } finally {
+          setLoadingCfg(false);
+        }
+      };
+      load();
+    }, []);
+
+    const toggleEvent = (eName: string) => {
+      setEvents(prev => prev.includes(eName) ? prev.filter(e => e !== eName) : [...prev, eName]);
+    };
+
+    const save = async () => {
+      try {
+        setSavingCfg(true);
+        await webhookApi.updateConfig({ url, events, enabled });
+        alert('Webhook settings saved');
+      } catch (e) {
+        alert('Failed to save webhook settings');
+      } finally {
+        setSavingCfg(false);
+      }
+    };
+
+    const test = async () => {
+      try {
+        setTesting(true);
+        const res = await webhookApi.test(url || undefined, 'order.created');
+        alert(res.message || 'Test event sent');
+        const logs = await webhookApi.getDeliveries({ limit: 10 }).catch(() => []);
+        setDeliveries(logs);
+      } catch (e) {
+        alert('Failed to send test');
+      } finally {
+        setTesting(false);
+      }
+    };
+
+    return (
+      <div className="space-y-4">
+        {loadingCfg ? (
+          <div className="text-sm text-gray-500">Loading webhook configuration...</div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Webhook URL</label>
+                <input
+                  type="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="https://your-domain.com/webhooks/pivota"
+                />
+              </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+                  Enabled
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-sm font-medium text-gray-700 mb-2">Events</div>
+              {['order.created','order.updated','payment.completed','payment.failed','product.out_of_stock'].map((ev) => (
+                <label key={ev} className="mr-4 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mr-1"
+                    checked={events.includes(ev)}
+                    onChange={() => toggleEvent(ev)}
+                  />
+                  {ev}
+                </label>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button onClick={save} disabled={savingCfg} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50">
+                {savingCfg ? 'Saving...' : 'Save'}
+              </button>
+              <button onClick={test} disabled={testing} className="px-4 py-2 border rounded disabled:opacity-50">
+                {testing ? 'Testing...' : 'Send Test Event'}
+              </button>
+            </div>
+
+            <div className="mt-4">
+              <div className="font-medium text-gray-900 mb-2">Recent Deliveries</div>
+              <div className="border rounded">
+                {deliveries.length === 0 && (
+                  <div className="p-3 text-sm text-gray-500">No deliveries yet</div>
+                )}
+                {deliveries.map((d) => (
+                  <div key={d.id || d.delivery_id} className="px-4 py-2 border-b last:border-b-0 text-sm flex items-center justify-between">
+                    <div>
+                      <div className="text-gray-900">{d.event || d.type}</div>
+                      <div className="text-gray-500">{new Date(d.created_at || Date.now()).toLocaleString()}</div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-xs px-2 py-0.5 rounded ${d.status === 'delivered' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{d.status || 'pending'}</span>
+                      <button
+                        onClick={async () => {
+                          try {
+                            await webhookApi.replayDelivery(d.id || d.delivery_id);
+                            alert('Replayed');
+                          } catch (e) {
+                            alert('Replay failed');
+                          }
+                        }}
+                        className="text-xs px-2 py-1 border rounded"
+                      >
+                        Replay
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -774,7 +951,19 @@ export default function MerchantDashboard() {
                   Sync from Shopify
                 </button>
                 <button 
-                  onClick={() => alert('Add product modal coming soon!')}
+                  onClick={async () => {
+                    const name = prompt('Product name:');
+                    const priceStr = prompt('Price (e.g., 19.99):');
+                    const stockStr = prompt('Stock quantity:');
+                    if (!name || !priceStr || !stockStr) return;
+                    try {
+                      await productsApi.addProduct({ name, price: parseFloat(priceStr), stock: parseInt(stockStr) });
+                      alert('Product added');
+                      await loadDashboardData();
+                    } catch (e) {
+                      alert('Failed to add product');
+                    }
+                  }}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
                 >
                   <Plus className="w-4 h-4 inline mr-1" />
@@ -881,7 +1070,7 @@ export default function MerchantDashboard() {
                 <p className="text-sm text-gray-600 mt-1">Connect your e-commerce platform to sync products</p>
               </div>
               <div className="p-6 space-y-4">
-                {/* Connected Stores */}
+                {/* Connected Stores - Real data from backend (e.g., chydantest.myshopify.com) */}
                 {connectedStores.length > 0 && (
                   <div className="space-y-3 mb-4">
                     <div className="flex items-center justify-between">
@@ -956,9 +1145,14 @@ export default function MerchantDashboard() {
                   </div>
                 )}
 
-                {/* Available Store Platforms */}
+                {/* Available Store Platforms - Show only if no stores connected */}
                 {connectedStores.length === 0 && (
                   <div>
+                    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-sm text-blue-900">
+                        💡 <strong>Test Account:</strong> If you're using merchant@test.com, your Shopify store (chydantest.myshopify.com) and PSP connections should appear here automatically once backend loads them.
+                      </p>
+                    </div>
                     <h3 className="text-sm font-semibold text-gray-700 mb-3">Connect Your First Store</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       {/* Shopify */}
@@ -1048,11 +1242,11 @@ export default function MerchantDashboard() {
               </div>
             </div>
 
-            {/* Your Connected PSPs */}
+            {/* Your Connected PSPs - Real merchant PSP connections */}
             <div className="bg-white rounded-lg shadow">
               <div className="px-6 py-4 border-b">
                 <h2 className="text-xl font-semibold">Your Connected PSP Accounts</h2>
-                <p className="text-sm text-gray-600 mt-1">All payments process through YOUR accounts</p>
+                <p className="text-sm text-gray-600 mt-1">All payments process through YOUR accounts (e.g., your Stripe/Adyen credentials)</p>
               </div>
               <div className="p-6 space-y-4">
                 {psps.filter(p => p.is_active).length > 0 ? (
@@ -1079,10 +1273,15 @@ export default function MerchantDashboard() {
                             Test
                           </button>
                           <button 
-                            onClick={() => {
+                            onClick={async () => {
                               if (confirm(`Disconnect ${psp.name}? This will stop processing payments through this PSP.`)) {
-                                // Handle disconnect
-                                alert('Disconnect functionality coming soon');
+                                try {
+                                  await pspManagementApi.disconnect(psp.id);
+                                  alert('PSP disconnected');
+                                  await loadDashboardData();
+                                } catch (e) {
+                                  alert('Failed to disconnect PSP');
+                                }
                               }
                             }}
                             className="text-red-600 hover:text-red-800 text-xs"
@@ -1212,10 +1411,10 @@ export default function MerchantDashboard() {
               </div>
             )}
             
-            {/* API Integration */}
+            {/* API Integration & Webhooks */}
             <div className="bg-white rounded-lg shadow">
               <div className="px-6 py-4 border-b">
-                <h2 className="text-xl font-semibold">API Integration</h2>
+                <h2 className="text-xl font-semibold">API & Webhooks</h2>
               </div>
               <div className="p-6 space-y-4">
                 <div className="p-4 bg-gray-50 rounded-lg">
@@ -1241,6 +1440,27 @@ export default function MerchantDashboard() {
                 >
                   Regenerate API Key
                 </button>
+
+                {/* Webhooks Configuration */}
+                <div className="mt-6 p-4 border rounded-lg">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-medium text-gray-900">Webhooks Configuration</h3>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const rotated = await webhookApi.rotateSecret();
+                          alert(`New Signing Secret: ${rotated.secret}`);
+                        } catch (e) {
+                          alert('Failed to rotate secret');
+                        }
+                      }}
+                      className="text-sm px-3 py-1 border rounded hover:bg-gray-50"
+                    >
+                      Rotate Secret
+                    </button>
+                  </div>
+                  <WebhookSettings />
+                </div>
               </div>
             </div>
           </div>
