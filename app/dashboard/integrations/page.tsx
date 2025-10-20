@@ -34,6 +34,7 @@ export default function IntegrationsPage() {
   const [showConnectStore, setShowConnectStore] = useState(false);
   const [showConnectPSP, setShowConnectPSP] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncingStoreId, setSyncingStoreId] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
 
   useEffect(() => {
@@ -127,15 +128,23 @@ export default function IntegrationsPage() {
     }
   };
 
-  const handleSyncProducts = async () => {
-    setSyncing(true);
+  const handleSyncProducts = async (store: any) => {
+    setSyncingStoreId(store.id);
     try {
-      const result = await apiClient.syncShopifyProducts();
-      alert(result.message || '✅ Products synced successfully!');
+      let result;
+      if (store.platform === 'shopify') {
+        result = await apiClient.syncShopifyProducts();
+      } else if (store.platform === 'wix') {
+        result = await apiClient.syncPlatformProducts('wix');
+      } else {
+        result = await apiClient.syncPlatformProducts(store.platform);
+      }
+      alert(result.message || `✅ ${store.platform} products synced successfully!`);
+      await loadIntegrationData(merchantId); // Reload to update product counts
     } catch (error: any) {
       alert('❌ Failed to sync products: ' + (error.response?.data?.detail || error.message));
     } finally {
-      setSyncing(false);
+      setSyncingStoreId(null);
     }
   };
 
@@ -293,13 +302,13 @@ export default function IntegrationsPage() {
                           <span className="px-3 py-1 bg-green-100 text-green-700 text-sm rounded-full">
                             Active
                           </span>
-                          {store.platform === 'shopify' && (
+                          {(store.platform === 'shopify' || store.platform === 'wix') && (
                             <button
-                              onClick={handleSyncProducts}
-                              disabled={syncing}
+                              onClick={() => handleSyncProducts(store)}
+                              disabled={syncingStoreId === store.id}
                               className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
                             >
-                              {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Sync Products'}
+                              {syncingStoreId === store.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Sync Products'}
                             </button>
                           )}
                         </div>
