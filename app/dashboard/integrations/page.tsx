@@ -148,6 +148,40 @@ export default function IntegrationsPage() {
     }
   };
 
+  const handleDeleteStore = async (store: any) => {
+    if (!confirm(`确定要删除商店 "${store.store_name || store.name}" 吗？\n\n这将断开与该商店的连接。`)) {
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      const response = await apiClient.client.delete(`/merchant/integrations/store/${store.id}`);
+      alert(response.data.message || '✅ 商店已删除');
+      await loadIntegrationData(merchantId);
+    } catch (error: any) {
+      alert('❌ 删除失败: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeletePSP = async (psp: any) => {
+    if (!confirm(`确定要删除PSP "${psp.name}" 吗？\n\n这将断开与该支付处理商的连接。`)) {
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      const response = await apiClient.client.delete(`/merchant/integrations/psp/${psp.id}`);
+      alert(response.data.message || '✅ PSP已删除');
+      await loadIntegrationData(merchantId);
+    } catch (error: any) {
+      alert('❌ 删除失败: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleTestPSP = async (pspId: string) => {
     setTesting(pspId);
     try {
@@ -311,6 +345,12 @@ export default function IntegrationsPage() {
                               {syncingStoreId === store.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Sync Products'}
                             </button>
                           )}
+                          <button
+                            onClick={() => handleDeleteStore(store)}
+                            className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                          >
+                            Delete
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -420,6 +460,12 @@ export default function IntegrationsPage() {
                             className="px-3 py-1 border rounded text-sm hover:bg-gray-50 disabled:opacity-50"
                           >
                             {testing === psp.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Test'}
+                          </button>
+                          <button
+                            onClick={() => handleDeletePSP(psp)}
+                            className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                          >
+                            Delete
                           </button>
                         </div>
                       </div>
