@@ -3,10 +3,10 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { CheckCircle, Store, CreditCard, FileText, Rocket } from 'lucide-react';
-import RegistrationStep from '../../components/RegistrationStep';
-import PSPSetupStep from '../../components/PSPSetupStep';
-import DocumentUploadStep from '../../components/DocumentUploadStep';
-import CompletionStep from '../../components/CompletionStep';
+import RegistrationStep from '@/components/RegistrationStep';
+import PSPSetupStep from '@/components/PSPSetupStep';
+import DocumentUploadStep from '@/components/DocumentUploadStep';
+import CompletionStep from '@/components/CompletionStep';
 
 type Step = 'register' | 'psp' | 'documents' | 'complete';
 
