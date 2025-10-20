@@ -15,4 +15,4 @@ export default function Home() {
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
     </div>
   );
-}
+}// Trigger Vercel: Mon Oct 20 11:00:39 CST 2025
