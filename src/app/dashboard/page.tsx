@@ -97,7 +97,7 @@ export default function MerchantDashboard() {
       console.log('Loading dashboard for merchant:', merchantId);
 
       // Load analytics - use real data from backend
-      const analyticsData = await analyticsApi.getDashboard('30d').catch((e) => {
+      const analyticsData = await analyticsApi.getDashboard(merchantId, '30d').catch((e) => {
         console.warn('Analytics API failed:', e);
         return null;
       });
@@ -114,11 +114,11 @@ export default function MerchantDashboard() {
       });
 
       // Load orders - fetch real orders
-      const ordersData = await ordersApi.getOrders({ limit: 10 }).catch((e) => {
+      const ordersData = await ordersApi.getOrders(merchantId, { limit: 10 }).catch((e) => {
         console.warn('Orders API failed:', e);
-        return { orders: [] };
+        return [];
       });
-      setOrders(ordersData?.orders || []);
+      setOrders(Array.isArray(ordersData) ? ordersData : []);
 
       // Load products - use real merchant products
       const productsData = await productsApi.getProducts(merchantId).catch((e) => {
@@ -129,9 +129,9 @@ export default function MerchantDashboard() {
 
       // Load PSPs and metrics - real data for this merchant
       const [pspList, pspStatus, metrics] = await Promise.all([
-        pspApi.getList().catch((e) => { console.warn('PSP list failed:', e); return []; }),
-        pspApi.getStatus().catch((e) => { console.warn('PSP status failed:', e); return null; }),
-        pspApi.getMetrics().catch((e) => { console.warn('PSP metrics failed:', e); return null; })
+        pspApi.getPSPs(merchantId).catch((e) => { console.warn('PSP list failed:', e); return []; }),
+        Promise.resolve(null), // getStatus not defined, skip
+        Promise.resolve(null)  // getMetrics not defined, skip
       ]);
       
       setPsps(pspList);
