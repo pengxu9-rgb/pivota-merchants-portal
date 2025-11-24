@@ -54,7 +54,7 @@ export default function DashboardPage() {
       // Load data in parallel
       const [
         analyticsData,
-        ordersData,
+        ordersResponse,
         productsData,
         storesData,
         pspsData,
@@ -65,7 +65,7 @@ export default function DashboardPage() {
         }),
         apiClient.getOrders({ limit: 10 }).catch(err => {
           console.warn('Orders failed:', err);
-          return [];
+          return { orders: [], total: 0, limit: 10, offset: 0 };
         }),
         apiClient.getProducts().catch(err => {
           console.warn('Products failed (may need admin access):', err);
@@ -82,11 +82,14 @@ export default function DashboardPage() {
         }) : Promise.resolve([]),
       ]);
 
+      // Extract orders array from response object
+      const ordersData = ordersResponse?.orders || [];
+
       // Update stats - prioritize analytics data but fallback to orders data
       // Calculate total products from connected stores
-      const storeProductCount = storesData.reduce((sum: number, store: any) => {
+      const storeProductCount = Array.isArray(storesData) ? storesData.reduce((sum: number, store: any) => {
         return sum + (store.product_count || 0);
-      }, 0);
+      }, 0) : 0;
 
       if (analyticsData) {
         setStats({
@@ -101,35 +104,36 @@ export default function DashboardPage() {
         // Update recent orders from analytics data if available
         if (analyticsData.recent_orders && analyticsData.recent_orders.length > 0) {
           setRecentOrders(analyticsData.recent_orders);
-        } else if (ordersData && ordersData.length > 0) {
+        } else if (Array.isArray(ordersData) && ordersData.length > 0) {
           setRecentOrders(ordersData);
         }
       } else {
         // Fallback: use direct data
+        const ordersArray = Array.isArray(ordersData) ? ordersData : [];
         setStats({
-          totalOrders: ordersData.length || 0,
-          totalRevenue: ordersData.reduce((sum: number, order: any) => sum + (order.total_amount || order.total || order.amount || 0), 0),
-          totalCustomers: new Set(ordersData.map((o: any) => o.customer_email)).size,
+          totalOrders: ordersArray.length || 0,
+          totalRevenue: ordersArray.reduce((sum: number, order: any) => sum + (order.total_amount || order.total || order.amount || 0), 0),
+          totalCustomers: new Set(ordersArray.map((o: any) => o.customer_email)).size,
           totalProducts: storeProductCount || productsData.length || 0,
           orderGrowth: 0,
           revenueGrowth: 0,
         });
-        setRecentOrders(ordersData);
+        setRecentOrders(ordersArray);
       }
 
       // Update other data
       console.log('📦 Products data:', productsData);
       console.log('🏪 Stores data:', storesData);
       console.log('💳 PSPs data:', pspsData);
-      setProducts(productsData.slice(0, 5));
-      setConnectedStores(storesData);
-      setConnectedPSPs(pspsData);
+      setProducts(Array.isArray(productsData) ? productsData.slice(0, 5) : []);
+      setConnectedStores(Array.isArray(storesData) ? storesData : []);
+      setConnectedPSPs(Array.isArray(pspsData) ? pspsData : []);
 
       console.log('✅ Dashboard data loaded:', {
-        orders: ordersData.length,
-        products: productsData.length,
-        stores: storesData.length,
-        psps: pspsData.length,
+        orders: Array.isArray(ordersData) ? ordersData.length : 0,
+        products: Array.isArray(productsData) ? productsData.length : 0,
+        stores: Array.isArray(storesData) ? storesData.length : 0,
+        psps: Array.isArray(pspsData) ? pspsData.length : 0,
       });
 
     } catch (error) {
