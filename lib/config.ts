@@ -59,5 +59,15 @@ export const API_CONFIG = {
 
 export const APP_CONFIG = {
   NAME: 'Pivota Merchant Portal',
-  VERSION: '2.0.0'
+  VERSION: '2.0.0',
+  SUPPORT_EMAIL: 'support@pivota.cc',
+};
+
+export const FEATURE_FLAGS = {
+  PLATFORM_ONBOARDING_V2:
+    (process.env.NEXT_PUBLIC_FEATURE_PLATFORM_ONBOARDING_V2 || 'true').toLowerCase() === 'true',
+  PLATFORM_ORDERS_V1:
+    (process.env.NEXT_PUBLIC_FEATURE_PLATFORM_ORDERS_V1 || 'false').toLowerCase() === 'true',
+  PLATFORM_ORDERS_ACP:
+    (process.env.NEXT_PUBLIC_FEATURE_PLATFORM_ORDERS_ACP || 'false').toLowerCase() === 'true',
 };
