@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   ArrowRight, 
   Settings as SettingsIcon,
@@ -8,10 +8,12 @@ import {
   TrendingUp,
   Save,
 } from 'lucide-react';
+import { apiClient } from '@/lib/api-client';
 
 interface PSP {
   id: string;
   name: string;
+  type?: string;
   is_active: boolean;
 }
 
@@ -28,13 +30,127 @@ export default function PSPRoutingConfig({ connectedPSPs }: Props) {
     { region: 'US', psp: 'stripe' },
   ]);
 
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
   const activePSPs = connectedPSPs.filter(p => p.is_active);
 
-  const handleSaveRouting = () => {
-    alert('✅ Routing configuration saved!\n\n' +
-          `Strategy: ${strategy}\n` +
-          `Primary PSP: ${primaryPSP}\n` +
-          `Fallback: ${fallbackChain.join(' → ')}`);
+  // Map backend routing_strategy to UI strategy
+  const mapBackendStrategyToUi = (backend?: string | null): string => {
+    const v = (backend || '').toLowerCase();
+    if (v === 'cost') return 'cost';
+    if (v === 'performance') return 'success';
+    return 'smart'; // default/priority
+  };
+
+  const mapUiStrategyToBackend = (ui: string): string => {
+    if (ui === 'cost') return 'cost';
+    if (ui === 'success') return 'performance';
+    return 'priority';
+  };
+
+  // Load existing routing configuration from backend
+  useEffect(() => {
+    const loadRouting = async () => {
+      if (!activePSPs.length) return;
+      try {
+        setLoading(true);
+        const data = await apiClient.getRoutingConfig();
+        if (!data || !Array.isArray(data.psp_priority)) return;
+
+        setStrategy(mapBackendStrategyToUi(data.routing_strategy));
+
+        const priorityList = [...data.psp_priority].sort(
+          (a: any, b: any) => (a.priority || 999) - (b.priority || 999)
+        );
+
+        const providerToId = (provider: string): string | undefined => {
+          const normalized = (provider || '').toLowerCase();
+          const match = activePSPs.find(
+            p =>
+              (p.type || '').toLowerCase() === normalized ||
+              (p.name || '').toLowerCase() === normalized
+          );
+          return match?.id;
+        };
+
+        if (priorityList.length > 0) {
+          const primaryProvider = priorityList[0].psp;
+          const primaryId = providerToId(primaryProvider);
+          if (primaryId) {
+            setPrimaryPSP(primaryId);
+          }
+
+          const fallbackIds: string[] = [];
+          priorityList.slice(1).forEach((entry: any) => {
+            const id = providerToId(entry.psp);
+            if (id && !fallbackIds.includes(id)) {
+              fallbackIds.push(id);
+            }
+          });
+          setFallbackChain(fallbackIds);
+        }
+      } catch (err) {
+        console.error('Failed to load PSP routing configuration', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadRouting();
+  }, [activePSPs.length]);
+
+  const handleSaveRouting = async () => {
+    try {
+      if (!primaryPSP) {
+        alert('Please select a primary PSP before saving.');
+        return;
+      }
+      setSaving(true);
+
+      // Build ordered list: primary first, then fallbacks in order (without duplicates)
+      const orderedIds: string[] = [
+        primaryPSP,
+        ...fallbackChain.filter(id => id && id !== primaryPSP),
+      ];
+
+      const psp_priority = orderedIds
+        .map((id, index) => {
+          const psp = activePSPs.find(p => p.id === id);
+          if (!psp) return null;
+          const provider =
+            (psp.type || '').toLowerCase() ||
+            (psp.name || '').toLowerCase();
+          if (!provider) return null;
+          return { psp: provider, priority: index + 1 };
+        })
+        .filter((entry): entry is { psp: string; priority: number } => !!entry);
+
+      if (!psp_priority.length) {
+        alert('No valid PSPs selected for routing.');
+        return;
+      }
+
+      const routing_strategy = mapUiStrategyToBackend(strategy);
+      const max_retries = Math.max(0, psp_priority.length - 1);
+
+      await apiClient.updateRoutingConfig({
+        psp_priority,
+        routing_strategy,
+        max_retries,
+        timeout_ms: 30000,
+      });
+
+      alert('✅ Routing configuration saved!');
+    } catch (error: any) {
+      console.error('Failed to save routing configuration', error);
+      alert(
+        '❌ Failed to save routing: ' +
+          (error?.response?.data?.detail || error.message || 'Unknown error')
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -202,14 +318,14 @@ export default function PSPRoutingConfig({ connectedPSPs }: Props) {
       <div className="flex justify-end">
         <button
           onClick={handleSaveRouting}
-          className="flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          disabled={saving || !primaryPSP}
+          className="flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
           <Save className="w-5 h-5" />
-          <span>Save Routing Configuration</span>
+          <span>{saving ? 'Saving...' : 'Save Routing Configuration'}</span>
         </button>
       </div>
     </div>
   );
 }
-
 

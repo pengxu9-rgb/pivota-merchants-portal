@@ -240,6 +240,7 @@ class ApiClient {
     const response = await this.client.get(`/merchant/${merchantId}/integrations`);
     const raw = response.data?.data?.stores || [];
     // Normalize to UI expected fields
+<<<<<<< HEAD
     return raw.map((s: any) => {
       const status = (s.status || '').toLowerCase();
       const isActive = status === 'connected' || status === 'active' || s.is_active === true;
@@ -254,6 +255,21 @@ class ApiClient {
         last_sync: s.last_sync || new Date().toISOString(),
       };
     });
+=======
+    return raw.map((s: any) => ({
+      id: s.id || s.store_id || `${s.platform}-${s.domain || s.name}`,
+      platform: s.platform,
+      store_name: s.name || s.store_name || s.domain || 'Store',
+      domain: s.domain || s.store_url || '',
+      status: s.status,
+      is_active: (() => {
+        const status = (s.status || '').toLowerCase();
+        return status === 'connected' || status === 'active' || s.is_active === true;
+      })(),
+      product_count: s.product_count ?? 0,
+      last_sync: s.last_sync || new Date().toISOString(),
+    }));
+>>>>>>> afe2189 (Wire PSP routing UI to /merchant/integrations/routing)
   }
 
   // PSP methods
@@ -261,6 +277,7 @@ class ApiClient {
     const response = await this.client.get(`/merchant/${merchantId}/psps`);
     const raw = response.data?.data?.psps || [];
     // Normalize to UI expected fields
+<<<<<<< HEAD
     return raw.map((p: any) => {
       const status = (p.status || '').toLowerCase();
       const isActive = status === 'active' || p.is_active === true;
@@ -275,6 +292,21 @@ class ApiClient {
         transaction_count: p.transaction_count ?? 0,
       };
     });
+=======
+    return raw.map((p: any) => ({
+      id: p.id || p.provider,
+      type: p.provider || p.type,
+      name: p.name || (p.provider ? p.provider.charAt(0).toUpperCase() + p.provider.slice(1) : 'PSP'),
+      status: p.status,
+      is_active: (() => {
+        const status = (p.status || '').toLowerCase();
+        return status === 'active' || p.is_active === true;
+      })(),
+      success_rate: p.success_rate ?? 98.5,
+      volume_today: p.volume_today ?? 0,
+      transaction_count: p.transaction_count ?? 0,
+    }));
+>>>>>>> afe2189 (Wire PSP routing UI to /merchant/integrations/routing)
   }
 
   // Sync products by platform
@@ -283,7 +315,7 @@ class ApiClient {
     const merchantId = localStorage.getItem('merchant_id') || '';
     
     if (p === 'shopify') {
-      return this.syncShopifyProducts(merchantId);
+    return this.syncShopifyProducts(merchantId);
     }
     // Wix or others
     const response = await this.client.post(`/merchant/integrations/${p}/sync`);
@@ -454,6 +486,22 @@ class ApiClient {
     if (logType) params.log_type = logType;
     const response = await this.client.get(`/merchant/integrations/${integrationId}/logs`, { params });
     return response.data;
+  }
+
+  // Merchant PSP routing configuration
+  async getRoutingConfig() {
+    const response = await this.client.get('/merchant/integrations/routing');
+    return response.data?.data || response.data;
+  }
+
+  async updateRoutingConfig(payload: {
+    psp_priority: { psp: string; priority: number }[];
+    routing_strategy?: string;
+    max_retries?: number;
+    timeout_ms?: number;
+  }) {
+    const response = await this.client.put('/merchant/integrations/routing', payload);
+    return response.data?.data || response.data;
   }
 
   async changePassword(passwordData: any) {
