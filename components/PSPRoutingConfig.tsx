@@ -269,11 +269,16 @@ export default function PSPRoutingConfig({ connectedPSPs }: Props) {
         </div>
       </div>
 
-      {/* Geographic Routing Rules */}
+      {/* Geographic Routing Rules (UI-only for now) */}
       <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex items-center space-x-3 mb-4">
-          <Globe className="w-5 h-5 text-blue-600" />
-          <h2 className="text-lg font-semibold text-gray-900">Geographic Routing Rules</h2>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-3">
+            <Globe className="w-5 h-5 text-blue-600" />
+            <h2 className="text-lg font-semibold text-gray-900">Geographic Routing Rules</h2>
+          </div>
+          <p className="text-xs text-gray-500">
+            Coming soon – currently not persisted.
+          </p>
         </div>
         <div className="space-y-3">
           {geoRules.map((rule, index) => (
@@ -328,4 +333,3 @@ export default function PSPRoutingConfig({ connectedPSPs }: Props) {
     </div>
   );
 }
-
