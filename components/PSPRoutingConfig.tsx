@@ -100,6 +100,12 @@ export default function PSPRoutingConfig({ connectedPSPs }: Props) {
     loadRouting();
   }, [activePSPs.length]);
 
+  const handlePrimaryChange = (pspId: string) => {
+    setPrimaryPSP(pspId);
+    // Ensure the primary PSP is never also in the fallback chain
+    setFallbackChain((prev) => prev.filter((id) => id !== pspId));
+  };
+
   const handleSaveRouting = async () => {
     try {
       if (!primaryPSP) {
@@ -215,7 +221,7 @@ export default function PSPRoutingConfig({ connectedPSPs }: Props) {
             <label className="block text-sm font-medium text-gray-700 mb-2">Primary PSP</label>
             <select
               value={primaryPSP}
-              onChange={(e) => setPrimaryPSP(e.target.value)}
+              onChange={(e) => handlePrimaryChange(e.target.value)}
               className="w-full px-3 py-2 border rounded-lg"
             >
               <option value="">Select Primary PSP</option>
