@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Loader, CheckCircle, AlertCircle, CreditCard } from 'lucide-react';
-import { onboardingApi } from '../lib/api';
+import { apiClient } from '../lib/api-client';
 
 interface PSPSetupStepProps {
   merchantId: string;
@@ -10,6 +10,7 @@ interface PSPSetupStepProps {
 export default function PSPSetupStep({ merchantId, onComplete }: PSPSetupStepProps) {
   const [pspType, setPspType] = useState<'stripe' | 'adyen' | ''>('');
   const [apiKey, setApiKey] = useState('');
+  const [accountId, setAccountId] = useState(''); // Adyen merchantAccount
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -20,12 +21,29 @@ export default function PSPSetupStep({ merchantId, onComplete }: PSPSetupStepPro
       return;
     }
 
+    if (pspType === 'adyen' && !accountId.trim()) {
+      setError('Adyen requires Merchant Account');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
     try {
-      await onboardingApi.setupPSP(merchantId, pspType, apiKey);
-      
+      const payload: any = {
+        provider: pspType,
+        merchant_id: merchantId,
+        api_key: apiKey,
+      };
+
+      if (pspType === 'adyen' && accountId) {
+        payload.account_id = accountId;
+      }
+
+      // Use unified integrations endpoint so merchant_psps has correct
+      // merchantAccount instead of a fake acct_* value.
+      await apiClient.connectPSPProvider(payload);
+
       onComplete({
         psp_type: pspType,
         api_key: apiKey,
@@ -152,6 +170,26 @@ export default function PSPSetupStep({ merchantId, onComplete }: PSPSetupStepPro
           </div>
         )}
 
+        {/* Adyen Merchant Account */}
+        {pspType === 'adyen' && (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Merchant Account <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              value={accountId}
+              onChange={(e) => setAccountId(e.target.value)}
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+              placeholder="YourCompanyECOM"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Find this in Adyen Customer Area under Account settings
+            </p>
+          </div>
+        )}
+
         {/* Error Message */}
         {error && (
           <div className="flex items-center gap-2 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -186,4 +224,3 @@ export default function PSPSetupStep({ merchantId, onComplete }: PSPSetupStepPro
     </div>
   );
 }
-
