@@ -25,6 +25,7 @@ export function PSPConfigForm({ provider, merchantId, onClose, onSuccess, apiCli
     (providerLower !== 'checkout' || accountId) &&
     (providerLower !== 'square' || accountId) &&
     (providerLower !== 'braintree' || accountId) &&
+    (providerLower !== 'adyen' || accountId) &&
     !saving;
 
   const getFieldLabels = () => {
@@ -58,9 +59,9 @@ export function PSPConfigForm({ provider, merchantId, onClose, onSuccess, apiCli
           showSecretKey: false,
           secretKeyLabel: '',
           secretKeyPlaceholder: '',
-          accountIdLabel: 'Merchant Account (optional)',
-          accountIdPlaceholder: 'Your Adyen merchant account',
-          accountIdRequired: false
+          accountIdLabel: 'Merchant Account',
+          accountIdPlaceholder: 'Your Adyen merchantAccount (e.g., WoopayECOM)',
+          accountIdRequired: true
         };
       case 'checkout':
         return {
