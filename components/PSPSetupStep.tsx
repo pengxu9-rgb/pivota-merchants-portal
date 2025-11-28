@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Loader, CheckCircle, AlertCircle, CreditCard, Plus } from 'lucide-react';
 import { onboardingApi } from '../lib/api';
+import { apiClient } from '../lib/api-client';
 
 interface PSPSetupStepProps {
   merchantId: string;
@@ -68,7 +69,10 @@ export default function PSPSetupStep({ merchantId, onComplete }: PSPSetupStepPro
         payload.setup_later = true; // Mark for later setup
       }
 
-      await onboardingApi.setupPSP(merchantId, payload.provider, apiKey, payload);
+      // New integration path: use /merchant/integrations/psp/connect so that
+      // Adyen merchantAccount (account_id) and other PSP metadata are stored
+      // in the unified merchant_psps table.
+      await apiClient.connectPSPProvider(payload);
       
       onComplete({
         psp_type: payload.provider,
