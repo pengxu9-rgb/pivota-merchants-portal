@@ -496,7 +496,8 @@ export default function ProductOptimizationPage() {
                   selected.platform_product_id === item.platform_product_id;
                 const titleOverride = item.enrichment?.title_override;
                 const title = titleOverride || item.standard?.title || '-';
-                const score = item.quality?.content_quality_score;
+                const cqScore = item.quality?.content_quality_score;
+                const mrScore = item.quality?.model_readiness_score;
 
                 return (
                   <button
@@ -525,11 +526,18 @@ export default function ProductOptimizationPage() {
                         <p className="font-medium text-gray-900 truncate">
                           {title}
                         </p>
-                        {typeof score === 'number' && (
-                          <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
-                            CQ {score.toFixed(0)}
-                          </span>
-                        )}
+                        <div className="flex flex-col items-end gap-1">
+                          {typeof cqScore === 'number' && (
+                            <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
+                              CQ {cqScore.toFixed(0)}
+                            </span>
+                          )}
+                          {typeof mrScore === 'number' && (
+                            <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium">
+                              MR {mrScore.toFixed(0)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       {titleOverride && (
                         <p className="text-[11px] text-blue-600 mt-0.5 truncate">
