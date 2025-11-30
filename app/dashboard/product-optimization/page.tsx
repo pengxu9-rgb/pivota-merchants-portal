@@ -71,6 +71,10 @@ export default function ProductOptimizationPage() {
   const [lastOptimizedAt, setLastOptimizedAt] = useState<Record<string, number>>(
     {}
   );
+  const [sortBy, setSortBy] = useState<'default' | 'cq_desc' | 'mr_desc'>(
+    'default'
+  );
+  const [showOnlyLowQuality, setShowOnlyLowQuality] = useState(false);
 
   useEffect(() => {
     loadProducts();
@@ -361,16 +365,56 @@ export default function ProductOptimizationPage() {
     }
   };
 
-  const filteredProducts = products.filter((item) => {
-    const title = item.standard?.title || '';
-    const overrideTitle = item.enrichment?.title_override || '';
-    const query = search.toLowerCase();
-    if (!query) return true;
-    return (
-      title.toLowerCase().includes(query) ||
-      overrideTitle.toLowerCase().includes(query)
-    );
-  });
+  const filteredProducts = (() => {
+    // Text search
+    const base = products.filter((item) => {
+      const title = item.standard?.title || '';
+      const overrideTitle = item.enrichment?.title_override || '';
+      const query = search.toLowerCase();
+      if (!query) return true;
+      return (
+        title.toLowerCase().includes(query) ||
+        overrideTitle.toLowerCase().includes(query)
+      );
+    });
+
+    // Optional low-quality filter
+    const filtered = base.filter((item) => {
+      if (!showOnlyLowQuality) return true;
+      const cq = item.quality?.content_quality_score;
+      // Treat undefined scores as "not low-quality" for this filter
+      return typeof cq === 'number' && cq < 60;
+    });
+
+    // Sorting
+    if (sortBy === 'default') {
+      return filtered;
+    }
+
+    const sorted = [...filtered];
+    if (sortBy === 'cq_desc') {
+      sorted.sort((a, b) => {
+        const av = typeof a.quality?.content_quality_score === 'number'
+          ? a.quality!.content_quality_score!
+          : -1;
+        const bv = typeof b.quality?.content_quality_score === 'number'
+          ? b.quality!.content_quality_score!
+          : -1;
+        return bv - av;
+      });
+    } else if (sortBy === 'mr_desc') {
+      sorted.sort((a, b) => {
+        const av = typeof a.quality?.model_readiness_score === 'number'
+          ? a.quality!.model_readiness_score!
+          : -1;
+        const bv = typeof b.quality?.model_readiness_score === 'number'
+          ? b.quality!.model_readiness_score!
+          : -1;
+        return bv - av;
+      });
+    }
+    return sorted;
+  })();
 
   if (loading) {
     return (
@@ -402,7 +446,7 @@ export default function ProductOptimizationPage() {
         </div>
 
         <div className="bg-white rounded-lg shadow border">
-              <div className="p-3 border-b">
+          <div className="p-3 border-b space-y-2">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
@@ -412,6 +456,31 @@ export default function ProductOptimizationPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-9 pr-3 py-1.5 border rounded-md text-sm"
               />
+            </div>
+            <div className="flex items-center justify-between gap-2 text-[11px]">
+              <div className="flex items-center gap-1">
+                <span className="text-gray-500">Sort:</span>
+                <select
+                  value={sortBy}
+                  onChange={(e) =>
+                    setSortBy(e.target.value as 'default' | 'cq_desc' | 'mr_desc')
+                  }
+                  className="border rounded px-2 py-0.5 text-[11px] bg-white"
+                >
+                  <option value="default">Recent sync</option>
+                  <option value="cq_desc">CQ ↓</option>
+                  <option value="mr_desc">MR ↓</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-1 text-gray-500">
+                <input
+                  type="checkbox"
+                  className="h-3 w-3"
+                  checked={showOnlyLowQuality}
+                  onChange={(e) => setShowOnlyLowQuality(e.target.checked)}
+                />
+                <span>Low CQ only (&lt; 60)</span>
+              </label>
             </div>
           </div>
           <div className="max-h-[520px] overflow-y-auto">
