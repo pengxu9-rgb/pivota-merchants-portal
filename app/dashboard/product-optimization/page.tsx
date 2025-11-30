@@ -66,6 +66,7 @@ export default function ProductOptimizationPage() {
 
   const [saving, setSaving] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
   const [qualityPreview, setQualityPreview] = useState<any | null>(null);
 
   useEffect(() => {
@@ -280,6 +281,71 @@ export default function ProductOptimizationPage() {
     }
   };
 
+  const handleAutoOptimize = async () => {
+    if (!selected) return;
+    setOptimizing(true);
+    try {
+      const data = await apiClient.runMerchantProductOptimization(
+        selected.platform,
+        selected.platform_product_id
+      );
+      // Update detail & form from returned enrichment
+      setDetail(data);
+      const enrichment = data.enrichment || {};
+      setForm({
+        title_override: enrichment.title_override || '',
+        summary_short: enrichment.summary_short || '',
+        bullet_points: enrichment.bullet_points || [],
+        usage_scenarios: enrichment.usage_scenarios || [],
+        audience_tags: enrichment.audience_tags || [],
+        topic_tags: enrichment.topic_tags || [],
+        regulatory_disclaimer_local:
+          enrichment.regulatory_disclaimer_local || '',
+      });
+      // Update quality preview
+      if (data.quality) {
+        setQualityPreview(data.quality);
+      }
+      // Update list item enrichment & scores
+      setProducts((prev) =>
+        prev.map((item) =>
+          item.platform === selected.platform &&
+          item.platform_product_id === selected.platform_product_id
+            ? {
+                ...item,
+                enrichment: enrichment,
+                quality: {
+                  ...(item.quality || {}),
+                  content_quality_score:
+                    data.quality?.content_quality_score ??
+                    item.quality?.content_quality_score ??
+                    null,
+                  model_readiness_score:
+                    data.quality?.model_readiness_score ??
+                    item.quality?.model_readiness_score ??
+                    null,
+                  conversion_potential_score:
+                    data.quality?.conversion_potential_score ??
+                    item.quality?.conversion_potential_score ??
+                    null,
+                  last_evaluated_at:
+                    data.quality?.snapshot_date ??
+                    item.quality?.last_evaluated_at ??
+                    null,
+                },
+              }
+            : item
+        )
+      );
+      alert('已完成 AI 优化，并刷新了质量评分。');
+    } catch (err) {
+      console.error('Failed to run auto optimization', err);
+      alert('AI 一键优化失败，请稍后再试。');
+    } finally {
+      setOptimizing(false);
+    }
+  };
+
   const filteredProducts = products.filter((item) => {
     const title = item.standard?.title || '';
     const overrideTitle = item.enrichment?.title_override || '';
@@ -481,6 +547,19 @@ export default function ProductOptimizationPage() {
                   Pivota enrichment（可编辑）
                 </h2>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAutoOptimize}
+                    disabled={optimizing || !selected}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {optimizing ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Wand2 className="w-3 h-3" />
+                    )}
+                    AI 一键优化
+                  </button>
                   <button
                     type="button"
                     onClick={handlePreviewQuality}
@@ -735,4 +814,3 @@ export default function ProductOptimizationPage() {
     </div>
   );
 }
-

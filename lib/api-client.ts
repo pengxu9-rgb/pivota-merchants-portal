@@ -170,6 +170,17 @@ class ApiClient {
     );
     return response.data;
   }
+
+  async runMerchantProductOptimization(
+    platform: string,
+    platformProductId: string
+  ) {
+    const encodedId = encodeURIComponent(platformProductId);
+    const response = await this.client.post(
+      `/merchant/products/${platform}/${encodedId}/enrichment/run`
+    );
+    return response.data;
+  }
   async createProduct(data: any) {
     const response = await this.client.post(API_CONFIG.ENDPOINTS.PRODUCT_CREATE, data);
     return response.data;
