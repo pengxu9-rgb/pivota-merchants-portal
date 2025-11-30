@@ -35,6 +35,14 @@ export default function DashboardPage() {
   const [connectedStores, setConnectedStores] = useState<any[]>([]);
   const [connectedPSPs, setConnectedPSPs] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
+  const [catalogQuality, setCatalogQuality] = useState<{
+    total_products: number;
+    scored_products: number;
+    avg_content_quality: number | null;
+    avg_model_readiness: number | null;
+    low_cq_threshold: number;
+    low_cq_count: number;
+  } | null>(null);
 
   useEffect(() => {
     const id = localStorage.getItem('merchant_id') || '';
@@ -58,6 +66,7 @@ export default function DashboardPage() {
         productsData,
         storesData,
         pspsData,
+        qualitySummary,
       ] = await Promise.all([
         apiClient.getAnalyticsDashboard('30d').catch(err => {
           console.warn('Analytics failed:', err);
@@ -80,6 +89,10 @@ export default function DashboardPage() {
           console.warn('PSPs failed:', err);
           return [];
         }) : Promise.resolve([]),
+        apiClient.getCatalogQualitySummary().catch(err => {
+          console.warn('Catalog quality summary failed:', err);
+          return null;
+        }),
       ]);
 
       // Extract orders array from response object
@@ -128,6 +141,19 @@ export default function DashboardPage() {
       setProducts(Array.isArray(productsData) ? productsData.slice(0, 5) : []);
       setConnectedStores(Array.isArray(storesData) ? storesData : []);
       setConnectedPSPs(Array.isArray(pspsData) ? pspsData : []);
+
+      if (qualitySummary) {
+        setCatalogQuality({
+          total_products: qualitySummary.total_products || 0,
+          scored_products: qualitySummary.scored_products || 0,
+          avg_content_quality: qualitySummary.avg_content_quality ?? null,
+          avg_model_readiness: qualitySummary.avg_model_readiness ?? null,
+          low_cq_threshold: qualitySummary.low_cq_threshold ?? 60,
+          low_cq_count: qualitySummary.low_cq_count || 0,
+        });
+      } else {
+        setCatalogQuality(null);
+      }
 
       console.log('✅ Dashboard data loaded:', {
         orders: Array.isArray(ordersData) ? ordersData.length : 0,
@@ -245,8 +271,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Connected Services */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Connected Services + Catalog Quality */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Connected Stores */}
         <div className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b">
@@ -338,6 +364,59 @@ export default function DashboardPage() {
                   Connect PSP
                 </a>
               </div>
+            )}
+          </div>
+        </div>
+
+        {/* Catalog Quality */}
+        <div className="bg-white rounded-lg shadow">
+          <div className="px-6 py-4 border-b flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900">Catalog Quality</h2>
+            <a
+              href="/dashboard/product-optimization"
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              Improve products →
+            </a>
+          </div>
+          <div className="p-6">
+            {catalogQuality ? (
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">Products scored</span>
+                  <span className="font-medium text-gray-900">
+                    {catalogQuality.scored_products}/{catalogQuality.total_products}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">Avg Content Quality</span>
+                  <span className="font-medium text-blue-700">
+                    {catalogQuality.avg_content_quality != null
+                      ? catalogQuality.avg_content_quality.toFixed(1)
+                      : '--'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">Avg Model Readiness</span>
+                  <span className="font-medium text-emerald-700">
+                    {catalogQuality.avg_model_readiness != null
+                      ? catalogQuality.avg_model_readiness.toFixed(1)
+                      : '--'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">
+                    Low CQ (&lt; {catalogQuality.low_cq_threshold})
+                  </span>
+                  <span className="font-medium text-amber-700">
+                    {catalogQuality.low_cq_count}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">
+                No quality data yet. Use Product Optimization to score your catalog.
+              </p>
             )}
           </div>
         </div>
@@ -449,4 +528,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
