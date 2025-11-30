@@ -131,6 +131,11 @@ class ApiClient {
     const response = await this.client.get(url);
     return response.data;
   }
+
+  async getCatalogQualitySummary() {
+    const response = await this.client.get('/merchant/products/quality/summary');
+    return response.data?.data || response.data;
+  }
   /**
    * v2 Merchant product view used for enrichment & quality
    * Backed by /merchant/products* endpoints in pivota-backend.

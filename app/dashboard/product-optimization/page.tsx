@@ -643,7 +643,7 @@ export default function ProductOptimizationPage() {
                     type="button"
                     onClick={handleAutoOptimize}
                     disabled={optimizing || !selected}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                    className="inline-flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                   >
                     {optimizing ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
@@ -656,7 +656,7 @@ export default function ProductOptimizationPage() {
                     type="button"
                     onClick={handlePreviewQuality}
                     disabled={previewLoading || !qualityPayload}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] border rounded-md hover:bg-gray-50 disabled:opacity-50"
+                    className="inline-flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap border rounded-md hover:bg-gray-50 disabled:opacity-50"
                   >
                     {previewLoading ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
@@ -669,7 +669,7 @@ export default function ProductOptimizationPage() {
                     type="button"
                     onClick={handleSaveAndEval}
                     disabled={saving || !qualityPayload}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
+                    className="inline-flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                   >
                     {saving ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
