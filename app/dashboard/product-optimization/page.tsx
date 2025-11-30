@@ -607,7 +607,7 @@ export default function ProductOptimizationPage() {
                     ) : (
                       <CheckCircle2 className="w-3 h-3" />
                     )}
-                    Save & score
+                    Save/Score
                   </button>
                 </div>
               </div>
