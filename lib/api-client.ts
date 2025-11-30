@@ -131,7 +131,6 @@ class ApiClient {
     const response = await this.client.get(url);
     return response.data;
   }
-
   /**
    * v2 Merchant product view used for enrichment & quality
    * Backed by /merchant/products* endpoints in pivota-backend.
@@ -171,7 +170,6 @@ class ApiClient {
     );
     return response.data;
   }
-
   async createProduct(data: any) {
     const response = await this.client.post(API_CONFIG.ENDPOINTS.PRODUCT_CREATE, data);
     return response.data;
@@ -327,7 +325,6 @@ class ApiClient {
     const response = await this.client.post(`/merchant/integrations/${p}/sync`);
     return response.data;
   }
-
   /**
    * Product quality preview & eval for enrichment workflow.
    */
@@ -363,7 +360,6 @@ class ApiClient {
     );
     return response.data;
   }
-
   async connectPSP(merchantId: string, pspType: string, apiKey: string, options?: any) {
     const response = await this.client.post('/merchant/onboarding/setup-psp', {
       merchant_id: merchantId,
