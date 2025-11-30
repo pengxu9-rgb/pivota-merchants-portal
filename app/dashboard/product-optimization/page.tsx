@@ -75,6 +75,7 @@ export default function ProductOptimizationPage() {
     'default'
   );
   const [showOnlyLowQuality, setShowOnlyLowQuality] = useState(false);
+  const [bulkOptimizing, setBulkOptimizing] = useState(false);
 
   useEffect(() => {
     loadProducts();
@@ -436,13 +437,56 @@ export default function ProductOptimizationPage() {
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Left: product list */}
       <div className="lg:col-span-1 space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Product Optimization
-          </h1>
-          <p className="text-gray-600 text-sm mt-1">
-            Optimize your products for the Pivota Shopping Agent using enrichment and quality scores.
-          </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              Product Optimization
+            </h1>
+            <p className="text-gray-600 text-sm mt-1">
+              Optimize your products for the Pivota Shopping Agent using enrichment and quality scores.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={bulkOptimizing}
+            onClick={async () => {
+              if (bulkOptimizing) return;
+              const confirmed = window.confirm(
+                'Run AI enrichment and scoring for a batch of products?\n\nThis may take a little while and will process recently synced items first.'
+              );
+              if (!confirmed) return;
+              setBulkOptimizing(true);
+              try {
+                const res = await apiClient.runMerchantBulkEnrichment({
+                  // v1: let backend decide platforms & limit defaults
+                  limit: 100,
+                });
+                const data = res.data || res;
+                alert(
+                  `Bulk optimization completed.\nProcessed: ${data.processed}\nSkipped: ${data.skipped}`
+                );
+                await loadProducts();
+              } catch (err) {
+                console.error('Bulk enrichment failed', err);
+                alert('Bulk optimization failed, please try again later.');
+              } finally {
+                setBulkOptimizing(false);
+              }
+            }}
+            className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
+          >
+            {bulkOptimizing ? (
+              <>
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                Running...
+              </>
+            ) : (
+              <>
+                <Wand2 className="w-3 h-3 mr-1" />
+                Bulk optimize
+              </>
+            )}
+          </button>
         </div>
 
         <div className="bg-white rounded-lg shadow border">

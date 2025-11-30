@@ -136,6 +136,7 @@ class ApiClient {
     const response = await this.client.get('/merchant/products/quality/summary');
     return response.data?.data || response.data;
   }
+
   /**
    * v2 Merchant product view used for enrichment & quality
    * Backed by /merchant/products* endpoints in pivota-backend.
@@ -184,6 +185,14 @@ class ApiClient {
     const response = await this.client.post(
       `/merchant/products/${platform}/${encodedId}/enrichment/run`
     );
+    return response.data;
+  }
+
+  async runMerchantBulkEnrichment(params?: { platform?: string; limit?: number }) {
+    const response = await this.client.post('/merchant/products/enrichment/backfill', {
+      platform: params?.platform,
+      limit: params?.limit,
+    });
     return response.data;
   }
   async createProduct(data: any) {
