@@ -68,6 +68,9 @@ export default function ProductOptimizationPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
   const [qualityPreview, setQualityPreview] = useState<any | null>(null);
+  const [lastOptimizedAt, setLastOptimizedAt] = useState<Record<string, number>>(
+    {}
+  );
 
   useEffect(() => {
     loadProducts();
@@ -283,6 +286,14 @@ export default function ProductOptimizationPage() {
 
   const handleAutoOptimize = async () => {
     if (!selected) return;
+    const key = `${selected.platform}|${selected.platform_product_id}`;
+    const now = Date.now();
+    const last = lastOptimizedAt[key];
+    if (last && now - last < 30_000) {
+      const secs = Math.ceil((30_000 - (now - last)) / 1000);
+      alert(`AI 一键优化冷却中，请 ${secs} 秒后再试。`);
+      return;
+    }
     setOptimizing(true);
     try {
       const data = await apiClient.runMerchantProductOptimization(
@@ -337,6 +348,10 @@ export default function ProductOptimizationPage() {
             : item
         )
       );
+      setLastOptimizedAt((prev) => ({
+        ...prev,
+        [key]: Date.now(),
+      }));
       alert('已完成 AI 优化，并刷新了质量评分。');
     } catch (err) {
       console.error('Failed to run auto optimization', err);
@@ -365,6 +380,14 @@ export default function ProductOptimizationPage() {
     );
   }
 
+  const isInCooldown = (() => {
+    if (!selected) return false;
+    const key = `${selected.platform}|${selected.platform_product_id}`;
+    const ts = lastOptimizedAt[key];
+    if (!ts) return false;
+    return Date.now() - ts < 30_000;
+  })();
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Left: product list */}
@@ -374,17 +397,17 @@ export default function ProductOptimizationPage() {
             Product Optimization
           </h1>
           <p className="text-gray-600 text-sm mt-1">
-            基于 Pivota enrichment & 质量评分，优化商品在 Agent 端的曝光与转化。
+            Optimize your products for the Pivota Shopping Agent using enrichment and quality scores.
           </p>
         </div>
 
         <div className="bg-white rounded-lg shadow border">
-          <div className="p-3 border-b">
+              <div className="p-3 border-b">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="按标题搜索商品..."
+                placeholder="Search products by title..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-9 pr-3 py-1.5 border rounded-md text-sm"
@@ -394,7 +417,7 @@ export default function ProductOptimizationPage() {
           <div className="max-h-[520px] overflow-y-auto">
             {filteredProducts.length === 0 ? (
               <div className="p-6 text-center text-gray-500 text-sm">
-                暂无商品。
+                No products found.
               </div>
             ) : (
               filteredProducts.map((item) => {
@@ -441,7 +464,7 @@ export default function ProductOptimizationPage() {
                       </div>
                       {titleOverride && (
                         <p className="text-[11px] text-blue-600 mt-0.5 truncate">
-                          已优化标题
+                          Optimized title
                         </p>
                       )}
                       <p className="text-[11px] text-gray-500 mt-0.5">
@@ -466,16 +489,16 @@ export default function ProductOptimizationPage() {
       <div className="lg:col-span-2 space-y-4">
         {!detail ? (
           <div className="h-full flex items-center justify-center border rounded-lg bg-white shadow">
-            <p className="text-gray-500 text-sm">
-              请选择左侧列表中的一个商品开始优化。
-            </p>
+              <p className="text-gray-500 text-sm">
+                Select a product on the left to start optimizing.
+              </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Standard view */}
             <div className="bg-white rounded-lg shadow border p-4 space-y-3">
               <h2 className="text-sm font-semibold text-gray-800">
-                源平台商品（只读）
+                Source platform product (read-only)
               </h2>
               <div className="w-full h-40 rounded bg-gray-100 flex items-center justify-center overflow-hidden">
                 {detail.standard?.image_url || detail.standard?.images?.[0] ? (
@@ -495,7 +518,7 @@ export default function ProductOptimizationPage() {
               <div className="space-y-2 text-sm">
                 <div>
                   <div className="text-xs text-gray-500 mb-0.5">
-                    原始标题
+                    Original title
                   </div>
                   <div className="font-medium text-gray-900">
                     {detail.standard.title || '-'}
@@ -503,13 +526,13 @@ export default function ProductOptimizationPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div>
-                    <div className="text-gray-500 mb-0.5">平台</div>
+                    <div className="text-gray-500 mb-0.5">Platform</div>
                     <div className="font-medium">
                       {detail.platform.toUpperCase()}
                     </div>
                   </div>
                   <div>
-                    <div className="text-gray-500 mb-0.5">价格</div>
+                    <div className="text-gray-500 mb-0.5">Price</div>
                     <div className="font-medium">
                       {(() => {
                         const p = detail.standard;
@@ -530,7 +553,7 @@ export default function ProductOptimizationPage() {
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-500 mb-0.5">描述</div>
+                  <div className="text-xs text-gray-500 mb-0.5">Description</div>
                   <div className="text-xs text-gray-700 line-clamp-4">
                     {detail.standard.description ||
                       detail.standard.description_text ||
@@ -544,47 +567,47 @@ export default function ProductOptimizationPage() {
             <div className="bg-white rounded-lg shadow border p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-gray-800">
-                  Pivota enrichment（可编辑）
+                  Pivota enrichment (editable)
                 </h2>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={handleAutoOptimize}
                     disabled={optimizing || !selected}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                   >
                     {optimizing ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
                     ) : (
                       <Wand2 className="w-3 h-3" />
                     )}
-                    AI 一键优化
+                    AI optimize
                   </button>
                   <button
                     type="button"
                     onClick={handlePreviewQuality}
                     disabled={previewLoading || !qualityPayload}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs border rounded-md hover:bg-gray-50 disabled:opacity-50"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] border rounded-md hover:bg-gray-50 disabled:opacity-50"
                   >
                     {previewLoading ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
                     ) : (
                       <Wand2 className="w-3 h-3" />
                     )}
-                    预览质量分
+                    Preview score
                   </button>
                   <button
                     type="button"
                     onClick={handleSaveAndEval}
                     disabled={saving || !qualityPayload}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
                   >
                     {saving ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
                     ) : (
                       <CheckCircle2 className="w-3 h-3" />
                     )}
-                    保存并打分
+                    Save & score
                   </button>
                 </div>
               </div>
@@ -592,7 +615,7 @@ export default function ProductOptimizationPage() {
               <div className="space-y-3 text-sm">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    优化标题（Agent 优先使用）
+                    Optimized title (used by Agent)
                   </label>
                   <input
                     type="text"
@@ -600,14 +623,14 @@ export default function ProductOptimizationPage() {
                     onChange={(e) =>
                       handleFormChange('title_override', e.target.value)
                     }
-                    placeholder="例如：轻量缓震跑鞋，适合日常通勤和城市跑步"
+                    placeholder="E.g. Lightweight running shoes for daily commute and city jogging"
                     className="w-full px-2.5 py-1.5 border rounded-md text-sm"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Summary（1–2 句话，Agent 摘要）
+                    Summary (1–2 sentences, Agent-facing)
                   </label>
                   <textarea
                     value={form.summary_short}
@@ -616,27 +639,27 @@ export default function ProductOptimizationPage() {
                     }
                     rows={2}
                     className="w-full px-2.5 py-1.5 border rounded-md text-sm"
-                    placeholder="简短说明适合谁、解决什么问题。"
+                    placeholder="Briefly describe who this is for and what problem it solves."
                   />
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="block text-xs font-medium text-gray-700">
-                      卖点 Bullet（建议 3–8 条）
+                      Selling points (3–8 bullets)
                     </label>
                     <button
                       type="button"
                       onClick={addBullet}
                       className="text-xs text-blue-600 hover:underline"
                     >
-                      + 添加
+                      + Add
                     </button>
                   </div>
                   <div className="space-y-1">
                     {form.bullet_points.length === 0 && (
                       <p className="text-[11px] text-gray-400">
-                        当前无卖点，点击“添加”开始填写。
+                        No selling points yet. Click “Add” to start.
                       </p>
                     )}
                     {form.bullet_points.map((bp, idx) => (
@@ -657,7 +680,7 @@ export default function ProductOptimizationPage() {
                           onClick={() => removeBullet(idx)}
                           className="text-[11px] text-gray-400 hover:text-red-500"
                         >
-                          删除
+                          Remove
                         </button>
                       </div>
                     ))}
@@ -667,7 +690,7 @@ export default function ProductOptimizationPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1">
-                      使用场景（逗号分隔）
+                      Usage scenarios (comma-separated)
                     </label>
                     <input
                       type="text"
@@ -678,13 +701,13 @@ export default function ProductOptimizationPage() {
                           parseTags(e.target.value)
                         )
                       }
-                      placeholder="例如：日常通勤, 城市慢跑"
+                      placeholder="E.g. Daily commute, city jogging"
                       className="w-full px-2.5 py-1.5 border rounded-md text-sm"
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1">
-                      目标人群（逗号分隔）
+                      Target audience (comma-separated)
                     </label>
                     <input
                       type="text"
@@ -695,7 +718,7 @@ export default function ProductOptimizationPage() {
                           parseTags(e.target.value)
                         )
                       }
-                      placeholder="例如：上班族, 跑步初学者"
+                      placeholder="E.g. office workers, running beginners"
                       className="w-full px-2.5 py-1.5 border rounded-md text-sm"
                     />
                   </div>
@@ -703,7 +726,7 @@ export default function ProductOptimizationPage() {
 
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    主题标签（逗号分隔）
+                    Topic tags (comma-separated)
                   </label>
                   <input
                     type="text"
@@ -714,14 +737,14 @@ export default function ProductOptimizationPage() {
                         parseTags(e.target.value)
                       )
                     }
-                    placeholder="例如：高性价比, 入门级, 环保"
+                    placeholder="E.g. high value, entry level, eco-friendly"
                     className="w-full px-2.5 py-1.5 border rounded-md text-sm"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    合规声明（可选，仅 Pivota 使用）
+                    Compliance disclaimer (optional, Pivota only)
                   </label>
                   <textarea
                     value={form.regulatory_disclaimer_local}
@@ -733,7 +756,7 @@ export default function ProductOptimizationPage() {
                     }
                     rows={2}
                     className="w-full px-2.5 py-1.5 border rounded-md text-sm"
-                    placeholder="例如：本产品为运动鞋，不具备医疗功效。"
+                    placeholder="E.g. This is a consumer product and does not provide medical effects."
                   />
                 </div>
 
@@ -744,7 +767,7 @@ export default function ProductOptimizationPage() {
                     disabled={saving}
                     className="px-3 py-1.5 text-xs border rounded-md hover:bg-gray-50 disabled:opacity-50"
                   >
-                    {saving ? '保存中…' : '仅保存 enrichment'}
+                    {saving ? 'Saving…' : 'Save enrichment only'}
                   </button>
                 </div>
               </div>
@@ -756,12 +779,12 @@ export default function ProductOptimizationPage() {
         <div className="bg-white rounded-lg shadow border p-4 space-y-2">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-800">
-              质量评分（Content / Model Readiness）
+              Quality scores (Content / Model Readiness)
             </h2>
           </div>
           {!qualityPreview ? (
             <p className="text-sm text-gray-500">
-              暂无评分，点击右侧“预览质量分”或“保存并打分”获取。
+              No scores yet. Use “Preview score” or “Save & score” on the right to compute them.
             </p>
           ) : (
             <div className="space-y-3 text-sm">
@@ -792,7 +815,7 @@ export default function ProductOptimizationPage() {
                 qualityPreview.problems.length > 0 && (
                   <div>
                     <div className="text-xs font-medium text-gray-700 mb-1">
-                      待改进建议
+                      Suggestions to improve
                     </div>
                     <ul className="space-y-1">
                       {qualityPreview.problems.map((p: any, idx: number) => (
