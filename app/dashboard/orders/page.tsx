@@ -251,11 +251,11 @@ export default function OrdersPage() {
                 filteredOrders.map((order) => (
                   <tr key={order.id || order.order_id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      <span 
-                        className="font-mono cursor-help" 
+                      <span
+                        className="font-mono cursor-text"
                         title={order.order_id || order.order_number || order.id}
                       >
-                        {(order.order_id || order.order_number || order.id).substring(0, 12)}...
+                        {order.order_id || order.order_number || order.id}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
