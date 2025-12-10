@@ -16,6 +16,7 @@ import {
   BarChart3,
   Zap,
   DollarSign,
+  Tag,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import { FEATURE_FLAGS } from "@/lib/config";
@@ -62,6 +63,7 @@ export default function DashboardLayout({
       icon: Package,
     },
     { name: "Commission", href: "/dashboard/commission", icon: DollarSign },
+    { name: "Promotions", href: "/portal/promotions", icon: Tag },
     { name: "Integrations", href: "/dashboard/integrations", icon: LinkIcon },
     { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
     { name: "MCP", href: "/dashboard/mcp", icon: Zap },
