@@ -107,8 +107,44 @@ class ApiClient {
   async getProducts() {
     const merchantId = localStorage.getItem('merchant_id') || '';
     if (!merchantId) return [];
-    const response = await this.client.get(`/products/${merchantId}`);
-    return response.data.products || [];
+
+    // Prefer the v2 products API which is backed by products_cache and supports
+    // pagination, so we can fetch the full catalog instead of an arbitrary
+    // fixed limit from the legacy endpoint.
+    try {
+      const pageSize = 250;
+      const first = await this.getProductsV2({
+        limit: pageSize,
+        offset: 0,
+      });
+
+      let products = first.products || [];
+      const total =
+        typeof first.total === 'number' ? first.total : products.length;
+
+      // If there are more products than the first page, fetch the remaining
+      // slice(s) and concatenate. This keeps the Products page in sync with
+      // MCP, which shows the full catalog size.
+      let offset = products.length;
+      while (offset < total) {
+        const next = await this.getProductsV2({
+          limit: pageSize,
+          offset,
+        });
+        const nextProducts = next.products || [];
+        if (!nextProducts.length) break;
+        products = products.concat(nextProducts);
+        offset += nextProducts.length;
+      }
+
+      return products;
+    } catch (err) {
+      console.warn('getProducts v2 failed, falling back to legacy /products', err);
+      const response = await this.client.get(`/products/${merchantId}`, {
+        params: { limit: 250 },
+      });
+      return response.data.products || [];
+    }
   }
 
   async getProductsV2(params?: { platform?: string; limit?: number; offset?: number }) {
