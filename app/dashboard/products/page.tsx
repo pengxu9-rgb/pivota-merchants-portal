@@ -4,14 +4,31 @@ import { useState, useEffect } from 'react';
 import { Package, Plus, Search, RefreshCw } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
-function getProductStatusInfo(product: any): { label: string; className: string } {
+function isProductSellable(product: any): boolean {
+  const explicit =
+    product?.sellable ?? product?.is_sellable ?? product?.isSellable ?? product?.sellable_status;
+  if (typeof explicit === 'boolean') return explicit;
+  if (typeof explicit === 'number') return explicit === 1;
+  if (typeof explicit === 'string') {
+    const normalized = explicit.trim().toLowerCase();
+    if (['sellable', 'true', '1', 'yes', 'y'].includes(normalized)) return true;
+    if (['not_sellable', 'not sellable', 'false', '0', 'no', 'n'].includes(normalized)) {
+      return false;
+    }
+  }
+
   const rawStatus = (product?.status ?? '').toString().toLowerCase();
   const orderable = product?.orderable;
+  return rawStatus === 'active' && orderable !== false;
+}
+
+function getProductStatusInfo(product: any): { label: string; className: string } {
+  const rawStatus = (product?.status ?? '').toString().toLowerCase();
 
   if (rawStatus === 'active') {
-    if (orderable === false) {
+    if (!isProductSellable(product)) {
       return {
-        label: 'Not orderable',
+        label: 'Not sellable',
         className: 'bg-yellow-100 text-yellow-800',
       };
     }
@@ -44,6 +61,7 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sellableFilter, setSellableFilter] = useState<'all' | 'sellable' | 'not_sellable'>('all');
   const [merchantId, setMerchantId] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
@@ -95,9 +113,11 @@ export default function ProductsPage() {
   };
 
   const filteredProducts = products.filter(product =>
-    searchTerm === '' || 
-    product.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.sku?.toLowerCase().includes(searchTerm.toLowerCase())
+    (searchTerm === '' ||
+      product.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      product.sku?.toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (sellableFilter === 'all' ||
+      (sellableFilter === 'sellable' ? isProductSellable(product) : !isProductSellable(product)))
   );
 
   if (loading) {
@@ -136,15 +156,31 @@ export default function ProductsPage() {
 
       <div className="bg-white rounded-lg shadow">
         <div className="p-4 border-b">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search products..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border rounded-lg"
-            />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search products..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border rounded-lg"
+              />
+            </div>
+            <div className="sm:w-56">
+              <select
+                value={sellableFilter}
+                onChange={(e) =>
+                  setSellableFilter(e.target.value as 'all' | 'sellable' | 'not_sellable')
+                }
+                className="w-full px-3 py-2 border rounded-lg bg-white"
+                aria-label="Filter by sellable status"
+              >
+                <option value="all">All sellable states</option>
+                <option value="sellable">Sellable</option>
+                <option value="not_sellable">Not sellable</option>
+              </select>
+            </div>
           </div>
         </div>
 
