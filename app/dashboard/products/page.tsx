@@ -4,6 +4,41 @@ import { useState, useEffect } from 'react';
 import { Package, Plus, Search, RefreshCw } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
+function getProductStatusInfo(product: any): { label: string; className: string } {
+  const rawStatus = (product?.status ?? '').toString().toLowerCase();
+  const orderable = product?.orderable;
+
+  if (rawStatus === 'active') {
+    if (orderable === false) {
+      return {
+        label: 'Not orderable',
+        className: 'bg-yellow-100 text-yellow-800',
+      };
+    }
+    return {
+      label: 'Sellable',
+      className: 'bg-green-100 text-green-800',
+    };
+  }
+
+  if (!rawStatus) {
+    return {
+      label: 'Unlisted',
+      className: 'bg-gray-100 text-gray-700',
+    };
+  }
+
+  const humanized = rawStatus
+    .split('_')
+    .map((w: string) => (w ? w[0].toUpperCase() + w.slice(1) : ''))
+    .join(' ');
+
+  return {
+    label: humanized,
+    className: 'bg-gray-100 text-gray-700',
+  };
+}
+
 export default function ProductsPage() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -136,7 +171,19 @@ export default function ProductsPage() {
                     )}
                   </div>
                   <h3 className="font-medium text-gray-900 truncate">{product.title || product.name}</h3>
-                  <p className="text-sm text-gray-600 mb-2">{product.sku || 'No SKU'}</p>
+                  <p className="text-sm text-gray-600 mb-1">{product.sku || 'No SKU'}</p>
+                  <div className="mb-2">
+                    {(() => {
+                      const status = getProductStatusInfo(product);
+                      return (
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${status.className}`}
+                        >
+                          {status.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
                   <div className="flex items-center justify-between">
                     <span className="text-lg font-bold text-gray-900">
                       {formatCurrency(product.price || 0)}
@@ -213,6 +260,12 @@ export default function ProductsPage() {
               <div>
                 <label className="text-sm font-medium text-gray-600">Stock</label>
                 <p className="text-gray-900">{selectedProduct.inventory_quantity ?? selectedProduct.stock ?? 0}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-600">Status</label>
+                <p className="text-gray-900">
+                  {getProductStatusInfo(selectedProduct).label}
+                </p>
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-600">Description</label>
@@ -307,4 +360,3 @@ export default function ProductsPage() {
     </div>
   );
 }
-
