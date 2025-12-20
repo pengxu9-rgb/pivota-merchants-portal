@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   TrendingUp,
   ShoppingBag,
@@ -17,9 +17,16 @@ import {
 import { apiClient } from '@/lib/api-client';
 
 export default function DashboardPage() {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // orders / skeleton loading
   const [refreshing, setRefreshing] = useState(false);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+  const [storesLoading, setStoresLoading] = useState(false);
+  const [pspsLoading, setPspsLoading] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [qualityLoading, setQualityLoading] = useState(false);
   const [merchantId, setMerchantId] = useState<string>('');
+  const loadSeqRef = useRef(0);
   
   // Dashboard data
   const [stats, setStats] = useState({
@@ -51,128 +58,178 @@ export default function DashboardPage() {
     if (!id) {
       console.warn('⚠️ No merchant_id found in localStorage!');
     }
-    loadDashboardData(id);
+    void loadDashboardData(id);
   }, []);
 
   const loadDashboardData = async (merchantId: string) => {
+    const loadSeq = ++loadSeqRef.current;
     try {
+      setAnalyticsError(null);
       setLoading(true);
       console.log('📊 Loading dashboard data for merchant:', merchantId);
 
-      // Load data in parallel
-      const [
-        analyticsData,
-        ordersResponse,
-        productsData,
-        storesData,
-        pspsData,
-        qualitySummary,
-      ] = await Promise.all([
-        apiClient.getAnalyticsDashboard('30d').catch(err => {
-          console.warn('Analytics failed:', err);
-          return null;
-        }),
-        apiClient.getOrders({ limit: 10 }).catch(err => {
-          console.warn('Orders failed:', err);
-          return { orders: [], total: 0, limit: 10, offset: 0 };
-        }),
-        apiClient.getProducts().catch(err => {
-          console.warn('Products failed (may need admin access):', err);
-          // Fallback: Show placeholder message
-          return [];
-        }),
-        merchantId ? apiClient.getConnectedStores(merchantId).catch(err => {
-          console.warn('Stores failed:', err);
-          return [];
-        }) : Promise.resolve([]),
-        merchantId ? apiClient.getPSPs(merchantId).catch(err => {
-          console.warn('PSPs failed:', err);
-          return [];
-        }) : Promise.resolve([]),
-        apiClient.getCatalogQualitySummary().catch(err => {
-          console.warn('Catalog quality summary failed:', err);
-          return null;
-        }),
-      ]);
-
-      // Extract orders array from response object
-      const ordersData = ordersResponse?.orders || [];
-
-      // Update stats - prioritize analytics data but fallback to orders data
-      // Calculate total products from connected stores
-      const storeProductCount = Array.isArray(storesData) ? storesData.reduce((sum: number, store: any) => {
-        return sum + (store.product_count || 0);
-      }, 0) : 0;
-
-      if (analyticsData) {
-        setStats({
-          totalOrders: analyticsData.total_orders || ordersData.length || 0,
-          totalRevenue: analyticsData.total_revenue || 0,
-          totalCustomers: analyticsData.total_customers || 0,
-          totalProducts: analyticsData.total_products || storeProductCount || productsData.length || 0,
-          orderGrowth: analyticsData.order_growth || 0,
-          revenueGrowth: analyticsData.revenue_growth || 0,
-        });
-        
-        // Update recent orders from analytics data if available
-        if (analyticsData.recent_orders && analyticsData.recent_orders.length > 0) {
-          setRecentOrders(analyticsData.recent_orders);
-        } else if (Array.isArray(ordersData) && ordersData.length > 0) {
-          setRecentOrders(ordersData);
-        }
-      } else {
-        // Fallback: use direct data
-        const ordersArray = Array.isArray(ordersData) ? ordersData : [];
-        setStats({
-          totalOrders: ordersArray.length || 0,
-          totalRevenue: ordersArray.reduce((sum: number, order: any) => sum + (order.total_amount || order.total || order.amount || 0), 0),
-          totalCustomers: new Set(ordersArray.map((o: any) => o.customer_email)).size,
-          totalProducts: storeProductCount || productsData.length || 0,
-          orderGrowth: 0,
-          revenueGrowth: 0,
-        });
-        setRecentOrders(ordersArray);
-      }
-
-      // Update other data
-      console.log('📦 Products data:', productsData);
-      console.log('🏪 Stores data:', storesData);
-      console.log('💳 PSPs data:', pspsData);
-      setProducts(Array.isArray(productsData) ? productsData.slice(0, 5) : []);
-      setConnectedStores(Array.isArray(storesData) ? storesData : []);
-      setConnectedPSPs(Array.isArray(pspsData) ? pspsData : []);
-
-      if (qualitySummary) {
-        setCatalogQuality({
-          total_products: qualitySummary.total_products || 0,
-          scored_products: qualitySummary.scored_products || 0,
-          avg_content_quality: qualitySummary.avg_content_quality ?? null,
-          avg_model_readiness: qualitySummary.avg_model_readiness ?? null,
-          low_cq_threshold: qualitySummary.low_cq_threshold ?? 60,
-          low_cq_count: qualitySummary.low_cq_count || 0,
-        });
-      } else {
-        setCatalogQuality(null);
-      }
-
-      console.log('✅ Dashboard data loaded:', {
-        orders: Array.isArray(ordersData) ? ordersData.length : 0,
-        products: Array.isArray(productsData) ? productsData.length : 0,
-        stores: Array.isArray(storesData) ? storesData.length : 0,
-        psps: Array.isArray(pspsData) ? pspsData.length : 0,
+      const ordersPromise = apiClient.getOrders({ limit: 10 }).catch(err => {
+        console.warn('Orders failed:', err);
+        return { orders: [], total: 0, limit: 10, offset: 0 };
       });
+
+      setProductsLoading(true);
+      const productsPromise = apiClient.getProducts().catch(err => {
+        console.warn('Products failed (may need admin access):', err);
+        return [];
+      });
+
+      setStoresLoading(Boolean(merchantId));
+      const storesPromise = merchantId
+        ? apiClient.getConnectedStores(merchantId).catch(err => {
+            console.warn('Stores failed:', err);
+            return [];
+          })
+        : Promise.resolve([]);
+
+      setPspsLoading(Boolean(merchantId));
+      const pspsPromise = merchantId
+        ? apiClient.getPSPs(merchantId).catch(err => {
+            console.warn('PSPs failed:', err);
+            return [];
+          })
+        : Promise.resolve([]);
+
+      setQualityLoading(true);
+      const qualityPromise = apiClient.getCatalogQualitySummary().catch(err => {
+        console.warn('Catalog quality summary failed:', err);
+        return null;
+      });
+
+      // These are safe to be slow; they should never block rendering.
+      void productsPromise
+        .then(productsData => {
+          if (loadSeq !== loadSeqRef.current) return;
+          setProducts(Array.isArray(productsData) ? productsData.slice(0, 5) : []);
+          setStats(prev => ({
+            ...prev,
+            totalProducts: prev.totalProducts || (Array.isArray(productsData) ? productsData.length : 0),
+          }));
+        })
+        .finally(() => {
+          if (loadSeq !== loadSeqRef.current) return;
+          setProductsLoading(false);
+        });
+
+      void storesPromise
+        .then(storesData => {
+          if (loadSeq !== loadSeqRef.current) return;
+          setConnectedStores(Array.isArray(storesData) ? storesData : []);
+          const storeProductCount = Array.isArray(storesData)
+            ? storesData.reduce((sum: number, store: any) => sum + (store.product_count || 0), 0)
+            : 0;
+          setStats(prev => ({
+            ...prev,
+            totalProducts: prev.totalProducts || storeProductCount,
+          }));
+        })
+        .finally(() => {
+          if (loadSeq !== loadSeqRef.current) return;
+          setStoresLoading(false);
+        });
+
+      void pspsPromise
+        .then(pspsData => {
+          if (loadSeq !== loadSeqRef.current) return;
+          setConnectedPSPs(Array.isArray(pspsData) ? pspsData : []);
+        })
+        .finally(() => {
+          if (loadSeq !== loadSeqRef.current) return;
+          setPspsLoading(false);
+        });
+
+      void qualityPromise
+        .then(qualitySummary => {
+          if (loadSeq !== loadSeqRef.current) return;
+          if (qualitySummary) {
+            setCatalogQuality({
+              total_products: qualitySummary.total_products || 0,
+              scored_products: qualitySummary.scored_products || 0,
+              avg_content_quality: qualitySummary.avg_content_quality ?? null,
+              avg_model_readiness: qualitySummary.avg_model_readiness ?? null,
+              low_cq_threshold: qualitySummary.low_cq_threshold ?? 60,
+              low_cq_count: qualitySummary.low_cq_count || 0,
+            });
+          } else {
+            setCatalogQuality(null);
+          }
+        })
+        .finally(() => {
+          if (loadSeq !== loadSeqRef.current) return;
+          setQualityLoading(false);
+        });
+
+      setAnalyticsLoading(true);
+      void apiClient
+        .getAnalyticsDashboard('30d')
+        .then(analyticsData => {
+          if (loadSeq !== loadSeqRef.current) return;
+          if (!analyticsData) return;
+
+          setStats(prev => ({
+            ...prev,
+            totalOrders: analyticsData.total_orders ?? prev.totalOrders,
+            totalRevenue: analyticsData.total_revenue ?? prev.totalRevenue,
+            totalCustomers: analyticsData.total_customers ?? prev.totalCustomers,
+            totalProducts: analyticsData.total_products ?? prev.totalProducts,
+            orderGrowth: analyticsData.order_growth ?? prev.orderGrowth,
+            revenueGrowth: analyticsData.revenue_growth ?? prev.revenueGrowth,
+          }));
+
+          if (analyticsData.recent_orders && analyticsData.recent_orders.length > 0) {
+            setRecentOrders(analyticsData.recent_orders);
+          }
+        })
+        .catch(err => {
+          if (loadSeq !== loadSeqRef.current) return;
+          console.warn('Analytics failed:', err);
+          setAnalyticsError(err?.message || 'Analytics failed');
+        })
+        .finally(() => {
+          if (loadSeq !== loadSeqRef.current) return;
+          setAnalyticsLoading(false);
+        });
+
+      // Only await orders to remove the initial skeleton.
+      const ordersResponse = await ordersPromise;
+      if (loadSeq !== loadSeqRef.current) return;
+
+      const ordersData = ordersResponse?.orders || [];
+      const ordersArray = Array.isArray(ordersData) ? ordersData : [];
+      const totalCustomers = new Set(ordersArray.map((o: any) => o.customer_email).filter(Boolean)).size;
+      const totalRevenue = ordersArray.reduce(
+        (sum: number, order: any) => sum + Number(order.total_amount ?? order.total ?? order.amount ?? 0),
+        0
+      );
+
+      setStats(prev => ({
+        ...prev,
+        totalOrders: ordersResponse?.total ?? ordersArray.length ?? 0,
+        totalRevenue,
+        totalCustomers,
+        orderGrowth: 0,
+        revenueGrowth: 0,
+      }));
+      setRecentOrders(ordersArray);
 
     } catch (error) {
       console.error('❌ Failed to load dashboard data:', error);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (loadSeq === loadSeqRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
   const handleRefresh = () => {
     setRefreshing(true);
-    loadDashboardData(merchantId);
+    void loadDashboardData(merchantId);
   };
 
   const formatCurrency = (amount: number) => {
@@ -181,14 +238,6 @@ export default function DashboardPage() {
       currency: 'USD',
     }).format(amount);
   };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -209,7 +258,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Connected Services Alert */}
-      {connectedStores.length === 0 && (
+      {!loading && !storesLoading && connectedStores.length === 0 && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <p className="text-sm text-yellow-800">
             <strong>⚠️ No stores connected</strong> - Connect your Shopify or Wix store to start syncing products and orders.{' '}
@@ -220,6 +269,18 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {(analyticsLoading || analyticsError) && (
+        <div className="flex items-center justify-between rounded-lg border bg-white px-4 py-2 text-sm">
+          <div className="flex items-center gap-2 text-gray-700">
+            <Activity className={`h-4 w-4 ${analyticsLoading ? 'animate-pulse' : ''}`} />
+            <span>
+              {analyticsLoading ? 'Updating analytics…' : 'Analytics unavailable (showing partial data)'}
+            </span>
+          </div>
+          {analyticsError && <span className="text-gray-500">{analyticsError}</span>}
+        </div>
+      )}
+
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white rounded-lg shadow p-6">
@@ -227,12 +288,14 @@ export default function DashboardPage() {
             <div className="p-2 bg-blue-100 rounded-lg">
               <ShoppingBag className="w-6 h-6 text-blue-600" />
             </div>
-            <div className={`flex items-center text-sm ${stats.orderGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {stats.orderGrowth >= 0 ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
-              <span>{Math.abs(stats.orderGrowth)}%</span>
-            </div>
+            {!analyticsLoading && (
+              <div className={`flex items-center text-sm ${stats.orderGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {stats.orderGrowth >= 0 ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+                <span>{Math.abs(stats.orderGrowth)}%</span>
+              </div>
+            )}
           </div>
-          <h3 className="text-2xl font-bold text-gray-900">{stats.totalOrders}</h3>
+          <h3 className="text-2xl font-bold text-gray-900">{loading ? '—' : stats.totalOrders}</h3>
           <p className="text-sm text-gray-600">Total Orders</p>
         </div>
 
@@ -241,12 +304,14 @@ export default function DashboardPage() {
             <div className="p-2 bg-green-100 rounded-lg">
               <DollarSign className="w-6 h-6 text-green-600" />
             </div>
-            <div className={`flex items-center text-sm ${stats.revenueGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {stats.revenueGrowth >= 0 ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
-              <span>{Math.abs(stats.revenueGrowth)}%</span>
-            </div>
+            {!analyticsLoading && (
+              <div className={`flex items-center text-sm ${stats.revenueGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {stats.revenueGrowth >= 0 ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+                <span>{Math.abs(stats.revenueGrowth)}%</span>
+              </div>
+            )}
           </div>
-          <h3 className="text-2xl font-bold text-gray-900">{formatCurrency(stats.totalRevenue)}</h3>
+          <h3 className="text-2xl font-bold text-gray-900">{loading ? '—' : formatCurrency(stats.totalRevenue)}</h3>
           <p className="text-sm text-gray-600">Total Revenue</p>
         </div>
 
@@ -256,7 +321,7 @@ export default function DashboardPage() {
               <Users className="w-6 h-6 text-purple-600" />
             </div>
           </div>
-          <h3 className="text-2xl font-bold text-gray-900">{stats.totalCustomers}</h3>
+          <h3 className="text-2xl font-bold text-gray-900">{loading ? '—' : stats.totalCustomers}</h3>
           <p className="text-sm text-gray-600">Customers</p>
         </div>
 
@@ -266,7 +331,9 @@ export default function DashboardPage() {
               <Package className="w-6 h-6 text-orange-600" />
             </div>
           </div>
-          <h3 className="text-2xl font-bold text-gray-900">{stats.totalProducts}</h3>
+          <h3 className="text-2xl font-bold text-gray-900">
+            {loading || storesLoading || productsLoading ? '—' : stats.totalProducts}
+          </h3>
           <p className="text-sm text-gray-600">Products</p>
         </div>
       </div>
@@ -279,7 +346,9 @@ export default function DashboardPage() {
             <h2 className="text-lg font-semibold text-gray-900">Connected Stores</h2>
           </div>
           <div className="p-6">
-            {connectedStores.length > 0 ? (
+            {storesLoading ? (
+              <p className="text-sm text-gray-500">Loading stores…</p>
+            ) : connectedStores.length > 0 ? (
               <div className="space-y-3">
                 {connectedStores.map((store, index) => (
                   <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
@@ -328,7 +397,9 @@ export default function DashboardPage() {
             <h2 className="text-lg font-semibold text-gray-900">Payment Processors</h2>
           </div>
           <div className="p-6">
-            {connectedPSPs.length > 0 ? (
+            {pspsLoading ? (
+              <p className="text-sm text-gray-500">Loading payment processors…</p>
+            ) : connectedPSPs.length > 0 ? (
               <div className="space-y-3">
                 {connectedPSPs.filter(psp => psp.is_active).map((psp, index) => (
                   <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
@@ -380,7 +451,9 @@ export default function DashboardPage() {
             </a>
           </div>
           <div className="p-6">
-            {catalogQuality ? (
+            {qualityLoading ? (
+              <p className="text-sm text-gray-500">Loading quality summary…</p>
+            ) : catalogQuality ? (
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600">Products scored</span>
@@ -452,7 +525,13 @@ export default function DashboardPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {recentOrders.length > 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                    Loading orders…
+                  </td>
+                </tr>
+              ) : recentOrders.length > 0 ? (
                 recentOrders.slice(0, 5).map((order) => (
                   <tr key={order.id || order.order_id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -476,7 +555,7 @@ export default function DashboardPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {new Date(order.created_at).toLocaleDateString()}
+                      {order.created_at ? new Date(order.created_at).toLocaleDateString() : '—'}
                     </td>
                   </tr>
                 ))
