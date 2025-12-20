@@ -291,9 +291,10 @@ export default function MCPPage() {
         return;
       }
 
-      // Sync each connected store
+      // Sync each connected store (schedule async task, then poll until completion)
       let synced = 0;
-      let errors = [];
+      const errors: string[] = [];
+      const scheduledTaskIds: number[] = [];
 
       for (const store of stores) {
         if (store.platform === 'shopify') {
@@ -313,6 +314,10 @@ export default function MCPPage() {
             
             if (syncResponse.ok) {
               synced++;
+              const taskId = syncData?.data?.task_id;
+              if (typeof taskId === 'number') {
+                scheduledTaskIds.push(taskId);
+              }
             } else {
               errors.push(`${store.platform}: ${syncData.detail || 'Failed'}`);
             }
@@ -351,12 +356,86 @@ export default function MCPPage() {
         }
       }
 
-      if (errors.length > 0) {
-        alert(`⚠️ Sync completed with errors:\n\n✅ Synced: ${synced}\n❌ Errors:\n${errors.join('\n')}`);
-      } else {
-        alert(`✅ MCP sync completed!\n\n${synced} store(s) synced successfully.`);
+      // If nothing was scheduled, just show the result and refresh.
+      if (!scheduledTaskIds.length) {
+        if (errors.length > 0) {
+          alert(`⚠️ Sync scheduled with errors:\n\n✅ Scheduled: ${synced}\n❌ Errors:\n${errors.join('\n')}`);
+        } else {
+          alert(`✅ Sync scheduled.\n\n${synced} store(s) scheduled successfully.`);
+        }
+        await loadMCPStatus();
+        return;
       }
-      await loadMCPStatus();
+
+      alert(
+        `⏳ Sync scheduled (background).\n\nTask(s): ${scheduledTaskIds.join(', ')}\n\nKeep this page open — you'll get a completion popup when it's done.`
+      );
+
+      // Poll status until all tasks complete (succeeded/failed), then notify.
+      const pollIntervalMs = 3000;
+      const timeoutMs = 10 * 60 * 1000;
+      const startedAt = Date.now();
+
+      const poll = async (): Promise<void> => {
+        try {
+          const statusResp = await fetch(
+            'https://web-production-fedb.up.railway.app/merchant/integrations/shopify/sync/status',
+            {
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('merchant_token')}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+          const statusData = await statusResp.json();
+          const tasks = statusData?.data?.tasks || [];
+
+          const done: any[] = [];
+          const pending: number[] = [];
+          for (const id of scheduledTaskIds) {
+            const t = tasks.find((x: any) => Number(x?.id) === Number(id));
+            const status = (t?.status || '').toLowerCase();
+            if (status === 'succeeded' || status === 'failed') {
+              done.push(t);
+            } else {
+              pending.push(id);
+            }
+          }
+
+          if (!pending.length) {
+            const summaries = done.map((t: any) => {
+              const counts = t?.counts || {};
+              const total = counts?.total ?? 0;
+              const succeeded = counts?.succeeded ?? 0;
+              const failed = counts?.failed ?? 0;
+              const pages = counts?.pages_fetched ?? 0;
+              return `#${t?.id} ${t?.status} (total=${total}, ok=${succeeded}, failed=${failed}, pages=${pages})`;
+            });
+
+            const hasFailed = done.some((t: any) => (t?.status || '').toLowerCase() === 'failed');
+            alert(
+              hasFailed
+                ? `❌ Shopify sync finished with failures:\n\n${summaries.join('\n')}`
+                : `✅ Shopify sync completed:\n\n${summaries.join('\n')}`
+            );
+            await loadMCPStatus();
+            return;
+          }
+        } catch (e: any) {
+          console.warn('Sync status poll failed:', e?.message || e);
+        }
+
+        if (Date.now() - startedAt < timeoutMs) {
+          setTimeout(poll, pollIntervalMs);
+        } else {
+          alert(
+            `⚠️ Shopify sync still running.\n\nTask(s): ${scheduledTaskIds.join(', ')}\n\nPlease refresh later or check the Integrations status page.`
+          );
+          await loadMCPStatus();
+        }
+      };
+
+      setTimeout(poll, pollIntervalMs);
     } catch (error) {
       alert('❌ Sync failed');
     }
