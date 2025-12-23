@@ -40,6 +40,8 @@ export default function IntegrationsPage() {
   const [syncingStoreId, setSyncingStoreId] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
 
+  const primaryStoreId = connectedStores.find((s) => s?.is_active)?.id || null;
+
   useEffect(() => {
     const id = localStorage.getItem('merchant_id') || '';
     const key = localStorage.getItem('merchant_api_key') || 'pk_live_' + Math.random().toString(36).substring(2, 15);
@@ -83,7 +85,7 @@ export default function IntegrationsPage() {
     try {
       let result;
       if (store.platform === 'shopify') {
-        result = await apiClient.syncShopifyProducts();
+        result = await apiClient.syncShopifyProducts(merchantId);
       } else if (store.platform === 'wix') {
         result = await apiClient.syncPlatformProducts('wix');
       } else {
@@ -98,6 +100,17 @@ export default function IntegrationsPage() {
     }
   };
 
+  const handleSetPrimaryStore = async (store: any) => {
+    if (!store?.id) return;
+    try {
+      const response = await apiClient.setPrimaryStore(store.id);
+      alert(response.message || '✅ Primary store updated');
+      await loadIntegrationData(merchantId);
+    } catch (error: any) {
+      alert('❌ Failed to set primary store: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
   const handleDeleteStore = async (store: any) => {
     if (!confirm(`Are you sure you want to delete the store "${store.store_name || store.name}"?\n\nThis will disconnect the store.`)) {
       return;
@@ -105,8 +118,8 @@ export default function IntegrationsPage() {
     
     try {
       setLoading(true);
-      const response = await apiClient.client.delete(`/merchant/integrations/store/${store.id}`);
-      alert(response.data.message || '✅ Store deleted');
+      const response = await apiClient.deleteStore(store.id);
+      alert(response.message || '✅ Store deleted');
       await loadIntegrationData(merchantId);
     } catch (error: any) {
       alert('❌ Delete failed: ' + (error.response?.data?.detail || error.message));
@@ -122,8 +135,8 @@ export default function IntegrationsPage() {
     
     try {
       setLoading(true);
-      const response = await apiClient.client.delete(`/merchant/integrations/psp/${psp.id}`);
-      alert(response.data.message || '✅ PSP deleted');
+      const response = await apiClient.deletePSP(psp.id);
+      alert(response.message || '✅ PSP deleted');
       await loadIntegrationData(merchantId);
     } catch (error: any) {
       alert('❌ Delete failed: ' + (error.response?.data?.detail || error.message));
@@ -263,6 +276,11 @@ export default function IntegrationsPage() {
                           <div>
                             <h3 className="font-medium text-gray-900">
                               {store.store_name || store.domain || 'Store ' + (index + 1)}
+                              {primaryStoreId && store.id === primaryStoreId && (
+                                <span className="ml-2 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full">
+                                  Primary
+                                </span>
+                              )}
                             </h3>
                             <p className="text-sm text-gray-600">
                               Platform: <span className="capitalize">{store.platform}</span> • 
@@ -277,6 +295,14 @@ export default function IntegrationsPage() {
                           <span className="px-3 py-1 bg-green-100 text-green-700 text-sm rounded-full">
                             Active
                           </span>
+                          {store?.is_active && primaryStoreId && store.id !== primaryStoreId && (
+                            <button
+                              onClick={() => handleSetPrimaryStore(store)}
+                              className="px-3 py-1 bg-purple-600 text-white text-sm rounded hover:bg-purple-700"
+                            >
+                              Make Primary
+                            </button>
+                          )}
                           {(store.platform === 'shopify' || store.platform === 'wix') && (
                             <button
                               onClick={() => handleSyncProducts(store)}

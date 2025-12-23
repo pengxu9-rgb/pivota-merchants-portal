@@ -354,6 +354,27 @@ class ApiClient {
     }));
   }
 
+  async setPrimaryStore(storeId: string) {
+    const response = await this.client.post(
+      `/merchant/integrations/store/${storeId}/primary`
+    );
+    return response.data;
+  }
+
+  async deleteStore(storeId: string) {
+    const response = await this.client.delete(
+      `/merchant/integrations/store/${storeId}`
+    );
+    return response.data;
+  }
+
+  async deletePSP(pspId: string) {
+    const response = await this.client.delete(
+      `/merchant/integrations/psp/${pspId}`
+    );
+    return response.data;
+  }
+
   // PSP methods
   async getPSPs(merchantId: string) {
     const response = await this.client.get(`/merchant/${merchantId}/psps`);
