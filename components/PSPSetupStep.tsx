@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Loader, CheckCircle, AlertCircle, CreditCard, Plus } from 'lucide-react';
 import { onboardingApi } from '../lib/api';
-import { apiClient } from '../lib/api-client';
 
 interface PSPSetupStepProps {
   merchantId: string;
@@ -51,31 +50,32 @@ export default function PSPSetupStep({ merchantId, onComplete }: PSPSetupStepPro
     setError('');
 
     try {
-      const payload: any = {
-        provider: pspType === 'other' ? customPspName.toLowerCase().replace(/\s+/g, '_') : pspType,
-        api_key: apiKey
-      };
+      const provider =
+        pspType === 'other'
+          ? customPspName.toLowerCase().trim().replace(/\s+/g, '_')
+          : pspType;
+
+      const additionalData: any = {};
 
       if (pspType === 'paypal' && secretKey) {
-        payload.secret_key = secretKey;
+        additionalData.secret_key = secretKey;
       }
 
       if ((pspType === 'adyen' || pspType === 'checkout') && accountId) {
-        payload.account_id = accountId;
+        additionalData.account_id = accountId;
       }
 
       if (pspType === 'other') {
-        payload.custom_psp = true;
-        payload.setup_later = true; // Mark for later setup
+        additionalData.custom_psp = true;
+        additionalData.setup_later = true;
       }
 
-      // New integration path: use /merchant/integrations/psp/connect so that
-      // Adyen merchantAccount (account_id) and other PSP metadata are stored
-      // in the unified merchant_psps table.
-      await apiClient.connectPSPProvider(payload);
+      // Signup onboarding is unauthenticated; use the onboarding PSP setup endpoint.
+      // Authenticated merchants connect PSPs later via /merchant/integrations/psp/connect.
+      await onboardingApi.setupPSP(merchantId, provider, apiKey, additionalData);
       
       onComplete({
-        psp_type: payload.provider,
+        psp_type: provider,
         api_key: apiKey,
         custom_psp: pspType === 'other'
       });
