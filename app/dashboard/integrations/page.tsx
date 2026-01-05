@@ -148,8 +148,21 @@ export default function IntegrationsPage() {
   const handleTestPSP = async (pspId: string) => {
     setTesting(pspId);
     try {
-      await apiClient.testPSP(pspId);
-      alert('✅ PSP connection test successful!');
+      const result = await apiClient.testPSP(pspId);
+      const status = (result?.status || '').toLowerCase();
+      const message = result?.message || 'PSP test completed';
+
+      if (status === 'success') {
+        alert('✅ ' + message);
+        return;
+      }
+
+      if (status === 'warning') {
+        alert('⚠️ ' + message);
+        return;
+      }
+
+      alert('❌ ' + message);
     } catch (error: any) {
       alert('❌ PSP test failed: ' + (error.response?.data?.detail || error.message));
     } finally {
