@@ -4,6 +4,11 @@ import { computePromotionStatus, Promotion } from '@/types/promotion';
 const BASE_URL = process.env.MERCHANT_API_BASE_URL;
 const ADMIN_KEY = process.env.MERCHANT_ADMIN_KEY;
 
+const UPSTREAM_TIMEOUT_MS = Math.max(
+  1000,
+  Number(process.env.MERCHANT_UPSTREAM_TIMEOUT_MS ?? 8000) || 8000
+);
+
 function missingConfig() {
   return !BASE_URL || !ADMIN_KEY;
 }
@@ -28,16 +33,23 @@ async function proxyFetch(path: string, init: RequestInit = {}) {
 
   const url = `${BASE_URL}${path}`;
   try {
-    const res = await fetch(url, {
-      ...init,
-      headers: {
-        'X-ADMIN-KEY': ADMIN_KEY as string,
-        ...(init.headers || {}),
-      },
-      cache: 'no-store',
-    });
-    const data = await res.json().catch(() => ({}));
-    return NextResponse.json(data, { status: res.status });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, {
+        ...init,
+        headers: {
+          'X-ADMIN-KEY': ADMIN_KEY as string,
+          ...(init.headers || {}),
+        },
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      const data = await res.json().catch(() => ({}));
+      return NextResponse.json(data, { status: res.status });
+    } finally {
+      clearTimeout(timeout);
+    }
   } catch (err) {
     console.error('[portal/promotions] proxy error', err);
     return NextResponse.json({ error: 'Upstream unavailable' }, { status: 502 });
@@ -53,13 +65,18 @@ export async function GET(req: NextRequest) {
   const url = new URL('/api/merchant/promotions', BASE_URL);
   url.searchParams.set('merchantId', merchantId);
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   const upstream = await fetch(url.toString(), {
     headers: { 'X-ADMIN-KEY': ADMIN_KEY as string },
     cache: 'no-store',
-  }).catch((err) => {
-    console.error('[portal/promotions] upstream error', err);
-    return null;
-  });
+    signal: controller.signal,
+  })
+    .catch((err) => {
+      console.error('[portal/promotions] upstream error', err);
+      return null;
+    })
+    .finally(() => clearTimeout(timeout));
 
   if (!upstream) {
     return NextResponse.json({ error: 'Upstream unavailable' }, { status: 502 });
