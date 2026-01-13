@@ -154,6 +154,12 @@ export default function OrdersPage() {
       alert('Refund processed successfully!');
       setShowRefundDialog(false);
       loadRefundHistory(orderId); // Reload refund history
+      try {
+        const updated = await apiClient.getOrderDetails(orderId);
+        setSelectedOrder(updated);
+      } catch (e) {
+        // Best-effort; still refresh list.
+      }
       loadOrders(); // Refresh order list
     } catch (error: any) {
       console.error('Failed to process refund:', error);
@@ -393,18 +399,18 @@ export default function OrdersPage() {
               </div>
 
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-gray-600">Order ID</p>
-                    <p className="font-semibold">{orderData.order_id}</p>
+                    <p className="font-semibold break-all">{orderData.order_id}</p>
                   </div>
                   <div>
                     <p className="text-sm text-gray-600">Status</p>
-                    <p className="font-semibold capitalize">{orderData.status}</p>
+                    <p className="font-semibold capitalize break-words">{orderData.status}</p>
                   </div>
                   <div>
                     <p className="text-sm text-gray-600">Payment Status</p>
-                    <p className="font-semibold capitalize">{orderData.payment_status}</p>
+                    <p className="font-semibold capitalize break-words">{orderData.payment_status}</p>
                   </div>
                   <div>
                     <p className="text-sm text-gray-600">Total Amount</p>
@@ -591,7 +597,7 @@ export default function OrdersPage() {
                 <div className="border-t pt-4 mt-4">
                   <div className="flex justify-between items-center mb-3">
                     <h3 className="font-semibold">Refunds</h3>
-                    {(orderData.total - (orderData.total_refunded || 0)) > 0 && (
+                    {((Number(orderData.total) || 0) - (Number(orderData.total_refunded) || 0)) > 0 && (
                       <button
                         onClick={() => setShowRefundDialog(true)}
                         className="flex items-center space-x-2 text-red-600 hover:text-red-800 font-medium text-sm"
@@ -607,14 +613,14 @@ export default function OrdersPage() {
                     <div className="flex justify-between">
                       <span className="text-gray-600">Refundable:</span>
                       <span className="font-medium text-green-600">
-                        ${((orderData.total || 0) - (orderData.total_refunded || 0)).toFixed(2)}
+                        ${((Number(orderData.total) || 0) - (Number(orderData.total_refunded) || 0)).toFixed(2)}
                       </span>
                     </div>
-                    {orderData.total_refunded > 0 && (
+                    {(Number(orderData.total_refunded) || 0) > 0 && (
                       <div className="flex justify-between mt-1">
                         <span className="text-gray-600">Already Refunded:</span>
                         <span className="font-medium text-red-600">
-                          ${(orderData.total_refunded || 0).toFixed(2)}
+                          ${(Number(orderData.total_refunded) || 0).toFixed(2)}
                         </span>
                       </div>
                     )}
