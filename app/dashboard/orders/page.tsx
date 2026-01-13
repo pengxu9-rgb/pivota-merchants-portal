@@ -676,7 +676,14 @@ export default function OrdersPage() {
       {/* Refund Dialog */}
       {showRefundDialog && selectedOrder && (
         <RefundDialog
-          order={selectedOrder.data || selectedOrder}
+          order={(() => {
+            const base = selectedOrder.data || selectedOrder;
+            const refundedFromHistory = (refundHistory || [])
+              .filter((r: any) => r?.status === 'completed')
+              .reduce((sum: number, r: any) => sum + (Number(r?.amount) || 0), 0);
+            const existing = Number(base?.total_refunded) || 0;
+            return { ...base, total_refunded: Math.max(existing, refundedFromHistory) };
+          })()}
           onClose={() => setShowRefundDialog(false)}
           onRefund={handleRefund}
         />
