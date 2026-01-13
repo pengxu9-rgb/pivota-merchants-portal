@@ -25,6 +25,9 @@ export default function OrdersPage() {
   // Refund state
   const [showRefundDialog, setShowRefundDialog] = useState(false);
   const [refundHistory, setRefundHistory] = useState<any[]>([]);
+  const [afterSalesCases, setAfterSalesCases] = useState<any[]>([]);
+  const [afterSalesLoading, setAfterSalesLoading] = useState(false);
+  const [approvingCaseId, setApprovingCaseId] = useState<string | null>(null);
 
   useEffect(() => {
     loadOrders();
@@ -102,6 +105,38 @@ export default function OrdersPage() {
       setRefundHistory([]);
     }
   };
+
+  const loadAfterSalesCases = async (orderId: string) => {
+    try {
+      setAfterSalesLoading(true);
+      const result = await apiClient.getOrderAfterSalesCases(orderId);
+      setAfterSalesCases(result.cases || []);
+    } catch (error: any) {
+      console.error('Failed to load after-sales cases:', error);
+      setAfterSalesCases([]);
+    } finally {
+      setAfterSalesLoading(false);
+    }
+  };
+
+  const handleApproveRefundRequest = async (caseId: string) => {
+    try {
+      const orderId = selectedOrder?.data?.order_id || selectedOrder?.order_id;
+      setApprovingCaseId(caseId);
+      await apiClient.approveAfterSalesCase(caseId);
+      alert('Refund approved. Processing has started.');
+      if (orderId) {
+        await loadAfterSalesCases(orderId);
+        await loadRefundHistory(orderId);
+      }
+      loadOrders();
+    } catch (error: any) {
+      console.error('Failed to approve refund:', error);
+      alert(error.response?.data?.detail || 'Failed to approve refund');
+    } finally {
+      setApprovingCaseId(null);
+    }
+  };
   
   const handleRefund = async (amount: number, reason: string) => {
     try {
@@ -126,6 +161,7 @@ export default function OrdersPage() {
     const orderId = order.data?.order_id || order.order_id;
     if (orderId) {
       await loadRefundHistory(orderId);
+      await loadAfterSalesCases(orderId);
     }
   };
 
@@ -474,6 +510,73 @@ export default function OrdersPage() {
                 )}
               </div>
               
+              {/* Refund Requests (After-sales cases) */}
+              <div className="border-t pt-4 mt-4">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="font-semibold">Refund Requests</h3>
+                  {afterSalesLoading && (
+                    <span className="text-xs text-gray-500">Loading…</span>
+                  )}
+                </div>
+
+                {afterSalesCases.filter((c) => c.case_type === 'refund').length === 0 ? (
+                  <div className="text-sm text-gray-500">No refund requests</div>
+                ) : (
+                  <div className="space-y-2">
+                    {afterSalesCases
+                      .filter((c) => c.case_type === 'refund')
+                      .map((c: any) => (
+                        <div key={c.case_id} className="bg-white border rounded p-3 text-sm">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">
+                                  {c.requested_refund_amount != null
+                                    ? formatCurrency(Number(c.requested_refund_amount))
+                                    : 'Full refund requested'}
+                                </span>
+                                <span
+                                  className={`text-xs px-2 py-0.5 rounded ${
+                                    c.status === 'requested'
+                                      ? 'bg-yellow-100 text-yellow-800'
+                                      : c.status === 'approved' || c.status === 'refund_pending'
+                                        ? 'bg-blue-100 text-blue-800'
+                                        : c.status === 'partially_refunded' || c.status === 'refunded' || c.status === 'refund_processed'
+                                          ? 'bg-green-100 text-green-800'
+                                          : 'bg-gray-100 text-gray-800'
+                                  }`}
+                                >
+                                  {c.status}
+                                </span>
+                              </div>
+                              {(c.reason_text || c.reason_code) && (
+                                <div className="text-xs text-gray-600 mt-1">
+                                  Reason: {c.reason_text || c.reason_code}
+                                </div>
+                              )}
+                              {c.created_at && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Requested: {new Date(c.created_at).toLocaleString()}
+                                </div>
+                              )}
+                            </div>
+
+                            {c.status === 'requested' ? (
+                              <button
+                                onClick={() => handleApproveRefundRequest(c.case_id)}
+                                disabled={approvingCaseId === c.case_id}
+                                className="shrink-0 px-3 py-1.5 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                              >
+                                {approvingCaseId === c.case_id ? 'Approving…' : 'Approve & Refund'}
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+
               {/* Refund Section */}
               {orderData.payment_status === 'paid' || orderData.payment_status === 'partially_refunded' ? (
                 <div className="border-t pt-4 mt-4">

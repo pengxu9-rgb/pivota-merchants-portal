@@ -713,6 +713,19 @@ class ApiClient {
     return response.data;
   }
 
+  async getOrderAfterSalesCases(orderId: string) {
+    const response = await this.client.get(`/merchant/orders/${orderId}/after-sales/cases`);
+    return response.data;
+  }
+
+  async approveAfterSalesCase(caseId: string, params?: { approved_refund_amount?: number; note?: string }) {
+    const response = await this.client.post(`/merchant/after-sales/cases/${caseId}/approve`, {
+      approved_refund_amount: params?.approved_refund_amount,
+      note: params?.note,
+    });
+    return response.data;
+  }
+
   // Generic HTTP methods
   async get(url: string, params?: any) {
     const response = await this.client.get(url, { params });
