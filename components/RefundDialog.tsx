@@ -58,7 +58,16 @@ export default function RefundDialog({ order, onClose, onRefund }: RefundDialogP
       await onRefund(refundAmount, reason);
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.detail || err.message || 'Failed to process refund');
+      const detail = err?.response?.data?.detail;
+      if (typeof detail === 'string') {
+        setError(detail);
+      } else if (detail && typeof detail === 'object') {
+        const msg = (detail.message || detail.error || 'Failed to process refund') as string;
+        const debugId = detail.debug_id ? ` (debug_id: ${detail.debug_id})` : '';
+        setError(`${msg}${debugId}`);
+      } else {
+        setError(err?.message || 'Failed to process refund');
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -188,4 +197,3 @@ export default function RefundDialog({ order, onClose, onRefund }: RefundDialogP
     </div>
   );
 }
-
