@@ -132,7 +132,16 @@ export default function OrdersPage() {
       loadOrders();
     } catch (error: any) {
       console.error('Failed to approve refund:', error);
-      alert(error.response?.data?.detail || 'Failed to approve refund');
+      const detail = error?.response?.data?.detail;
+      if (typeof detail === 'string') {
+        alert(detail);
+      } else if (detail && typeof detail === 'object') {
+        const msg = detail.message || detail.error || 'Failed to approve refund';
+        const debugId = detail.debug_id ? ` (debug_id: ${detail.debug_id})` : '';
+        alert(`${msg}${debugId}`);
+      } else {
+        alert('Failed to approve refund');
+      }
     } finally {
       setApprovingCaseId(null);
     }
