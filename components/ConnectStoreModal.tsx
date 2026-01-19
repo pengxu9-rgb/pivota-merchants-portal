@@ -119,7 +119,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
           if (installUrl) {
             setShopifyInstallUrl(installUrl);
             window.open(installUrl, '_blank', 'noopener,noreferrer');
-            alert('✅ Install link created. Complete the Shopify authorization, then return here and click "I\\'ve installed, refresh stores".');
+            alert(`✅ Install link created. Complete the Shopify authorization, then return here and click "I've installed, refresh stores".`);
           } else {
             alert('✅ Install link created, but no URL was returned. Please try again.');
           }
