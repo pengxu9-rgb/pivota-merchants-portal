@@ -21,7 +21,11 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
   
   // Form fields for different platforms
   const [shopifyDomain, setShopifyDomain] = useState('');
+  const [shopifyConnectMode, setShopifyConnectMode] = useState<'oauth' | 'custom_token'>('oauth');
   const [shopifyInstallUrl, setShopifyInstallUrl] = useState('');
+  const [shopifyAdminToken, setShopifyAdminToken] = useState('');
+  const [shopifyWebhookSecret, setShopifyWebhookSecret] = useState('');
+  const [shopifyStorefrontToken, setShopifyStorefrontToken] = useState('');
   
   const [wixSiteId, setWixSiteId] = useState('');
   const [wixApiKey, setWixApiKey] = useState('');
@@ -50,11 +54,22 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
 
       switch (platform) {
         case 'shopify':
-          endpoint = 'https://web-production-fedb.up.railway.app/integrations/shopify/install-links';
-          payload = {
-            merchant_id: merchantId,
-            shop_domain: shopifyDomain,
-          };
+          if (shopifyConnectMode === 'custom_token') {
+            endpoint = 'https://web-production-fedb.up.railway.app/integrations/shopify/connect';
+            payload = {
+              merchant_id: merchantId,
+              shop_domain: shopifyDomain,
+              access_token: shopifyAdminToken,
+              webhook_secret: shopifyWebhookSecret || undefined,
+              storefront_access_token: shopifyStorefrontToken || undefined,
+            };
+          } else {
+            endpoint = 'https://web-production-fedb.up.railway.app/integrations/shopify/install-links';
+            payload = {
+              merchant_id: merchantId,
+              shop_domain: shopifyDomain,
+            };
+          }
           break;
 
         case 'wix':
@@ -115,13 +130,21 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
 
       if (response.ok) {
         if (platform === 'shopify') {
-          const installUrl = data?.install_url || '';
-          if (installUrl) {
-            setShopifyInstallUrl(installUrl);
-            window.open(installUrl, '_blank', 'noopener,noreferrer');
-            alert(`✅ Install link created. Complete the Shopify authorization, then return here and click "I've installed, refresh stores".`);
+          if (shopifyConnectMode === 'custom_token') {
+            alert('✅ Shopify store connected successfully!');
+            onSuccess();
+            handleClose();
           } else {
-            alert('✅ Install link created, but no URL was returned. Please try again.');
+            const installUrl = data?.install_url || '';
+            if (installUrl) {
+              setShopifyInstallUrl(installUrl);
+              window.open(installUrl, '_blank', 'noopener,noreferrer');
+              alert(
+                `✅ Install link created. Complete the Shopify authorization, then return here and click "I've installed, refresh stores".`
+              );
+            } else {
+              alert('✅ Install link created, but no URL was returned. Please try again.');
+            }
           }
         } else {
           alert(`✅ ${platform.charAt(0).toUpperCase() + platform.slice(1)} store connected successfully!`);
@@ -141,7 +164,11 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
   const handleClose = () => {
     setPlatform('');
     setShopifyDomain('');
+    setShopifyConnectMode('oauth');
     setShopifyInstallUrl('');
+    setShopifyAdminToken('');
+    setShopifyWebhookSecret('');
+    setShopifyStorefrontToken('');
     setWixSiteId('');
     setWixApiKey('');
     setWixStoreName('');
@@ -211,48 +238,132 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                   required
                 />
               </div>
-              <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
-                We will generate a secure install link and open Shopify for authorization. No Admin API token required.
-                Use the store's MyShopify domain. Install links are one-time use.
-              </div>
-              {shopifyInstallUrl ? (
-                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                  <div className="text-xs text-gray-500 mb-2">Install link (valid for ~15 minutes, one-time use)</div>
-                  <div className="flex items-center gap-2">
+
+              <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                <div className="text-sm font-medium text-gray-700 mb-2">Connection method</div>
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-start gap-2 cursor-pointer">
                     <input
-                      type="text"
-                      readOnly
-                      value={shopifyInstallUrl}
-                      className="w-full px-3 py-2 border rounded-lg bg-white text-xs"
+                      type="radio"
+                      name="shopifyConnectMode"
+                      value="oauth"
+                      checked={shopifyConnectMode === 'oauth'}
+                      onChange={() => {
+                        setShopifyConnectMode('oauth');
+                        setShopifyAdminToken('');
+                      }}
+                      className="mt-1"
                     />
-                    <button
-                      type="button"
-                      onClick={() => navigator.clipboard.writeText(shopifyInstallUrl)}
-                      className="inline-flex items-center px-2 py-2 rounded-lg border text-gray-600 hover:text-gray-900"
-                      title="Copy"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => window.open(shopifyInstallUrl, '_blank', 'noopener,noreferrer')}
-                      className="inline-flex items-center px-2 py-2 rounded-lg border text-blue-600 hover:text-blue-800"
-                      title="Open"
-                    >
-                      <LinkIcon className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="mt-3 flex items-center justify-end">
-                    <button
-                      type="button"
-                      onClick={handleShopifyInstalled}
-                      className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700 hover:bg-blue-100"
-                    >
-                      I've installed, refresh stores
-                    </button>
-                  </div>
+                    <div className="text-sm">
+                      <div className="font-medium text-gray-900">Pivota app (OAuth) — recommended</div>
+                      <div className="text-gray-600">
+                        Generates a one-time install link and opens Shopify for authorization. No Admin API token required.
+                      </div>
+                    </div>
+                  </label>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="shopifyConnectMode"
+                      value="custom_token"
+                      checked={shopifyConnectMode === 'custom_token'}
+                      onChange={() => {
+                        setShopifyConnectMode('custom_token');
+                        setShopifyInstallUrl('');
+                      }}
+                      className="mt-1"
+                    />
+                    <div className="text-sm">
+                      <div className="font-medium text-gray-900">Custom app token (manual)</div>
+                      <div className="text-gray-600">Use when public app install is unavailable (e.g. pending review).</div>
+                    </div>
+                  </label>
                 </div>
-              ) : null}
+              </div>
+
+              {shopifyConnectMode === 'oauth' ? (
+                <>
+                  <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+                    Use the store&apos;s MyShopify domain. Install links are one-time use.
+                  </div>
+                  {shopifyInstallUrl ? (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                      <div className="text-xs text-gray-500 mb-2">Install link (valid for ~15 minutes, one-time use)</div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={shopifyInstallUrl}
+                          className="w-full px-3 py-2 border rounded-lg bg-white text-xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard.writeText(shopifyInstallUrl)}
+                          className="inline-flex items-center px-2 py-2 rounded-lg border text-gray-600 hover:text-gray-900"
+                          title="Copy"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => window.open(shopifyInstallUrl, '_blank', 'noopener,noreferrer')}
+                          className="inline-flex items-center px-2 py-2 rounded-lg border text-blue-600 hover:text-blue-800"
+                          title="Open"
+                        >
+                          <LinkIcon className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="mt-3 flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={handleShopifyInstalled}
+                          className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700 hover:bg-blue-100"
+                        >
+                          I&apos;ve installed, refresh stores
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Admin API Access Token *</label>
+                    <input
+                      type="password"
+                      value={shopifyAdminToken}
+                      onChange={(e) => setShopifyAdminToken(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
+                      placeholder="shpat_..."
+                      required
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Get from Shopify Admin → Apps → Develop apps → Your app → Admin API access token</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Webhook secret (optional)</label>
+                    <input
+                      type="password"
+                      value={shopifyWebhookSecret}
+                      onChange={(e) => setShopifyWebhookSecret(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
+                      placeholder="API secret key (only if using this custom app for webhooks)"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Only needed if webhooks are created by this custom app and you want Pivota to verify their HMAC signatures.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Storefront access token (optional)</label>
+                    <input
+                      type="password"
+                      value={shopifyStorefrontToken}
+                      onChange={(e) => setShopifyStorefrontToken(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
+                      placeholder="shpat_... (Storefront) / storefront token"
+                    />
+                  </div>
+                </>
+              )}
             </>
           )}
 
@@ -436,18 +547,34 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
             </button>
             <button
               type="submit"
-              disabled={loading || !platform}
+              disabled={
+                loading ||
+                !platform ||
+                (platform === 'shopify' &&
+                  (!shopifyDomain.trim() ||
+                    (shopifyConnectMode === 'custom_token' && !shopifyAdminToken.trim())))
+              }
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>{platform === 'shopify' ? 'Generating link...' : 'Connecting...'}</span>
+                  <span>
+                    {platform === 'shopify' && shopifyConnectMode === 'oauth'
+                      ? 'Generating link...'
+                      : 'Connecting...'}
+                  </span>
                 </>
               ) : (
                 <>
                   <Store className="w-4 h-4" />
-                  <span>{platform === 'shopify' ? 'Generate Install Link' : 'Connect Store'}</span>
+                  <span>
+                    {platform === 'shopify'
+                      ? shopifyConnectMode === 'oauth'
+                        ? 'Generate Install Link'
+                        : 'Connect Store'
+                      : 'Connect Store'}
+                  </span>
                 </>
               )}
             </button>
