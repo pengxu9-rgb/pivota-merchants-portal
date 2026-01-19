@@ -119,7 +119,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
           if (installUrl) {
             setShopifyInstallUrl(installUrl);
             window.open(installUrl, '_blank', 'noopener,noreferrer');
-            alert('✅ Install link created. Complete the Shopify authorization in the new tab.');
+            alert('✅ Install link created. Complete the Shopify authorization, then return here and click "I\\'ve installed, refresh stores".');
           } else {
             alert('✅ Install link created, but no URL was returned. Please try again.');
           }
@@ -154,6 +154,11 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
     setPsStoreUrl('');
     setPsApiKey('');
     onClose();
+  };
+
+  const handleShopifyInstalled = async () => {
+    await onSuccess();
+    handleClose();
   };
 
   return (
@@ -208,6 +213,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
               </div>
               <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
                 We will generate a secure install link and open Shopify for authorization. No Admin API token required.
+                Use the store's MyShopify domain. Install links are one-time use.
               </div>
               {shopifyInstallUrl ? (
                 <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
@@ -234,6 +240,15 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                       title="Open"
                     >
                       <LinkIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="mt-3 flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={handleShopifyInstalled}
+                      className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700 hover:bg-blue-100"
+                    >
+                      I've installed, refresh stores
                     </button>
                   </div>
                 </div>
