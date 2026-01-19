@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { X, Store, Loader2 } from 'lucide-react';
+import { X, Store, Loader2, Link as LinkIcon, Copy } from 'lucide-react';
 
 interface ConnectStoreModalProps {
   isOpen: boolean;
@@ -21,7 +21,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
   
   // Form fields for different platforms
   const [shopifyDomain, setShopifyDomain] = useState('');
-  const [shopifyToken, setShopifyToken] = useState('');
+  const [shopifyInstallUrl, setShopifyInstallUrl] = useState('');
   
   const [wixSiteId, setWixSiteId] = useState('');
   const [wixApiKey, setWixApiKey] = useState('');
@@ -50,11 +50,10 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
 
       switch (platform) {
         case 'shopify':
-          endpoint = 'https://web-production-fedb.up.railway.app/integrations/shopify/connect';
+          endpoint = 'https://web-production-fedb.up.railway.app/integrations/shopify/install-links';
           payload = {
             merchant_id: merchantId,
             shop_domain: shopifyDomain,
-            access_token: shopifyToken
           };
           break;
 
@@ -115,9 +114,20 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
       const data = await response.json();
 
       if (response.ok) {
-        alert(`✅ ${platform.charAt(0).toUpperCase() + platform.slice(1)} store connected successfully!`);
-        onSuccess();
-        handleClose();
+        if (platform === 'shopify') {
+          const installUrl = data?.install_url || '';
+          if (installUrl) {
+            setShopifyInstallUrl(installUrl);
+            window.open(installUrl, '_blank', 'noopener,noreferrer');
+            alert('✅ Install link created. Complete the Shopify authorization in the new tab.');
+          } else {
+            alert('✅ Install link created, but no URL was returned. Please try again.');
+          }
+        } else {
+          alert(`✅ ${platform.charAt(0).toUpperCase() + platform.slice(1)} store connected successfully!`);
+          onSuccess();
+          handleClose();
+        }
       } else {
         alert(`❌ Failed: ${data.detail || data.message || 'Unknown error'}`);
       }
@@ -131,7 +141,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
   const handleClose = () => {
     setPlatform('');
     setShopifyDomain('');
-    setShopifyToken('');
+    setShopifyInstallUrl('');
     setWixSiteId('');
     setWixApiKey('');
     setWixStoreName('');
@@ -196,22 +206,38 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                   required
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Admin API Access Token *
-                </label>
-                <input
-                  type="password"
-                  value={shopifyToken}
-                  onChange={(e) => setShopifyToken(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
-                  placeholder="shpat_..."
-                  required
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Get from Shopify Admin → Apps → Develop apps
-                </p>
+              <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+                We will generate a secure install link and open Shopify for authorization. No Admin API token required.
               </div>
+              {shopifyInstallUrl ? (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <div className="text-xs text-gray-500 mb-2">Install link (valid for ~15 minutes, one-time use)</div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={shopifyInstallUrl}
+                      className="w-full px-3 py-2 border rounded-lg bg-white text-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(shopifyInstallUrl)}
+                      className="inline-flex items-center px-2 py-2 rounded-lg border text-gray-600 hover:text-gray-900"
+                      title="Copy"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => window.open(shopifyInstallUrl, '_blank', 'noopener,noreferrer')}
+                      className="inline-flex items-center px-2 py-2 rounded-lg border text-blue-600 hover:text-blue-800"
+                      title="Open"
+                    >
+                      <LinkIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </>
           )}
 
@@ -401,12 +427,12 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Connecting...</span>
+                  <span>{platform === 'shopify' ? 'Generating link...' : 'Connecting...'}</span>
                 </>
               ) : (
                 <>
                   <Store className="w-4 h-4" />
-                  <span>Connect Store</span>
+                  <span>{platform === 'shopify' ? 'Generate Install Link' : 'Connect Store'}</span>
                 </>
               )}
             </button>
