@@ -6,14 +6,8 @@ import {
   CreditCard,
   Plus,
   Settings,
-  Check,
-  X,
   Loader2,
-  RefreshCw,
-  Link as LinkIcon,
-  AlertCircle,
   Copy,
-  Key,
   Webhook,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
@@ -36,11 +30,12 @@ export default function IntegrationsPage() {
   const [showConnectStore, setShowConnectStore] = useState(false);
   const [showConnectPSP, setShowConnectPSP] = useState(false);
   const [selectedPSPProvider, setSelectedPSPProvider] = useState<string>('');
-  const [syncing, setSyncing] = useState(false);
   const [syncingStoreId, setSyncingStoreId] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
 
   const primaryStoreId = connectedStores.find((s) => s?.is_active)?.id || null;
+  const activePSPCount = connectedPSPs.filter((p) => p.is_active).length;
+  const showRoutingTab = activePSPCount > 1;
 
   useEffect(() => {
     const id = localStorage.getItem('merchant_id') || '';
@@ -201,62 +196,80 @@ export default function IntegrationsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Integrations</h1>
-        <p className="text-gray-600">Connect your stores, payment processors, and configure webhooks</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Integrations</h1>
+        <p className="text-sm sm:text-base text-gray-600">
+          Connect your stores, payment processors, and configure webhooks
+        </p>
       </div>
 
 
       {/* Tabs */}
       <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
+        <nav
+          className={`-mb-px grid ${
+            showRoutingTab ? 'grid-cols-4' : 'grid-cols-3'
+          } gap-1 sm:flex sm:gap-8`}
+        >
           <button
             onClick={() => setActiveTab('stores')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+            className={`flex flex-col items-center justify-center gap-1 py-2 px-1 border-b-2 font-medium text-xs sm:flex-row sm:justify-start sm:text-sm ${
               activeTab === 'stores'
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            <Store className="w-4 h-4 inline mr-2" />
-            Stores ({connectedStores.length})
+            <Store className="w-4 h-4 sm:mr-2" />
+            <span className="leading-tight text-center sm:text-left">
+              <span className="hidden sm:inline">Stores ({connectedStores.length})</span>
+              <span className="sm:hidden">Stores</span>
+              <span className="sm:hidden block text-[11px] text-gray-500">({connectedStores.length})</span>
+            </span>
           </button>
           <button
             onClick={() => setActiveTab('psps')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+            className={`flex flex-col items-center justify-center gap-1 py-2 px-1 border-b-2 font-medium text-xs sm:flex-row sm:justify-start sm:text-sm ${
               activeTab === 'psps'
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            <CreditCard className="w-4 h-4 inline mr-2" />
-            Payment Processors ({connectedPSPs.filter(p => p.is_active).length})
+            <CreditCard className="w-4 h-4 sm:mr-2" />
+            <span className="leading-tight text-center sm:text-left">
+              <span className="hidden sm:inline">Payment Processors ({activePSPCount})</span>
+              <span className="sm:hidden">PSPs</span>
+              <span className="sm:hidden block text-[11px] text-gray-500">({activePSPCount})</span>
+            </span>
           </button>
-          {connectedPSPs.filter(p => p.is_active).length > 1 && (
+          {showRoutingTab && (
             <button
               onClick={() => setActiveTab('routing')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              className={`flex flex-col items-center justify-center gap-1 py-2 px-1 border-b-2 font-medium text-xs sm:flex-row sm:justify-start sm:text-sm ${
                 activeTab === 'routing'
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              <Settings className="w-4 h-4 inline mr-2" />
+              <Settings className="w-4 h-4 sm:mr-2" />
               Routing
             </button>
           )}
           <button
             onClick={() => setActiveTab('webhooks')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+            className={`flex flex-col items-center justify-center gap-1 py-2 px-1 border-b-2 font-medium text-xs sm:flex-row sm:justify-start sm:text-sm ${
               activeTab === 'webhooks'
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            <Webhook className="w-4 h-4 inline mr-2" />
-            API & Webhooks
+            <Webhook className="w-4 h-4 sm:mr-2" />
+            <span className="leading-tight text-center sm:text-left">
+              <span className="hidden sm:inline">API & Webhooks</span>
+              <span className="sm:hidden">API</span>
+              <span className="sm:hidden block text-[11px] text-transparent">.</span>
+            </span>
           </button>
         </nav>
       </div>
@@ -266,28 +279,29 @@ export default function IntegrationsPage() {
         <div className="space-y-6">
           {/* Connected Stores */}
           <div className="bg-white rounded-lg shadow">
-            <div className="px-6 py-4 border-b flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Connected Stores</h2>
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-base sm:text-lg font-semibold">Connected Stores</h2>
               <button
                 onClick={() => setShowConnectStore(true)}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
               >
                 <Plus className="w-4 h-4" />
-                <span>Connect Store</span>
+                <span className="hidden sm:inline">Connect Store</span>
+                <span className="sm:hidden">Connect</span>
               </button>
             </div>
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               {connectedStores.length > 0 ? (
                 <div className="space-y-4">
                   {connectedStores.map((store, index) => (
                     <div key={index} className="border rounded-lg p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                           <div className="p-2 bg-blue-100 rounded-lg">
                             <Store className="w-6 h-6 text-blue-600" />
                           </div>
-                          <div>
-                            <h3 className="font-medium text-gray-900">
+                          <div className="min-w-0">
+                            <h3 className="font-medium text-gray-900 truncate">
                               {store.store_name || store.domain || 'Store ' + (index + 1)}
                               {primaryStoreId && store.id === primaryStoreId && (
                                 <span className="ml-2 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full">
@@ -295,41 +309,51 @@ export default function IntegrationsPage() {
                                 </span>
                               )}
                             </h3>
-                            <p className="text-sm text-gray-600">
+                            <p className="text-xs sm:text-sm text-gray-600">
                               Platform: <span className="capitalize">{store.platform}</span> • 
                               Products: {store.product_count || 0}
                             </p>
                             {store.domain && (
-                              <p className="text-xs text-gray-500 mt-1">{store.domain}</p>
+                              <p className="text-xs text-gray-500 mt-1 break-all">{store.domain}</p>
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <span className="px-3 py-1 bg-green-100 text-green-700 text-sm rounded-full">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs sm:text-sm rounded-full">
                             Active
                           </span>
                           {store?.is_active && primaryStoreId && store.id !== primaryStoreId && (
                             <button
                               onClick={() => handleSetPrimaryStore(store)}
-                              className="px-3 py-1 bg-purple-600 text-white text-sm rounded hover:bg-purple-700"
+                              className="px-2.5 sm:px-3 py-1 bg-purple-600 text-white text-xs sm:text-sm rounded hover:bg-purple-700"
                             >
-                              Make Primary
+                              <span className="hidden sm:inline">Make Primary</span>
+                              <span className="sm:hidden">Primary</span>
                             </button>
                           )}
                           {(store.platform === 'shopify' || store.platform === 'wix') && (
                             <button
                               onClick={() => handleSyncProducts(store)}
                               disabled={syncingStoreId === store.id}
-                              className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
+                              className="px-2.5 sm:px-3 py-1 bg-blue-600 text-white text-xs sm:text-sm rounded hover:bg-blue-700 disabled:opacity-50"
+                              aria-label="Sync products"
                             >
-                              {syncingStoreId === store.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Sync Products'}
+                              {syncingStoreId === store.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <span className="hidden sm:inline">Sync Products</span>
+                                  <span className="sm:hidden">Sync</span>
+                                </>
+                              )}
                             </button>
                           )}
                           <button
                             onClick={() => handleDeleteStore(store)}
-                            className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                            className="px-2.5 sm:px-3 py-1 bg-red-600 text-white text-xs sm:text-sm rounded hover:bg-red-700"
                           >
-                            Delete
+                            <span className="hidden sm:inline">Delete</span>
+                            <span className="sm:hidden">Del</span>
                           </button>
                         </div>
                       </div>
@@ -366,50 +390,52 @@ export default function IntegrationsPage() {
         <div className="space-y-6">
           {/* Connected PSPs */}
           <div className="bg-white rounded-lg shadow">
-            <div className="px-6 py-4 border-b flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Payment Processors</h2>
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-base sm:text-lg font-semibold">Payment Processors</h2>
               <button
                 onClick={() => setShowConnectPSP(true)}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
               >
                 <Plus className="w-4 h-4" />
-                <span>Connect PSP</span>
+                <span className="hidden sm:inline">Connect PSP</span>
+                <span className="sm:hidden">Connect</span>
               </button>
             </div>
-            <div className="p-6">
-              {connectedPSPs.filter(p => p.is_active).length > 0 ? (
+            <div className="p-4 sm:p-6">
+              {activePSPCount > 0 ? (
                 <div className="space-y-4">
-                  {connectedPSPs.filter(p => p.is_active).map((psp) => (
+                  {connectedPSPs.filter((p) => p.is_active).map((psp) => (
                     <div key={psp.id} className="border rounded-lg p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                           <div className="p-2 bg-purple-100 rounded-lg">
                             <CreditCard className="w-6 h-6 text-purple-600" />
                           </div>
-                          <div>
-                            <h3 className="font-medium text-gray-900">{psp.name}</h3>
-                            <p className="text-sm text-gray-600">
+                          <div className="min-w-0">
+                            <h3 className="font-medium text-gray-900 truncate">{psp.name}</h3>
+                            <p className="text-xs sm:text-sm text-gray-600">
                               Success Rate: {psp.success_rate || 0}% • 
                               Volume: ${psp.volume_today || 0}
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <span className="px-3 py-1 bg-green-100 text-green-700 text-sm rounded-full">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs sm:text-sm rounded-full">
                             Active
                           </span>
                           <button
                             onClick={() => handleTestPSP(psp.id)}
                             disabled={testing === psp.id}
-                            className="px-3 py-1 border rounded text-sm hover:bg-gray-50 disabled:opacity-50"
+                            className="px-2.5 sm:px-3 py-1 border rounded text-xs sm:text-sm hover:bg-gray-50 disabled:opacity-50"
                           >
                             {testing === psp.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Test'}
                           </button>
                           <button
                             onClick={() => handleDeletePSP(psp)}
-                            className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                            className="px-2.5 sm:px-3 py-1 bg-red-600 text-white text-xs sm:text-sm rounded hover:bg-red-700"
                           >
-                            Delete
+                            <span className="hidden sm:inline">Delete</span>
+                            <span className="sm:hidden">Del</span>
                           </button>
                         </div>
                       </div>
@@ -505,16 +531,16 @@ export default function IntegrationsPage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Your API Key</label>
-                <div className="flex items-center space-x-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
                   <input
                     type="text"
                     value={apiKey}
                     readOnly
-                    className="flex-1 px-3 py-2 bg-gray-50 border rounded-lg font-mono text-sm"
+                    className="w-full sm:flex-1 px-3 py-2 bg-gray-50 border rounded-lg font-mono text-sm"
                   />
                   <button
                     onClick={() => copyToClipboard(apiKey)}
-                    className="px-3 py-2 border rounded-lg hover:bg-gray-50"
+                    className="w-full sm:w-auto px-3 py-2 border rounded-lg hover:bg-gray-50 flex items-center justify-center"
                   >
                     <Copy className="w-4 h-4" />
                   </button>
@@ -529,17 +555,17 @@ export default function IntegrationsPage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Webhook URL</label>
-                <div className="flex items-center space-x-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
                   <input
                     type="text"
                     value={webhookConfig?.url || ''}
                     placeholder="https://your-domain.com/webhooks/pivota"
-                    className="flex-1 px-3 py-2 border rounded-lg"
+                    className="w-full sm:flex-1 px-3 py-2 border rounded-lg"
                     readOnly
                   />
                   <button
                     onClick={handleSaveWebhook}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
                   >
                     Configure
                   </button>
