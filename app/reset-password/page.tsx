@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Lock, AlertCircle, CheckCircle } from 'lucide-react';
+import { API_CONFIG } from '@/lib/config';
 
 function ResetPasswordForm() {
   const router = useRouter();
@@ -41,7 +42,7 @@ function ResetPasswordForm() {
     try {
       setLoading(true);
       
-      const response = await fetch('https://web-production-fedb.up.railway.app/api/auth/reset-password', {
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.RESET_PASSWORD}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -157,6 +158,5 @@ export default function ResetPasswordPage() {
     </Suspense>
   );
 }
-
 
 

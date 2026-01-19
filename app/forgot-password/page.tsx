@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Mail, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
+import { API_CONFIG } from '@/lib/config';
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
@@ -19,7 +20,7 @@ export default function ForgotPasswordPage() {
     try {
       setLoading(true);
       
-      const response = await fetch('https://web-production-fedb.up.railway.app/api/auth/forgot-password', {
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.FORGOT_PASSWORD}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -122,7 +123,6 @@ export default function ForgotPasswordPage() {
     </div>
   );
 }
-
 
 
 

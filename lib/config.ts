@@ -4,6 +4,9 @@ export const API_CONFIG = {
   ENDPOINTS: {
     // Auth
     LOGIN: '/api/auth/login',
+    FORGOT_PASSWORD: '/api/auth/forgot-password',
+    RESET_PASSWORD: '/api/auth/reset-password',
+    CHANGE_PASSWORD: '/api/auth/change-password',
     REGISTER: '/merchant/onboarding/register',
     LOGOUT: '/auth/signout',
     
@@ -18,6 +21,8 @@ export const API_CONFIG = {
     PRODUCT_UPDATE: '/products/:id',
     PRODUCT_DELETE: '/products/:id',
     SYNC_SHOPIFY: '/merchant/integrations/shopify/sync',
+    SYNC_SHOPIFY_STATUS: '/merchant/integrations/shopify/sync/status',
+    SYNC_WIX: '/merchant/integrations/wix/sync',
     
     // Orders
     ORDERS_LIST: '/orders',
@@ -27,9 +32,14 @@ export const API_CONFIG = {
     
     // Integrations
     SHOPIFY_CONNECT: '/integrations/shopify/connect',
+    SHOPIFY_INSTALL_LINKS: '/integrations/shopify/install-links',
+    SHOPIFY_OAUTH_START: '/integrations/shopify/oauth/start',
     SHOPIFY_DISCONNECT: '/integrations/shopify/disconnect',
     WIX_CONNECT: '/integrations/wix/connect',
     WIX_DISCONNECT: '/integrations/wix/disconnect',
+    WOOCOMMERCE_CONNECT: '/integrations/woocommerce/connect',
+    BIGCOMMERCE_CONNECT: '/integrations/bigcommerce/connect',
+    PRESTASHOP_CONNECT: '/integrations/prestashop/connect',
     STORES_LIST: '/merchant/:merchantId/integrations',
     
     // PSP

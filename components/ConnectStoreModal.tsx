@@ -7,6 +7,7 @@
 
 import { useState } from 'react';
 import { X, Store, Loader2, Link as LinkIcon, Copy } from 'lucide-react';
+import { API_CONFIG } from '@/lib/config';
 
 interface ConnectStoreModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ interface ConnectStoreModalProps {
 export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchantId }: ConnectStoreModalProps) {
   const [platform, setPlatform] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const baseUrl = API_CONFIG.BASE_URL;
   
   // Form fields for different platforms
   const [shopifyDomain, setShopifyDomain] = useState('');
@@ -55,7 +57,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
       switch (platform) {
         case 'shopify':
           if (shopifyConnectMode === 'custom_token') {
-            endpoint = 'https://web-production-fedb.up.railway.app/integrations/shopify/connect';
+            endpoint = `${baseUrl}${API_CONFIG.ENDPOINTS.SHOPIFY_CONNECT}`;
             payload = {
               merchant_id: merchantId,
               shop_domain: shopifyDomain,
@@ -64,7 +66,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
               storefront_access_token: shopifyStorefrontToken || undefined,
             };
           } else {
-            endpoint = 'https://web-production-fedb.up.railway.app/integrations/shopify/install-links';
+            endpoint = `${baseUrl}${API_CONFIG.ENDPOINTS.SHOPIFY_INSTALL_LINKS}`;
             payload = {
               merchant_id: merchantId,
               shop_domain: shopifyDomain,
@@ -73,7 +75,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
           break;
 
         case 'wix':
-          endpoint = 'https://web-production-fedb.up.railway.app/integrations/wix/connect';
+          endpoint = `${baseUrl}${API_CONFIG.ENDPOINTS.WIX_CONNECT}`;
           payload = {
             merchant_id: merchantId,
             site_id: wixSiteId,
@@ -83,7 +85,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
           break;
 
         case 'woocommerce':
-          endpoint = 'https://web-production-fedb.up.railway.app/integrations/woocommerce/connect';
+          endpoint = `${baseUrl}${API_CONFIG.ENDPOINTS.WOOCOMMERCE_CONNECT}`;
           payload = {
             merchant_id: merchantId,
             store_url: wooStoreUrl,
@@ -93,7 +95,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
           break;
 
         case 'bigcommerce':
-          endpoint = 'https://web-production-fedb.up.railway.app/integrations/bigcommerce/connect';
+          endpoint = `${baseUrl}${API_CONFIG.ENDPOINTS.BIGCOMMERCE_CONNECT}`;
           payload = {
             merchant_id: merchantId,
             store_hash: bcStoreHash,
@@ -103,7 +105,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
           break;
 
         case 'prestashop':
-          endpoint = 'https://web-production-fedb.up.railway.app/integrations/prestashop/connect';
+          endpoint = `${baseUrl}${API_CONFIG.ENDPOINTS.PRESTASHOP_CONNECT}`;
           payload = {
             merchant_id: merchantId,
             store_url: psStoreUrl,

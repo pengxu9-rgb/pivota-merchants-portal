@@ -13,6 +13,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { API_CONFIG } from '@/lib/config';
 
 export default function MCPPage() {
   const [loading, setLoading] = useState(true);
@@ -237,7 +238,7 @@ export default function MCPPage() {
 
       // Check if any store is connected
       const response = await fetch(
-        `https://web-production-fedb.up.railway.app/merchant/${merchantId}/integrations`,
+        `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.STORES_LIST.replace(':merchantId', merchantId)}`,
         {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('merchant_token')}`
@@ -275,7 +276,7 @@ export default function MCPPage() {
 
       // Check which stores are connected
       const storesResponse = await fetch(
-        `https://web-production-fedb.up.railway.app/merchant/${merchantId}/integrations`,
+        `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.STORES_LIST.replace(':merchantId', merchantId)}`,
         {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('merchant_token')}`
@@ -300,7 +301,7 @@ export default function MCPPage() {
         if (store.platform === 'shopify') {
           try {
             const syncResponse = await fetch(
-              'https://web-production-fedb.up.railway.app/merchant/integrations/shopify/sync',
+              `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.SYNC_SHOPIFY}`,
               {
                 method: 'POST',
                 headers: {
@@ -327,7 +328,7 @@ export default function MCPPage() {
         } else if (store.platform === 'wix') {
           try {
             const syncResponse = await fetch(
-              'https://web-production-fedb.up.railway.app/merchant/integrations/wix/sync',
+              `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.SYNC_WIX}`,
               {
                 method: 'POST',
                 headers: {
@@ -379,7 +380,7 @@ export default function MCPPage() {
       const poll = async (): Promise<void> => {
         try {
           const statusResp = await fetch(
-            'https://web-production-fedb.up.railway.app/merchant/integrations/shopify/sync/status',
+            `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.SYNC_SHOPIFY_STATUS}`,
             {
               headers: {
                 'Authorization': `Bearer ${localStorage.getItem('merchant_token')}`,

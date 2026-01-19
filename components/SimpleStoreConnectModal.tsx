@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { X, Store } from 'lucide-react';
+import { API_CONFIG } from '@/lib/config';
 
 interface SimpleStoreConnectModalProps {
   isOpen: boolean;
@@ -58,7 +59,7 @@ export default function SimpleStoreConnectModal({
         };
       }
 
-      const response = await fetch(`https://web-production-fedb.up.railway.app${endpoint}`, {
+      const response = await fetch(`${API_CONFIG.BASE_URL}${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -200,7 +201,6 @@ export default function SimpleStoreConnectModal({
     </div>
   );
 }
-
 
 
 

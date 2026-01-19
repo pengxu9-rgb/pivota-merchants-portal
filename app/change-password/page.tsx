@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Lock, AlertCircle, CheckCircle } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { API_CONFIG } from '@/lib/config';
 
 export default function ChangePasswordPage() {
   const router = useRouter();
@@ -33,7 +33,7 @@ export default function ChangePasswordPage() {
     try {
       setLoading(true);
       
-      const response = await fetch('https://web-production-fedb.up.railway.app/api/auth/change-password', {
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.CHANGE_PASSWORD}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -157,4 +157,3 @@ export default function ChangePasswordPage() {
     </div>
   );
 }
-

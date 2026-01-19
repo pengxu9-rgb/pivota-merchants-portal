@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Store, Loader, AlertCircle, CheckCircle, ArrowRight, Code } from 'lucide-react';
+import { API_CONFIG } from '@/lib/config';
 
 interface StoreConnectionStepProps {
   merchantId: string;
@@ -69,7 +70,7 @@ export default function StoreConnectionStep({ merchantId, storeUrl, onComplete, 
       try {
         const shopDomain = storeUrl.replace('https://', '').replace('http://', '').split('/')[0];
         const response = await fetch(
-          `https://web-production-fedb.up.railway.app/integrations/shopify/oauth/start?merchant_id=${merchantId}&shop=${shopDomain}`
+          `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.SHOPIFY_OAUTH_START}?merchant_id=${merchantId}&shop=${shopDomain}`
         );
         const data = await response.json();
         
