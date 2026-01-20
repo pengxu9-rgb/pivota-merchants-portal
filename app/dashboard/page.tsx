@@ -27,11 +27,19 @@ export default function DashboardPage() {
   const [qualityLoading, setQualityLoading] = useState(false);
   const [merchantId, setMerchantId] = useState<string>('');
   const loadSeqRef = useRef(0);
-  const revenueOverrideRef = useRef<{ loadSeq: number; revenue: number; growth: number } | null>(null);
+  const periodOverrideRef = useRef<{
+    loadSeq: number;
+    totalOrders: number;
+    paidOrders: number;
+    orderGrowth: number;
+    revenue: number;
+    revenueGrowth: number;
+  } | null>(null);
   
   // Dashboard data
   const [stats, setStats] = useState({
     totalOrders: 0,
+    paidOrders: 0,
     totalRevenue: 0,
     totalCustomers: 0,
     totalProducts: 0,
@@ -65,7 +73,7 @@ export default function DashboardPage() {
   const loadDashboardData = async (merchantId: string) => {
     const loadSeq = ++loadSeqRef.current;
     let analyticsSucceeded = false;
-    revenueOverrideRef.current = null;
+    periodOverrideRef.current = null;
     try {
       setAnalyticsError(null);
       setLoading(true);
@@ -175,6 +183,22 @@ export default function DashboardPage() {
           if (!analyticsData) return;
           analyticsSucceeded = true;
 
+          const analyticsTotalOrders =
+            analyticsData?.total_orders_placed ??
+            analyticsData?.total_orders ??
+            analyticsData?.orders?.total ??
+            analyticsData?.order_breakdown?.total ??
+            analyticsData?.total_order_attempts ??
+            null;
+
+          const analyticsPaidOrders =
+            analyticsData?.total_payments_succeeded ??
+            analyticsData?.total_transactions ??
+            analyticsData?.orders?.paid ??
+            analyticsData?.order_breakdown?.paid ??
+            analyticsData?.total_paid_orders ??
+            null;
+
           const analyticsPaidRevenue =
             analyticsData?.revenue_breakdown?.confirmed ??
             analyticsData?.revenue_breakdown?.paid ??
@@ -190,21 +214,22 @@ export default function DashboardPage() {
             analyticsData?.net_revenue_growth ??
             null;
 
-          const override = revenueOverrideRef.current;
+          const override = periodOverrideRef.current;
 
           setStats(prev => ({
             ...prev,
-            totalOrders: analyticsData.total_orders ?? prev.totalOrders,
+            totalOrders: override?.loadSeq === loadSeq ? override.totalOrders : analyticsTotalOrders ?? prev.totalOrders,
+            paidOrders: override?.loadSeq === loadSeq ? override.paidOrders : analyticsPaidOrders ?? prev.paidOrders,
             totalRevenue:
               override?.loadSeq === loadSeq
                 ? override.revenue
                 : analyticsPaidRevenue ?? analyticsData.total_revenue ?? prev.totalRevenue,
             totalCustomers: analyticsData.total_customers ?? prev.totalCustomers,
             totalProducts: analyticsData.total_products ?? prev.totalProducts,
-            orderGrowth: analyticsData.order_growth ?? prev.orderGrowth,
+            orderGrowth: override?.loadSeq === loadSeq ? override.orderGrowth : analyticsData.order_growth ?? prev.orderGrowth,
             revenueGrowth:
               override?.loadSeq === loadSeq
-                ? override.growth
+                ? override.revenueGrowth
                 : analyticsPaidRevenueGrowth ?? analyticsData.revenue_growth ?? prev.revenueGrowth,
           }));
 
@@ -286,7 +311,7 @@ export default function DashboardPage() {
         return Number.isFinite(amount) ? amount : 0;
       };
 
-      const computePaidRevenueFromOrders = async () => {
+      const computePaidPeriodStatsFromOrders = async () => {
         try {
           const nowMs = Date.now();
           const dayMs = 24 * 60 * 60 * 1000;
@@ -300,6 +325,10 @@ export default function DashboardPage() {
           let fetched = 0;
           let currentRevenue = 0;
           let prevRevenue = 0;
+          let currentOrders = 0;
+          let prevOrders = 0;
+          let currentPaidOrders = 0;
+          let prevPaidOrders = 0;
 
           while (true) {
             const page = await apiClient.getOrders({ limit: pageSize, offset });
@@ -312,11 +341,22 @@ export default function DashboardPage() {
               const createdAtMs = getOrderCreatedAtMs(order);
               if (createdAtMs == null || createdAtMs < prevStartMs) continue;
 
-              if (!isRevenueEligibleOrder(order)) continue;
+              const isCurrent = createdAtMs >= currentStartMs;
+              if (isCurrent) currentOrders += 1;
+              else prevOrders += 1;
 
+              const isPaid = isRevenueEligibleOrder(order);
               const amount = getOrderAmount(order);
-              if (createdAtMs >= currentStartMs) currentRevenue += amount;
-              else prevRevenue += amount;
+
+              if (isPaid) {
+                if (isCurrent) {
+                  currentPaidOrders += 1;
+                  currentRevenue += amount;
+                } else {
+                  prevPaidOrders += 1;
+                  prevRevenue += amount;
+                }
+              }
             }
 
             offset += pageOrders.length;
@@ -331,28 +371,42 @@ export default function DashboardPage() {
             if (lastCreatedAtMs != null && lastCreatedAtMs < prevStartMs) break;
           }
 
-          const growth =
+          const revenueGrowth =
             prevRevenue > 0 ? Math.round(((currentRevenue - prevRevenue) / prevRevenue) * 100) : currentRevenue > 0 ? 100 : 0;
 
-          revenueOverrideRef.current = { loadSeq, revenue: currentRevenue, growth };
+          const orderGrowth =
+            prevOrders > 0 ? Math.round(((currentOrders - prevOrders) / prevOrders) * 100) : currentOrders > 0 ? 100 : 0;
+
+          periodOverrideRef.current = {
+            loadSeq,
+            totalOrders: currentOrders,
+            paidOrders: currentPaidOrders,
+            orderGrowth,
+            revenue: currentRevenue,
+            revenueGrowth,
+          };
 
           setStats(prev => ({
             ...prev,
+            totalOrders: currentOrders,
+            paidOrders: currentPaidOrders,
             totalRevenue: currentRevenue,
-            revenueGrowth: growth,
+            orderGrowth,
+            revenueGrowth,
           }));
         } catch (err) {
           if (loadSeq !== loadSeqRef.current) return;
-          console.warn('Paid revenue computation failed:', err);
+          console.warn('Paid period stats computation failed:', err);
         }
       };
 
-      void computePaidRevenueFromOrders();
+      void computePaidPeriodStatsFromOrders();
 
       if (!analyticsSucceeded) {
         setStats(prev => ({
           ...prev,
           totalOrders: ordersResponse?.total ?? ordersArray.length ?? 0,
+          paidOrders: ordersArray.filter(isRevenueEligibleOrder).length,
           totalRevenue,
           totalCustomers,
           orderGrowth: 0,
@@ -440,10 +494,16 @@ export default function DashboardPage() {
                 </span>
               </div>
             )}
-          </div>
-          <h3 className="text-2xl font-bold text-gray-900">{loading ? '—' : stats.totalOrders}</h3>
-          <p className="text-sm text-gray-600">Orders (30d)</p>
-        </div>
+	          </div>
+	          <h3 className="text-2xl font-bold text-gray-900">{loading ? '—' : stats.totalOrders}</h3>
+	          <p className="text-sm text-gray-600">Orders (30d)</p>
+	          {!loading && (
+	            <p className="text-xs text-gray-500 mt-1">
+	              {stats.paidOrders} paid • {stats.totalOrders > 0 ? Math.round((stats.paidOrders / stats.totalOrders) * 100) : 0}
+	              % success
+	            </p>
+	          )}
+	        </div>
 
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between mb-4">
