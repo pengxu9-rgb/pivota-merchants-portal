@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { BarChart3, TrendingUp, TrendingDown, Activity, DollarSign } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import {
@@ -25,11 +25,159 @@ export default function AnalyticsPage() {
   const [loadingTrends, setLoadingTrends] = useState(false);
   const [netMode, setNetMode] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
+  const revenueComputeSeqRef = useRef(0);
+  const [paidRevenueOverride, setPaidRevenueOverride] = useState<{
+    revenue: number;
+    growth: number;
+  } | null>(null);
+  const [paidRevenueOverrideLoading, setPaidRevenueOverrideLoading] = useState(false);
 
   useEffect(() => {
     loadAnalytics();
     loadTrends();
   }, [timeRange, metric, netMode]);
+
+  useEffect(() => {
+    const seq = ++revenueComputeSeqRef.current;
+    setPaidRevenueOverrideLoading(true);
+    setPaidRevenueOverride(null);
+
+    const getRangeDays = (range: string) => {
+      if (range === '1d') return 1;
+      if (range === '7d') return 7;
+      if (range === '30d') return 30;
+      if (range === '90d') return 90;
+      return 30;
+    };
+
+    const isRevenueEligibleOrder = (order: any) => {
+      const paymentStatus = String(order?.payment_status ?? '').toLowerCase();
+      const status = String(order?.status ?? '').toLowerCase();
+
+      if (paymentStatus) {
+        if (
+          paymentStatus === 'paid' ||
+          paymentStatus === 'succeeded' ||
+          paymentStatus === 'success' ||
+          paymentStatus === 'settled' ||
+          paymentStatus === 'partially_refunded'
+        ) {
+          return true;
+        }
+        if (
+          paymentStatus === 'pending' ||
+          paymentStatus === 'unpaid' ||
+          paymentStatus === 'failed' ||
+          paymentStatus === 'canceled' ||
+          paymentStatus === 'cancelled' ||
+          paymentStatus === 'void' ||
+          paymentStatus === 'refunded' ||
+          paymentStatus === 'refund_pending'
+        ) {
+          return false;
+        }
+      }
+
+      return status === 'completed' || status === 'fulfilled';
+    };
+
+    const getOrderCreatedAtMs = (order: any) => {
+      const raw =
+        order?.created_at ??
+        order?.createdAt ??
+        order?.created ??
+        order?.order_created_at ??
+        order?.order_date ??
+        null;
+      if (!raw) return null;
+      const ms = new Date(raw).getTime();
+      return Number.isFinite(ms) ? ms : null;
+    };
+
+    const getOrderAmount = (order: any) => {
+      const raw = order?.total_amount ?? order?.total ?? order?.amount ?? 0;
+      const amount = Number(raw);
+      return Number.isFinite(amount) ? amount : 0;
+    };
+
+    const computePaidRevenueFromOrders = async () => {
+      try {
+        const rangeDays = getRangeDays(timeRange);
+        const nowMs = Date.now();
+        const dayMs = 24 * 60 * 60 * 1000;
+        const currentStartMs = nowMs - rangeDays * dayMs;
+        const prevStartMs = nowMs - rangeDays * 2 * dayMs;
+
+        const pageSize = 200;
+        const maxOrders = 20000;
+
+        let offset = 0;
+        let fetched = 0;
+        let currentRevenue = 0;
+        let prevRevenue = 0;
+        let coveredPrevPeriod = false;
+
+        while (true) {
+          const page = await apiClient.getOrders({ limit: pageSize, offset });
+          if (seq !== revenueComputeSeqRef.current) return;
+
+          const pageOrders = Array.isArray(page?.orders) ? page.orders : [];
+          if (!pageOrders.length) {
+            coveredPrevPeriod = true;
+            break;
+          }
+
+          for (const order of pageOrders) {
+            const createdAtMs = getOrderCreatedAtMs(order);
+            if (createdAtMs == null || createdAtMs < prevStartMs) continue;
+
+            if (!isRevenueEligibleOrder(order)) continue;
+
+            const amount = getOrderAmount(order);
+            if (createdAtMs >= currentStartMs) currentRevenue += amount;
+            else prevRevenue += amount;
+          }
+
+          offset += pageOrders.length;
+          fetched += pageOrders.length;
+
+          const pageTotal = typeof page?.total === 'number' ? page.total : null;
+          if (pageTotal != null && offset >= pageTotal) {
+            coveredPrevPeriod = true;
+            break;
+          }
+
+          const lastOrder = pageOrders[pageOrders.length - 1];
+          const lastCreatedAtMs = getOrderCreatedAtMs(lastOrder);
+          if (lastCreatedAtMs != null && lastCreatedAtMs < prevStartMs) {
+            coveredPrevPeriod = true;
+            break;
+          }
+
+          if (fetched >= maxOrders) break;
+        }
+
+        if (!coveredPrevPeriod) {
+          console.warn(`Paid revenue override skipped: reached maxOrders=${maxOrders} before covering prev period`);
+          return;
+        }
+
+        const growth =
+          prevRevenue > 0 ? Math.round(((currentRevenue - prevRevenue) / prevRevenue) * 100) : currentRevenue > 0 ? 100 : 0;
+
+        if (seq !== revenueComputeSeqRef.current) return;
+        setPaidRevenueOverride({ revenue: currentRevenue, growth });
+      } catch (e) {
+        if (seq !== revenueComputeSeqRef.current) return;
+        console.warn('Paid revenue override failed:', e);
+      } finally {
+        if (seq !== revenueComputeSeqRef.current) return;
+        setPaidRevenueOverrideLoading(false);
+      }
+    };
+
+    void computePaidRevenueFromOrders();
+  }, [timeRange]);
 
   const loadAnalytics = async () => {
     try {
@@ -98,6 +246,10 @@ export default function AnalyticsPage() {
     analytics?.net_revenue_growth ??
     analytics?.revenue_growth ??
     0;
+
+  const displayPaidRevenue = paidRevenueOverride?.revenue ?? paidRevenue;
+  const displayPaidRevenueGrowth = paidRevenueOverride?.growth ?? paidRevenueGrowth;
+  const prevPeriodLabel = `vs prev ${timeRange}`;
 
   return (
     <div className="space-y-6">
@@ -206,23 +358,26 @@ export default function AnalyticsPage() {
               <DollarSign className="w-6 h-6 text-orange-600" />
             </div>
             <div className={`flex items-center text-sm ${
-              paidRevenueGrowth >= 0 ? 'text-green-600' : 'text-red-600'
+              displayPaidRevenueGrowth >= 0 ? 'text-green-600' : 'text-red-600'
             }`}>
-              {paidRevenueGrowth >= 0 ? (
+              {displayPaidRevenueGrowth >= 0 ? (
                 <TrendingUp className="w-4 h-4" />
               ) : (
                 <TrendingDown className="w-4 h-4" />
               )}
               <span className="whitespace-nowrap">
-                {Math.abs(paidRevenueGrowth)}% <span className="text-xs text-gray-500">vs prev period</span>
+                {Math.abs(displayPaidRevenueGrowth)}% <span className="text-xs text-gray-500">{prevPeriodLabel}</span>
               </span>
             </div>
           </div>
           <h3 className="text-2xl font-bold text-gray-900">
-            {formatCurrency(paidRevenue)}
+            {formatCurrency(displayPaidRevenue)}
           </h3>
           <p className="text-sm text-gray-600">Paid Revenue</p>
-          <p className="text-xs text-gray-500 mt-1">Paid orders only (excludes pending/unpaid)</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Paid orders only (excludes pending/unpaid)
+            {paidRevenueOverrideLoading ? ' • recomputing…' : paidRevenueOverride ? ' • computed from orders' : ''}
+          </p>
         </div>
       </div>
 
