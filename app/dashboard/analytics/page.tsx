@@ -82,6 +82,23 @@ export default function AnalyticsPage() {
     );
   }
 
+  const paidRevenue =
+    analytics?.revenue_breakdown?.confirmed ??
+    analytics?.revenue_breakdown?.paid ??
+    analytics?.confirmed_revenue ??
+    analytics?.paid_revenue ??
+    analytics?.total_paid_revenue ??
+    analytics?.net_revenue ??
+    analytics?.total_revenue ??
+    0;
+
+  const paidRevenueGrowth =
+    analytics?.confirmed_revenue_growth ??
+    analytics?.paid_revenue_growth ??
+    analytics?.net_revenue_growth ??
+    analytics?.revenue_growth ??
+    0;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -189,20 +206,23 @@ export default function AnalyticsPage() {
               <DollarSign className="w-6 h-6 text-orange-600" />
             </div>
             <div className={`flex items-center text-sm ${
-              (analytics?.revenue_growth || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+              paidRevenueGrowth >= 0 ? 'text-green-600' : 'text-red-600'
             }`}>
-              {(analytics?.revenue_growth || 0) >= 0 ? (
+              {paidRevenueGrowth >= 0 ? (
                 <TrendingUp className="w-4 h-4" />
               ) : (
                 <TrendingDown className="w-4 h-4" />
               )}
-              <span>{Math.abs(analytics?.revenue_growth || 0)}%</span>
+              <span className="whitespace-nowrap">
+                {Math.abs(paidRevenueGrowth)}% <span className="text-xs text-gray-500">vs prev period</span>
+              </span>
             </div>
           </div>
           <h3 className="text-2xl font-bold text-gray-900">
-            {formatCurrency(analytics?.total_revenue || 0)}
+            {formatCurrency(paidRevenue)}
           </h3>
-          <p className="text-sm text-gray-600">Total Revenue</p>
+          <p className="text-sm text-gray-600">Paid Revenue</p>
+          <p className="text-xs text-gray-500 mt-1">Paid orders only (excludes pending/unpaid)</p>
         </div>
       </div>
 
