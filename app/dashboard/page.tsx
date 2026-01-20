@@ -63,6 +63,7 @@ export default function DashboardPage() {
 
   const loadDashboardData = async (merchantId: string) => {
     const loadSeq = ++loadSeqRef.current;
+    let analyticsSucceeded = false;
     try {
       setAnalyticsError(null);
       setLoading(true);
@@ -170,6 +171,7 @@ export default function DashboardPage() {
         .then(analyticsData => {
           if (loadSeq !== loadSeqRef.current) return;
           if (!analyticsData) return;
+          analyticsSucceeded = true;
 
           setStats(prev => ({
             ...prev,
@@ -201,20 +203,55 @@ export default function DashboardPage() {
 
       const ordersData = ordersResponse?.orders || [];
       const ordersArray = Array.isArray(ordersData) ? ordersData : [];
+
+      const isRevenueEligibleOrder = (order: any) => {
+        const paymentStatus = String(order?.payment_status ?? '').toLowerCase();
+        const status = String(order?.status ?? '').toLowerCase();
+
+        if (paymentStatus) {
+          if (
+            paymentStatus === 'paid' ||
+            paymentStatus === 'succeeded' ||
+            paymentStatus === 'success' ||
+            paymentStatus === 'settled' ||
+            paymentStatus === 'partially_refunded'
+          ) {
+            return true;
+          }
+          if (
+            paymentStatus === 'pending' ||
+            paymentStatus === 'unpaid' ||
+            paymentStatus === 'failed' ||
+            paymentStatus === 'canceled' ||
+            paymentStatus === 'cancelled' ||
+            paymentStatus === 'void' ||
+            paymentStatus === 'refunded' ||
+            paymentStatus === 'refund_pending'
+          ) {
+            return false;
+          }
+        }
+
+        return status === 'completed' || status === 'fulfilled';
+      };
+
       const totalCustomers = new Set(ordersArray.map((o: any) => o.customer_email).filter(Boolean)).size;
       const totalRevenue = ordersArray.reduce(
-        (sum: number, order: any) => sum + Number(order.total_amount ?? order.total ?? order.amount ?? 0),
+        (sum: number, order: any) =>
+          sum + (isRevenueEligibleOrder(order) ? Number(order.total_amount ?? order.total ?? order.amount ?? 0) : 0),
         0
       );
 
-      setStats(prev => ({
-        ...prev,
-        totalOrders: ordersResponse?.total ?? ordersArray.length ?? 0,
-        totalRevenue,
-        totalCustomers,
-        orderGrowth: 0,
-        revenueGrowth: 0,
-      }));
+      if (!analyticsSucceeded) {
+        setStats(prev => ({
+          ...prev,
+          totalOrders: ordersResponse?.total ?? ordersArray.length ?? 0,
+          totalRevenue,
+          totalCustomers,
+          orderGrowth: 0,
+          revenueGrowth: 0,
+        }));
+      }
       setRecentOrders(ordersArray);
 
     } catch (error) {
