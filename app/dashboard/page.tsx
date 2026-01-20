@@ -27,6 +27,7 @@ export default function DashboardPage() {
   const [qualityLoading, setQualityLoading] = useState(false);
   const [merchantId, setMerchantId] = useState<string>('');
   const loadSeqRef = useRef(0);
+  const revenueOverrideRef = useRef<{ loadSeq: number; revenue: number; growth: number } | null>(null);
   
   // Dashboard data
   const [stats, setStats] = useState({
@@ -64,6 +65,7 @@ export default function DashboardPage() {
   const loadDashboardData = async (merchantId: string) => {
     const loadSeq = ++loadSeqRef.current;
     let analyticsSucceeded = false;
+    revenueOverrideRef.current = null;
     try {
       setAnalyticsError(null);
       setLoading(true);
@@ -173,14 +175,37 @@ export default function DashboardPage() {
           if (!analyticsData) return;
           analyticsSucceeded = true;
 
+          const analyticsPaidRevenue =
+            analyticsData?.revenue_breakdown?.confirmed ??
+            analyticsData?.revenue_breakdown?.paid ??
+            analyticsData?.confirmed_revenue ??
+            analyticsData?.paid_revenue ??
+            analyticsData?.total_paid_revenue ??
+            analyticsData?.net_revenue ??
+            null;
+
+          const analyticsPaidRevenueGrowth =
+            analyticsData?.confirmed_revenue_growth ??
+            analyticsData?.paid_revenue_growth ??
+            analyticsData?.net_revenue_growth ??
+            null;
+
+          const override = revenueOverrideRef.current;
+
           setStats(prev => ({
             ...prev,
             totalOrders: analyticsData.total_orders ?? prev.totalOrders,
-            totalRevenue: analyticsData.total_revenue ?? prev.totalRevenue,
+            totalRevenue:
+              override?.loadSeq === loadSeq
+                ? override.revenue
+                : analyticsPaidRevenue ?? analyticsData.total_revenue ?? prev.totalRevenue,
             totalCustomers: analyticsData.total_customers ?? prev.totalCustomers,
             totalProducts: analyticsData.total_products ?? prev.totalProducts,
             orderGrowth: analyticsData.order_growth ?? prev.orderGrowth,
-            revenueGrowth: analyticsData.revenue_growth ?? prev.revenueGrowth,
+            revenueGrowth:
+              override?.loadSeq === loadSeq
+                ? override.growth
+                : analyticsPaidRevenueGrowth ?? analyticsData.revenue_growth ?? prev.revenueGrowth,
           }));
 
           if (analyticsData.recent_orders && analyticsData.recent_orders.length > 0) {
@@ -241,6 +266,88 @@ export default function DashboardPage() {
           sum + (isRevenueEligibleOrder(order) ? Number(order.total_amount ?? order.total ?? order.amount ?? 0) : 0),
         0
       );
+
+      const getOrderCreatedAtMs = (order: any) => {
+        const raw =
+          order?.created_at ??
+          order?.createdAt ??
+          order?.created ??
+          order?.order_created_at ??
+          order?.order_date ??
+          null;
+        if (!raw) return null;
+        const ms = new Date(raw).getTime();
+        return Number.isFinite(ms) ? ms : null;
+      };
+
+      const getOrderAmount = (order: any) => {
+        const raw = order?.total_amount ?? order?.total ?? order?.amount ?? 0;
+        const amount = Number(raw);
+        return Number.isFinite(amount) ? amount : 0;
+      };
+
+      const computePaidRevenueFromOrders = async () => {
+        try {
+          const nowMs = Date.now();
+          const dayMs = 24 * 60 * 60 * 1000;
+          const currentStartMs = nowMs - 30 * dayMs;
+          const prevStartMs = nowMs - 60 * dayMs;
+
+          const pageSize = 200;
+          const maxOrders = 5000;
+
+          let offset = 0;
+          let fetched = 0;
+          let currentRevenue = 0;
+          let prevRevenue = 0;
+
+          while (true) {
+            const page = await apiClient.getOrders({ limit: pageSize, offset });
+            if (loadSeq !== loadSeqRef.current) return;
+
+            const pageOrders = Array.isArray(page?.orders) ? page.orders : [];
+            if (!pageOrders.length) break;
+
+            for (const order of pageOrders) {
+              const createdAtMs = getOrderCreatedAtMs(order);
+              if (createdAtMs == null || createdAtMs < prevStartMs) continue;
+
+              if (!isRevenueEligibleOrder(order)) continue;
+
+              const amount = getOrderAmount(order);
+              if (createdAtMs >= currentStartMs) currentRevenue += amount;
+              else prevRevenue += amount;
+            }
+
+            offset += pageOrders.length;
+            fetched += pageOrders.length;
+
+            const pageTotal = typeof page?.total === 'number' ? page.total : null;
+            if (pageTotal != null && offset >= pageTotal) break;
+            if (fetched >= maxOrders) break;
+
+            const lastOrder = pageOrders[pageOrders.length - 1];
+            const lastCreatedAtMs = getOrderCreatedAtMs(lastOrder);
+            if (lastCreatedAtMs != null && lastCreatedAtMs < prevStartMs) break;
+          }
+
+          const growth =
+            prevRevenue > 0 ? Math.round(((currentRevenue - prevRevenue) / prevRevenue) * 100) : currentRevenue > 0 ? 100 : 0;
+
+          revenueOverrideRef.current = { loadSeq, revenue: currentRevenue, growth };
+
+          setStats(prev => ({
+            ...prev,
+            totalRevenue: currentRevenue,
+            revenueGrowth: growth,
+          }));
+        } catch (err) {
+          if (loadSeq !== loadSeqRef.current) return;
+          console.warn('Paid revenue computation failed:', err);
+        }
+      };
+
+      void computePaidRevenueFromOrders();
 
       if (!analyticsSucceeded) {
         setStats(prev => ({
@@ -328,12 +435,14 @@ export default function DashboardPage() {
             {!analyticsLoading && (
               <div className={`flex items-center text-sm ${stats.orderGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {stats.orderGrowth >= 0 ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
-                <span>{Math.abs(stats.orderGrowth)}%</span>
+                <span className="whitespace-nowrap">
+                  {Math.abs(stats.orderGrowth)}% <span className="text-xs text-gray-500">vs prev 30d</span>
+                </span>
               </div>
             )}
           </div>
           <h3 className="text-2xl font-bold text-gray-900">{loading ? '—' : stats.totalOrders}</h3>
-          <p className="text-sm text-gray-600">Total Orders</p>
+          <p className="text-sm text-gray-600">Orders (30d)</p>
         </div>
 
         <div className="bg-white rounded-lg shadow p-6">
@@ -344,12 +453,14 @@ export default function DashboardPage() {
             {!analyticsLoading && (
               <div className={`flex items-center text-sm ${stats.revenueGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {stats.revenueGrowth >= 0 ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
-                <span>{Math.abs(stats.revenueGrowth)}%</span>
+                <span className="whitespace-nowrap">
+                  {Math.abs(stats.revenueGrowth)}% <span className="text-xs text-gray-500">vs prev 30d</span>
+                </span>
               </div>
             )}
           </div>
           <h3 className="text-2xl font-bold text-gray-900">{loading ? '—' : formatCurrency(stats.totalRevenue)}</h3>
-          <p className="text-sm text-gray-600">Total Revenue</p>
+          <p className="text-sm text-gray-600">Paid Revenue (30d)</p>
         </div>
 
         <div className="bg-white rounded-lg shadow p-6">
