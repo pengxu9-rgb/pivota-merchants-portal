@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Package, Plus, Search, RefreshCw } from 'lucide-react';
+import { Package, Plus, Search } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
 function isProductSellable(product: any): boolean {
@@ -59,18 +59,13 @@ function getProductStatusInfo(product: any): { label: string; className: string 
 export default function ProductsPage() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [sellableFilter, setSellableFilter] = useState<'all' | 'sellable' | 'not_sellable'>('all');
-  const [merchantId, setMerchantId] = useState('');
-  const [showAddModal, setShowAddModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
 
   useEffect(() => {
-    const id = localStorage.getItem('merchant_id') || '';
-    setMerchantId(id);
     loadProducts();
   }, []);
 
@@ -86,21 +81,7 @@ export default function ProductsPage() {
     }
   };
 
-  const handleSync = async () => {
-    setSyncing(true);
-    try {
-      const result = await apiClient.syncShopifyProducts();
-      alert(result.message || '✅ Products synced successfully!');
-      await loadProducts();
-    } catch (error: any) {
-      alert('❌ Failed to sync: ' + (error.response?.data?.detail || error.message));
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   const handleAddProduct = () => {
-    setShowAddModal(true);
     // In a real implementation, this would open a modal with a form
     alert('Add Product feature: Coming soon! This will open a modal to add a new product.');
   };
@@ -136,14 +117,6 @@ export default function ProductsPage() {
           <p className="text-gray-600">Manage your product catalog</p>
         </div>
         <div className="flex items-center space-x-2">
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="flex items-center space-x-2 px-4 py-2 border rounded-lg hover:bg-gray-50 disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-            <span>Sync from Store</span>
-          </button>
           <button 
             onClick={handleAddProduct}
             className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -255,12 +228,13 @@ export default function ProductsPage() {
             <div className="text-center py-12">
               <Package className="w-12 h-12 text-gray-400 mx-auto mb-3" />
               <p className="text-gray-600 mb-4">No products found</p>
-              <button
-                onClick={handleSync}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Sync Products from Store
-              </button>
+              <p className="text-sm text-gray-500">
+                Sync products via{' '}
+                <a href="/dashboard/integrations" className="text-blue-600 hover:text-blue-700 underline">
+                  Integrations
+                </a>
+                .
+              </p>
             </div>
           )}
         </div>
