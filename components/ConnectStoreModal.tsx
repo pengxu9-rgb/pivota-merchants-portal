@@ -25,7 +25,8 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
   const [shopifyDomain, setShopifyDomain] = useState('');
   const [shopifyConnectMode, setShopifyConnectMode] = useState<'oauth' | 'custom_token'>('oauth');
   const [shopifyInstallUrl, setShopifyInstallUrl] = useState('');
-  const [shopifyAdminToken, setShopifyAdminToken] = useState('');
+  const [shopifyClientId, setShopifyClientId] = useState('');
+  const [shopifyClientSecret, setShopifyClientSecret] = useState('');
   const [shopifyWebhookSecret, setShopifyWebhookSecret] = useState('');
   const [shopifyStorefrontToken, setShopifyStorefrontToken] = useState('');
   
@@ -61,7 +62,8 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
             payload = {
               merchant_id: merchantId,
               shop_domain: shopifyDomain,
-              access_token: shopifyAdminToken,
+              client_id: shopifyClientId,
+              client_secret: shopifyClientSecret,
               webhook_secret: shopifyWebhookSecret || undefined,
               storefront_access_token: shopifyStorefrontToken || undefined,
             };
@@ -168,7 +170,8 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
     setShopifyDomain('');
     setShopifyConnectMode('oauth');
     setShopifyInstallUrl('');
-    setShopifyAdminToken('');
+    setShopifyClientId('');
+    setShopifyClientSecret('');
     setShopifyWebhookSecret('');
     setShopifyStorefrontToken('');
     setWixSiteId('');
@@ -252,7 +255,8 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                       checked={shopifyConnectMode === 'oauth'}
                       onChange={() => {
                         setShopifyConnectMode('oauth');
-                        setShopifyAdminToken('');
+                        setShopifyClientId('');
+                        setShopifyClientSecret('');
                       }}
                       className="mt-1"
                     />
@@ -276,8 +280,8 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                       className="mt-1"
                     />
                     <div className="text-sm">
-                      <div className="font-medium text-gray-900">Custom app token (manual)</div>
-                      <div className="text-gray-600">Use when public app install is unavailable (e.g. pending review).</div>
+                      <div className="font-medium text-gray-900">Custom app credentials (manual)</div>
+                      <div className="text-gray-600">Use when public app install is unavailable. Pivota will rotate Admin token automatically.</div>
                     </div>
                   </label>
                 </div>
@@ -330,16 +334,29 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
               ) : (
                 <>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Admin API Access Token *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Client ID *</label>
                     <input
-                      type="password"
-                      value={shopifyAdminToken}
-                      onChange={(e) => setShopifyAdminToken(e.target.value)}
+                      type="text"
+                      value={shopifyClientId}
+                      onChange={(e) => setShopifyClientId(e.target.value)}
                       className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
-                      placeholder="shpat_..."
+                      placeholder="Shopify app client ID"
                       required
                     />
-                    <p className="mt-1 text-xs text-gray-500">Get from Shopify Admin → Apps → Develop apps → Your app → Admin API access token</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Client Secret *</label>
+                    <input
+                      type="password"
+                      value={shopifyClientSecret}
+                      onChange={(e) => setShopifyClientSecret(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
+                      placeholder="Shopify app client secret"
+                      required
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Get from Shopify Admin → Apps → Develop apps → Your app → API credentials
+                    </p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Webhook secret (optional)</label>
@@ -554,7 +571,8 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                 !platform ||
                 (platform === 'shopify' &&
                   (!shopifyDomain.trim() ||
-                    (shopifyConnectMode === 'custom_token' && !shopifyAdminToken.trim())))
+                    (shopifyConnectMode === 'custom_token' &&
+                      (!shopifyClientId.trim() || !shopifyClientSecret.trim()))))
               }
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >

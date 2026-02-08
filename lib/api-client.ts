@@ -302,11 +302,17 @@ class ApiClient {
   }
 
   // Integration methods
-  async connectShopify(merchantId: string, shopDomain: string, accessToken: string) {
+  async connectShopify(
+    merchantId: string,
+    shopDomain: string,
+    clientId: string,
+    clientSecret: string
+  ) {
     const response = await this.client.post('/integrations/shopify/connect', {
       merchant_id: merchantId,
       shop_domain: shopDomain,
-      access_token: accessToken,
+      client_id: clientId,
+      client_secret: clientSecret,
     });
     return response.data;
   }

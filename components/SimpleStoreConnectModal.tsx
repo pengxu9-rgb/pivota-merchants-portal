@@ -19,7 +19,8 @@ export default function SimpleStoreConnectModal({
 }: SimpleStoreConnectModalProps) {
   const [platform, setPlatform] = useState('shopify');
   const [shopDomain, setShopDomain] = useState('');
-  const [accessToken, setAccessToken] = useState('');
+  const [shopifyClientId, setShopifyClientId] = useState('');
+  const [shopifyClientSecret, setShopifyClientSecret] = useState('');
   const [siteId, setSiteId] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [saving, setSaving] = useState(false);
@@ -27,7 +28,7 @@ export default function SimpleStoreConnectModal({
   if (!isOpen) return null;
 
   const canSave = merchantId && 
-    (platform === 'shopify' ? (shopDomain && accessToken) :
+    (platform === 'shopify' ? (shopDomain && shopifyClientId && shopifyClientSecret) :
      platform === 'wix' ? (siteId && apiKey) :
      false) && !saving;
 
@@ -48,7 +49,8 @@ export default function SimpleStoreConnectModal({
         payload = {
           merchant_id: merchantId,
           shop_domain: shopDomain,
-          access_token: accessToken
+          client_id: shopifyClientId,
+          client_secret: shopifyClientSecret
         };
       } else if (platform === 'wix') {
         endpoint = '/integrations/wix/connect';
@@ -127,17 +129,29 @@ export default function SimpleStoreConnectModal({
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Admin API Access Token <span className="text-red-500">*</span>
+                  Client ID <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={shopifyClientId}
+                  onChange={(e) => setShopifyClientId(e.target.value)}
+                  placeholder="Shopify app client ID"
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Client Secret <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="password"
-                  value={accessToken}
-                  onChange={(e) => setAccessToken(e.target.value)}
-                  placeholder="shpat_..."
+                  value={shopifyClientSecret}
+                  onChange={(e) => setShopifyClientSecret(e.target.value)}
+                  placeholder="Shopify app client secret"
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Generate in Shopify Admin → Settings → Apps → Develop apps
+                  Use Shopify Admin → Apps → Develop apps → Your app → API credentials
                 </p>
               </div>
             </>
@@ -176,7 +190,7 @@ export default function SimpleStoreConnectModal({
           {/* Info Box */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <p className="text-sm text-blue-800">
-              {platform === 'shopify' && '💡 Your store domain should end with .myshopify.com. Create a custom app in Shopify Admin to get an access token.'}
+              {platform === 'shopify' && '💡 Your store domain should end with .myshopify.com. Enter your app client ID/secret and Pivota will refresh Admin token automatically.'}
               {platform === 'wix' && '💡 Find your Site ID and API key in Wix Dashboard → Settings → Developer Tools.'}
             </p>
           </div>
@@ -201,7 +215,6 @@ export default function SimpleStoreConnectModal({
     </div>
   );
 }
-
 
 
 
