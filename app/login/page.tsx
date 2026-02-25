@@ -40,7 +40,12 @@ export default function LoginPage() {
       }
     } catch (err: any) {
       console.error('❌ Login error:', err);
-      setError(err.response?.data?.detail || 'Failed to login. Please try again.');
+      setError(
+        err?.response?.data?.detail ||
+        err?.response?.data?.error?.message ||
+        err?.message ||
+        'Failed to login. Please try again.'
+      );
     } finally {
       setLoading(false);
     }

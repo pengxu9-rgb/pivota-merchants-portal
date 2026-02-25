@@ -38,10 +38,20 @@ class ApiClient {
         console.error(`❌ API Error: ${error.response?.status} ${error.config?.url}`);
         
         if (error.response?.status === 401) {
-          // Clear auth and redirect to login
-          this.clearAuth();
-          if (typeof window !== 'undefined') {
-            window.location.href = '/login';
+          // Keep login failure feedback visible on /login.
+          // Redirect only for authenticated-page 401s.
+          const requestUrl = String(error.config?.url || '');
+          const isLoginRequest =
+            requestUrl.includes(API_CONFIG.ENDPOINTS.LOGIN) ||
+            requestUrl.includes('/api/auth/login');
+          const isLoginPage =
+            typeof window !== 'undefined' && window.location.pathname === '/login';
+
+          if (!isLoginRequest && !isLoginPage) {
+            this.clearAuth();
+            if (typeof window !== 'undefined') {
+              window.location.href = '/login';
+            }
           }
         }
         
