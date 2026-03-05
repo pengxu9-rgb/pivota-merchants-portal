@@ -35,8 +35,6 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
   const [shopifyInstallUrl, setShopifyInstallUrl] = useState('');
   const [shopifyClientId, setShopifyClientId] = useState('');
   const [shopifyClientSecret, setShopifyClientSecret] = useState('');
-  const [shopifyWebhookSecret, setShopifyWebhookSecret] = useState('');
-  const [shopifyStorefrontToken, setShopifyStorefrontToken] = useState('');
   
   const [wixSiteId, setWixSiteId] = useState('');
   const [wixApiKey, setWixApiKey] = useState('');
@@ -72,8 +70,6 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
               shop_domain: shopifyDomain,
               client_id: shopifyClientId,
               client_secret: shopifyClientSecret,
-              webhook_secret: shopifyWebhookSecret || undefined,
-              storefront_access_token: shopifyStorefrontToken || undefined,
             };
           } else {
             endpoint = `${baseUrl}${API_CONFIG.ENDPOINTS.SHOPIFY_INSTALL_LINKS}`;
@@ -180,8 +176,6 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
     setShopifyInstallUrl('');
     setShopifyClientId('');
     setShopifyClientSecret('');
-    setShopifyWebhookSecret('');
-    setShopifyStorefrontToken('');
     setWixSiteId('');
     setWixApiKey('');
     setWixStoreName('');
@@ -367,29 +361,6 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                     <p className="mt-1 text-xs text-gray-500">
                       Get from Shopify Admin → Apps → Develop apps → Your app → API credentials
                     </p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Webhook secret (optional)</label>
-                    <input
-                      type="password"
-                      value={shopifyWebhookSecret}
-                      onChange={(e) => setShopifyWebhookSecret(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
-                      placeholder="API secret key (only if using this custom app for webhooks)"
-                    />
-                    <p className="mt-1 text-xs text-gray-500">
-                      Only needed if webhooks are created by this custom app and you want Pivota to verify their HMAC signatures.
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Storefront access token (optional)</label>
-                    <input
-                      type="password"
-                      value={shopifyStorefrontToken}
-                      onChange={(e) => setShopifyStorefrontToken(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
-                      placeholder="shpat_... (Storefront) / storefront token"
-                    />
                   </div>
                 </>
               )}
