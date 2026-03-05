@@ -17,13 +17,21 @@ interface ConnectStoreModalProps {
 }
 
 export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchantId }: ConnectStoreModalProps) {
+  // Keep OAuth hidden by default until the product is ready.
+  const SHOPIFY_OAUTH_ENABLED = (
+    process.env.NEXT_PUBLIC_FEATURE_SHOPIFY_OAUTH ||
+    process.env.NEXT_PUBLIC_ENABLE_SHOPIFY_OAUTH ||
+    'false'
+  ).toLowerCase() === 'true';
   const [platform, setPlatform] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const baseUrl = API_CONFIG.BASE_URL;
   
   // Form fields for different platforms
   const [shopifyDomain, setShopifyDomain] = useState('');
-  const [shopifyConnectMode, setShopifyConnectMode] = useState<'oauth' | 'custom_token'>('oauth');
+  const [shopifyConnectMode, setShopifyConnectMode] = useState<'oauth' | 'custom_token'>(
+    SHOPIFY_OAUTH_ENABLED ? 'oauth' : 'custom_token'
+  );
   const [shopifyInstallUrl, setShopifyInstallUrl] = useState('');
   const [shopifyClientId, setShopifyClientId] = useState('');
   const [shopifyClientSecret, setShopifyClientSecret] = useState('');
@@ -57,7 +65,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
 
       switch (platform) {
         case 'shopify':
-          if (shopifyConnectMode === 'custom_token') {
+          if (!SHOPIFY_OAUTH_ENABLED || shopifyConnectMode === 'custom_token') {
             endpoint = `${baseUrl}${API_CONFIG.ENDPOINTS.SHOPIFY_CONNECT}`;
             payload = {
               merchant_id: merchantId,
@@ -134,7 +142,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
 
       if (response.ok) {
         if (platform === 'shopify') {
-          if (shopifyConnectMode === 'custom_token') {
+          if (!SHOPIFY_OAUTH_ENABLED || shopifyConnectMode === 'custom_token') {
             alert('✅ Shopify store connected successfully!');
             onSuccess();
             handleClose();
@@ -168,7 +176,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
   const handleClose = () => {
     setPlatform('');
     setShopifyDomain('');
-    setShopifyConnectMode('oauth');
+    setShopifyConnectMode(SHOPIFY_OAUTH_ENABLED ? 'oauth' : 'custom_token');
     setShopifyInstallUrl('');
     setShopifyClientId('');
     setShopifyClientSecret('');
@@ -244,50 +252,52 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                 />
               </div>
 
-              <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                <div className="text-sm font-medium text-gray-700 mb-2">Connection method</div>
-                <div className="flex flex-col gap-2">
-                  <label className="flex items-start gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="shopifyConnectMode"
-                      value="oauth"
-                      checked={shopifyConnectMode === 'oauth'}
-                      onChange={() => {
-                        setShopifyConnectMode('oauth');
-                        setShopifyClientId('');
-                        setShopifyClientSecret('');
-                      }}
-                      className="mt-1"
-                    />
-                    <div className="text-sm">
-                      <div className="font-medium text-gray-900">Pivota app (OAuth) — recommended</div>
-                      <div className="text-gray-600">
-                        Generates a one-time install link and opens Shopify for authorization. No Admin API token required.
+              {SHOPIFY_OAUTH_ENABLED && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <div className="text-sm font-medium text-gray-700 mb-2">Connection method</div>
+                  <div className="flex flex-col gap-2">
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="shopifyConnectMode"
+                        value="oauth"
+                        checked={shopifyConnectMode === 'oauth'}
+                        onChange={() => {
+                          setShopifyConnectMode('oauth');
+                          setShopifyClientId('');
+                          setShopifyClientSecret('');
+                        }}
+                        className="mt-1"
+                      />
+                      <div className="text-sm">
+                        <div className="font-medium text-gray-900">Pivota app (OAuth) — recommended</div>
+                        <div className="text-gray-600">
+                          Generates a one-time install link and opens Shopify for authorization. No Admin API token required.
+                        </div>
                       </div>
-                    </div>
-                  </label>
-                  <label className="flex items-start gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="shopifyConnectMode"
-                      value="custom_token"
-                      checked={shopifyConnectMode === 'custom_token'}
-                      onChange={() => {
-                        setShopifyConnectMode('custom_token');
-                        setShopifyInstallUrl('');
-                      }}
-                      className="mt-1"
-                    />
-                    <div className="text-sm">
-                      <div className="font-medium text-gray-900">Custom app credentials (manual)</div>
-                      <div className="text-gray-600">Use when public app install is unavailable. Pivota will rotate Admin token automatically.</div>
-                    </div>
-                  </label>
+                    </label>
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="shopifyConnectMode"
+                        value="custom_token"
+                        checked={shopifyConnectMode === 'custom_token'}
+                        onChange={() => {
+                          setShopifyConnectMode('custom_token');
+                          setShopifyInstallUrl('');
+                        }}
+                        className="mt-1"
+                      />
+                      <div className="text-sm">
+                        <div className="font-medium text-gray-900">Custom app credentials (manual)</div>
+                        <div className="text-gray-600">Use when public app install is unavailable. Pivota will rotate Admin token automatically.</div>
+                      </div>
+                    </label>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {shopifyConnectMode === 'oauth' ? (
+              {SHOPIFY_OAUTH_ENABLED && shopifyConnectMode === 'oauth' ? (
                 <>
                   <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
                     Use the store&apos;s MyShopify domain. Install links are one-time use.
@@ -571,7 +581,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                 !platform ||
                 (platform === 'shopify' &&
                   (!shopifyDomain.trim() ||
-                    (shopifyConnectMode === 'custom_token' &&
+                    ((!SHOPIFY_OAUTH_ENABLED || shopifyConnectMode === 'custom_token') &&
                       (!shopifyClientId.trim() || !shopifyClientSecret.trim()))))
               }
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
@@ -580,7 +590,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span>
-                    {platform === 'shopify' && shopifyConnectMode === 'oauth'
+                    {platform === 'shopify' && SHOPIFY_OAUTH_ENABLED && shopifyConnectMode === 'oauth'
                       ? 'Generating link...'
                       : 'Connecting...'}
                   </span>
@@ -590,7 +600,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                   <Store className="w-4 h-4" />
                   <span>
                     {platform === 'shopify'
-                      ? shopifyConnectMode === 'oauth'
+                      ? SHOPIFY_OAUTH_ENABLED && shopifyConnectMode === 'oauth'
                         ? 'Generate Install Link'
                         : 'Connect Store'
                       : 'Connect Store'}
