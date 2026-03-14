@@ -1,12 +1,21 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { User, Bell, Shield, Save, Loader2 } from 'lucide-react';
+import { FormEvent, useEffect, useState } from 'react';
+import { User, Bell, Shield, Save, Loader2, Lock } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+
+function validatePassword(password: string): string | null {
+  if (password.length < 8) return 'Password must be at least 8 characters long.';
+  if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter.';
+  if (!/[a-z]/.test(password)) return 'Password must contain at least one lowercase letter.';
+  if (!/[0-9]/.test(password)) return 'Password must contain at least one digit.';
+  return null;
+}
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
   
   const [profile, setProfile] = useState({
     business_name: '',
@@ -22,6 +31,13 @@ export default function SettingsPage() {
     email_inventory: false,
     email_weekly: false,
   });
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
 
   useEffect(() => {
     loadSettings();
@@ -59,44 +75,47 @@ export default function SettingsPage() {
     }
   };
 
-  const handleChangePassword = () => {
-    const oldPassword = prompt('Enter your current password:');
-    if (!oldPassword) {
-      // User cancelled or entered empty string
-      return;
-    }
-    
-    const newPassword = prompt('Enter your new password:');
-    if (!newPassword) {
-      // User cancelled or entered empty string
-      return;
-    }
-    
-    const confirmPassword = prompt('Confirm your new password:');
-    if (!confirmPassword) {
-      // User cancelled or entered empty string
-      return;
-    }
-    
-    if (newPassword !== confirmPassword) {
-      alert('❌ Passwords do not match');
-      return;
-    }
-    
-    if (newPassword.length < 8) {
-      alert('❌ Password must be at least 8 characters long');
-      return;
-    }
-    
-    handleChangePasswordAsync(oldPassword, newPassword);
-  };
+  const handleChangePassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess('');
 
-  const handleChangePasswordAsync = async (oldPassword: string, newPassword: string) => {
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordError('New passwords do not match.');
+      return;
+    }
+
+    const validationError = validatePassword(passwordForm.newPassword);
+    if (validationError) {
+      setPasswordError(validationError);
+      return;
+    }
+
+    setSavingPassword(true);
     try {
-      const result = await apiClient.changePassword({ old_password: oldPassword, new_password: newPassword });
-      alert(result.message || '✅ Password changed successfully!');
+      const result = await apiClient.changePassword({
+        current_password: passwordForm.currentPassword,
+        new_password: passwordForm.newPassword,
+      });
+
+      setPasswordSuccess(result.message || 'Password changed successfully. Redirecting to login...');
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      });
+      window.setTimeout(() => {
+        apiClient.logout();
+      }, 1200);
     } catch (error: any) {
-      alert('❌ Failed to change password: ' + (error.response?.data?.detail || error.message));
+      setPasswordError(
+        error?.response?.data?.detail ||
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to change password.'
+      );
+    } finally {
+      setSavingPassword(false);
     }
   };
 
@@ -261,6 +280,18 @@ export default function SettingsPage() {
           <h2 className="text-lg font-semibold">Security</h2>
         </div>
         <div className="p-6 space-y-4">
+          {passwordError ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {passwordError}
+            </div>
+          ) : null}
+
+          {passwordSuccess ? (
+            <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+              {passwordSuccess}
+            </div>
+          ) : null}
+
           <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
             <div>
               <div className="font-medium">Two-Factor Authentication</div>
@@ -273,18 +304,79 @@ export default function SettingsPage() {
               Enable
             </button>
           </div>
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-            <div>
-              <div className="font-medium">Change Password</div>
-              <div className="text-sm text-gray-600">Update your account password</div>
+
+          <form onSubmit={handleChangePassword} className="rounded-lg border border-gray-200 p-4 space-y-4">
+            <div className="flex items-center space-x-3">
+              <div className="rounded-lg bg-blue-50 p-2">
+                <Lock className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <div className="font-medium text-gray-900">Change Password</div>
+                <div className="text-sm text-gray-600">Update your merchant login password.</div>
+              </div>
             </div>
-            <button 
-              onClick={handleChangePassword}
-              className="px-4 py-2 border rounded-lg hover:bg-gray-100"
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Current Password
+              </label>
+              <input
+                type="password"
+                value={passwordForm.currentPassword}
+                onChange={(event) =>
+                  setPasswordForm((current) => ({ ...current, currentPassword: event.target.value }))
+                }
+                required
+                className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                placeholder="Enter your current password"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  value={passwordForm.newPassword}
+                  onChange={(event) =>
+                    setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))
+                  }
+                  required
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                  placeholder="Enter a new password"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Confirm New Password
+                </label>
+                <input
+                  type="password"
+                  value={passwordForm.confirmPassword}
+                  onChange={(event) =>
+                    setPasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))
+                  }
+                  required
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                  placeholder="Confirm the new password"
+                />
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-500">
+              Use at least 8 characters with uppercase, lowercase, and a number.
+            </p>
+
+            <button
+              type="submit"
+              disabled={savingPassword}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Change
+              {savingPassword ? 'Updating Password...' : 'Update Password'}
             </button>
-          </div>
+          </form>
         </div>
       </div>
 
@@ -311,4 +403,3 @@ export default function SettingsPage() {
     </div>
   );
 }
-

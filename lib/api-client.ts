@@ -640,8 +640,8 @@ class ApiClient {
     return response.data?.data || response.data;
   }
 
-  async changePassword(passwordData: any) {
-    const response = await this.client.post('/merchant/security/change-password', passwordData);
+  async changePassword(passwordData: { current_password: string; new_password: string }) {
+    const response = await this.client.post('/api/auth/change-password', passwordData);
     return response.data;
   }
 
