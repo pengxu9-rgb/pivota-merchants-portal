@@ -62,6 +62,74 @@ type ReadinessSummary = {
   next_action?: string | null;
 };
 
+type ReadinessIssueBucket = {
+  code: string;
+  label: string;
+  severity: 'high' | 'medium' | 'low';
+  scope: 'merchant' | 'product';
+  affected_count: number;
+  fix_surface:
+    | 'product_content'
+    | 'catalog_data'
+    | 'integrations'
+    | 'policy'
+    | 'pivota_managed';
+  impact: 'discovery_only' | 'checkout' | 'full_agent_commerce';
+  direct_target: string;
+  reason_codes: string[];
+};
+
+type MerchantReadinessAction = {
+  label: string;
+  description: string;
+  target_url: string;
+  fix_surface:
+    | 'product_content'
+    | 'catalog_data'
+    | 'integrations'
+    | 'policy'
+    | 'pivota_managed';
+  scope: 'merchant' | 'product';
+  impact: 'discovery_only' | 'checkout' | 'full_agent_commerce';
+  affected_count: number;
+  related_bucket_codes?: string[];
+};
+
+type ProductQueueIssue = {
+  code: string;
+  label: string;
+  impact: 'discovery_only' | 'checkout' | 'full_agent_commerce';
+  affected_variant_count: number;
+};
+
+type ProductQueueItem = {
+  product_id: string;
+  platform: string;
+  title: string;
+  image_url?: string | null;
+  brand?: string | null;
+  category?: string | null;
+  blocked_variant_count: number;
+  ready_variant_count: number;
+  top_issues: ProductQueueIssue[];
+  primary_action?: string | null;
+  fix_surface:
+    | 'product_content'
+    | 'catalog_data'
+    | 'integrations'
+    | 'policy'
+    | 'pivota_managed';
+  impact: 'discovery_only' | 'checkout' | 'full_agent_commerce';
+};
+
+type ReadinessOptimizationPayload = {
+  readiness_summary: ReadinessSummary;
+  issue_buckets: ReadinessIssueBucket[];
+  merchant_actions: MerchantReadinessAction[];
+  product_queue: ProductQueueItem[];
+  last_generated_at?: string | null;
+};
+
 const emptyForm: EnrichmentFormState = {
   title_override: '',
   summary_short: '',
@@ -100,13 +168,40 @@ const getReadinessTone = (tier?: string) => {
   }
 };
 
+const getIssueBucketCodeForReason = (code: string) => {
+  const mapping: Record<string, string> = {
+    missing_title: 'catalog_content',
+    missing_primary_image: 'catalog_content',
+    missing_description: 'catalog_content',
+    missing_price: 'price_currency',
+    missing_currency: 'price_currency',
+    out_of_stock: 'inventory_availability',
+    inventory_stale: 'inventory_availability',
+    missing_shipping_profile: 'shipping_returns_setup',
+    merchant_shipping_policy_missing: 'shipping_returns_setup',
+    merchant_return_policy_missing: 'shipping_returns_setup',
+    merchant_checkout_capability_missing: 'checkout_payment_setup',
+    checkout_stub_missing: 'checkout_payment_setup',
+    payment_execution_stubbed: 'checkout_payment_setup',
+    reviews_summary_unavailable: 'reviews_trust',
+    cross_merchant_review_group_unresolved: 'reviews_trust',
+    review_coverage_partial: 'reviews_trust',
+    no_reviews_available: 'reviews_trust',
+    merchant_writeback_unavailable: 'order_sync_operations',
+    order_sync_stubbed: 'order_sync_operations',
+  };
+  return mapping[code] || 'other';
+};
+
 export default function ProductOptimizationPage() {
   const searchParams = useSearchParams();
   const fromReadiness = searchParams.get('source') === 'readiness';
+  const focusIssue = searchParams.get('focus');
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<MerchantProductListItem[]>([]);
   const [search, setSearch] = useState('');
-  const [readinessSummary, setReadinessSummary] = useState<ReadinessSummary | null>(null);
+  const [optimizationData, setOptimizationData] = useState<ReadinessOptimizationPayload | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(true);
 
   const [selected, setSelected] = useState<{
     platform: string;
@@ -125,26 +220,27 @@ export default function ProductOptimizationPage() {
   const [sortBy, setSortBy] = useState<'default' | 'cq_desc' | 'mr_desc'>(
     'default'
   );
+  const [showBlockedOnly, setShowBlockedOnly] = useState(false);
   const [showOnlyLowQuality, setShowOnlyLowQuality] = useState(false);
+  const [issueFilter, setIssueFilter] = useState<string>('all');
   const [bulkOptimizing, setBulkOptimizing] = useState(false);
 
   useEffect(() => {
-    loadProducts();
+    void loadProducts();
+    void loadOptimizationData();
   }, []);
 
   useEffect(() => {
-    const loadReadinessSummary = async () => {
-      try {
-        const response = await apiClient.get('/merchant/dashboard/readiness');
-        const payload = response?.data?.data || response?.data || response;
-        setReadinessSummary(payload || null);
-      } catch (err) {
-        console.warn('Failed to load readiness summary', err);
-      }
-    };
+    if (fromReadiness) {
+      setShowBlockedOnly(true);
+    }
+  }, [fromReadiness]);
 
-    void loadReadinessSummary();
-  }, []);
+  useEffect(() => {
+    if (focusIssue) {
+      setIssueFilter(focusIssue);
+    }
+  }, [focusIssue]);
 
   const loadProducts = async () => {
     try {
@@ -154,15 +250,23 @@ export default function ProductOptimizationPage() {
         page_size: 50,
       });
       setProducts(data.items || []);
-      // Auto-select first product
-      if (data.items && data.items.length > 0) {
-        const first = data.items[0];
-        handleSelect(first.platform, first.platform_product_id);
-      }
     } catch (err) {
       console.error('Failed to load merchant products', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadOptimizationData = async () => {
+    try {
+      setReadinessLoading(true);
+      const data = await apiClient.getMerchantReadinessOptimization();
+      setOptimizationData(data || null);
+    } catch (err) {
+      console.error('Failed to load readiness optimization payload', err);
+      setOptimizationData(null);
+    } finally {
+      setReadinessLoading(false);
     }
   };
 
@@ -225,6 +329,32 @@ export default function ProductOptimizationPage() {
   const formatTags = (tags: string[]) => tags.join(', ');
 
   const currentStandard = detail?.standard;
+  const readinessSummary = optimizationData?.readiness_summary || null;
+  const issueBuckets = optimizationData?.issue_buckets || [];
+  const merchantActions = optimizationData?.merchant_actions || [];
+  const productQueue = optimizationData?.product_queue || [];
+
+  const productQueueMap = useMemo(() => {
+    return new Map(
+      productQueue.map((item, index) => [
+        `${item.platform}|${item.product_id}`,
+        { item, index },
+      ])
+    );
+  }, [productQueue]);
+
+  const productsWithReadiness = useMemo(() => {
+    return products.map((item) => {
+      const readiness = productQueueMap.get(
+        `${item.platform}|${item.platform_product_id}`
+      ) || null;
+      return {
+        ...item,
+        readiness: readiness?.item || null,
+        readinessIndex: readiness?.index ?? Number.MAX_SAFE_INTEGER,
+      };
+    });
+  }, [products, productQueueMap]);
 
   const qualityPayload = useMemo(() => {
     if (!currentStandard) return null;
@@ -289,6 +419,7 @@ export default function ProductOptimizationPage() {
             : item
         )
       );
+      await loadOptimizationData();
     } catch (err) {
       console.error('Failed to save enrichment', err);
       alert('保存失败，请稍后重试。');
@@ -341,10 +472,11 @@ export default function ProductOptimizationPage() {
                       data.conversion_potential_score,
                   },
                 }
-              : item
+            : item
           )
         );
       }
+      await loadOptimizationData();
     } catch (err) {
       console.error('Failed to save & evaluate quality', err);
       alert('保存并打分失败，请稍后重试。');
@@ -422,6 +554,7 @@ export default function ProductOptimizationPage() {
         ...prev,
         [key]: Date.now(),
       }));
+      await loadOptimizationData();
       alert('已完成 AI 优化，并刷新了质量评分。');
     } catch (err) {
       console.error('Failed to run auto optimization', err);
@@ -433,7 +566,7 @@ export default function ProductOptimizationPage() {
 
   const filteredProducts = (() => {
     // Text search
-    const base = products.filter((item) => {
+    const base = productsWithReadiness.filter((item) => {
       const title = item.standard?.title || '';
       const overrideTitle = item.enrichment?.title_override || '';
       const query = search.toLowerCase();
@@ -446,18 +579,43 @@ export default function ProductOptimizationPage() {
 
     // Optional low-quality filter
     const filtered = base.filter((item) => {
+      if (showBlockedOnly && !item.readiness?.blocked_variant_count) return false;
       if (!showOnlyLowQuality) return true;
       const cq = item.quality?.content_quality_score;
       // Treat undefined scores as "not low-quality" for this filter
       return typeof cq === 'number' && cq < 60;
     });
 
+    const issueFiltered = filtered.filter((item) => {
+      if (issueFilter === 'all') return true;
+      const issues = item.readiness?.top_issues || [];
+      return issues.some((issue) => getIssueBucketCodeForReason(issue.code) === issueFilter);
+    });
+
     // Sorting
     if (sortBy === 'default') {
-      return filtered;
+      return [...issueFiltered].sort((a, b) => {
+        const blockedDiff =
+          (b.readiness?.blocked_variant_count || 0) -
+          (a.readiness?.blocked_variant_count || 0);
+        if (blockedDiff !== 0) return blockedDiff;
+
+        const indexDiff = a.readinessIndex - b.readinessIndex;
+        if (indexDiff !== 0) return indexDiff;
+
+        const aCq =
+          typeof a.quality?.content_quality_score === 'number'
+            ? a.quality.content_quality_score
+            : -1;
+        const bCq =
+          typeof b.quality?.content_quality_score === 'number'
+            ? b.quality.content_quality_score
+            : -1;
+        return aCq - bCq;
+      });
     }
 
-    const sorted = [...filtered];
+    const sorted = [...issueFiltered];
     if (sortBy === 'cq_desc') {
       sorted.sort((a, b) => {
         const av = typeof a.quality?.content_quality_score === 'number'
@@ -482,6 +640,12 @@ export default function ProductOptimizationPage() {
     return sorted;
   })();
 
+  useEffect(() => {
+    if (selected || filteredProducts.length === 0) return;
+    const first = filteredProducts[0];
+    void handleSelect(first.platform, first.platform_product_id);
+  }, [filteredProducts, selected]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -498,7 +662,7 @@ export default function ProductOptimizationPage() {
     return Date.now() - ts < 30_000;
   })();
 
-  const readinessIssues =
+  const summaryTopIssues =
     readinessSummary?.blocker_breakdown && readinessSummary.blocker_breakdown.length > 0
       ? readinessSummary.blocker_breakdown
       : (readinessSummary?.top_blockers || []).slice(0, 3).map((code) => ({
@@ -506,6 +670,25 @@ export default function ProductOptimizationPage() {
           label: formatReadinessCode(code),
           count: 0,
         }));
+
+  const selectedQueueItem =
+    selected
+      ? productQueue.find(
+          (item) =>
+            item.platform === selected.platform &&
+            item.product_id === selected.platform_product_id
+        ) || null
+      : null;
+
+  const storeSetupActions = merchantActions.filter((action) =>
+    ['integrations', 'policy'].includes(action.fix_surface)
+  );
+  const productActions = merchantActions.filter((action) =>
+    ['product_content', 'catalog_data'].includes(action.fix_surface)
+  );
+  const pivotaManagedActions = merchantActions.filter(
+    (action) => action.fix_surface === 'pivota_managed'
+  );
 
   return (
     <div className="space-y-6">
@@ -533,35 +716,62 @@ export default function ProductOptimizationPage() {
               <p className="mt-2 text-sm font-medium text-slate-900">
                 {readinessSummary.action_text || readinessSummary.next_action || 'Start with the issues below, then optimize the affected products.'}
               </p>
+              {optimizationData?.last_generated_at && (
+                <p className="mt-2 text-xs text-slate-500">
+                  Last checked {new Date(optimizationData.last_generated_at).toLocaleString()}
+                </p>
+              )}
             </div>
-            <a
-              href="/dashboard/integrations"
-              className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-900 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
-            >
-              Review integrations
-            </a>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void loadOptimizationData()}
+                disabled={readinessLoading}
+                className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-900 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {readinessLoading ? 'Refreshing…' : 'Refresh readiness'}
+              </button>
+              {storeSetupActions.length > 0 && (
+                <a
+                  href="/dashboard/integrations"
+                  className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-900 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
+                >
+                  Review integrations
+                </a>
+              )}
+            </div>
           </div>
 
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          <div className="mt-4 grid gap-3 xl:grid-cols-3">
             <div className="rounded-lg bg-white/80 p-4">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Top issues to fix
+                Issue overview
               </div>
               <div className="mt-3 space-y-2">
-                {readinessIssues.length > 0 ? (
-                  readinessIssues.map((issue) => (
-                    <div key={issue.code} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 ring-1 ring-slate-200">
-                      <span className="text-sm text-slate-800">{issue.label}</span>
-                      {issue.count > 0 && (
+                {issueBuckets.length > 0 ? (
+                  issueBuckets.slice(0, 6).map((bucket) => (
+                    <div key={bucket.code} className="rounded-lg bg-white px-3 py-2 ring-1 ring-slate-200">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-medium text-slate-900">{bucket.label}</span>
                         <span className="text-xs font-semibold text-slate-500">
-                          {issue.count} variants
+                          {bucket.affected_count}
                         </span>
-                      )}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-600">
+                        {bucket.scope === 'merchant' ? 'Store setup' : 'Product fix'} ·{' '}
+                        {bucket.impact === 'full_agent_commerce'
+                          ? 'Blocks agent commerce'
+                          : bucket.impact === 'checkout'
+                            ? 'Blocks checkout'
+                            : 'Blocks discovery'}
+                      </div>
                     </div>
                   ))
                 ) : (
                   <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
-                    No blocking issues are active right now.
+                    {summaryTopIssues.length > 0
+                      ? `${summaryTopIssues[0].label} is the main issue right now.`
+                      : 'No blocking issues are active right now.'}
                   </div>
                 )}
               </div>
@@ -572,15 +782,49 @@ export default function ProductOptimizationPage() {
                 Recommended actions
               </div>
               <div className="mt-3 space-y-2">
-                {(readinessSummary.recommended_actions || []).length > 0 ? (
-                  readinessSummary.recommended_actions?.map((action) => (
-                    <div key={action} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
-                      {action}
+                {(productActions.length > 0 ? productActions : merchantActions).length > 0 ? (
+                  (productActions.length > 0 ? productActions : merchantActions).slice(0, 4).map((action) => (
+                    <div key={`${action.label}-${action.target_url}`} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
+                      {action.description}
                     </div>
                   ))
                 ) : (
                   <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
                     Optimize any low-quality products and rerun readiness when you make catalog changes.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-white/80 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Store setup to review
+              </div>
+              <div className="mt-3 space-y-2">
+                {storeSetupActions.length > 0 ? (
+                  storeSetupActions.map((action) => (
+                    <a
+                      key={`${action.label}-${action.target_url}`}
+                      href={action.target_url}
+                      className="block rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50"
+                    >
+                      <div className="font-medium text-slate-900">{action.label}</div>
+                      <div className="mt-1 text-xs text-slate-600">{action.description}</div>
+                    </a>
+                  ))
+                ) : pivotaManagedActions.length > 0 ? (
+                  pivotaManagedActions.map((action) => (
+                    <div
+                      key={`${action.label}-${action.description}`}
+                      className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200"
+                    >
+                      <div className="font-medium text-slate-900">{action.label}</div>
+                      <div className="mt-1 text-xs text-slate-600">{action.description}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
+                    No merchant-level setup blockers are active right now.
                   </div>
                 )}
               </div>
@@ -619,6 +863,7 @@ export default function ProductOptimizationPage() {
                   `Bulk optimization completed.\nProcessed: ${data.processed}\nSkipped: ${data.skipped}`
                 );
                 await loadProducts();
+                await loadOptimizationData();
               } catch (err) {
                 console.error('Bulk enrichment failed', err);
                 alert('Bulk optimization failed, please try again later.');
@@ -655,29 +900,57 @@ export default function ProductOptimizationPage() {
               />
             </div>
             <div className="flex items-center justify-between gap-2 text-[11px]">
-              <div className="flex items-center gap-1">
-                <span className="text-gray-500">Sort:</span>
-                <select
-                  value={sortBy}
-                  onChange={(e) =>
-                    setSortBy(e.target.value as 'default' | 'cq_desc' | 'mr_desc')
-                  }
-                  className="border rounded px-2 py-0.5 text-[11px] bg-white"
-                >
-                  <option value="default">Recent sync</option>
-                  <option value="cq_desc">CQ ↓</option>
-                  <option value="mr_desc">MR ↓</option>
-                </select>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-500">Sort:</span>
+                  <select
+                    value={sortBy}
+                    onChange={(e) =>
+                      setSortBy(e.target.value as 'default' | 'cq_desc' | 'mr_desc')
+                    }
+                    className="border rounded px-2 py-0.5 text-[11px] bg-white"
+                  >
+                    <option value="default">Readiness priority</option>
+                    <option value="cq_desc">CQ ↓</option>
+                    <option value="mr_desc">MR ↓</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-500">Issue:</span>
+                  <select
+                    value={issueFilter}
+                    onChange={(e) => setIssueFilter(e.target.value)}
+                    className="border rounded px-2 py-0.5 text-[11px] bg-white"
+                  >
+                    <option value="all">All issues</option>
+                    {issueBuckets.map((bucket) => (
+                      <option key={bucket.code} value={bucket.code}>
+                        {bucket.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <label className="flex items-center gap-1 text-gray-500">
-                <input
-                  type="checkbox"
-                  className="h-3 w-3"
-                  checked={showOnlyLowQuality}
-                  onChange={(e) => setShowOnlyLowQuality(e.target.checked)}
-                />
-                <span>Low CQ only (&lt; 60)</span>
-              </label>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-1 text-gray-500">
+                  <input
+                    type="checkbox"
+                    className="h-3 w-3"
+                    checked={showBlockedOnly}
+                    onChange={(e) => setShowBlockedOnly(e.target.checked)}
+                  />
+                  <span>Blocked only</span>
+                </label>
+                <label className="flex items-center gap-1 text-gray-500">
+                  <input
+                    type="checkbox"
+                    className="h-3 w-3"
+                    checked={showOnlyLowQuality}
+                    onChange={(e) => setShowOnlyLowQuality(e.target.checked)}
+                  />
+                  <span>Low CQ only (&lt; 60)</span>
+                </label>
+              </div>
             </div>
           </div>
           <div className="max-h-[520px] overflow-y-auto">
@@ -695,6 +968,8 @@ export default function ProductOptimizationPage() {
                 const title = titleOverride || item.standard?.title || '-';
                 const cqScore = item.quality?.content_quality_score;
                 const mrScore = item.quality?.model_readiness_score;
+                const readiness = item.readiness;
+                const mainIssue = readiness?.top_issues?.[0];
 
                 return (
                   <button
@@ -741,6 +1016,15 @@ export default function ProductOptimizationPage() {
                           Optimized title
                         </p>
                       )}
+                      {readiness?.blocked_variant_count ? (
+                        <p className="text-[11px] text-amber-700 mt-0.5 truncate">
+                          {readiness.blocked_variant_count} blocked · {mainIssue?.label || 'Needs optimization'}
+                        </p>
+                      ) : readiness?.top_issues?.length ? (
+                        <p className="text-[11px] text-slate-600 mt-0.5 truncate">
+                          {mainIssue?.label || 'At-risk product'}
+                        </p>
+                      ) : null}
                       <p className="text-[11px] text-gray-500 mt-0.5">
                         {item.platform.toUpperCase()} ·{' '}
                         {item.standard?.price?.value ??
@@ -761,6 +1045,78 @@ export default function ProductOptimizationPage() {
 
       {/* Right: detail & enrichment editor */}
       <div className="lg:col-span-2 space-y-4">
+        {selectedQueueItem && (
+          <div className="rounded-lg border bg-white p-4 shadow">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${selectedQueueItem.blocked_variant_count > 0 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>
+                    {selectedQueueItem.blocked_variant_count > 0 ? 'Needs work' : 'Ready'}
+                  </span>
+                  <span className="text-sm text-slate-600">
+                    {selectedQueueItem.ready_variant_count} ready / {selectedQueueItem.blocked_variant_count} blocked variants
+                  </span>
+                </div>
+                <h3 className="mt-2 text-base font-semibold text-slate-900">
+                  Readiness for this product
+                </h3>
+                <p className="mt-1 text-sm text-slate-700">
+                  {selectedQueueItem.primary_action || 'Review this product and improve its enrichment before broader LLM exposure.'}
+                </p>
+              </div>
+              {['integrations', 'policy'].includes(selectedQueueItem.fix_surface) && (
+                <a
+                  href="/dashboard/integrations"
+                  className="inline-flex items-center justify-center rounded-lg bg-slate-50 px-4 py-2 text-sm font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-100"
+                >
+                  Review integrations
+                </a>
+              )}
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              <div className="rounded-lg bg-slate-50 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Main issues
+                </div>
+                <div className="mt-2 space-y-2">
+                  {selectedQueueItem.top_issues.length > 0 ? (
+                    selectedQueueItem.top_issues.map((issue) => (
+                      <div key={issue.code} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
+                        <div className="font-medium text-slate-900">{issue.label}</div>
+                        <div className="mt-1 text-xs text-slate-600">
+                          {issue.affected_variant_count} affected variants · {issue.impact === 'full_agent_commerce'
+                            ? 'Blocks agent commerce'
+                            : issue.impact === 'checkout'
+                              ? 'Blocks checkout'
+                              : 'Blocks discovery'}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
+                      No active issues on this product right now.
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  What to change here
+                </div>
+                <div className="mt-2 space-y-2">
+                  <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
+                    Update the title, summary, bullets, and audience fields below so this product is easier for LLMs to understand and rank safely.
+                  </div>
+                  <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
+                    Use `Preview score` or `Save/Score` after edits to confirm the product is moving toward readiness.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {!detail ? (
           <div className="h-full flex items-center justify-center border rounded-lg bg-white shadow">
               <p className="text-gray-500 text-sm">

@@ -183,6 +183,11 @@ class ApiClient {
     return response.data?.data || response.data;
   }
 
+  async getMerchantReadinessOptimization() {
+    const response = await this.client.get('/merchant/readiness/optimization');
+    return response.data?.data || response.data;
+  }
+
   /**
    * v2 Merchant product view used for enrichment & quality
    * Backed by /merchant/products* endpoints in pivota-backend.
