@@ -16,18 +16,35 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
-export default function DashboardPage() {
-  const [readinessSummary, setReadinessSummary] = useState<{
-    tier: 'green' | 'yellow' | 'red';
+type ReadinessSummary = {
+  tier: 'green' | 'yellow' | 'red';
+  label: string;
+  assessment_state: 'assessed' | 'not_assessed' | 'disabled';
+  score?: number | null;
+  ready_variant_count: number;
+  blocked_variant_count: number;
+  top_blockers: string[];
+  top_warnings: string[];
+  summary_text?: string | null;
+  action_text?: string | null;
+  recommended_actions?: string[];
+  blocker_breakdown?: Array<{
+    code: string;
     label: string;
-    assessment_state: 'assessed' | 'not_assessed' | 'disabled';
-    score?: number | null;
-    ready_variant_count: number;
-    blocked_variant_count: number;
-    top_blockers: string[];
-    top_warnings: string[];
-    next_action?: string | null;
-  } | null>(null);
+    count: number;
+  }>;
+  next_action?: string | null;
+};
+
+const formatReadinessCode = (value: string) =>
+  value
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+
+export default function DashboardPage() {
+  const [readinessSummary, setReadinessSummary] = useState<ReadinessSummary | null>(null);
   const [loading, setLoading] = useState(true); // orders / skeleton loading
   const [refreshing, setRefreshing] = useState(false);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
@@ -486,6 +503,15 @@ export default function DashboardPage() {
     }
   };
 
+  const readinessIssues =
+    readinessSummary?.blocker_breakdown && readinessSummary.blocker_breakdown.length > 0
+      ? readinessSummary.blocker_breakdown
+      : (readinessSummary?.top_blockers || []).slice(0, 3).map((code) => ({
+          code,
+          label: formatReadinessCode(code),
+          count: 0,
+        }));
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -545,26 +571,34 @@ export default function DashboardPage() {
               </div>
               <h2 className="mt-3 text-lg font-semibold text-slate-900">Agent commerce readiness</h2>
               <p className="mt-1 text-sm text-slate-700">
-                {readinessSummary.next_action || 'No readiness action is currently available.'}
+                {readinessSummary.summary_text || readinessSummary.next_action || 'No readiness action is currently available.'}
+              </p>
+              <p className="mt-2 text-sm font-medium text-slate-900">
+                {readinessSummary.action_text || readinessSummary.next_action || 'Open optimization to see what to fix next.'}
               </p>
             </div>
             <a
-              href="/dashboard/integrations"
+              href="/dashboard/product-optimization?source=readiness"
               className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-900 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
             >
-              Review setup
+              Optimize now
             </a>
           </div>
 
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             <div className="rounded-lg bg-white/70 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Top blockers</div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {readinessSummary.top_blockers.length > 0 ? (
-                  readinessSummary.top_blockers.map((blocker) => (
-                    <span key={blocker} className="rounded-full bg-white px-2.5 py-1 text-xs text-slate-700 ring-1 ring-slate-200">
-                      {blocker}
-                    </span>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">What needs work</div>
+              <div className="mt-3 space-y-2">
+                {readinessIssues.length > 0 ? (
+                  readinessIssues.map((issue) => (
+                    <div key={issue.code} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 ring-1 ring-slate-200">
+                      <span className="text-sm text-slate-800">{issue.label}</span>
+                      {issue.count > 0 && (
+                        <span className="text-xs font-semibold text-slate-500">
+                          {issue.count} variants
+                        </span>
+                      )}
+                    </div>
                   ))
                 ) : (
                   <span className="text-sm text-slate-600">No active blockers.</span>
@@ -572,16 +606,22 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="rounded-lg bg-white/70 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Warnings</div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {readinessSummary.top_warnings.length > 0 ? (
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">What to do next</div>
+              <div className="mt-3 space-y-2">
+                {(readinessSummary.recommended_actions || []).length > 0 ? (
+                  readinessSummary.recommended_actions?.map((action) => (
+                    <div key={action} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
+                      {action}
+                    </div>
+                  ))
+                ) : readinessSummary.top_warnings.length > 0 ? (
                   readinessSummary.top_warnings.map((warning) => (
-                    <span key={warning} className="rounded-full bg-white px-2.5 py-1 text-xs text-slate-700 ring-1 ring-slate-200">
-                      {warning}
-                    </span>
+                    <div key={warning} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
+                      {formatReadinessCode(warning)}
+                    </div>
                   ))
                 ) : (
-                  <span className="text-sm text-slate-600">No active warnings.</span>
+                  <span className="text-sm text-slate-600">No follow-up actions right now.</span>
                 )}
               </div>
             </div>

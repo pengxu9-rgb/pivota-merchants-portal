@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Package, Search, Loader2, Wand2, CheckCircle2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
@@ -42,6 +43,25 @@ type EnrichmentFormState = {
   regulatory_disclaimer_local: string;
 };
 
+type ReadinessSummary = {
+  tier: 'green' | 'yellow' | 'red';
+  label: string;
+  assessment_state: 'assessed' | 'not_assessed' | 'disabled';
+  score?: number | null;
+  ready_variant_count: number;
+  blocked_variant_count: number;
+  summary_text?: string | null;
+  action_text?: string | null;
+  recommended_actions?: string[];
+  blocker_breakdown?: Array<{
+    code: string;
+    label: string;
+    count: number;
+  }>;
+  top_blockers: string[];
+  next_action?: string | null;
+};
+
 const emptyForm: EnrichmentFormState = {
   title_override: '',
   summary_short: '',
@@ -52,10 +72,41 @@ const emptyForm: EnrichmentFormState = {
   regulatory_disclaimer_local: '',
 };
 
+const formatReadinessCode = (value: string) =>
+  value
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+
+const getReadinessTone = (tier?: string) => {
+  switch (tier) {
+    case 'green':
+      return {
+        badge: 'bg-emerald-100 text-emerald-700',
+        card: 'border-emerald-200 bg-emerald-50',
+      };
+    case 'yellow':
+      return {
+        badge: 'bg-amber-100 text-amber-800',
+        card: 'border-amber-200 bg-amber-50',
+      };
+    case 'red':
+    default:
+      return {
+        badge: 'bg-rose-100 text-rose-700',
+        card: 'border-rose-200 bg-rose-50',
+      };
+  }
+};
+
 export default function ProductOptimizationPage() {
+  const searchParams = useSearchParams();
+  const fromReadiness = searchParams.get('source') === 'readiness';
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<MerchantProductListItem[]>([]);
   const [search, setSearch] = useState('');
+  const [readinessSummary, setReadinessSummary] = useState<ReadinessSummary | null>(null);
 
   const [selected, setSelected] = useState<{
     platform: string;
@@ -79,6 +130,20 @@ export default function ProductOptimizationPage() {
 
   useEffect(() => {
     loadProducts();
+  }, []);
+
+  useEffect(() => {
+    const loadReadinessSummary = async () => {
+      try {
+        const response = await apiClient.get('/merchant/dashboard/readiness');
+        const payload = response?.data?.data || response?.data || response;
+        setReadinessSummary(payload || null);
+      } catch (err) {
+        console.warn('Failed to load readiness summary', err);
+      }
+    };
+
+    void loadReadinessSummary();
   }, []);
 
   const loadProducts = async () => {
@@ -433,17 +498,105 @@ export default function ProductOptimizationPage() {
     return Date.now() - ts < 30_000;
   })();
 
+  const readinessIssues =
+    readinessSummary?.blocker_breakdown && readinessSummary.blocker_breakdown.length > 0
+      ? readinessSummary.blocker_breakdown
+      : (readinessSummary?.top_blockers || []).slice(0, 3).map((code) => ({
+          code,
+          label: formatReadinessCode(code),
+          count: 0,
+        }));
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="space-y-6">
+      {readinessSummary && (
+        <div className={`rounded-xl border p-5 ${getReadinessTone(readinessSummary.tier).card}`}>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${getReadinessTone(readinessSummary.tier).badge}`}>
+                  {readinessSummary.label}
+                </span>
+                <span className="text-sm font-medium text-slate-900">
+                  LLM readiness score {readinessSummary.score ?? '—'}
+                </span>
+                <span className="text-sm text-slate-600">
+                  {readinessSummary.ready_variant_count} ready / {readinessSummary.blocked_variant_count} blocked variants
+                </span>
+              </div>
+              <h1 className="mt-3 text-2xl font-bold text-gray-900">
+                {fromReadiness ? 'Readiness optimization plan' : 'Product Optimization'}
+              </h1>
+              <p className="mt-1 text-sm text-slate-700">
+                {readinessSummary.summary_text || 'Use this page to fix the catalog and setup issues that are blocking agent commerce.'}
+              </p>
+              <p className="mt-2 text-sm font-medium text-slate-900">
+                {readinessSummary.action_text || readinessSummary.next_action || 'Start with the issues below, then optimize the affected products.'}
+              </p>
+            </div>
+            <a
+              href="/dashboard/integrations"
+              className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-900 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
+            >
+              Review integrations
+            </a>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <div className="rounded-lg bg-white/80 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Top issues to fix
+              </div>
+              <div className="mt-3 space-y-2">
+                {readinessIssues.length > 0 ? (
+                  readinessIssues.map((issue) => (
+                    <div key={issue.code} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 ring-1 ring-slate-200">
+                      <span className="text-sm text-slate-800">{issue.label}</span>
+                      {issue.count > 0 && (
+                        <span className="text-xs font-semibold text-slate-500">
+                          {issue.count} variants
+                        </span>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
+                    No blocking issues are active right now.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-white/80 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Recommended actions
+              </div>
+              <div className="mt-3 space-y-2">
+                {(readinessSummary.recommended_actions || []).length > 0 ? (
+                  readinessSummary.recommended_actions?.map((action) => (
+                    <div key={action} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
+                      {action}
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
+                    Optimize any low-quality products and rerun readiness when you make catalog changes.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Left: product list */}
       <div className="lg:col-span-1 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              Product Optimization
-            </h1>
+            <h2 className="text-2xl font-bold text-gray-900">Catalog products</h2>
             <p className="text-gray-600 text-sm mt-1">
-              Optimize your products for the Pivota Shopping Agent using enrichment and quality scores.
+              Improve titles, summaries, and quality scores for the products that still need work.
             </p>
           </div>
           <button
@@ -953,6 +1106,7 @@ export default function ProductOptimizationPage() {
                 )}
             </div>
           )}
+        </div>
         </div>
       </div>
     </div>
