@@ -17,6 +17,17 @@ import {
 import { apiClient } from '@/lib/api-client';
 
 export default function DashboardPage() {
+  const [readinessSummary, setReadinessSummary] = useState<{
+    tier: 'green' | 'yellow' | 'red';
+    label: string;
+    assessment_state: 'assessed' | 'not_assessed' | 'disabled';
+    score?: number | null;
+    ready_variant_count: number;
+    blocked_variant_count: number;
+    top_blockers: string[];
+    top_warnings: string[];
+    next_action?: string | null;
+  } | null>(null);
   const [loading, setLoading] = useState(true); // orders / skeleton loading
   const [refreshing, setRefreshing] = useState(false);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
@@ -232,6 +243,7 @@ export default function DashboardPage() {
                 ? override.revenueGrowth
                 : analyticsPaidRevenueGrowth ?? analyticsData.revenue_growth ?? prev.revenueGrowth,
           }));
+          setReadinessSummary(analyticsData.readiness_summary || null);
 
           if (analyticsData.recent_orders && analyticsData.recent_orders.length > 0) {
             setRecentOrders(analyticsData.recent_orders);
@@ -241,6 +253,7 @@ export default function DashboardPage() {
           if (loadSeq !== loadSeqRef.current) return;
           console.warn('Analytics failed:', err);
           setAnalyticsError(err?.message || 'Analytics failed');
+          setReadinessSummary(null);
         })
         .finally(() => {
           if (loadSeq !== loadSeqRef.current) return;
@@ -437,6 +450,27 @@ export default function DashboardPage() {
     }).format(amount);
   };
 
+  const getReadinessTone = (tier?: string) => {
+    switch (tier) {
+      case 'green':
+        return {
+          badge: 'bg-emerald-100 text-emerald-700',
+          card: 'border-emerald-200 bg-emerald-50',
+        };
+      case 'yellow':
+        return {
+          badge: 'bg-amber-100 text-amber-800',
+          card: 'border-amber-200 bg-amber-50',
+        };
+      case 'red':
+      default:
+        return {
+          badge: 'bg-rose-100 text-rose-700',
+          card: 'border-rose-200 bg-rose-50',
+        };
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -476,6 +510,67 @@ export default function DashboardPage() {
             </span>
           </div>
           {analyticsError && <span className="text-gray-500">{analyticsError}</span>}
+        </div>
+      )}
+
+      {readinessSummary && (
+        <div className={`rounded-lg border p-5 ${getReadinessTone(readinessSummary.tier).card}`}>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${getReadinessTone(readinessSummary.tier).badge}`}>
+                  {readinessSummary.label}
+                </span>
+                <span className="text-sm font-medium text-slate-900">
+                  LLM readiness score {readinessSummary.score ?? '—'}
+                </span>
+                <span className="text-sm text-slate-600">
+                  {readinessSummary.ready_variant_count} ready / {readinessSummary.blocked_variant_count} blocked variants
+                </span>
+              </div>
+              <h2 className="mt-3 text-lg font-semibold text-slate-900">Agent commerce readiness</h2>
+              <p className="mt-1 text-sm text-slate-700">
+                {readinessSummary.next_action || 'No readiness action is currently available.'}
+              </p>
+            </div>
+            <a
+              href="/dashboard/integrations"
+              className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-900 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
+            >
+              Review setup
+            </a>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <div className="rounded-lg bg-white/70 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Top blockers</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {readinessSummary.top_blockers.length > 0 ? (
+                  readinessSummary.top_blockers.map((blocker) => (
+                    <span key={blocker} className="rounded-full bg-white px-2.5 py-1 text-xs text-slate-700 ring-1 ring-slate-200">
+                      {blocker}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-sm text-slate-600">No active blockers.</span>
+                )}
+              </div>
+            </div>
+            <div className="rounded-lg bg-white/70 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Warnings</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {readinessSummary.top_warnings.length > 0 ? (
+                  readinessSummary.top_warnings.map((warning) => (
+                    <span key={warning} className="rounded-full bg-white px-2.5 py-1 text-xs text-slate-700 ring-1 ring-slate-200">
+                      {warning}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-sm text-slate-600">No active warnings.</span>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
