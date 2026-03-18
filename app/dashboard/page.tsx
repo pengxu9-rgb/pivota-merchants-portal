@@ -81,6 +81,20 @@ export default function DashboardPage() {
     void loadDashboardData(id);
   }, []);
 
+  useEffect(() => {
+    const loadReadinessSummary = async () => {
+      try {
+        const response = await apiClient.get('/merchant/dashboard/readiness');
+        const payload = response?.data?.data || response?.data || response;
+        setReadinessSummary(payload || null);
+      } catch (error) {
+        console.warn('Readiness summary failed:', error);
+      }
+    };
+
+    void loadReadinessSummary();
+  }, []);
+
   const loadDashboardData = async (merchantId: string) => {
     const loadSeq = ++loadSeqRef.current;
     let analyticsSucceeded = false;
@@ -243,7 +257,9 @@ export default function DashboardPage() {
                 ? override.revenueGrowth
                 : analyticsPaidRevenueGrowth ?? analyticsData.revenue_growth ?? prev.revenueGrowth,
           }));
-          setReadinessSummary(analyticsData.readiness_summary || null);
+          if (analyticsData.readiness_summary) {
+            setReadinessSummary(analyticsData.readiness_summary);
+          }
 
           if (analyticsData.recent_orders && analyticsData.recent_orders.length > 0) {
             setRecentOrders(analyticsData.recent_orders);
@@ -253,7 +269,6 @@ export default function DashboardPage() {
           if (loadSeq !== loadSeqRef.current) return;
           console.warn('Analytics failed:', err);
           setAnalyticsError(err?.message || 'Analytics failed');
-          setReadinessSummary(null);
         })
         .finally(() => {
           if (loadSeq !== loadSeqRef.current) return;
