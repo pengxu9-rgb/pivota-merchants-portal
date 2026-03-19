@@ -234,11 +234,6 @@ class ApiClient {
     return response.data;
   }
 
-  async getCatalogQualitySummary() {
-    const response = await this.client.get('/merchant/products/quality/summary');
-    return response.data?.data || response.data;
-  }
-
   async getMerchantReadinessOptimization() {
     const response = await this.client.get('/merchant/readiness/optimization');
     return response.data?.data || response.data;

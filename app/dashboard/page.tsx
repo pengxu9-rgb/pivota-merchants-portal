@@ -40,6 +40,14 @@ type ReadinessSummary = {
   }>;
 };
 
+type ReadinessOptimizationPayload = {
+  readiness_summary?: ReadinessSummary | null;
+  product_queue?: Array<{
+    content_quality_score?: number | null;
+    model_readiness_score?: number | null;
+  }>;
+};
+
 type DashboardStats = {
   totalOrders: number;
   paidOrders: number;
@@ -131,20 +139,6 @@ export default function DashboardPage() {
     void loadDashboardData(id);
   }, []);
 
-  useEffect(() => {
-    const loadReadinessSummary = async () => {
-      try {
-        const response = await apiClient.get('/merchant/dashboard/readiness');
-        const payload = response?.data?.data || response?.data || response;
-        setReadinessSummary(payload || null);
-      } catch (error) {
-        console.warn('Readiness summary failed:', error);
-      }
-    };
-
-    void loadReadinessSummary();
-  }, []);
-
   const loadDashboardData = async (currentMerchantId: string) => {
     const loadSeq = ++loadSeqRef.current;
     let analyticsSucceeded = false;
@@ -182,10 +176,60 @@ export default function DashboardPage() {
         : Promise.resolve([]);
 
       setQualityLoading(true);
-      const qualityPromise = apiClient.getCatalogQualitySummary().catch((err) => {
-        console.warn('Catalog quality summary failed:', err);
-        return null;
-      });
+      const optimizationPromise = apiClient
+        .getMerchantReadinessOptimization()
+        .catch((err) => {
+          console.warn('Readiness optimization failed:', err);
+          return null;
+        });
+
+      void optimizationPromise
+        .then((optimizationPayload: ReadinessOptimizationPayload | null) => {
+          if (loadSeq !== loadSeqRef.current) return;
+          if (!optimizationPayload) {
+            setCatalogQuality(null);
+            return;
+          }
+          const readiness = optimizationPayload?.readiness_summary || null;
+          const queue = Array.isArray(optimizationPayload?.product_queue)
+            ? optimizationPayload.product_queue
+            : [];
+
+          if (readiness) {
+            setReadinessSummary(readiness);
+          }
+
+          const scoredProducts = queue.filter(
+            (item) =>
+              typeof item.content_quality_score === 'number' ||
+              typeof item.model_readiness_score === 'number'
+          );
+          const cqValues = scoredProducts
+            .map((item) => item.content_quality_score)
+            .filter((value): value is number => typeof value === 'number');
+          const mrValues = scoredProducts
+            .map((item) => item.model_readiness_score)
+            .filter((value): value is number => typeof value === 'number');
+
+          setCatalogQuality({
+            total_products: queue.length,
+            scored_products: scoredProducts.length,
+            avg_content_quality:
+              cqValues.length > 0
+                ? cqValues.reduce((sum, value) => sum + value, 0) / cqValues.length
+                : null,
+            avg_model_readiness:
+              mrValues.length > 0
+                ? mrValues.reduce((sum, value) => sum + value, 0) / mrValues.length
+                : null,
+            low_cq_threshold: 60,
+            low_cq_count: cqValues.filter((value) => value < 60).length,
+          });
+        })
+        .finally(() => {
+          if (loadSeq !== loadSeqRef.current) return;
+          setQualityLoading(false);
+        });
 
       void productsPromise
         .then((productsData) => {
@@ -230,28 +274,6 @@ export default function DashboardPage() {
         .finally(() => {
           if (loadSeq !== loadSeqRef.current) return;
           setPspsLoading(false);
-        });
-
-      void qualityPromise
-        .then((qualitySummary) => {
-          if (loadSeq !== loadSeqRef.current) return;
-          if (!qualitySummary) {
-            setCatalogQuality(null);
-            return;
-          }
-
-          setCatalogQuality({
-            total_products: qualitySummary.total_products || 0,
-            scored_products: qualitySummary.scored_products || 0,
-            avg_content_quality: qualitySummary.avg_content_quality ?? null,
-            avg_model_readiness: qualitySummary.avg_model_readiness ?? null,
-            low_cq_threshold: qualitySummary.low_cq_threshold ?? 60,
-            low_cq_count: qualitySummary.low_cq_count || 0,
-          });
-        })
-        .finally(() => {
-          if (loadSeq !== loadSeqRef.current) return;
-          setQualityLoading(false);
         });
 
       setAnalyticsLoading(true);
@@ -320,7 +342,7 @@ export default function DashboardPage() {
                 : analyticsPaidRevenueGrowth ?? analyticsData.revenue_growth ?? prev.revenueGrowth,
           }));
 
-          if (analyticsData.readiness_summary) {
+          if (!readinessSummary && analyticsData.readiness_summary) {
             setReadinessSummary(analyticsData.readiness_summary);
           }
 
