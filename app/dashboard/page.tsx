@@ -42,6 +42,15 @@ type ReadinessSummary = {
 
 type ReadinessOptimizationPayload = {
   readiness_summary?: ReadinessSummary | null;
+  dashboard_snapshot?: {
+    total_orders?: number | null;
+    paid_orders?: number | null;
+    total_revenue?: number | null;
+    total_customers?: number | null;
+    total_products?: number | null;
+    order_growth?: number | null;
+    revenue_growth?: number | null;
+  } | null;
   product_queue?: Array<{
     queue_item_id: string;
     title: string;
@@ -157,7 +166,6 @@ export default function DashboardPage() {
 
   const loadDashboardData = async (currentMerchantId: string) => {
     const loadSeq = ++loadSeqRef.current;
-    let analyticsSucceeded = false;
 
     try {
       setAnalyticsError(null);
@@ -185,61 +193,12 @@ export default function DashboardPage() {
         : Promise.resolve([]);
 
       setQualityLoading(true);
+      setAnalyticsLoading(true);
       const optimizationPromise = apiClient
         .getMerchantReadinessOptimization()
         .catch((err) => {
           console.warn('Readiness optimization failed:', err);
           return null;
-        });
-
-      void optimizationPromise
-        .then((optimizationPayload: ReadinessOptimizationPayload | null) => {
-          if (loadSeq !== loadSeqRef.current) return;
-          if (!optimizationPayload) {
-            setCatalogQuality(null);
-            setOptimizationQueue([]);
-            return;
-          }
-          const readiness = optimizationPayload?.readiness_summary || null;
-          const queue = Array.isArray(optimizationPayload?.product_queue)
-            ? optimizationPayload.product_queue
-            : [];
-          setOptimizationQueue(queue);
-
-          if (readiness) {
-            setReadinessSummary(readiness);
-          }
-
-          const scoredProducts = queue.filter(
-            (item) =>
-              typeof item.content_quality_score === 'number' ||
-              typeof item.model_readiness_score === 'number'
-          );
-          const cqValues = scoredProducts
-            .map((item) => item.content_quality_score)
-            .filter((value): value is number => typeof value === 'number');
-          const mrValues = scoredProducts
-            .map((item) => item.model_readiness_score)
-            .filter((value): value is number => typeof value === 'number');
-
-          setCatalogQuality({
-            total_products: queue.length,
-            scored_products: scoredProducts.length,
-            avg_content_quality:
-              cqValues.length > 0
-                ? cqValues.reduce((sum, value) => sum + value, 0) / cqValues.length
-                : null,
-            avg_model_readiness:
-              mrValues.length > 0
-                ? mrValues.reduce((sum, value) => sum + value, 0) / mrValues.length
-                : null,
-            low_cq_threshold: 60,
-            low_cq_count: cqValues.filter((value) => value < 60).length,
-          });
-        })
-        .finally(() => {
-          if (loadSeq !== loadSeqRef.current) return;
-          setQualityLoading(false);
         });
 
       void storesPromise
@@ -272,80 +231,74 @@ export default function DashboardPage() {
           setPspsLoading(false);
         });
 
-      setAnalyticsLoading(true);
-      void apiClient
-        .getAnalyticsDashboard('30d')
-        .then((analyticsData) => {
-          if (loadSeq !== loadSeqRef.current || !analyticsData) return;
-          analyticsSucceeded = true;
-
-          const analyticsTotalOrders =
-            analyticsData?.total_orders_placed ??
-            analyticsData?.total_orders ??
-            analyticsData?.orders?.total ??
-            analyticsData?.order_breakdown?.total ??
-            analyticsData?.total_order_attempts ??
-            null;
-
-          const analyticsPaidOrders =
-            analyticsData?.total_payments_succeeded ??
-            analyticsData?.total_transactions ??
-            analyticsData?.orders?.paid ??
-            analyticsData?.order_breakdown?.paid ??
-            analyticsData?.total_paid_orders ??
-            null;
-
-          const analyticsPaidRevenue =
-            analyticsData?.revenue_breakdown?.confirmed ??
-            analyticsData?.revenue_breakdown?.paid ??
-            analyticsData?.confirmed_revenue ??
-            analyticsData?.paid_revenue ??
-            analyticsData?.total_paid_revenue ??
-            analyticsData?.net_revenue ??
-            null;
-
-          const analyticsPaidRevenueGrowth =
-            analyticsData?.confirmed_revenue_growth ??
-            analyticsData?.paid_revenue_growth ??
-            analyticsData?.net_revenue_growth ??
-            null;
-
-          setStats((prev) => ({
-            ...prev,
-            totalOrders: analyticsTotalOrders ?? prev.totalOrders,
-            paidOrders: analyticsPaidOrders ?? prev.paidOrders,
-            totalRevenue:
-              analyticsPaidRevenue ?? analyticsData.total_revenue ?? prev.totalRevenue,
-            totalCustomers: analyticsData.total_customers ?? prev.totalCustomers,
-            totalProducts: analyticsData.total_products ?? prev.totalProducts,
-            orderGrowth: analyticsData.order_growth ?? prev.orderGrowth,
-            revenueGrowth:
-              analyticsPaidRevenueGrowth ?? analyticsData.revenue_growth ?? prev.revenueGrowth,
-          }));
-
-          if (!readinessSummary && analyticsData.readiness_summary) {
-            setReadinessSummary(analyticsData.readiness_summary);
-          }
-
-          if (analyticsData.recent_orders && analyticsData.recent_orders.length > 0) {
-            setRecentOrders(analyticsData.recent_orders);
-          }
-        })
-        .catch((err) => {
-          if (loadSeq !== loadSeqRef.current) return;
-          console.warn('Analytics failed:', err);
-          setAnalyticsError(err?.message || 'Analytics failed');
-        })
-        .finally(() => {
-          if (loadSeq !== loadSeqRef.current) return;
-          setAnalyticsLoading(false);
-        });
-
-      const ordersResponse = await ordersPromise;
+      const [ordersResponse, optimizationPayload] = await Promise.all([
+        ordersPromise,
+        optimizationPromise,
+      ]);
       if (loadSeq !== loadSeqRef.current) return;
 
       const ordersData = ordersResponse?.orders || [];
       const ordersArray = Array.isArray(ordersData) ? ordersData : [];
+
+      if (!optimizationPayload) {
+        setCatalogQuality(null);
+        setOptimizationQueue([]);
+        setAnalyticsError('Overview metrics are temporarily unavailable.');
+      } else {
+        const readiness = optimizationPayload.readiness_summary || null;
+        const queue = Array.isArray(optimizationPayload.product_queue)
+          ? optimizationPayload.product_queue
+          : [];
+        const dashboardSnapshot = optimizationPayload.dashboard_snapshot || null;
+
+        setOptimizationQueue(queue);
+
+        if (readiness) {
+          setReadinessSummary(readiness);
+        }
+
+        const scoredProducts = queue.filter(
+          (item) =>
+            typeof item.content_quality_score === 'number' ||
+            typeof item.model_readiness_score === 'number'
+        );
+        const cqValues = scoredProducts
+          .map((item) => item.content_quality_score)
+          .filter((value): value is number => typeof value === 'number');
+        const mrValues = scoredProducts
+          .map((item) => item.model_readiness_score)
+          .filter((value): value is number => typeof value === 'number');
+
+        setCatalogQuality({
+          total_products: queue.length,
+          scored_products: scoredProducts.length,
+          avg_content_quality:
+            cqValues.length > 0
+              ? cqValues.reduce((sum, value) => sum + value, 0) / cqValues.length
+              : null,
+          avg_model_readiness:
+            mrValues.length > 0
+              ? mrValues.reduce((sum, value) => sum + value, 0) / mrValues.length
+              : null,
+          low_cq_threshold: 60,
+          low_cq_count: cqValues.filter((value) => value < 60).length,
+        });
+
+        if (dashboardSnapshot) {
+          setStats((prev) => ({
+            ...prev,
+            totalOrders: dashboardSnapshot.total_orders ?? prev.totalOrders,
+            paidOrders: dashboardSnapshot.paid_orders ?? prev.paidOrders,
+            totalRevenue: dashboardSnapshot.total_revenue ?? prev.totalRevenue,
+            totalCustomers: dashboardSnapshot.total_customers ?? prev.totalCustomers,
+            totalProducts: dashboardSnapshot.total_products ?? prev.totalProducts,
+            orderGrowth: dashboardSnapshot.order_growth ?? prev.orderGrowth,
+            revenueGrowth: dashboardSnapshot.revenue_growth ?? prev.revenueGrowth,
+          }));
+        } else {
+          setAnalyticsError('Overview metrics are temporarily unavailable.');
+        }
+      }
 
       const isRevenueEligibleOrder = (order: any) => {
         const paymentStatus = String(order?.payment_status ?? '').toLowerCase();
@@ -391,7 +344,7 @@ export default function DashboardPage() {
         0
       );
 
-      if (!analyticsSucceeded) {
+      if (!optimizationPayload?.dashboard_snapshot) {
         setStats((prev) => ({
           ...prev,
           totalOrders: ordersResponse?.total ?? ordersArray.length ?? 0,
@@ -410,6 +363,8 @@ export default function DashboardPage() {
       if (loadSeq === loadSeqRef.current) {
         setLoading(false);
         setRefreshing(false);
+        setAnalyticsLoading(false);
+        setQualityLoading(false);
       }
     }
   };
