@@ -249,7 +249,8 @@ export default function ProductsPage() {
                 placeholder="Search titles or SKU"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
-                className="merchant-input pl-14"
+                className="merchant-input"
+                style={{ paddingLeft: '3.25rem' }}
               />
             </div>
             <div className="lg:w-64">
