@@ -243,6 +243,11 @@ type ReadinessActionRunResult = {
   after_plan?: OptimizationPlan;
 };
 
+type WorkspaceProductItem = MerchantProductListItem & {
+  readiness: ProductQueueItem | null;
+  readinessIndex: number;
+};
+
 const emptyForm: EnrichmentFormState = {
   title_override: '',
   summary_short: '',
@@ -567,18 +572,52 @@ export default function ProductOptimizationPage() {
     );
   }, [productQueue]);
 
-  const productsWithReadiness = useMemo(() => {
-    return products.map((item) => {
-      const readiness = productQueueMap.get(
-        `${item.platform}|${item.platform_product_id}`
-      ) || null;
-      return {
+  const productsByKey = useMemo(() => {
+    return new Map(
+      products.map((item) => [
+        `${item.platform}|${item.platform_product_id}`,
+        item,
+      ])
+    );
+  }, [products]);
+
+  const queueDrivenProducts = useMemo<WorkspaceProductItem[]>(() => {
+    if (productQueue.length === 0) {
+      return products.map((item) => ({
         ...item,
-        readiness: readiness?.item || null,
-        readinessIndex: readiness?.index ?? Number.MAX_SAFE_INTEGER,
+        readiness:
+          productQueueMap.get(`${item.platform}|${item.platform_product_id}`)
+            ?.item || null,
+        readinessIndex:
+          productQueueMap.get(`${item.platform}|${item.platform_product_id}`)
+            ?.index ?? Number.MAX_SAFE_INTEGER,
+      }));
+    }
+
+    return productQueue.map((queueItem, index) => {
+      const platformProductId =
+        queueItem.platform_product_id || queueItem.product_id;
+      const productKey = `${queueItem.platform}|${platformProductId}`;
+      const base = productsByKey.get(productKey);
+
+      return {
+        merchant_id: base?.merchant_id || '',
+        platform: queueItem.platform,
+        platform_product_id: platformProductId,
+        standard: {
+          title: base?.standard?.title || queueItem.title,
+          price: base?.standard?.price,
+          main_image_url:
+            base?.standard?.main_image_url || queueItem.image_url || undefined,
+          last_synced_at: base?.standard?.last_synced_at,
+        },
+        enrichment: base?.enrichment,
+        quality: base?.quality,
+        readiness: queueItem,
+        readinessIndex: index,
       };
     });
-  }, [products, productQueueMap]);
+  }, [productQueue, productQueueMap, products, productsByKey]);
 
   const qualityPayload = useMemo(() => {
     if (!currentStandard) return null;
@@ -868,8 +907,8 @@ export default function ProductOptimizationPage() {
 
   const filteredProducts = (() => {
     // Text search
-    const base = productsWithReadiness.filter((item) => {
-      const title = item.standard?.title || '';
+    const base = queueDrivenProducts.filter((item) => {
+      const title = item.enrichment?.title_override || item.standard?.title || '';
       const overrideTitle = item.enrichment?.title_override || '';
       const query = search.toLowerCase();
       if (!query) return true;
@@ -897,13 +936,13 @@ export default function ProductOptimizationPage() {
     // Sorting
     if (sortBy === 'default') {
       return [...issueFiltered].sort((a, b) => {
+        const indexDiff = a.readinessIndex - b.readinessIndex;
+        if (indexDiff !== 0) return indexDiff;
+
         const blockedDiff =
           (b.readiness?.blocked_variant_count || 0) -
           (a.readiness?.blocked_variant_count || 0);
         if (blockedDiff !== 0) return blockedDiff;
-
-        const indexDiff = a.readinessIndex - b.readinessIndex;
-        if (indexDiff !== 0) return indexDiff;
 
         const aCq =
           typeof a.quality?.content_quality_score === 'number'
