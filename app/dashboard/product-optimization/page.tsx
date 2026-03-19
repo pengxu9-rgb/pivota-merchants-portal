@@ -350,6 +350,7 @@ export default function ProductOptimizationPage() {
   const focusIssue = searchParams.get('focus');
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<MerchantProductListItem[]>([]);
+  const [productsHydrating, setProductsHydrating] = useState(false);
   const [search, setSearch] = useState('');
   const [optimizationData, setOptimizationData] = useState<ReadinessOptimizationPayload | null>(null);
   const [readinessLoading, setReadinessLoading] = useState(true);
@@ -384,7 +385,6 @@ export default function ProductOptimizationPage() {
   const [bulkOptimizing, setBulkOptimizing] = useState(false);
 
   useEffect(() => {
-    void loadProducts();
     void loadOptimizationData();
   }, []);
 
@@ -402,7 +402,7 @@ export default function ProductOptimizationPage() {
 
   const loadProducts = async () => {
     try {
-      setLoading(true);
+      setProductsHydrating(true);
       const pageSize = 100;
       const maxPages = 50;
       const allItems: MerchantProductListItem[] = [];
@@ -431,7 +431,7 @@ export default function ProductOptimizationPage() {
     } catch (err) {
       console.error('Failed to load merchant products', err);
     } finally {
-      setLoading(false);
+      setProductsHydrating(false);
     }
   };
 
@@ -456,7 +456,36 @@ export default function ProductOptimizationPage() {
       return null;
     } finally {
       setReadinessLoading(false);
+      setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (!optimizationData?.product_queue?.length) return;
+    if (products.length > 0 || productsHydrating) return;
+    void loadProducts();
+  }, [optimizationData, products.length, productsHydrating]);
+
+  const upsertCachedProduct = (nextItem: MerchantProductListItem) => {
+    setProducts((prev) => {
+      const index = prev.findIndex(
+        (item) =>
+          item.platform === nextItem.platform &&
+          item.platform_product_id === nextItem.platform_product_id
+      );
+      if (index === -1) {
+        return [...prev, nextItem];
+      }
+      const next = [...prev];
+      next[index] = {
+        ...next[index],
+        ...nextItem,
+        standard: nextItem.standard || next[index].standard,
+        enrichment: nextItem.enrichment ?? next[index].enrichment,
+        quality: nextItem.quality ?? next[index].quality,
+      };
+      return next;
+    });
   };
 
   const loadProductDetail = async (
@@ -479,6 +508,22 @@ export default function ProductOptimizationPage() {
         topic_tags: enrichment.topic_tags || [],
         regulatory_disclaimer_local:
           enrichment.regulatory_disclaimer_local || '',
+      });
+      upsertCachedProduct({
+        merchant_id: data.merchant_id,
+        platform: data.platform,
+        platform_product_id: data.platform_product_id,
+        standard: {
+          title: data.standard?.title,
+          price: data.standard?.price,
+          main_image_url:
+            data.standard?.image_url ||
+            data.standard?.main_image_url ||
+            data.standard?.images?.[0],
+          last_synced_at: data.standard?.last_synced_at,
+        },
+        enrichment: data.enrichment,
+        quality: data.quality,
       });
       if (data.quality) {
         setQualityPreview(data.quality);
@@ -1061,16 +1106,18 @@ export default function ProductOptimizationPage() {
       ? '/dashboard/integrations'
       : '/dashboard/product-optimization';
 
+  const qualityMetadataReady = products.length > 0;
+
   return (
     <div className="space-y-6">
       {readinessSummary && (
         <div className={`rounded-xl border p-5 ${getReadinessTone(readinessSummary.tier).card}`}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <div className="flex flex-wrap items-center gap-3">
-                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${getReadinessTone(readinessSummary.tier).badge}`}>
-                  {readinessSummary.label}
-                </span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${getReadinessTone(readinessSummary.tier).badge}`}>
+                    {readinessSummary.label}
+                  </span>
                 <span className="text-sm font-medium text-slate-900">
                   Catalog health score {readinessSummary.score ?? '—'}
                 </span>
@@ -1116,8 +1163,8 @@ export default function ProductOptimizationPage() {
                 </div>
               )}
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button
+              <div className="flex flex-wrap gap-2">
+                <button
                 type="button"
                 onClick={() =>
                   void loadOptimizationData({
@@ -1139,10 +1186,10 @@ export default function ProductOptimizationPage() {
                   Review integrations
                 </a>
               )}
+              </div>
             </div>
-          </div>
 
-          <div className="mt-4 grid gap-3 xl:grid-cols-3">
+            <div className="mt-4 grid gap-3 xl:grid-cols-3">
             <div className="rounded-lg bg-white/80 p-4">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Issue overview
@@ -1309,14 +1356,19 @@ export default function ProductOptimizationPage() {
                   <span className="text-gray-500">Sort:</span>
                   <select
                     value={sortBy}
+                    disabled={!qualityMetadataReady && sortBy !== 'default'}
                     onChange={(e) =>
                       setSortBy(e.target.value as 'default' | 'cq_desc' | 'mr_desc')
                     }
                     className="border rounded px-2 py-0.5 text-[11px] bg-white"
                   >
                     <option value="default">Readiness priority</option>
-                    <option value="cq_desc">CQ ↓</option>
-                    <option value="mr_desc">MR ↓</option>
+                    <option value="cq_desc" disabled={!qualityMetadataReady}>
+                      CQ ↓
+                    </option>
+                    <option value="mr_desc" disabled={!qualityMetadataReady}>
+                      MR ↓
+                    </option>
                   </select>
                 </div>
                 <div className="flex items-center gap-1">
@@ -1350,11 +1402,24 @@ export default function ProductOptimizationPage() {
                     type="checkbox"
                     className="h-3 w-3"
                     checked={showOnlyLowQuality}
+                    disabled={!qualityMetadataReady}
                     onChange={(e) => setShowOnlyLowQuality(e.target.checked)}
                   />
-                  <span>Low CQ only (&lt; 60)</span>
+                  <span className={!qualityMetadataReady ? 'text-gray-400' : ''}>
+                    Low CQ only (&lt; 60)
+                  </span>
                 </label>
               </div>
+              {!qualityMetadataReady && (
+                <p className="text-xs text-gray-500">
+                  Loading CQ and MR details in the background. Readiness priority is available immediately.
+                </p>
+              )}
+              {productsHydrating && qualityMetadataReady && (
+                <p className="text-xs text-gray-500">
+                  Refreshing CQ and MR details in the background.
+                </p>
+              )}
             </div>
           </div>
           <div className="max-h-[520px] overflow-y-auto">
