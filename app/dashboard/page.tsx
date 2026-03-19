@@ -43,6 +43,16 @@ type ReadinessSummary = {
 type ReadinessOptimizationPayload = {
   readiness_summary?: ReadinessSummary | null;
   product_queue?: Array<{
+    queue_item_id: string;
+    title: string;
+    image_url?: string | null;
+    price_value?: number | null;
+    price_currency?: string | null;
+    blocked_variant_count: number;
+    top_issues?: Array<{
+      code: string;
+      label: string;
+    }>;
     content_quality_score?: number | null;
     model_readiness_score?: number | null;
   }>;
@@ -65,6 +75,19 @@ function formatCurrency(amount: number) {
     style: 'currency',
     currency: 'USD',
   }).format(amount);
+}
+
+function formatProductPrice(amount?: number | null, currency?: string | null) {
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) return 'Price unavailable';
+
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency || 'USD',
+    }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency || 'USD'}`;
+  }
 }
 
 function formatRelativeTime(value?: string | null) {
@@ -97,7 +120,6 @@ export default function DashboardPage() {
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [storesLoading, setStoresLoading] = useState(false);
   const [pspsLoading, setPspsLoading] = useState(false);
-  const [productsLoading, setProductsLoading] = useState(false);
   const [qualityLoading, setQualityLoading] = useState(false);
   const [merchantId, setMerchantId] = useState('');
   const loadSeqRef = useRef(0);
@@ -123,7 +145,9 @@ export default function DashboardPage() {
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [connectedStores, setConnectedStores] = useState<any[]>([]);
   const [connectedPSPs, setConnectedPSPs] = useState<any[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
+  const [optimizationQueue, setOptimizationQueue] = useState<
+    NonNullable<ReadinessOptimizationPayload['product_queue']>
+  >([]);
   const [catalogQuality, setCatalogQuality] = useState<{
     total_products: number;
     scored_products: number;
@@ -151,12 +175,6 @@ export default function DashboardPage() {
       const ordersPromise = apiClient.getOrders({ limit: 10 }).catch((err) => {
         console.warn('Orders failed:', err);
         return { orders: [], total: 0, limit: 10, offset: 0 };
-      });
-
-      setProductsLoading(true);
-      const productsPromise = apiClient.getProducts().catch((err) => {
-        console.warn('Products failed:', err);
-        return [];
       });
 
       setStoresLoading(Boolean(currentMerchantId));
@@ -188,12 +206,14 @@ export default function DashboardPage() {
           if (loadSeq !== loadSeqRef.current) return;
           if (!optimizationPayload) {
             setCatalogQuality(null);
+            setOptimizationQueue([]);
             return;
           }
           const readiness = optimizationPayload?.readiness_summary || null;
           const queue = Array.isArray(optimizationPayload?.product_queue)
             ? optimizationPayload.product_queue
             : [];
+          setOptimizationQueue(queue);
 
           if (readiness) {
             setReadinessSummary(readiness);
@@ -229,21 +249,6 @@ export default function DashboardPage() {
         .finally(() => {
           if (loadSeq !== loadSeqRef.current) return;
           setQualityLoading(false);
-        });
-
-      void productsPromise
-        .then((productsData) => {
-          if (loadSeq !== loadSeqRef.current) return;
-          setProducts(Array.isArray(productsData) ? productsData : []);
-          setStats((prev) => ({
-            ...prev,
-            totalProducts:
-              prev.totalProducts || (Array.isArray(productsData) ? productsData.length : 0),
-          }));
-        })
-        .finally(() => {
-          if (loadSeq !== loadSeqRef.current) return;
-          setProductsLoading(false);
         });
 
       void storesPromise
@@ -603,18 +608,15 @@ export default function DashboardPage() {
       : '/dashboard/product-optimization?source=readiness';
 
   const activePSPs = connectedPSPs.filter((psp) => psp?.is_active);
-  const missingImageCount = products.filter((product) => {
-    return !(
-      product?.image_url ||
-      product?.image ||
-      product?.images?.[0] ||
-      product?.main_image_url
-    );
-  }).length;
-  const missingDescriptionCount = products.filter((product) => {
-    const description = product?.description || product?.body_html || product?.summary || '';
-    return !String(description).trim();
-  }).length;
+  const missingImageCount = optimizationQueue.filter(
+    (product) =>
+      product.top_issues?.some((issue) => issue.code === 'missing_primary_image') ||
+      !product.image_url
+  ).length;
+  const missingDescriptionCount = optimizationQueue.filter((product) =>
+    product.top_issues?.some((issue) => issue.code === 'missing_description')
+  ).length;
+  const spotlightProducts = optimizationQueue.slice(0, 4);
 
   const blockedVariants = readinessSummary?.blocked_variant_count || 0;
   const readyVariants = readinessSummary?.ready_variant_count || 0;
@@ -767,8 +769,8 @@ export default function DashboardPage() {
       ? {
           title: `Improve ${qualityNeedsAttention} products before the next push`,
           detail: 'Tightening descriptions and imagery will help products surface more confidently across channels.',
-          href: '/dashboard/products',
-          cta: 'Open catalog',
+          href: readinessHref,
+          cta: 'Open catalog health',
         }
       : null,
     connectedStores.length === 0 || activePSPs.length === 0
@@ -1137,25 +1139,25 @@ export default function DashboardPage() {
 
         <SurfaceCard
           title="Catalog spotlight"
-          description="A quick look at the current catalog items most likely to shape merchant perception."
+          description="The highest-priority catalog items currently shaping launch readiness and merchant perception."
           action={
-            <MerchantLinkButton href="/dashboard/products" variant="ghost" icon={ArrowRight}>
-              Open catalog
+            <MerchantLinkButton href={readinessHref} variant="ghost" icon={ArrowRight}>
+              Open catalog health
             </MerchantLinkButton>
           }
         >
           <div className="grid gap-4 px-5 py-5 sm:grid-cols-2">
-            {products.length > 0 ? (
-              products.slice(0, 4).map((product) => (
+            {spotlightProducts.length > 0 ? (
+              spotlightProducts.map((product) => (
                 <div
-                  key={product.id || product.product_id}
+                  key={product.queue_item_id}
                   className="rounded-[1.25rem] border border-[color:var(--merchant-line)] bg-white/70 p-4"
                 >
                   <div className="mb-4 flex h-28 items-center justify-center overflow-hidden rounded-[1rem] bg-[color:var(--merchant-surface-muted)]">
-                    {product.image_url || product.image ? (
+                    {product.image_url ? (
                       <img
-                        src={product.image_url || product.image}
-                        alt={product.name || product.title}
+                        src={product.image_url}
+                        alt={product.title}
                         className="h-full w-full object-cover"
                       />
                     ) : (
@@ -1164,22 +1166,25 @@ export default function DashboardPage() {
                   </div>
                   <div className="space-y-1.5">
                     <p className="truncate font-medium text-[color:var(--merchant-ink)]">
-                      {product.name || product.title || 'Untitled product'}
+                      {product.title || 'Untitled product'}
                     </p>
                     <p className="text-sm text-[color:var(--merchant-muted)]">
-                      {formatCurrency(product.price || product.price_amount || 0)}
+                      {formatProductPrice(product.price_value, product.price_currency)}
                     </p>
                     <p className="text-sm text-[color:var(--merchant-muted-strong)]">
-                      Stock {product.stock || product.inventory_quantity || 0}
+                      {product.top_issues?.[0]?.label ||
+                        (product.blocked_variant_count > 0
+                          ? `${product.blocked_variant_count} blocked variants`
+                          : 'Ready for review')}
                     </p>
                   </div>
                 </div>
               ))
             ) : (
               <div className="sm:col-span-2 text-sm leading-6 text-[color:var(--merchant-muted)]">
-                {productsLoading
+                {qualityLoading
                   ? 'Refreshing catalog spotlight…'
-                  : 'Once your catalog syncs, Overview will surface a curated product snapshot here.'}
+                  : 'Once readiness generates a priority queue, Overview will surface the highest-impact catalog items here.'}
               </div>
             )}
           </div>
