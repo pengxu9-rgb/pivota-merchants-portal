@@ -271,63 +271,6 @@ const formatReadinessCode = (value: string) =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 
-const scoreTextLength = (text: string, min: number, max: number) => {
-  const normalized = text.trim();
-  if (!normalized) return 0;
-
-  const length = normalized.length;
-  if (length <= 0) return 0;
-  if (length >= min && length <= max) return 1;
-  if (length < min) return Math.max(0, length / min);
-  if (length >= max * 3) return 0.4;
-
-  const span = max * 2;
-  const over = length - max;
-  return Math.max(0.4, 1 - (over / span) * 0.6);
-};
-
-const buildFallbackQuality = (item: {
-  title?: string | null;
-  description?: string | null;
-  priceValue?: number | null;
-  imageUrl?: string | null;
-  brand?: string | null;
-  category?: string | null;
-  summary?: string | null;
-  bulletPoints?: string[] | null;
-  usageScenarios?: string[] | null;
-}) => {
-  const titleScore = scoreTextLength(item.title || '', 10, 80);
-  const descriptionScore = scoreTextLength(item.description || '', 40, 600);
-  const summaryScore = scoreTextLength(item.summary || '', 20, 120);
-  const bulletsCount = (item.bulletPoints || []).filter(Boolean).length;
-  const bulletsOk = bulletsCount >= 3;
-  const hasAnyImage = Boolean(item.imageUrl);
-  const hasBrand = Boolean(item.brand);
-  const hasCategory = Boolean(item.category);
-  const priceOk = typeof item.priceValue === 'number' && item.priceValue > 0;
-  const attributeScore = (item.usageScenarios || []).length > 0 ? 0.5 : 0;
-
-  const rawScores = [
-    titleScore,
-    descriptionScore,
-    summaryScore,
-    attributeScore,
-    hasAnyImage ? 1 : 0,
-    hasBrand && hasCategory ? 1 : 0,
-    priceOk ? 1 : 0,
-  ];
-  const contentQualityScore = Math.round((rawScores.reduce((sum, score) => sum + score, 0) / rawScores.length) * 1000) / 10;
-  const modelReadinessScore = Math.round(((summaryScore * 0.4 + (bulletsOk ? 1 : 0) * 0.3 + attributeScore * 0.3) * 1000)) / 10;
-
-  return {
-    content_quality_score: contentQualityScore,
-    model_readiness_score: modelReadinessScore,
-    conversion_potential_score: null,
-    last_evaluated_at: null,
-  };
-};
-
 const getReadinessTone = (tier?: string) => {
   switch (tier) {
     case 'green':
@@ -666,23 +609,6 @@ export default function ProductOptimizationPage() {
       const productKey = `${queueItem.platform}|${platformProductId}`;
       const base = productsByKey.get(productKey);
       const baseQuality = base?.quality || {};
-      const fallbackQuality = buildFallbackQuality({
-        title: base?.standard?.title || queueItem.title,
-        description:
-          (base?.standard as any)?.description ||
-          (base?.standard as any)?.description_text ||
-          null,
-        priceValue:
-          typeof base?.standard?.price === 'number'
-            ? base.standard.price
-            : base?.standard?.price?.value ?? queueItem.price_value ?? null,
-        imageUrl: base?.standard?.main_image_url || queueItem.image_url || null,
-        brand: queueItem.brand || null,
-        category: queueItem.category || null,
-        summary: base?.enrichment?.summary_short || null,
-        bulletPoints: base?.enrichment?.bullet_points || null,
-        usageScenarios: base?.enrichment?.usage_scenarios || null,
-      });
 
       return {
         merchant_id: base?.merchant_id || '',
@@ -709,23 +635,23 @@ export default function ProductOptimizationPage() {
               ? baseQuality.content_quality_score
               : typeof queueItem.content_quality_score === 'number'
                 ? queueItem.content_quality_score
-                : fallbackQuality.content_quality_score,
+                : null,
           model_readiness_score:
             typeof baseQuality.model_readiness_score === 'number'
               ? baseQuality.model_readiness_score
               : typeof queueItem.model_readiness_score === 'number'
                 ? queueItem.model_readiness_score
-                : fallbackQuality.model_readiness_score,
+                : null,
           conversion_potential_score:
             typeof baseQuality.conversion_potential_score === 'number'
               ? baseQuality.conversion_potential_score
               : typeof queueItem.conversion_potential_score === 'number'
                 ? queueItem.conversion_potential_score
-                : fallbackQuality.conversion_potential_score,
+                : null,
           last_evaluated_at:
             baseQuality.last_evaluated_at ||
             queueItem.quality_last_evaluated_at ||
-            fallbackQuality.last_evaluated_at,
+            null,
         },
         readiness: queueItem,
         readinessIndex: index,
