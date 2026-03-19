@@ -928,6 +928,39 @@ export default function ProductOptimizationPage() {
     void handleSelect(first.platform, first.platform_product_id);
   }, [filteredProducts, selected]);
 
+  useEffect(() => {
+    if (!selected) return;
+
+    const selectedStillVisible = filteredProducts.some(
+      (item) =>
+        item.platform === selected.platform &&
+        item.platform_product_id === selected.platform_product_id
+    );
+
+    if (selectedStillVisible) {
+      return;
+    }
+
+    if (filteredProducts.length > 0) {
+      const first = filteredProducts[0];
+      void handleSelect(first.platform, first.platform_product_id);
+      return;
+    }
+
+    setSelected(null);
+    setDetail(null);
+    setQualityPreview(null);
+    setForm(emptyForm);
+    setActionPreview(null);
+    setLatestJob(null);
+    setVerificationResult(null);
+    setActionFeedback(
+      showBlockedOnly
+        ? 'No blocked products match the current filters. Turn off `Blocked only` or choose a different issue.'
+        : 'No products match the current filters.'
+    );
+  }, [filteredProducts, selected, showBlockedOnly]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1268,7 +1301,9 @@ export default function ProductOptimizationPage() {
           <div className="max-h-[520px] overflow-y-auto">
             {filteredProducts.length === 0 ? (
               <div className="p-6 text-center text-gray-500 text-sm">
-                No products found.
+                {showBlockedOnly
+                  ? 'No blocked products match the current filters.'
+                  : 'No products match the current filters.'}
               </div>
             ) : (
               filteredProducts.map((item) => {
@@ -1624,32 +1659,45 @@ export default function ProductOptimizationPage() {
                   Pivota enrichment (editable)
                 </h2>
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handlePreviewRecommendedAction}
-                    disabled={actionPreviewLoading || !selectedActionRequest}
-                    className="inline-flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap border rounded-md hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    {actionPreviewLoading ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Wand2 className="w-3 h-3" />
-                    )}
-                    Preview suggested fix
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleAutoOptimize}
-                    disabled={optimizing || !canApplyPreviewedAction || isInCooldown}
-                    className="inline-flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {optimizing ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Wand2 className="w-3 h-3" />
-                    )}
-                    Apply suggested fix
-                  </button>
+                  {canExecuteSelectedAction ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handlePreviewRecommendedAction}
+                        disabled={actionPreviewLoading || !selectedActionRequest}
+                        className="inline-flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap border rounded-md hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {actionPreviewLoading ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Wand2 className="w-3 h-3" />
+                        )}
+                        Preview suggested fix
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAutoOptimize}
+                        disabled={
+                          optimizing || !canApplyPreviewedAction || isInCooldown
+                        }
+                        className="inline-flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {optimizing ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Wand2 className="w-3 h-3" />
+                        )}
+                        Apply suggested fix
+                      </button>
+                    </>
+                  ) : selectedQueueItem ? (
+                    <a
+                      href={manualReviewHref}
+                      className="inline-flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap border rounded-md hover:bg-gray-50"
+                    >
+                      {getManualReviewLabel(selectedQueueItem.fix_surface)}
+                    </a>
+                  ) : null}
                   <button
                     type="button"
                     onClick={handlePreviewQuality}

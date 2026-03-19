@@ -24,6 +24,11 @@ type ReadinessSummary = {
   ready_variant_count: number;
   blocked_variant_count: number;
   top_blockers?: string[];
+  blocker_breakdown?: Array<{
+    code: string;
+    label: string;
+    count: number;
+  }>;
 };
 
 export default function DashboardPage() {
@@ -511,10 +516,17 @@ export default function DashboardPage() {
     return mapping[code] || 'all';
   };
 
-  const readinessFocus =
+  const readinessFocusSource =
     readinessSummary?.top_blockers && readinessSummary.top_blockers.length > 0
-      ? getIssueBucketCodeForReason(readinessSummary.top_blockers[0])
-      : 'all';
+      ? readinessSummary.top_blockers[0]
+      : readinessSummary?.blocker_breakdown &&
+          readinessSummary.blocker_breakdown.length > 0
+        ? readinessSummary.blocker_breakdown[0].code
+        : null;
+
+  const readinessFocus = readinessFocusSource
+    ? getIssueBucketCodeForReason(readinessFocusSource)
+    : 'all';
 
   const readinessHref =
     readinessFocus && readinessFocus !== 'all'
