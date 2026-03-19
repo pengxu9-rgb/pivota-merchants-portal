@@ -7,6 +7,7 @@ import RefundDialog from '@/components/RefundDialog';
 import {
   MerchantButton,
   PageHeader,
+  StatusBadge,
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
 
@@ -192,6 +193,22 @@ export default function OrdersPage() {
     }).format(amount);
   };
 
+  const getStatusTone = (status?: string) => {
+    switch ((status || '').toLowerCase()) {
+      case 'completed':
+        return 'success' as const;
+      case 'processing':
+        return 'brand' as const;
+      case 'pending':
+        return 'warning' as const;
+      case 'cancelled':
+      case 'canceled':
+        return 'critical' as const;
+      default:
+        return 'neutral' as const;
+    }
+  };
+
   const filteredOrders = orders.filter(order => {
     const matchesSearch = searchTerm === '' || 
       order.order_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -199,6 +216,14 @@ export default function OrdersPage() {
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+  const pendingCount = filteredOrders.filter((order) => order.status === 'pending').length;
+  const processingCount = filteredOrders.filter((order) => order.status === 'processing').length;
+  const completedCount = filteredOrders.filter((order) => order.status === 'completed').length;
+  const visibleRevenue = filteredOrders.reduce(
+    (sum, order) => sum + Number(order.amount || order.total_amount || order.total || 0),
+    0
+  );
+  const totalPages = Math.max(1, Math.ceil(totalOrders / itemsPerPage));
 
   if (loading) {
     return (
@@ -244,7 +269,7 @@ export default function OrdersPage() {
   const shippingAddress = normalizeAddress(orderData?.shipping_address);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Orders"
         title="Keep sales, fulfillment, and after-sales operations readable at a glance."
@@ -261,9 +286,56 @@ export default function OrdersPage() {
         }
       />
 
-      <SurfaceCard>
-        <div className="p-4 border-b">
-          <div className="flex items-center space-x-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="merchant-panel p-5">
+          <p className="text-sm text-[color:var(--merchant-muted)]">Orders in view</p>
+          <div className="mt-1.5 text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+            {filteredOrders.length}
+          </div>
+          <p className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
+            {totalOrders} total orders across the current result set
+          </p>
+        </div>
+        <div className="merchant-panel p-5">
+          <p className="text-sm text-[color:var(--merchant-muted)]">Needs action</p>
+          <div className="mt-1.5 text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+            {pendingCount + processingCount}
+          </div>
+          <p className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
+            {pendingCount} pending · {processingCount} processing
+          </p>
+        </div>
+        <div className="merchant-panel p-5">
+          <p className="text-sm text-[color:var(--merchant-muted)]">Completed</p>
+          <div className="mt-1.5 text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+            {completedCount}
+          </div>
+          <p className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
+            Orders already fulfilled or closed out
+          </p>
+        </div>
+        <div className="merchant-panel p-5">
+          <p className="text-sm text-[color:var(--merchant-muted)]">Visible order value</p>
+          <div className="mt-1.5 text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+            {formatCurrency(visibleRevenue)}
+          </div>
+          <p className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
+            Revenue represented on the current page and filters
+          </p>
+        </div>
+      </div>
+
+      <SurfaceCard
+        title="Filter orders"
+        description="Search by order or customer, then narrow the workspace to the fulfillment stage you need."
+        action={
+          <StatusBadge tone="neutral">
+            {filteredOrders.length} visible · {totalOrders} total
+          </StatusBadge>
+        }
+      >
+        <div className="border-b border-[color:var(--merchant-line)] p-4">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[color:var(--merchant-muted)]" />
               <input
@@ -271,43 +343,65 @@ export default function OrdersPage() {
                 placeholder="Search orders or customer email"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="merchant-input pl-10"
+                className="merchant-input"
+                style={{ paddingLeft: '3.25rem' }}
               />
             </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setCurrentPage(1); // Reset to first page when filter changes
-              }}
-              className="merchant-select"
-            >
-              <option value="all">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="processing">Processing</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
+            <div className="flex items-center gap-3">
+              <Filter className="h-4 w-4 text-[color:var(--merchant-muted)]" />
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="merchant-select"
+              >
+                <option value="all">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="processing">Processing</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge tone={pendingCount > 0 ? 'warning' : 'neutral'}>
+                {pendingCount} pending
+              </StatusBadge>
+              <StatusBadge tone={processingCount > 0 ? 'brand' : 'neutral'}>
+                {processingCount} processing
+              </StatusBadge>
+              <StatusBadge tone={completedCount > 0 ? 'success' : 'neutral'}>
+                {completedCount} completed
+              </StatusBadge>
+            </div>
           </div>
         </div>
+      </SurfaceCard>
 
+      <SurfaceCard
+        title="Order activity"
+        description="Track customer, amount, fulfillment status, and the next action from a single merchant-facing table."
+        action={<StatusBadge tone="neutral">Page {currentPage} of {totalPages}</StatusBadge>}
+        className="overflow-hidden"
+      >
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
+          <table className="merchant-table min-w-full">
+            <thead className="bg-[color:var(--merchant-surface-muted)]/60">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Order ID</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th>Order ID</th>
+                <th>Customer</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Date</th>
+                <th className="text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody>
               {filteredOrders.length > 0 ? (
                 filteredOrders.map((order) => (
-                  <tr key={order.id || order.order_id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <tr key={order.id || order.order_id}>
+                    <td className="whitespace-nowrap text-sm font-medium text-[color:var(--merchant-ink)]">
                       <span
                         className="font-mono cursor-text"
                         title={order.order_id || order.order_number || order.id}
@@ -315,39 +409,34 @@ export default function OrdersPage() {
                         {order.order_id || order.order_number || order.id}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="text-sm text-[color:var(--merchant-muted-strong)]">
                       {order.customer?.email || order.customer_email || 'Guest'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="whitespace-nowrap text-sm font-medium text-[color:var(--merchant-ink)]">
                       {formatCurrency(order.amount || order.total_amount || 0)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        order.status === 'completed' ? 'bg-green-100 text-green-800' :
-                        order.status === 'processing' ? 'bg-blue-100 text-blue-800' :
-                        order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
+                    <td className="whitespace-nowrap">
+                      <StatusBadge tone={getStatusTone(order.status)}>
                         {order.status || 'pending'}
-                      </span>
+                      </StatusBadge>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="whitespace-nowrap text-sm text-[color:var(--merchant-muted)]">
                       {new Date(order.created_at).toLocaleDateString()}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td className="whitespace-nowrap text-right text-sm">
                       <button 
                         onClick={() => handleViewOrder(order.order_id || order.id)}
-                        className="text-blue-600 hover:text-blue-800"
+                        className="font-medium text-[color:var(--merchant-brand)] hover:text-[color:var(--merchant-brand-strong)]"
                       >
-                        View
+                        Review
                       </button>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
-                    <ShoppingBag className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                  <td colSpan={6} className="px-6 py-12 text-center text-[color:var(--merchant-muted)]">
+                    <ShoppingBag className="mx-auto mb-3 h-12 w-12 text-[color:var(--merchant-muted)]" />
                     <p>No orders found</p>
                   </td>
                 </tr>
@@ -358,29 +447,29 @@ export default function OrdersPage() {
 
         {/* Pagination */}
         {totalOrders > 0 && (
-          <div className="px-6 py-4 border-t flex items-center justify-between">
-            <div className="text-sm text-gray-700">
+          <div className="flex flex-col gap-3 border-t border-[color:var(--merchant-line)] px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="text-sm text-[color:var(--merchant-muted-strong)]">
               Showing <span className="font-medium">{((currentPage - 1) * itemsPerPage) + 1}</span> to{' '}
               <span className="font-medium">
                 {Math.min(currentPage * itemsPerPage, totalOrders)}
               </span>{' '}
               of <span className="font-medium">{totalOrders}</span> orders
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
-                className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="merchant-button-secondary px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Previous
               </button>
-              <span className="text-sm text-gray-700">
-                Page {currentPage} of {Math.ceil(totalOrders / itemsPerPage)}
+              <span className="text-sm text-[color:var(--merchant-muted-strong)]">
+                Page {currentPage} of {totalPages}
               </span>
               <button
-                onClick={() => setCurrentPage(p => Math.min(Math.ceil(totalOrders / itemsPerPage), p + 1))}
-                disabled={currentPage >= Math.ceil(totalOrders / itemsPerPage)}
-                className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                className="merchant-button-secondary px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Next
               </button>

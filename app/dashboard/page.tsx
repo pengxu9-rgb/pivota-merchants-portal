@@ -465,10 +465,19 @@ export default function DashboardPage() {
 
   const heroDescription =
     blockedVariants > 0
-      ? 'Start with the highest-impact catalog issues first, then move to channel setup and payment readiness.'
+      ? 'Clear blockers first, then move to content and channel setup.'
       : qualityNeedsAttention > 0
-        ? 'Content gaps are now the clearest drag on launch readiness. Tighten descriptions and imagery before the next campaign push.'
-        : 'Use Overview to monitor readiness, sales momentum, and the next operational bottlenecks without translating internal system language.';
+        ? 'Tighten content before the next launch or campaign push.'
+        : 'Track readiness, sales, and setup from one merchant workspace.';
+
+  const heroLead =
+    blockedVariants > 0
+      ? `${blockerLabel} is the clearest drag on launch readiness right now.`
+      : qualityNeedsAttention > 0
+        ? `${qualityNeedsAttention} products still need content before they feel launch-ready.`
+        : connectedStores.length === 0 || activePSPs.length === 0
+          ? 'Commerce setup is the next constraint for channel launch.'
+          : 'Catalog and commerce setup are in a workable state.';
 
   const heroFacts = [
     blockedVariants > 0
@@ -515,10 +524,10 @@ export default function DashboardPage() {
             : 'No major catalog blockers detected',
       detail:
         blockedVariants > 0
-          ? `${blockedVariants} variants still need attention before they can be channel-ready.`
+          ? `${blockedVariants} variants still need fixes before launch.`
           : averageContentScore != null
-            ? `Average content quality is ${averageContentScore}/100 across scored products.`
-            : 'Catalog health is being assessed from the latest synced product data.',
+            ? `Average content quality ${averageContentScore}/100.`
+            : 'Catalog health is being assessed.',
       href: readinessHref,
       cta: 'Review catalog health',
     },
@@ -529,8 +538,8 @@ export default function DashboardPage() {
       supporting: blockedVariants > 0 ? blockerLabel : 'No blocking readiness issues',
       detail:
         blockedVariants > 0
-          ? 'Clear the highest-impact blockers first to restore launch readiness faster.'
-          : 'Variants with valid content, price, inventory, and setup will surface here when issues emerge.',
+          ? 'Start with the biggest blocker bucket first.'
+          : 'No blocking readiness issues in the latest snapshot.',
       href: readinessHref,
       cta: blockedVariants > 0 ? 'Resolve blocked variants' : 'View readiness details',
     },
@@ -546,8 +555,8 @@ export default function DashboardPage() {
             : 'Quality score pending',
       detail:
         qualityNeedsAttention > 0
-          ? `${missingDescriptionCount} missing descriptions · ${missingImageCount} missing images in the current snapshot.`
-          : 'Descriptions and primary imagery are in good shape for the synced products.',
+          ? `${missingDescriptionCount} descriptions missing · ${missingImageCount} images missing.`
+          : 'Descriptions and imagery look complete.',
       href: '/dashboard/products',
       cta: 'Improve product content',
     },
@@ -558,10 +567,10 @@ export default function DashboardPage() {
       supporting: `${connectedStores.length} channels · ${activePSPs.length} payment setups`,
       detail:
         connectedStores.length === 0
-          ? 'Connect a sales channel before products can flow into live merchant operations.'
+          ? 'Connect a sales channel first.'
           : activePSPs.length === 0
-            ? 'Add payment setup to turn catalog readiness into completed orders.'
-            : 'Commerce setup is in place. Focus the team on product and launch blockers next.',
+            ? 'Add payment setup to complete checkout.'
+            : 'Setup is in place. Focus the team on products next.',
       href: '/dashboard/integrations',
       cta: 'Check channel readiness',
     },
@@ -711,7 +720,7 @@ export default function DashboardPage() {
               disabled={refreshing}
               icon={RefreshCw}
             >
-              {refreshing ? 'Refreshing…' : 'Refresh overview'}
+              {refreshing ? 'Refreshing…' : 'Refresh'}
             </MerchantButton>
             <MerchantLinkButton href={readinessHref} icon={Sparkles}>
               Review catalog issues
@@ -750,14 +759,23 @@ export default function DashboardPage() {
             ))}
           </div>
           <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-            <div>
-              <h2 className="text-xl font-semibold tracking-[-0.04em] text-[color:var(--merchant-ink)] sm:text-[1.75rem]">
-                What needs attention first
-              </h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-[color:var(--merchant-muted-strong)] sm:text-[15px]">
-                Prioritize catalog blockers and content gaps before broadening campaign spend or channel rollout. Overview should keep the next merchant actions visible without forcing the team to translate internal system language.
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge tone={readinessTone}>
+                  {blockedVariants > 0
+                    ? 'Blockers first'
+                    : qualityNeedsAttention > 0
+                      ? 'Content next'
+                      : 'Ready to scale'}
+                </StatusBadge>
+                <StatusBadge tone="neutral">
+                  {stats.totalOrders} orders in the last 30d
+                </StatusBadge>
+              </div>
+              <p className="max-w-3xl text-sm leading-6 text-[color:var(--merchant-muted-strong)] sm:text-[15px]">
+                {heroLead}
               </p>
-              <div className="mt-4 flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-3">
                 <MerchantLinkButton href={readinessHref} icon={ArrowRight}>
                   Review catalog health
                 </MerchantLinkButton>
@@ -767,11 +785,11 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-2.5 sm:grid-cols-2">
               {businessSnapshot.map((item) => (
                 <div
                   key={item.label}
-                  className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/72 px-4 py-3.5"
+                  className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/72 px-4 py-3"
                 >
                   <div className="flex items-center gap-2.5 text-xs text-[color:var(--merchant-muted)]">
                     <item.icon className="h-4 w-4" />
@@ -780,7 +798,7 @@ export default function DashboardPage() {
                   <div className="mt-1.5 text-[1.7rem] font-semibold tracking-[-0.04em] text-[color:var(--merchant-ink)]">
                     {loading ? '—' : item.value}
                   </div>
-                  <div className="mt-1 text-sm leading-5 text-[color:var(--merchant-muted-strong)]">
+                  <div className="mt-1 text-xs leading-5 text-[color:var(--merchant-muted-strong)]">
                     {item.meta}
                   </div>
                 </div>
@@ -793,10 +811,10 @@ export default function DashboardPage() {
       <div className="grid gap-4 xl:grid-cols-4">
         {priorityPanels.map((panel) => (
           <div key={panel.title} className="merchant-panel p-5">
-            <div className="space-y-3.5">
+            <div className="space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <StatusBadge tone={panel.tone}>{panel.title}</StatusBadge>
-                <div className="text-right text-sm text-[color:var(--merchant-muted)]">
+                <div className="text-right text-xs leading-5 text-[color:var(--merchant-muted)]">
                   {panel.supporting}
                 </div>
               </div>
@@ -804,7 +822,7 @@ export default function DashboardPage() {
                 <div className="text-[2rem] font-semibold tracking-[-0.06em] text-[color:var(--merchant-ink)]">
                   {loading ? '—' : panel.value}
                 </div>
-                <p className="mt-1.5 text-sm leading-5 text-[color:var(--merchant-muted-strong)]">
+                <p className="mt-1 text-sm leading-5 text-[color:var(--merchant-muted-strong)]">
                   {panel.detail}
                 </p>
               </div>
@@ -819,7 +837,7 @@ export default function DashboardPage() {
       <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <SurfaceCard
           title="Top opportunities"
-          description="Use the next highest-impact actions to improve launch readiness and merchant performance."
+          description="Next merchant actions with the clearest near-term impact."
         >
           <div className="divide-y divide-[color:var(--merchant-line)]">
             {opportunityItems.length > 0 ? (
@@ -832,7 +850,7 @@ export default function DashboardPage() {
                     <p className="text-base font-medium text-[color:var(--merchant-ink)]">
                       {item.title}
                     </p>
-                    <p className="text-sm leading-6 text-[color:var(--merchant-muted)]">
+                    <p className="text-sm leading-5 text-[color:var(--merchant-muted)]">
                       {item.detail}
                     </p>
                   </div>
@@ -851,7 +869,7 @@ export default function DashboardPage() {
 
         <SurfaceCard
           title="Recent activity"
-          description="A calmer view of what changed most recently across orders and merchant operations."
+          description="Recent order and merchant activity."
           action={
             <MerchantLinkButton href="/dashboard/orders" variant="ghost" icon={ArrowRight}>
               Open orders
@@ -884,7 +902,12 @@ export default function DashboardPage() {
 
       <SectionHeader
         title="Operational support"
-        description="Keep channel and payment setup visible without letting infrastructure dominate the top of the page."
+        description="Keep channels and payments visible without letting infrastructure dominate the page."
+        action={
+          <StatusBadge tone="neutral">
+            {connectedStores.length} channels · {activePSPs.length} payment setups
+          </StatusBadge>
+        }
       />
       <div className="grid gap-4 xl:grid-cols-3">
         {supportCards.map((card) => (
@@ -915,7 +938,7 @@ export default function DashboardPage() {
       <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <SurfaceCard
           title="Readiness focus"
-          description="The latest blocker breakdown translated into merchant-facing next steps."
+          description="Current blocker buckets translated into next steps."
           action={
             <MerchantLinkButton href={readinessHref} variant="ghost" icon={ArrowRight}>
               Open details
@@ -932,9 +955,6 @@ export default function DashboardPage() {
                   <div>
                     <p className="font-medium text-[color:var(--merchant-ink)]">
                       {blocker.label}
-                    </p>
-                    <p className="text-sm text-[color:var(--merchant-muted)]">
-                      Affects channel launch and merchant readiness
                     </p>
                   </div>
                   <StatusBadge tone="warning">{blocker.count} affected</StatusBadge>
