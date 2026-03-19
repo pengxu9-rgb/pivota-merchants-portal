@@ -853,10 +853,16 @@ export default function DashboardPage() {
       meta: `${stats.totalProducts} products in catalog`,
       icon: Users,
     },
+    {
+      label: 'Commerce setup',
+      value: `${connectedStores.length} channels`,
+      meta: `${connectedPSPs.length} payment setups`,
+      icon: Store,
+    },
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Overview"
         title={heroTitle}
@@ -900,59 +906,59 @@ export default function DashboardPage() {
       )}
 
       <SurfaceCard strong className="overflow-hidden">
-        <div className="grid gap-8 px-6 py-6 lg:grid-cols-[1.35fr_0.95fr] lg:px-8 lg:py-8">
-          <div className="space-y-5">
-            <div className="flex flex-wrap gap-2">
-              {heroFacts.map((fact) => (
-                <StatusBadge key={fact.label} tone={fact.tone} icon={fact.icon}>
-                  {fact.label}
-                </StatusBadge>
-              ))}
-            </div>
-            <div className="space-y-3">
-              <h2 className="text-2xl font-semibold tracking-[-0.04em] text-[color:var(--merchant-ink)] sm:text-3xl">
+        <div className="space-y-5 px-5 py-5 lg:px-6 lg:py-6">
+          <div className="flex flex-wrap gap-2">
+            {heroFacts.map((fact) => (
+              <StatusBadge key={fact.label} tone={fact.tone} icon={fact.icon}>
+                {fact.label}
+              </StatusBadge>
+            ))}
+          </div>
+          <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+            <div>
+              <h2 className="text-xl font-semibold tracking-[-0.04em] text-[color:var(--merchant-ink)] sm:text-[1.75rem]">
                 What needs attention first
               </h2>
-              <p className="max-w-2xl text-base leading-7 text-[color:var(--merchant-muted-strong)]">
-                Prioritize catalog blockers and content gaps before broadening campaign spend or channel rollout. The actions below keep the team focused on merchant outcomes, not system states.
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-[color:var(--merchant-muted-strong)] sm:text-[15px]">
+                Prioritize catalog blockers and content gaps before broadening campaign spend or channel rollout. Overview should keep the next merchant actions visible without forcing the team to translate internal system language.
               </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <MerchantLinkButton href={readinessHref} icon={ArrowRight}>
-                Review catalog health
-              </MerchantLinkButton>
-              <MerchantLinkButton href="/dashboard/products" variant="secondary" icon={Package}>
-                Open catalog
-              </MerchantLinkButton>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            {businessSnapshot.map((item) => (
-              <div
-                key={item.label}
-                className="rounded-[1.35rem] border border-[color:var(--merchant-line)] bg-white/70 px-5 py-4"
-              >
-                <div className="flex items-center gap-3 text-sm text-[color:var(--merchant-muted)]">
-                  <item.icon className="h-4 w-4" />
-                  <span>{item.label}</span>
-                </div>
-                <div className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-[color:var(--merchant-ink)]">
-                  {loading ? '—' : item.value}
-                </div>
-                <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
-                  {item.meta}
-                </div>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <MerchantLinkButton href={readinessHref} icon={ArrowRight}>
+                  Review catalog health
+                </MerchantLinkButton>
+                <MerchantLinkButton href="/dashboard/products" variant="secondary" icon={Package}>
+                  Open catalog
+                </MerchantLinkButton>
               </div>
-            ))}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {businessSnapshot.map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/72 px-4 py-3.5"
+                >
+                  <div className="flex items-center gap-2.5 text-xs text-[color:var(--merchant-muted)]">
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.label}</span>
+                  </div>
+                  <div className="mt-1.5 text-[1.7rem] font-semibold tracking-[-0.04em] text-[color:var(--merchant-ink)]">
+                    {loading ? '—' : item.value}
+                  </div>
+                  <div className="mt-1 text-sm leading-5 text-[color:var(--merchant-muted-strong)]">
+                    {item.meta}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </SurfaceCard>
 
       <div className="grid gap-4 xl:grid-cols-4">
         {priorityPanels.map((panel) => (
-          <div key={panel.title} className="merchant-panel p-6">
-            <div className="space-y-4">
+          <div key={panel.title} className="merchant-panel p-5">
+            <div className="space-y-3.5">
               <div className="flex items-start justify-between gap-3">
                 <StatusBadge tone={panel.tone}>{panel.title}</StatusBadge>
                 <div className="text-right text-sm text-[color:var(--merchant-muted)]">
@@ -960,10 +966,10 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div>
-                <div className="text-4xl font-semibold tracking-[-0.06em] text-[color:var(--merchant-ink)]">
+                <div className="text-[2rem] font-semibold tracking-[-0.06em] text-[color:var(--merchant-ink)]">
                   {loading ? '—' : panel.value}
                 </div>
-                <p className="mt-2 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+                <p className="mt-1.5 text-sm leading-5 text-[color:var(--merchant-muted-strong)]">
                   {panel.detail}
                 </p>
               </div>
@@ -985,7 +991,7 @@ export default function DashboardPage() {
               opportunityItems.map((item) => (
                 <div
                   key={item.title}
-                  className="flex flex-col gap-4 px-6 py-5 sm:flex-row sm:items-start sm:justify-between"
+                  className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-start sm:justify-between"
                 >
                   <div className="space-y-2">
                     <p className="text-base font-medium text-[color:var(--merchant-ink)]">
@@ -1020,7 +1026,7 @@ export default function DashboardPage() {
           <div className="divide-y divide-[color:var(--merchant-line)]">
             {recentActivity.length > 0 ? (
               recentActivity.map((item) => (
-                <div key={`${item.title}-${item.timestamp}`} className="flex items-start justify-between gap-4 px-6 py-5">
+                <div key={`${item.title}-${item.timestamp}`} className="flex items-start justify-between gap-4 px-5 py-4">
                   <div className="space-y-1.5">
                     <p className="text-base font-medium text-[color:var(--merchant-ink)]">
                       {item.title}
@@ -1047,13 +1053,13 @@ export default function DashboardPage() {
       />
       <div className="grid gap-4 xl:grid-cols-3">
         {supportCards.map((card) => (
-          <div key={card.title} className="merchant-panel p-6">
-            <div className="space-y-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[color:var(--merchant-surface-muted)] text-[color:var(--merchant-brand)]">
+          <div key={card.title} className="merchant-panel p-5">
+            <div className="space-y-3.5">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[color:var(--merchant-surface-muted)] text-[color:var(--merchant-brand)]">
                 <card.icon className="h-5 w-5" />
               </div>
-              <div className="space-y-2">
-                <p className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
+              <div className="space-y-1.5">
+                <p className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
                   {card.title}
                 </p>
                 <p className="text-sm font-medium text-[color:var(--merchant-muted-strong)]">
@@ -1081,7 +1087,7 @@ export default function DashboardPage() {
             </MerchantLinkButton>
           }
         >
-          <div className="space-y-3 px-6 py-6">
+          <div className="space-y-3 px-5 py-5">
             {readinessSummary?.blocker_breakdown && readinessSummary.blocker_breakdown.length > 0 ? (
               readinessSummary.blocker_breakdown.slice(0, 4).map((blocker) => (
                 <div
@@ -1116,7 +1122,7 @@ export default function DashboardPage() {
             </MerchantLinkButton>
           }
         >
-          <div className="grid gap-4 px-6 py-6 sm:grid-cols-2">
+          <div className="grid gap-4 px-5 py-5 sm:grid-cols-2">
             {products.length > 0 ? (
               products.slice(0, 4).map((product) => (
                 <div

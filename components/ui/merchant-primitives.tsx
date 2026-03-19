@@ -89,8 +89,8 @@ export function SectionHeader({
   className?: string;
 }) {
   return (
-    <div className={cx("flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between", className)}>
-      <div className="space-y-1">
+    <div className={cx("flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between", className)}>
+      <div className="space-y-0.5">
         <h2 className="merchant-section-title">{title}</h2>
         {description ? <p className="merchant-text-muted max-w-2xl">{description}</p> : null}
       </div>
@@ -113,12 +113,12 @@ export function PageHeader({
   className?: string;
 }) {
   return (
-    <div className={cx("flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between", className)}>
-      <div className="max-w-3xl space-y-3">
+    <div className={cx("flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between", className)}>
+      <div className="max-w-4xl space-y-2">
         {eyebrow ? <div className="merchant-overline">{eyebrow}</div> : null}
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <h1 className="merchant-page-title">{title}</h1>
-          {description ? <p className="merchant-text-muted text-base sm:text-lg">{description}</p> : null}
+          {description ? <p className="merchant-text-muted text-sm sm:text-base">{description}</p> : null}
         </div>
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-3">{actions}</div> : null}
@@ -146,8 +146,8 @@ export function SurfaceCard({
   return (
     <section className={cx("merchant-panel", strong && "merchant-panel-strong", className)}>
       {title || eyebrow || description || action ? (
-        <div className="flex flex-col gap-4 border-b border-[color:var(--merchant-line)] px-6 py-5 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1">
+        <div className="flex flex-col gap-3 border-b border-[color:var(--merchant-line)] px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-0.5">
             {eyebrow ? <div className="merchant-overline">{eyebrow}</div> : null}
             {title ? <h3 className="merchant-card-title">{title}</h3> : null}
             {description ? <p className="merchant-text-muted">{description}</p> : null}

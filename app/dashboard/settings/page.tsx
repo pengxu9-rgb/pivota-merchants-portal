@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
-import { User, Bell, Shield, Save, Loader2, Lock } from 'lucide-react';
+import { AlertCircle, User, Bell, Shield, Save, Loader2, Lock } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import {
   MerchantButton,
@@ -22,6 +22,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [loadError, setLoadError] = useState('');
   
   const [profile, setProfile] = useState({
     business_name: '',
@@ -49,9 +50,32 @@ export default function SettingsPage() {
     loadSettings();
   }, []);
 
+  const hydrateProfileFromStoredUser = () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const storedUser = localStorage.getItem('merchant_user');
+      if (!storedUser) {
+        return;
+      }
+
+      const parsed = JSON.parse(storedUser);
+      setProfile((current) => ({
+        ...current,
+        business_name: current.business_name || parsed.business_name || parsed.full_name || '',
+        contact_email: current.contact_email || parsed.email || '',
+      }));
+    } catch (error) {
+      console.warn('Failed to hydrate merchant profile from local storage:', error);
+    }
+  };
+
   const loadSettings = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const data = await apiClient.getProfile();
       if (data) {
         setProfile({
@@ -64,6 +88,8 @@ export default function SettingsPage() {
       }
     } catch (error) {
       console.error('Failed to load settings:', error);
+      setLoadError('Business profile details are temporarily unavailable. You can still update password and notification preferences while profile data is being restored.');
+      hydrateProfileFromStoredUser();
     } finally {
       setLoading(false);
     }
@@ -73,6 +99,7 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       const result = await apiClient.updateProfile(profile);
+      setLoadError('');
       alert(result.message || '✅ Settings saved successfully!');
     } catch (error: any) {
       alert('❌ Failed to save: ' + (error.response?.data?.detail || error.message));
@@ -149,138 +176,145 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-8 max-w-5xl">
+    <div className="max-w-6xl space-y-6">
       <PageHeader
         eyebrow="Settings"
         title="Manage merchant profile, notifications, and account access."
         description="Settings should feel like a calm place to maintain contact details, alert preferences, and security controls without dropping back into an internal admin form."
       />
 
-      {/* Business Profile */}
-      <SurfaceCard
-        title="Business profile"
-        description="Keep the merchant-facing identity and contact information used across your workspace up to date."
-        action={<StatusBadge tone="brand" icon={User}>Profile</StatusBadge>}
-      >
-        <div className="p-6 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-[color:var(--merchant-muted-strong)] mb-2">
-                Business Name
-              </label>
-              <input
-                type="text"
-                value={profile.business_name}
-                onChange={(e) => setProfile({ ...profile, business_name: e.target.value })}
-                className="merchant-input"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[color:var(--merchant-muted-strong)] mb-2">
-                Contact Email
-              </label>
-              <input
-                type="email"
-                value={profile.contact_email}
-                onChange={(e) => setProfile({ ...profile, contact_email: e.target.value })}
-                className="merchant-input"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[color:var(--merchant-muted-strong)] mb-2">
-                Phone Number
-              </label>
-              <input
-                type="tel"
-                value={profile.contact_phone}
-                onChange={(e) => setProfile({ ...profile, contact_phone: e.target.value })}
-                className="merchant-input"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[color:var(--merchant-muted-strong)] mb-2">
-                Website
-              </label>
-              <input
-                type="url"
-                value={profile.website}
-                onChange={(e) => setProfile({ ...profile, website: e.target.value })}
-                className="merchant-input"
-                placeholder="https://example.com"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-[color:var(--merchant-muted-strong)] mb-2">
-              Business Address
-            </label>
-            <textarea
-              value={profile.address}
-              onChange={(e) => setProfile({ ...profile, address: e.target.value })}
-              className="merchant-textarea"
-              rows={3}
-            />
-          </div>
+      {loadError ? (
+        <div className="flex items-start gap-3 rounded-[1.1rem] border border-[color:var(--merchant-warning-soft)] bg-[color:var(--merchant-warning-soft)]/65 px-4 py-3 text-sm text-[color:var(--merchant-warning)]">
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <p>{loadError}</p>
         </div>
-      </SurfaceCard>
+      ) : null}
 
-      {/* Notifications */}
-      <SurfaceCard
-        title="Notifications"
-        description="Choose which merchant updates deserve attention in your inbox."
-        action={<StatusBadge tone="neutral" icon={Bell}>Email preferences</StatusBadge>}
-      >
-        <div className="p-6 space-y-4">
-          <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-4">
-            <div>
-              <div className="font-medium text-[color:var(--merchant-ink)]">New orders</div>
-              <div className="text-sm text-[color:var(--merchant-muted)]">Get notified when new orders land in the portal</div>
+      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <SurfaceCard
+          title="Business profile"
+          description="Keep the merchant-facing identity and contact information used across your workspace up to date."
+          action={<StatusBadge tone="brand" icon={User}>Profile</StatusBadge>}
+        >
+          <div className="space-y-4 p-5">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-muted-strong)]">
+                  Business Name
+                </label>
+                <input
+                  type="text"
+                  value={profile.business_name}
+                  onChange={(e) => setProfile({ ...profile, business_name: e.target.value })}
+                  className="merchant-input"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-muted-strong)]">
+                  Contact Email
+                </label>
+                <input
+                  type="email"
+                  value={profile.contact_email}
+                  onChange={(e) => setProfile({ ...profile, contact_email: e.target.value })}
+                  className="merchant-input"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-muted-strong)]">
+                  Phone Number
+                </label>
+                <input
+                  type="tel"
+                  value={profile.contact_phone}
+                  onChange={(e) => setProfile({ ...profile, contact_phone: e.target.value })}
+                  className="merchant-input"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-muted-strong)]">
+                  Website
+                </label>
+                <input
+                  type="url"
+                  value={profile.website}
+                  onChange={(e) => setProfile({ ...profile, website: e.target.value })}
+                  className="merchant-input"
+                  placeholder="https://example.com"
+                />
+              </div>
             </div>
-            <input
-              type="checkbox"
-              checked={notifications.email_orders}
-              onChange={(e) => setNotifications({ ...notifications, email_orders: e.target.checked })}
-              className="rounded"
-            />
-          </label>
-          <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-4">
             <div>
-              <div className="font-medium text-[color:var(--merchant-ink)]">Payment updates</div>
-              <div className="text-sm text-[color:var(--merchant-muted)]">Notifications about settlement or payment status changes</div>
+              <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-muted-strong)]">
+                Business Address
+              </label>
+              <textarea
+                value={profile.address}
+                onChange={(e) => setProfile({ ...profile, address: e.target.value })}
+                className="merchant-textarea"
+                rows={3}
+              />
             </div>
-            <input
-              type="checkbox"
-              checked={notifications.email_payments}
-              onChange={(e) => setNotifications({ ...notifications, email_payments: e.target.checked })}
-              className="rounded"
-            />
-          </label>
-          <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-4">
-            <div>
-              <div className="font-medium text-[color:var(--merchant-ink)]">Low inventory</div>
-              <div className="text-sm text-[color:var(--merchant-muted)]">Alert the team when stock levels need attention</div>
-            </div>
-            <input
-              type="checkbox"
-              checked={notifications.email_inventory}
-              onChange={(e) => setNotifications({ ...notifications, email_inventory: e.target.checked })}
-              className="rounded"
-            />
-          </label>
-          <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-4">
-            <div>
-              <div className="font-medium text-[color:var(--merchant-ink)]">Weekly reports</div>
-              <div className="text-sm text-[color:var(--merchant-muted)]">Receive a quieter weekly summary of performance and catalog health</div>
-            </div>
-            <input
-              type="checkbox"
-              checked={notifications.email_weekly}
-              onChange={(e) => setNotifications({ ...notifications, email_weekly: e.target.checked })}
-              className="rounded"
-            />
-          </label>
-        </div>
-      </SurfaceCard>
+          </div>
+        </SurfaceCard>
+
+        <SurfaceCard
+          title="Notifications"
+          description="Choose which merchant updates deserve attention in your inbox."
+          action={<StatusBadge tone="neutral" icon={Bell}>Email preferences</StatusBadge>}
+        >
+          <div className="space-y-3 p-5">
+            <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
+              <div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">New orders</div>
+                <div className="text-sm text-[color:var(--merchant-muted)]">Get notified when new orders land in the portal</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifications.email_orders}
+                onChange={(e) => setNotifications({ ...notifications, email_orders: e.target.checked })}
+                className="rounded"
+              />
+            </label>
+            <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
+              <div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">Payment updates</div>
+                <div className="text-sm text-[color:var(--merchant-muted)]">Notifications about settlement or payment status changes</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifications.email_payments}
+                onChange={(e) => setNotifications({ ...notifications, email_payments: e.target.checked })}
+                className="rounded"
+              />
+            </label>
+            <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
+              <div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">Low inventory</div>
+                <div className="text-sm text-[color:var(--merchant-muted)]">Alert the team when stock levels need attention</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifications.email_inventory}
+                onChange={(e) => setNotifications({ ...notifications, email_inventory: e.target.checked })}
+                className="rounded"
+              />
+            </label>
+            <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
+              <div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">Weekly reports</div>
+                <div className="text-sm text-[color:var(--merchant-muted)]">Receive a quieter weekly summary of performance and catalog health</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifications.email_weekly}
+                onChange={(e) => setNotifications({ ...notifications, email_weekly: e.target.checked })}
+                className="rounded"
+              />
+            </label>
+          </div>
+        </SurfaceCard>
+      </div>
 
       {/* Security */}
       <SurfaceCard
@@ -288,7 +322,7 @@ export default function SettingsPage() {
         description="Protect portal access for your merchant team and keep credentials current."
         action={<StatusBadge tone="warning" icon={Shield}>Account access</StatusBadge>}
       >
-        <div className="p-6 space-y-4">
+        <div className="space-y-4 p-5">
           {passwordError ? (
             <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {passwordError}

@@ -129,11 +129,43 @@ class ApiClient {
   // Profile methods
   async getProfile() {
     const response = await this.client.get(API_CONFIG.ENDPOINTS.PROFILE);
-    return response.data;
+    const payload = response.data?.data || response.data || {};
+
+    return {
+      merchant_id: payload.merchant_id || '',
+      business_name: payload.business_name || payload.full_name || '',
+      contact_email: payload.contact_email || payload.email || '',
+      contact_phone: payload.contact_phone || payload.phone || '',
+      website: payload.website || payload.store_url || '',
+      address: payload.address || '',
+      country: payload.country || payload.region || '',
+      business_type: payload.business_type || '',
+      status: payload.status || '',
+      total_orders: payload.total_orders || 0,
+      total_revenue: payload.total_revenue || 0,
+    };
   }
 
   async updateProfile(data: any) {
     const response = await this.client.put(API_CONFIG.ENDPOINTS.UPDATE_PROFILE, data);
+    if (typeof window !== 'undefined') {
+      try {
+        const storedUser = localStorage.getItem('merchant_user');
+        if (storedUser) {
+          const parsed = JSON.parse(storedUser);
+          localStorage.setItem(
+            'merchant_user',
+            JSON.stringify({
+              ...parsed,
+              business_name: data.business_name || parsed.business_name,
+              email: data.contact_email || parsed.email,
+            })
+          );
+        }
+      } catch (error) {
+        console.warn('Failed to update stored merchant profile:', error);
+      }
+    }
     return response.data;
   }
 
