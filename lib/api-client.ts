@@ -188,6 +188,64 @@ class ApiClient {
     return response.data?.data || response.data;
   }
 
+  async refreshMerchantReadinessOptimization(params?: {
+    scope?: string;
+    reason?: string;
+  }) {
+    const response = await this.client.post(
+      '/merchant/readiness/actions/refresh',
+      {
+        scope: params?.scope ?? 'merchant',
+        reason: params?.reason ?? 'manual',
+      }
+    );
+    return response.data?.data || response.data;
+  }
+
+  async previewMerchantReadinessAction(body: {
+    plan_id: string;
+    action_id?: string;
+    action_type?: string;
+    targets?: Array<Record<string, any>>;
+    dry_run?: boolean;
+  }) {
+    const response = await this.client.post(
+      '/merchant/readiness/actions/preview',
+      {
+        plan_id: body.plan_id,
+        action_id: body.action_id,
+        action_type: body.action_type,
+        targets: body.targets ?? [],
+        dry_run: body.dry_run ?? true,
+      }
+    );
+    return response.data?.data || response.data;
+  }
+
+  async runMerchantReadinessAction(body: {
+    plan_id: string;
+    action_id?: string;
+    action_type?: string;
+    targets?: Array<Record<string, any>>;
+    idempotency_key?: string;
+    execution_mode?: 'sync' | 'async';
+  }) {
+    const response = await this.client.post('/merchant/readiness/actions/run', {
+      plan_id: body.plan_id,
+      action_id: body.action_id,
+      action_type: body.action_type,
+      targets: body.targets ?? [],
+      idempotency_key: body.idempotency_key,
+      execution_mode: body.execution_mode ?? 'sync',
+    });
+    return response.data?.data || response.data;
+  }
+
+  async getMerchantReadinessJob(jobId: string) {
+    const response = await this.client.get(`/merchant/readiness/jobs/${jobId}`);
+    return response.data?.data || response.data;
+  }
+
   /**
    * v2 Merchant product view used for enrichment & quality
    * Backed by /merchant/products* endpoints in pivota-backend.

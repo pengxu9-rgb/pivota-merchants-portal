@@ -62,6 +62,25 @@ type ReadinessSummary = {
   next_action?: string | null;
 };
 
+type OptimizationPlan = {
+  plan_id: string;
+  snapshot_id: string;
+  workspace_version: string;
+  priority_policy_version: string;
+  refresh_state: string;
+  plan_status: string;
+  generated_at?: string | null;
+  expires_at?: string | null;
+  can_apply_actions: boolean;
+  last_successful_rescore_at?: string | null;
+};
+
+type ScoreBundle = {
+  readiness_score?: number | null;
+  exposure_score?: number | null;
+  conversion_score?: number | null;
+};
+
 type ReadinessIssueBucket = {
   code: string;
   label: string;
@@ -80,6 +99,8 @@ type ReadinessIssueBucket = {
 };
 
 type MerchantReadinessAction = {
+  action_id?: string | null;
+  action_type?: string | null;
   label: string;
   description: string;
   target_url: string;
@@ -92,6 +113,9 @@ type MerchantReadinessAction = {
   scope: 'merchant' | 'product';
   impact: 'discovery_only' | 'checkout' | 'full_agent_commerce';
   affected_count: number;
+  fixability?: 'merchant_fixable' | 'pivota_managed' | 'manual_review';
+  priority_score?: number;
+  priority_reason?: string | null;
   related_bucket_codes?: string[];
 };
 
@@ -103,8 +127,11 @@ type ProductQueueIssue = {
 };
 
 type ProductQueueItem = {
+  queue_item_scope: 'merchant' | 'product' | 'variant';
+  queue_item_id: string;
   product_id: string;
   platform: string;
+  platform_product_id?: string | null;
   title: string;
   image_url?: string | null;
   brand?: string | null;
@@ -119,15 +146,101 @@ type ProductQueueItem = {
     | 'integrations'
     | 'policy'
     | 'pivota_managed';
+  fixability: 'merchant_fixable' | 'pivota_managed' | 'manual_review';
   impact: 'discovery_only' | 'checkout' | 'full_agent_commerce';
+  priority_score: number;
+  priority_reason?: string | null;
+  recommended_action_id?: string | null;
+  recommended_action_type?: string | null;
 };
 
 type ReadinessOptimizationPayload = {
+  plan: OptimizationPlan;
+  score_bundle: ScoreBundle;
   readiness_summary: ReadinessSummary;
   issue_buckets: ReadinessIssueBucket[];
   merchant_actions: MerchantReadinessAction[];
   product_queue: ProductQueueItem[];
   last_generated_at?: string | null;
+};
+
+type RemediationAction = {
+  action_id: string;
+  plan_id: string;
+  action_type: string;
+  surface: string;
+  scope: string;
+  targets: Array<Record<string, any>>;
+  fixability: string;
+  priority_score: number;
+  priority_reason?: string | null;
+  reason?: string | null;
+  preconditions: string[];
+  idempotency_key?: string | null;
+  status: string;
+};
+
+type PatchCandidate = {
+  candidate_id: string;
+  action_id: string;
+  target_field: string;
+  before: any;
+  after: any;
+  confidence?: number | null;
+  rationale?: string | null;
+  evidence_used?: Array<Record<string, any>>;
+  risk_flags?: string[];
+  requires_approval: boolean;
+};
+
+type ReadinessActionPreview = {
+  action: RemediationAction;
+  candidate_patches: PatchCandidate[];
+  expected_impact?: {
+    impact?: string | null;
+    priority_score?: number | null;
+    targets?: Array<{
+      platform: string;
+      platform_product_id: string;
+      before_scores?: Record<string, number | null>;
+      after_scores?: Record<string, number | null>;
+      delta?: Record<string, number | null>;
+    }>;
+  };
+  requires_approval: boolean;
+  warnings: string[];
+};
+
+type VerificationResult = {
+  verification_id: string;
+  action_id: string;
+  before_snapshot_id: string;
+  after_snapshot_id: string;
+  delta_scores?: Record<string, number | null>;
+  resolved_issues?: string[];
+  remaining_issues?: string[];
+  expected_impact?: Record<string, any>;
+  observed_impact?: Record<string, any>;
+  merchant_visible_impact?: string | null;
+};
+
+type ExecutionJob = {
+  job_id: string;
+  action_id: string;
+  executor_type: string;
+  status: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  result?: Record<string, any>;
+  error_code?: string | null;
+  retry_count?: number;
+};
+
+type ReadinessActionRunResult = {
+  job: ExecutionJob;
+  action: RemediationAction;
+  verification: VerificationResult;
+  after_plan?: OptimizationPlan;
 };
 
 const emptyForm: EnrichmentFormState = {
@@ -212,8 +325,15 @@ export default function ProductOptimizationPage() {
 
   const [saving, setSaving] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [actionPreviewLoading, setActionPreviewLoading] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
   const [qualityPreview, setQualityPreview] = useState<any | null>(null);
+  const [actionPreview, setActionPreview] =
+    useState<ReadinessActionPreview | null>(null);
+  const [latestJob, setLatestJob] = useState<ExecutionJob | null>(null);
+  const [verificationResult, setVerificationResult] =
+    useState<VerificationResult | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [lastOptimizedAt, setLastOptimizedAt] = useState<Record<string, number>>(
     {}
   );
@@ -257,25 +377,34 @@ export default function ProductOptimizationPage() {
     }
   };
 
-  const loadOptimizationData = async () => {
+  const loadOptimizationData = async (options?: {
+    refresh?: boolean;
+    scope?: 'merchant' | 'product' | 'variant';
+    reason?: string;
+  }) => {
     try {
       setReadinessLoading(true);
-      const data = await apiClient.getMerchantReadinessOptimization();
+      const data = options?.refresh
+        ? await apiClient.refreshMerchantReadinessOptimization({
+            scope: options.scope ?? 'merchant',
+            reason: options.reason ?? 'manual',
+          })
+        : await apiClient.getMerchantReadinessOptimization();
       setOptimizationData(data || null);
+      return data || null;
     } catch (err) {
       console.error('Failed to load readiness optimization payload', err);
       setOptimizationData(null);
+      return null;
     } finally {
       setReadinessLoading(false);
     }
   };
 
-  const handleSelect = async (platform: string, platformProductId: string) => {
-    setSelected({ platform, platform_product_id: platformProductId });
-    setDetail(null);
-    setQualityPreview(null);
-    setForm(emptyForm);
-
+  const loadProductDetail = async (
+    platform: string,
+    platformProductId: string
+  ) => {
     try {
       const data = await apiClient.getMerchantProductDetail(
         platform,
@@ -296,9 +425,38 @@ export default function ProductOptimizationPage() {
       if (data.quality) {
         setQualityPreview(data.quality);
       }
+      return data;
     } catch (err) {
       console.error('Failed to load merchant product detail', err);
+      return null;
     }
+  };
+
+  const handleSelect = async (platform: string, platformProductId: string) => {
+    setSelected({ platform, platform_product_id: platformProductId });
+    setDetail(null);
+    setQualityPreview(null);
+    setForm(emptyForm);
+    setActionPreview(null);
+    setLatestJob(null);
+    setVerificationResult(null);
+    setActionFeedback(null);
+    await loadProductDetail(platform, platformProductId);
+  };
+
+  const isPlanSupersededError = (err: any) =>
+    err?.response?.status === 409 &&
+    err?.response?.data?.detail?.code === 'OPTIMIZATION_PLAN_SUPERSEDED';
+
+  const getActionErrorMessage = (err: any, fallback: string) => {
+    const detailMessage =
+      err?.response?.data?.detail?.message ||
+      err?.response?.data?.detail ||
+      err?.message;
+    if (typeof detailMessage === 'string' && detailMessage.trim()) {
+      return detailMessage;
+    }
+    return fallback;
   };
 
   const handleFormChange = (field: keyof EnrichmentFormState, value: any) => {
@@ -329,15 +487,28 @@ export default function ProductOptimizationPage() {
   const formatTags = (tags: string[]) => tags.join(', ');
 
   const currentStandard = detail?.standard;
+  const optimizationPlan = optimizationData?.plan || null;
+  const scoreBundle = optimizationData?.score_bundle || null;
   const readinessSummary = optimizationData?.readiness_summary || null;
   const issueBuckets = optimizationData?.issue_buckets || [];
   const merchantActions = optimizationData?.merchant_actions || [];
   const productQueue = optimizationData?.product_queue || [];
 
+  useEffect(() => {
+    setActionPreview(null);
+    setLatestJob(null);
+    setVerificationResult(null);
+    setActionFeedback(null);
+  }, [
+    selected?.platform,
+    selected?.platform_product_id,
+    optimizationPlan?.plan_id,
+  ]);
+
   const productQueueMap = useMemo(() => {
     return new Map(
       productQueue.map((item, index) => [
-        `${item.platform}|${item.product_id}`,
+        `${item.platform}|${item.platform_product_id || item.product_id}`,
         { item, index },
       ])
     );
@@ -383,6 +554,51 @@ export default function ProductOptimizationPage() {
     };
   }, [currentStandard, form]);
 
+  const selectedQueueItem =
+    selected
+      ? productQueue.find(
+          (item) =>
+            item.platform === selected.platform &&
+            (item.platform_product_id || item.product_id) ===
+              selected.platform_product_id
+        ) || null
+      : null;
+
+  const selectedActionRequest = useMemo(() => {
+    if (!optimizationPlan || !selectedQueueItem) {
+      return null;
+    }
+
+    const target = {
+      scope: selectedQueueItem.queue_item_scope,
+      surface: selectedQueueItem.fix_surface,
+      queue_item_id: selectedQueueItem.queue_item_id,
+      product_id: selectedQueueItem.product_id,
+      platform: selectedQueueItem.platform,
+      platform_product_id:
+        selectedQueueItem.platform_product_id || selectedQueueItem.product_id,
+      reason: selectedQueueItem.primary_action || '',
+    };
+
+    return {
+      plan_id: optimizationPlan.plan_id,
+      action_id: selectedQueueItem.recommended_action_id || undefined,
+      action_type: selectedQueueItem.recommended_action_type || undefined,
+      targets: [target],
+    };
+  }, [optimizationPlan, selectedQueueItem]);
+
+  const canExecuteSelectedAction =
+    Boolean(selectedActionRequest) &&
+    optimizationPlan?.can_apply_actions === true &&
+    selectedQueueItem?.recommended_action_type === 'run_product_enrichment';
+
+  const canApplyPreviewedAction =
+    canExecuteSelectedAction &&
+    Boolean(actionPreview) &&
+    actionPreview?.action?.action_id ===
+      (selectedActionRequest?.action_id || actionPreview?.action?.action_id);
+
   const handleSave = async () => {
     if (!selected) return;
     setSaving(true);
@@ -419,7 +635,7 @@ export default function ProductOptimizationPage() {
             : item
         )
       );
-      await loadOptimizationData();
+      await loadOptimizationData({ refresh: true, scope: 'product', reason: 'post_edit' });
     } catch (err) {
       console.error('Failed to save enrichment', err);
       alert('保存失败，请稍后重试。');
@@ -476,7 +692,7 @@ export default function ProductOptimizationPage() {
           )
         );
       }
-      await loadOptimizationData();
+      await loadOptimizationData({ refresh: true, scope: 'product', reason: 'post_edit' });
     } catch (err) {
       console.error('Failed to save & evaluate quality', err);
       alert('保存并打分失败，请稍后重试。');
@@ -487,7 +703,7 @@ export default function ProductOptimizationPage() {
   };
 
   const handleAutoOptimize = async () => {
-    if (!selected) return;
+    if (!selected || !selectedActionRequest || !canExecuteSelectedAction) return;
     const key = `${selected.platform}|${selected.platform_product_id}`;
     const now = Date.now();
     const last = lastOptimizedAt[key];
@@ -497,70 +713,98 @@ export default function ProductOptimizationPage() {
       return;
     }
     setOptimizing(true);
+    setActionFeedback(null);
     try {
-      const data = await apiClient.runMerchantProductOptimization(
+      const result = (await apiClient.runMerchantReadinessAction({
+        ...selectedActionRequest,
+        idempotency_key: `portal:${selectedActionRequest.plan_id}:${
+          selectedActionRequest.action_id || selectedActionRequest.action_type
+        }:${selected.platform}:${selected.platform_product_id}`,
+        execution_mode: 'sync',
+      })) as ReadinessActionRunResult;
+      setLatestJob(result.job || null);
+      setVerificationResult(result.verification || null);
+
+      if (result.job?.job_id) {
+        try {
+          const latest = await apiClient.getMerchantReadinessJob(result.job.job_id);
+          setLatestJob(latest || result.job);
+        } catch (jobErr) {
+          console.error('Failed to refresh remediation job state', jobErr);
+        }
+      }
+
+      await loadProductDetail(
         selected.platform,
         selected.platform_product_id
       );
-      // Update detail & form from returned enrichment
-      setDetail(data);
-      const enrichment = data.enrichment || {};
-      setForm({
-        title_override: enrichment.title_override || '',
-        summary_short: enrichment.summary_short || '',
-        bullet_points: enrichment.bullet_points || [],
-        usage_scenarios: enrichment.usage_scenarios || [],
-        audience_tags: enrichment.audience_tags || [],
-        topic_tags: enrichment.topic_tags || [],
-        regulatory_disclaimer_local:
-          enrichment.regulatory_disclaimer_local || '',
-      });
-      // Update quality preview
-      if (data.quality) {
-        setQualityPreview(data.quality);
-      }
-      // Update list item enrichment & scores
-      setProducts((prev) =>
-        prev.map((item) =>
-          item.platform === selected.platform &&
-          item.platform_product_id === selected.platform_product_id
-            ? {
-                ...item,
-                enrichment: enrichment,
-                quality: {
-                  ...(item.quality || {}),
-                  content_quality_score:
-                    data.quality?.content_quality_score ??
-                    item.quality?.content_quality_score ??
-                    null,
-                  model_readiness_score:
-                    data.quality?.model_readiness_score ??
-                    item.quality?.model_readiness_score ??
-                    null,
-                  conversion_potential_score:
-                    data.quality?.conversion_potential_score ??
-                    item.quality?.conversion_potential_score ??
-                    null,
-                  last_evaluated_at:
-                    data.quality?.snapshot_date ??
-                    item.quality?.last_evaluated_at ??
-                    null,
-                },
-              }
-            : item
-        )
-      );
+      await loadProducts();
       setLastOptimizedAt((prev) => ({
         ...prev,
         [key]: Date.now(),
       }));
-      await loadOptimizationData();
-      alert('已完成 AI 优化，并刷新了质量评分。');
+      await loadOptimizationData({
+        refresh: true,
+        scope: 'product',
+        reason: 'post_action',
+      });
+      setActionFeedback(
+        result.verification?.merchant_visible_impact ||
+          'Applied the recommended AI fix and refreshed readiness.'
+      );
     } catch (err) {
       console.error('Failed to run auto optimization', err);
-      alert('AI 一键优化失败，请稍后再试。');
+      if (isPlanSupersededError(err)) {
+        await loadOptimizationData({
+          refresh: true,
+          scope: 'product',
+          reason: 'plan_superseded',
+        });
+        setActionFeedback(
+          'The readiness plan changed while you were working. We refreshed the workspace to the latest plan.'
+        );
+      } else {
+        alert(getActionErrorMessage(err, 'AI 一键优化失败，请稍后再试。'));
+      }
     } finally {
       setOptimizing(false);
+    }
+  };
+
+  const handlePreviewRecommendedAction = async () => {
+    if (!selectedActionRequest) return;
+    setActionPreviewLoading(true);
+    setActionFeedback(null);
+    try {
+      const preview = (await apiClient.previewMerchantReadinessAction({
+        ...selectedActionRequest,
+        dry_run: true,
+      })) as ReadinessActionPreview;
+      setActionPreview(preview);
+      if (preview.warnings?.length > 0) {
+        setActionFeedback(preview.warnings[0]);
+      }
+    } catch (err) {
+      console.error('Failed to preview readiness action', err);
+      if (isPlanSupersededError(err)) {
+        await loadOptimizationData({
+          refresh: true,
+          scope: 'product',
+          reason: 'plan_superseded',
+        });
+        setActionFeedback(
+          'The readiness plan changed while you were working. We refreshed the workspace to the latest plan.'
+        );
+      } else {
+        alert(
+          getActionErrorMessage(
+            err,
+            'Failed to preview the recommended fix. Please try again.'
+          )
+        );
+      }
+    } finally {
+      setActionPreviewLoading(false);
     }
   };
 
@@ -671,15 +915,6 @@ export default function ProductOptimizationPage() {
           count: 0,
         }));
 
-  const selectedQueueItem =
-    selected
-      ? productQueue.find(
-          (item) =>
-            item.platform === selected.platform &&
-            item.product_id === selected.platform_product_id
-        ) || null
-      : null;
-
   const storeSetupActions = merchantActions.filter((action) =>
     ['integrations', 'policy'].includes(action.fix_surface)
   );
@@ -689,6 +924,12 @@ export default function ProductOptimizationPage() {
   const pivotaManagedActions = merchantActions.filter(
     (action) => action.fix_surface === 'pivota_managed'
   );
+
+  const manualReviewHref =
+    selectedQueueItem?.fix_surface === 'integrations' ||
+    selectedQueueItem?.fix_surface === 'policy'
+      ? '/dashboard/integrations'
+      : '/dashboard/product-optimization';
 
   return (
     <div className="space-y-6">
@@ -716,16 +957,45 @@ export default function ProductOptimizationPage() {
               <p className="mt-2 text-sm font-medium text-slate-900">
                 {readinessSummary.action_text || readinessSummary.next_action || 'Start with the issues below, then optimize the affected products.'}
               </p>
-              {optimizationData?.last_generated_at && (
-                <p className="mt-2 text-xs text-slate-500">
-                  Last checked {new Date(optimizationData.last_generated_at).toLocaleString()}
-                </p>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                {optimizationData?.last_generated_at && (
+                  <span>
+                    Last checked {new Date(optimizationData.last_generated_at).toLocaleString()}
+                  </span>
+                )}
+                {optimizationPlan?.last_successful_rescore_at && (
+                  <span>
+                    Last rescore {new Date(optimizationPlan.last_successful_rescore_at).toLocaleString()}
+                  </span>
+                )}
+                {optimizationPlan?.plan_id && (
+                  <span>Plan {optimizationPlan.plan_id.slice(-8)}</span>
+                )}
+              </div>
+              {scoreBundle && (
+                <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                    Eligibility {scoreBundle.readiness_score ?? '—'}
+                  </span>
+                  <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                    Exposure {scoreBundle.exposure_score ?? '—'}
+                  </span>
+                  <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                    Conversion {scoreBundle.conversion_score ?? '—'}
+                  </span>
+                </div>
               )}
             </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => void loadOptimizationData()}
+                onClick={() =>
+                  void loadOptimizationData({
+                    refresh: true,
+                    scope: 'merchant',
+                    reason: 'manual',
+                  })
+                }
                 disabled={readinessLoading}
                 className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-900 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-50"
               >
@@ -863,7 +1133,11 @@ export default function ProductOptimizationPage() {
                   `Bulk optimization completed.\nProcessed: ${data.processed}\nSkipped: ${data.skipped}`
                 );
                 await loadProducts();
-                await loadOptimizationData();
+                await loadOptimizationData({
+                  refresh: true,
+                  scope: 'merchant',
+                  reason: 'post_action',
+                });
               } catch (err) {
                 console.error('Bulk enrichment failed', err);
                 alert('Bulk optimization failed, please try again later.');
@@ -1064,17 +1338,47 @@ export default function ProductOptimizationPage() {
                   {selectedQueueItem.primary_action || 'Review this product and improve its enrichment before broader LLM exposure.'}
                 </p>
               </div>
-              {['integrations', 'policy'].includes(selectedQueueItem.fix_surface) && (
-                <a
-                  href="/dashboard/integrations"
-                  className="inline-flex items-center justify-center rounded-lg bg-slate-50 px-4 py-2 text-sm font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-100"
-                >
-                  Review integrations
-                </a>
-              )}
+              <div className="flex flex-wrap gap-2">
+                {canExecuteSelectedAction && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handlePreviewRecommendedAction}
+                      disabled={actionPreviewLoading}
+                      className="inline-flex items-center justify-center rounded-lg bg-slate-50 px-4 py-2 text-sm font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50"
+                    >
+                      {actionPreviewLoading ? 'Previewing…' : 'Preview AI fix'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAutoOptimize}
+                      disabled={optimizing || !canApplyPreviewedAction || isInCooldown}
+                      className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {optimizing ? 'Applying…' : 'Apply AI fix'}
+                    </button>
+                  </>
+                )}
+                {!canExecuteSelectedAction && (
+                  <a
+                    href={manualReviewHref}
+                    className="inline-flex items-center justify-center rounded-lg bg-slate-50 px-4 py-2 text-sm font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-100"
+                  >
+                    {['integrations', 'policy'].includes(selectedQueueItem.fix_surface)
+                      ? 'Review integrations'
+                      : 'Review issue details'}
+                  </a>
+                )}
+              </div>
             </div>
 
-            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {actionFeedback && (
+              <div className="mt-4 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-900 ring-1 ring-blue-200">
+                {actionFeedback}
+              </div>
+            )}
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
               <div className="rounded-lg bg-slate-50 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Main issues
@@ -1102,15 +1406,94 @@ export default function ProductOptimizationPage() {
               </div>
               <div className="rounded-lg bg-slate-50 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  What to change here
+                  Recommended action
                 </div>
                 <div className="mt-2 space-y-2">
                   <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
-                    Update the title, summary, bullets, and audience fields below so this product is easier for LLMs to understand and rank safely.
+                    <div className="font-medium text-slate-900">
+                      {selectedQueueItem.recommended_action_type === 'run_product_enrichment'
+                        ? 'AI enrichment fix is available'
+                        : 'Manual review is required'}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">
+                      {selectedQueueItem.priority_reason ||
+                        selectedQueueItem.primary_action ||
+                        'This action is prioritized because it should unlock more agent-commerce value than lower-impact edits.'}
+                    </div>
                   </div>
                   <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
-                    Use `Preview score` or `Save/Score` after edits to confirm the product is moving toward readiness.
+                    <div className="font-medium text-slate-900">
+                      {selectedQueueItem.fixability === 'merchant_fixable'
+                        ? 'You can fix this here'
+                        : 'This needs manual follow-up'}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">
+                      Scope: {selectedQueueItem.queue_item_scope} · Priority {selectedQueueItem.priority_score.toFixed(0)}
+                    </div>
                   </div>
+                </div>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Preview and verification
+                </div>
+                <div className="mt-2 space-y-2">
+                  {actionPreview ? (
+                    <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
+                      <div className="font-medium text-slate-900">
+                        {actionPreview.candidate_patches.length} suggested field changes
+                      </div>
+                      <div className="mt-1 space-y-1 text-xs text-slate-600">
+                        {actionPreview.candidate_patches.slice(0, 3).map((patch) => (
+                          <div key={patch.candidate_id}>
+                            {patch.target_field.replaceAll('_', ' ')}
+                          </div>
+                        ))}
+                        {actionPreview.expected_impact?.targets?.[0]?.delta && (
+                          <div className="pt-1 text-slate-700">
+                            Expected CQ delta{' '}
+                            {actionPreview.expected_impact.targets[0].delta
+                              .content_quality_score ?? 0}
+                            {' · '}Expected MR delta{' '}
+                            {actionPreview.expected_impact.targets[0].delta
+                              .model_readiness_score ?? 0}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
+                      Preview the recommended fix before applying it.
+                    </div>
+                  )}
+                  {verificationResult && (
+                    <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
+                      <div className="font-medium text-slate-900">Latest verification</div>
+                      <div className="mt-1 text-xs text-slate-600">
+                        Readiness delta{' '}
+                        {verificationResult.delta_scores?.readiness_score ?? 0}
+                        {' · '}Blocked variants delta{' '}
+                        {verificationResult.delta_scores?.blocked_variant_count ?? 0}
+                      </div>
+                    </div>
+                  )}
+                  {latestJob && (
+                    <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
+                      <div className="font-medium text-slate-900">
+                        Job {latestJob.status.replaceAll('_', ' ')}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-600">
+                        {latestJob.completed_at
+                          ? `Completed ${new Date(latestJob.completed_at).toLocaleString()}`
+                          : 'Execution is still in progress.'}
+                      </div>
+                    </div>
+                  )}
+                  {!verificationResult && !latestJob && !actionPreview && (
+                    <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
+                      Use `Preview AI fix` to inspect the exact changes before you apply them.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1202,8 +1585,21 @@ export default function ProductOptimizationPage() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    onClick={handlePreviewRecommendedAction}
+                    disabled={actionPreviewLoading || !selectedActionRequest}
+                    className="inline-flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap border rounded-md hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {actionPreviewLoading ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Wand2 className="w-3 h-3" />
+                    )}
+                    Preview AI fix
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleAutoOptimize}
-                    disabled={optimizing || !selected}
+                    disabled={optimizing || !canApplyPreviewedAction || isInCooldown}
                     className="inline-flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                   >
                     {optimizing ? (
@@ -1211,7 +1607,7 @@ export default function ProductOptimizationPage() {
                     ) : (
                       <Wand2 className="w-3 h-3" />
                     )}
-                    AI optimize
+                    Apply AI fix
                   </button>
                   <button
                     type="button"
