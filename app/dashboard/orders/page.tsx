@@ -4,6 +4,11 @@ import { useState, useEffect } from 'react';
 import { ShoppingBag, Download, Search, Filter, Truck, DollarSign } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import RefundDialog from '@/components/RefundDialog';
+import {
+  MerchantButton,
+  PageHeader,
+  SurfaceCard,
+} from '@/components/ui/merchant-primitives';
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<any[]>([]);
@@ -239,33 +244,34 @@ export default function OrdersPage() {
   const shippingAddress = normalizeAddress(orderData?.shipping_address);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
-          <p className="text-gray-600">Manage and track all your orders</p>
-        </div>
-        <button 
-          onClick={handleExport}
-          disabled={exporting}
-          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-        >
-          <Download className="w-4 h-4" />
-          <span>{exporting ? 'Exporting...' : 'Export'}</span>
-        </button>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Orders"
+        title="Keep sales, fulfillment, and after-sales operations readable at a glance."
+        description="Use Orders as the operational companion to Overview: fulfillment, refunds, and customer follow-through all stay in one merchant-facing workspace."
+        actions={
+          <MerchantButton
+            type="button"
+            onClick={handleExport}
+            disabled={exporting}
+            icon={Download}
+          >
+            {exporting ? 'Exporting…' : 'Export orders'}
+          </MerchantButton>
+        }
+      />
 
-      <div className="bg-white rounded-lg shadow">
+      <SurfaceCard>
         <div className="p-4 border-b">
           <div className="flex items-center space-x-4">
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[color:var(--merchant-muted)]" />
               <input
                 type="text"
-                placeholder="Search orders..."
+                placeholder="Search orders or customer email"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border rounded-lg"
+                className="merchant-input pl-10"
               />
             </div>
             <select
@@ -274,7 +280,7 @@ export default function OrdersPage() {
                 setStatusFilter(e.target.value);
                 setCurrentPage(1); // Reset to first page when filter changes
               }}
-              className="px-4 py-2 border rounded-lg"
+              className="merchant-select"
             >
               <option value="all">All Status</option>
               <option value="pending">Pending</option>
@@ -381,7 +387,7 @@ export default function OrdersPage() {
             </div>
           </div>
         )}
-      </div>
+      </SurfaceCard>
 
       {/* Order Details Modal */}
       {showOrderModal && orderData && (

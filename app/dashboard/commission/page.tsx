@@ -8,6 +8,13 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { DollarSign, Plus, Trash2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import {
+  MerchantButton,
+  PageHeader,
+  StatusBadge,
+  SurfaceCard,
+} from '@/components/ui/merchant-primitives';
+import { PaymentsNav } from '@/components/ui/payments-nav';
 
 export default function CommissionPage() {
   const router = useRouter();
@@ -123,102 +130,98 @@ export default function CommissionPage() {
 
   if (loading) {
     return (
-      <div className="p-8 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
+      <div className="flex min-h-[320px] items-center justify-center">
+        <div className="merchant-panel px-8 py-6">
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-[color:var(--merchant-line-strong)] border-t-[color:var(--merchant-success)]"></div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <DollarSign className="h-8 w-8 text-green-600" />
-            Commission Management
-          </h1>
-          <p className="text-gray-600 mt-2">Set commission rates for agents</p>
-        </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-        >
-          <Plus className="h-5 w-5" />
-          New Offer
-        </button>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Payments"
+        title="Set commission offers without making incentives feel like back-office config."
+        description="Use commission offers to attract agents and shape promotion economics, while keeping the merchant-facing payment experience calm and readable."
+        actions={
+          <MerchantButton type="button" onClick={() => setShowForm(true)} icon={Plus}>
+            New offer
+          </MerchantButton>
+        }
+      />
+
+      <PaymentsNav />
 
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+        <div className="merchant-panel px-5 py-4 text-[color:var(--merchant-critical)]">
           {error}
         </div>
       )}
 
       {/* Platform Fallback Info */}
-      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+      <div className="merchant-panel merchant-panel-muted p-4">
         <div className="flex items-start space-x-3">
-          <svg className="w-6 h-6 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-6 h-6 text-[color:var(--merchant-brand)] mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           <div className="flex-1">
-            <h4 className="text-base font-semibold text-blue-900 mb-1">Platform Default Commission</h4>
-            <p className="text-sm text-blue-700">
+            <h4 className="text-base font-semibold text-[color:var(--merchant-ink)] mb-1">Platform fallback commission</h4>
+            <p className="text-sm text-[color:var(--merchant-muted-strong)]">
               When no commission offer is set for an order, the platform will automatically apply a <strong>1% fallback rate</strong> 
               to ensure agents are still compensated for their efforts. This applies to all order amounts.
             </p>
-            <p className="text-sm text-blue-600 mt-2">
-              💡 <em>Tip: Set competitive commission rates to attract more agents to promote your products!</em>
+            <p className="text-sm text-[color:var(--merchant-muted)] mt-2">
+              Set a stronger merchant-funded offer when you want more visibility from agents.
             </p>
           </div>
         </div>
       </div>
 
       {/* Offers List */}
-      <div className="bg-white rounded-lg shadow">
-        <table className="w-full">
-          <thead className="bg-gray-50">
+      <SurfaceCard>
+        <table className="merchant-table">
+          <thead>
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent Type</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Commission Rate</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Min Order</th>
-              <th className="px-6 py-3"></th>
+              <th>Agent type</th>
+              <th>Commission rate</th>
+              <th>Minimum order</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {offers.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
-                  No commission offers yet. Click "New Offer" to create one.
+                <td colSpan={4} className="px-6 py-12 text-center text-[color:var(--merchant-muted)]">
+                  No commission offers yet. Create one to give agents a clearer reason to prioritize your catalog.
                 </td>
               </tr>
             ) : (
               offers.map(offer => (
-                <tr key={offer.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
+                <tr key={offer.id}>
+                  <td>
                     {offer.agent_type === 'premium' ? (
-                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium">
-                        ⭐ Premium
-                      </span>
+                      <StatusBadge tone="brand">Premium</StatusBadge>
                     ) : (
-                      <span className="font-medium text-gray-900">
+                      <span className="font-medium text-[color:var(--merchant-ink)]">
                         All Agents
                       </span>
                     )}
                   </td>
-                  <td className="px-6 py-4">
-                    <span className="font-semibold text-green-600 text-lg">
+                  <td>
+                    <span className="font-semibold text-[color:var(--merchant-success)] text-lg">
                       {(offer.rate * 100).toFixed(2)}%
                     </span>
                   </td>
-                  <td className="px-6 py-4">
-                    <span className="text-gray-700">
+                  <td>
+                    <span className="text-[color:var(--merchant-muted-strong)]">
                       {offer.min_amount > 0 ? `$${offer.min_amount.toFixed(2)}+` : 'No minimum'}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td className="text-right">
                     <button 
                       onClick={() => handleDelete(offer.id)}
-                      className="text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors"
+                      className="merchant-icon-button text-[color:var(--merchant-critical)]"
                       title="Delete offer"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -229,7 +232,7 @@ export default function CommissionPage() {
             )}
           </tbody>
         </table>
-      </div>
+      </SurfaceCard>
 
       {/* Create Form Modal */}
       {showForm && (
@@ -330,4 +333,3 @@ export default function CommissionPage() {
     </div>
   );
 }
-

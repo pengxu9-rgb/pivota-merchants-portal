@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Instrument_Sans } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+const instrumentSans = Instrument_Sans({
+  variable: "--font-instrument-sans",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "Pivota – Unified Agent Payment Network",
-  description: "Connect AI agents to merchants through unified payment infrastructure.",
+  title: "Pivota Merchant Portal",
+  description: "Manage catalog health, orders, channels, and payment operations from one merchant control center.",
 };
 
 export default function RootLayout({
@@ -19,11 +19,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${inter.variable} antialiased`}
-      >
-        {children}
-      </body>
+      <body className={`${instrumentSans.variable} antialiased`}>{children}</body>
     </html>
   );
 }

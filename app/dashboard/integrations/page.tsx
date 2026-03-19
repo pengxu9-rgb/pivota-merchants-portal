@@ -14,6 +14,12 @@ import { apiClient } from '@/lib/api-client';
 import PSPRoutingConfig from '@/components/PSPRoutingConfig';
 import ConnectStoreModal from '@/components/ConnectStoreModal';
 import { PSPConfigForm } from '@/components/PSPConfigForm';
+import {
+  MerchantButton,
+  PageHeader,
+  StatusBadge,
+  SurfaceCard,
+} from '@/components/ui/merchant-primitives';
 
 export default function IntegrationsPage() {
   const [loading, setLoading] = useState(true);
@@ -197,13 +203,68 @@ export default function IntegrationsPage() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Integrations</h1>
-        <p className="text-sm sm:text-base text-gray-600">
-          Connect your stores, payment processors, and configure webhooks
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Integrations"
+        title="Set up sales channels, payments, and merchant-facing commerce plumbing."
+        description="Keep storefront connections, payment setup, routing rules, and API credentials in one place, but frame them as launch readiness rather than platform internals."
+        actions={
+          <>
+            <MerchantButton type="button" variant="secondary" onClick={() => setShowConnectPSP(true)} icon={CreditCard}>
+              Add payment setup
+            </MerchantButton>
+            <MerchantButton type="button" onClick={() => setShowConnectStore(true)} icon={Store}>
+              Connect sales channel
+            </MerchantButton>
+          </>
+        }
+      />
+
+      <SurfaceCard strong>
+        <div className="grid gap-4 px-6 py-6 lg:grid-cols-4">
+          <div className="rounded-[1.2rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
+            <div className="text-sm text-[color:var(--merchant-muted)]">Sales channels</div>
+            <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+              {connectedStores.length}
+            </div>
+            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
+              Connected storefronts and feeds
+            </div>
+          </div>
+          <div className="rounded-[1.2rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
+            <div className="text-sm text-[color:var(--merchant-muted)]">Payment setup</div>
+            <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+              {activePSPCount}
+            </div>
+            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
+              Active processors ready to route
+            </div>
+          </div>
+          <div className="rounded-[1.2rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
+            <div className="text-sm text-[color:var(--merchant-muted)]">Primary channel</div>
+            <div className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
+              {connectedStores.find((store) => store?.is_active)?.store_name ||
+                connectedStores.find((store) => store?.is_active)?.domain ||
+                'Not set'}
+            </div>
+            <div className="mt-2">
+              <StatusBadge tone={primaryStoreId ? 'success' : 'warning'}>
+                {primaryStoreId ? 'Primary channel selected' : 'Choose a primary channel'}
+              </StatusBadge>
+            </div>
+          </div>
+          <div className="rounded-[1.2rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
+            <div className="text-sm text-[color:var(--merchant-muted)]">API & webhooks</div>
+            <div className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
+              {webhookConfig?.enabled ? 'Configured' : 'Needs attention'}
+            </div>
+            <div className="mt-2">
+              <StatusBadge tone={webhookConfig?.enabled ? 'success' : 'warning'}>
+                {webhookConfig?.enabled ? 'Webhook active' : 'Webhook not configured'}
+              </StatusBadge>
+            </div>
+          </div>
+        </div>
+      </SurfaceCard>
 
 
       {/* Tabs */}
@@ -223,8 +284,8 @@ export default function IntegrationsPage() {
           >
             <Store className="w-4 h-4 sm:mr-2" />
             <span className="leading-tight text-center sm:text-left">
-              <span className="hidden sm:inline">Stores ({connectedStores.length})</span>
-              <span className="sm:hidden">Stores</span>
+              <span className="hidden sm:inline">Sales Channels ({connectedStores.length})</span>
+              <span className="sm:hidden">Channels</span>
               <span className="sm:hidden block text-[11px] text-gray-500">({connectedStores.length})</span>
             </span>
           </button>
@@ -238,8 +299,8 @@ export default function IntegrationsPage() {
           >
             <CreditCard className="w-4 h-4 sm:mr-2" />
             <span className="leading-tight text-center sm:text-left">
-              <span className="hidden sm:inline">Payment Processors ({activePSPCount})</span>
-              <span className="sm:hidden">PSPs</span>
+              <span className="hidden sm:inline">Payment Setup ({activePSPCount})</span>
+              <span className="sm:hidden">Payments</span>
               <span className="sm:hidden block text-[11px] text-gray-500">({activePSPCount})</span>
             </span>
           </button>
@@ -280,7 +341,7 @@ export default function IntegrationsPage() {
           {/* Connected Stores */}
           <div className="bg-white rounded-lg shadow">
             <div className="px-4 sm:px-6 py-3 sm:py-4 border-b flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-base sm:text-lg font-semibold">Connected Stores</h2>
+              <h2 className="text-base sm:text-lg font-semibold">Sales Channels</h2>
               <button
                 onClick={() => setShowConnectStore(true)}
                 className="w-full sm:w-auto flex items-center justify-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
@@ -391,7 +452,7 @@ export default function IntegrationsPage() {
           {/* Connected PSPs */}
           <div className="bg-white rounded-lg shadow">
             <div className="px-4 sm:px-6 py-3 sm:py-4 border-b flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-base sm:text-lg font-semibold">Payment Processors</h2>
+              <h2 className="text-base sm:text-lg font-semibold">Payment Setup</h2>
               <button
                 onClick={() => setShowConnectPSP(true)}
                 className="w-full sm:w-auto flex items-center justify-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"

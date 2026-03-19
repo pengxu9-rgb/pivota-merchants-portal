@@ -7,6 +7,9 @@ import {
   PromotionType,
   computePromotionStatus,
 } from '@/types/promotion';
+import {
+  MerchantButton,
+} from '@/components/ui/merchant-primitives';
 
 type PromotionFormMode = 'create' | 'edit';
 
@@ -258,36 +261,30 @@ export function PromotionForm({
   const status = initial ? computePromotionStatus(initial as Promotion) : null;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">
+          <h3 className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
             {mode === 'create' ? 'New promotion' : 'Edit promotion'}
           </h3>
-          <p className="text-sm text-gray-500">
-            Manage discounts applied to your products and Creator Agents.
+          <p className="text-sm text-[color:var(--merchant-muted)]">
+            Manage discounts applied to your products and creator-facing commerce surfaces.
           </p>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
-          >
+          <MerchantButton type="button" variant="secondary" onClick={onCancel}>
             Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
-          >
+          </MerchantButton>
+          <MerchantButton type="button" onClick={handleSubmit} disabled={submitting}>
             {submitting ? 'Saving...' : 'Save'}
-          </button>
+          </MerchantButton>
         </div>
       </div>
 
       {status && (
-        <div className="text-sm text-gray-500">
-          Status: <span className="font-medium text-gray-700">{status}</span>
+        <div className="text-sm text-[color:var(--merchant-muted)]">
+          Status:{' '}
+          <span className="font-medium text-[color:var(--merchant-muted-strong)]">{status}</span>
         </div>
       )}
 
@@ -297,24 +294,24 @@ export function PromotionForm({
         </div>
       )}
 
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-3">
           <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700">Name</label>
+            <label className="text-sm font-medium text-[color:var(--merchant-muted-strong)]">Name</label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2"
+              className="merchant-input"
               placeholder="Weekend bundle"
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700">Description</label>
+            <label className="text-sm font-medium text-[color:var(--merchant-muted-strong)]">Description</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2"
+              className="merchant-textarea"
               rows={3}
               placeholder="Internal note (optional)"
             />
@@ -322,35 +319,35 @@ export function PromotionForm({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-sm font-medium text-gray-700">Start time</label>
+              <label className="text-sm font-medium text-[color:var(--merchant-muted-strong)]">Start time</label>
               <input
                 type="datetime-local"
                 value={startAt}
                 onChange={(e) => setStartAt(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                className="merchant-input"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-sm font-medium text-gray-700">End time</label>
+              <label className="text-sm font-medium text-[color:var(--merchant-muted-strong)]">End time</label>
               <input
                 type="datetime-local"
                 value={endAt}
                 onChange={(e) => setEndAt(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                className="merchant-input"
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">Type</label>
+            <label className="text-sm font-medium text-[color:var(--merchant-muted-strong)]">Type</label>
             <div className="flex gap-2">
               {(['FLASH_SALE', 'MULTI_BUY_DISCOUNT'] as PromotionType[]).map((t) => (
                 <button
                   key={t}
-                  className={`px-3 py-2 rounded-lg border ${
+                  className={`px-3 py-2 rounded-full border text-sm ${
                     type === t
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 text-gray-700'
+                      ? 'border-[color:var(--merchant-brand)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]'
+                      : 'border-[color:var(--merchant-line-strong)] text-[color:var(--merchant-muted-strong)]'
                   }`}
                   onClick={() => setType(t)}
                   type="button"
@@ -362,7 +359,7 @@ export function PromotionForm({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">Channels</label>
+            <label className="text-sm font-medium text-[color:var(--merchant-muted-strong)]">Channels</label>
             <div className="flex flex-wrap gap-2">
               {['web', 'app', 'creator_agents'].map((ch) => (
                 <button
@@ -371,33 +368,33 @@ export function PromotionForm({
                   onClick={() => toggleChannel(ch)}
                   className={`px-3 py-1 rounded-full text-sm border ${
                     channels.includes(ch)
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 text-gray-600'
+                      ? 'border-[color:var(--merchant-brand)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]'
+                      : 'border-[color:var(--merchant-line-strong)] text-[color:var(--merchant-muted)]'
                   }`}
                 >
                   {ch === 'creator_agents' ? 'Creator Agents' : ch.toUpperCase()}
                 </button>
               ))}
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-[color:var(--merchant-muted)]">
               When Creator Agents is enabled, this promotion may appear in AI shopping experiences.
             </p>
           </div>
         </div>
 
         <div className="space-y-3">
-          <div className="space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
-            <label className="text-sm font-medium text-gray-700">Apply to</label>
+          <div className="space-y-2 rounded-xl border border-[color:var(--merchant-line)] bg-white/70 p-3">
+            <label className="text-sm font-medium text-[color:var(--merchant-muted-strong)]">Apply to</label>
             <div className="flex gap-2">
               {(['all', 'category', 'product'] as ScopeMode[]).map((m) => (
                 <button
                   key={m}
                   type="button"
                   onClick={() => setScopeMode(m)}
-                  className={`px-3 py-1.5 rounded-lg border ${
+                  className={`px-3 py-1.5 rounded-full border text-sm ${
                     scopeMode === m
-                      ? 'border-blue-500 bg-white text-blue-700'
-                      : 'border-gray-200 text-gray-600'
+                      ? 'border-[color:var(--merchant-brand)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]'
+                      : 'border-[color:var(--merchant-line-strong)] text-[color:var(--merchant-muted)]'
                   }`}
                 >
                   {m === 'all'
@@ -412,7 +409,7 @@ export function PromotionForm({
               <input
                 value={categoryIds}
                 onChange={(e) => setCategoryIds(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                className="merchant-input"
                 placeholder="category ids, comma-separated"
               />
             )}
@@ -420,20 +417,20 @@ export function PromotionForm({
               <input
                 value={productIds}
                 onChange={(e) => setProductIds(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                className="merchant-input"
                 placeholder="product ids / SKUs, comma-separated"
               />
             )}
           </div>
 
-          <div className="space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
-            <label className="text-sm font-medium text-gray-700">Config</label>
+          <div className="space-y-2 rounded-xl border border-[color:var(--merchant-line)] bg-white/70 p-3">
+            <label className="text-sm font-medium text-[color:var(--merchant-muted-strong)]">Config</label>
             {type === 'FLASH_SALE' ? (
               <div className="grid grid-cols-3 gap-2">
                 <input
                   value={config.flashPrice || ''}
                   onChange={(e) => setConfig((p) => ({ ...p, flashPrice: e.target.value }))}
-                  className="rounded-lg border border-gray-200 px-3 py-2"
+                  className="merchant-input"
                   placeholder="Flash price"
                 />
                 <input
@@ -441,13 +438,13 @@ export function PromotionForm({
                   onChange={(e) =>
                     setConfig((p) => ({ ...p, originalPrice: e.target.value }))
                   }
-                  className="rounded-lg border border-gray-200 px-3 py-2"
+                  className="merchant-input"
                   placeholder="Original price"
                 />
                 <input
                   value={config.stockLimit || ''}
                   onChange={(e) => setConfig((p) => ({ ...p, stockLimit: e.target.value }))}
-                  className="rounded-lg border border-gray-200 px-3 py-2"
+                  className="merchant-input"
                   placeholder="Stock limit (optional)"
                 />
               </div>
@@ -458,7 +455,7 @@ export function PromotionForm({
                   onChange={(e) =>
                     setConfig((p) => ({ ...p, thresholdQuantity: e.target.value }))
                   }
-                  className="rounded-lg border border-gray-200 px-3 py-2"
+                  className="merchant-input"
                   placeholder="Threshold quantity"
                 />
                 <input
@@ -466,22 +463,22 @@ export function PromotionForm({
                   onChange={(e) =>
                     setConfig((p) => ({ ...p, discountPercent: e.target.value }))
                   }
-                  className="rounded-lg border border-gray-200 px-3 py-2"
+                  className="merchant-input"
                   placeholder="Discount %"
                 />
               </div>
             )}
-            <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-              <p className="text-xs text-gray-500">How this deal will be displayed</p>
-              <p className="text-sm font-medium text-gray-800">
+            <div className="rounded-lg border border-[color:var(--merchant-line)] bg-white/80 px-3 py-2">
+              <p className="text-xs text-[color:var(--merchant-muted)]">How this deal will be displayed</p>
+              <p className="text-sm font-medium text-[color:var(--merchant-ink)]">
                 {labelPreview || 'Configure the promotion to see a preview.'}
               </p>
             </div>
           </div>
 
-          <div className="space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
+          <div className="space-y-2 rounded-xl border border-[color:var(--merchant-line)] bg-white/70 p-3">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-700">
+              <label className="text-sm font-medium text-[color:var(--merchant-muted-strong)]">
                 Allow Creator Agents
               </label>
               <input
@@ -495,15 +492,15 @@ export function PromotionForm({
                 <input
                   value={allowedCreatorIds}
                   onChange={(e) => setAllowedCreatorIds(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                  className="merchant-input"
                   placeholder="Limit to creator IDs (optional, comma-separated)"
                 />
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-[color:var(--merchant-muted)]">
                   Leave empty to allow all eligible creators in Pivota&apos;s network.
                 </p>
               </>
             ) : (
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-[color:var(--merchant-muted)]">
                 This promotion will not be used by Creator Agents.
               </p>
             )}

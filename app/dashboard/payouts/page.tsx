@@ -2,9 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { 
-  ArrowLeft, 
   DollarSign, 
   Upload, 
   Download, 
@@ -22,6 +20,12 @@ import {
   Copy
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import {
+  MerchantButton,
+  PageHeader,
+  SurfaceCard,
+} from '@/components/ui/merchant-primitives';
+import { PaymentsNav } from '@/components/ui/payments-nav';
 
 interface Payout {
   id: number;
@@ -422,53 +426,36 @@ export default function PayoutsPage() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-blue-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b sticky top-0 z-10">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Link href="/dashboard" className="text-gray-600 hover:text-gray-900">
-                <ArrowLeft className="w-5 h-5" />
-              </Link>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Agent Payouts</h1>
-                <p className="text-sm text-gray-600 mt-1">Manage commission payouts to agents</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-              >
-                <Plus className="w-5 h-5" />
-                <span>Create Payout</span>
-              </button>
-              <button
-                onClick={exportPaymentDetails}
-                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <Download className="w-5 h-5" />
-                <span>Export Payment Details</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Payments"
+        title="Manage merchant payouts with clearer operational context."
+        description="Track unpaid commissions, create payout records, export bank details, and upload proof without turning the page into an internal finance console."
+        actions={
+          <>
+            <MerchantButton type="button" onClick={() => setShowCreateModal(true)} icon={Plus}>
+              Create payout
+            </MerchantButton>
+            <MerchantButton type="button" variant="secondary" onClick={exportPaymentDetails} icon={Download}>
+              Export payment details
+            </MerchantButton>
+          </>
+        }
+      />
 
-      <main className="px-6 py-8">
+      <PaymentsNav />
         {/* Pending Commissions Section - Always show if there are unpaid commissions */}
         {pendingCommissionSummary && pendingCommissionSummary.total_amount > 0 && (
           <div className="mb-8">
             {/* Info Banner */}
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+            <div className="merchant-panel px-5 py-4 mb-4">
               <div className="flex items-start gap-3">
-                <Clock className="w-5 h-5 text-yellow-600 mt-0.5" />
+                <Clock className="w-5 h-5 text-[color:var(--merchant-warning)] mt-0.5" />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-yellow-900">
+                  <p className="text-sm font-medium text-[color:var(--merchant-ink)]">
                     Unpaid Commissions Found
                   </p>
-                  <p className="text-sm text-yellow-700 mt-1">
+                  <p className="text-sm text-[color:var(--merchant-muted-strong)] mt-1">
                     You have <strong>${pendingCommissionSummary.total_amount.toFixed(2)}</strong> in commissions 
                     owed to <strong>{pendingCommissionSummary.unique_agents} agents</strong> from the last 30 days. 
                     These commissions haven't been converted to payout records yet.
@@ -478,7 +465,7 @@ export default function PayoutsPage() {
             </div>
 
             {/* Pending Commissions Card */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <div className="merchant-panel overflow-hidden">
               <div className="p-6 border-b border-gray-200">
                 <div className="flex items-center justify-between">
                   <div>
@@ -490,7 +477,7 @@ export default function PayoutsPage() {
                   <button
                     onClick={generatePayoutsFromCommissions}
                     disabled={generatingPayouts}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
+                    className="merchant-button-primary disabled:opacity-50"
                   >
                     {generatingPayouts ? (
                       <>
@@ -572,9 +559,9 @@ export default function PayoutsPage() {
             </div>
 
             {/* How it works */}
-            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-sm font-medium text-blue-900 mb-2">How Payouts Work:</p>
-              <ol className="text-sm text-blue-700 space-y-1 ml-4 list-decimal">
+            <div className="merchant-panel merchant-panel-muted mt-4 p-4">
+              <p className="text-sm font-medium text-[color:var(--merchant-ink)] mb-2">How payouts flow</p>
+              <ol className="text-sm text-[color:var(--merchant-muted-strong)] space-y-1 ml-4 list-decimal">
                 <li><strong>Generate Payouts</strong>: Click the button above to create payout records from unpaid commissions</li>
                 <li><strong>Pay Agents</strong>: Make the actual payment to agents (bank transfer, Stripe Connect, etc.)</li>
                 <li><strong>Upload Proof</strong>: Upload payment confirmation and reference number</li>
@@ -586,62 +573,62 @@ export default function PayoutsPage() {
 
         {/* Summary Cards - Always show */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="merchant-panel p-6">
               <div className="flex items-center justify-between mb-2">
-                <div className="p-2 bg-purple-50 rounded-lg">
-                  <DollarSign className="w-6 h-6 text-purple-600" />
+                <div className="p-2 bg-[color:var(--merchant-brand-soft)] rounded-lg">
+                  <DollarSign className="w-6 h-6 text-[color:var(--merchant-brand)]" />
                 </div>
               </div>
-              <p className="text-sm text-gray-600 mb-1">Total Amount</p>
-              <p className="text-2xl font-bold text-gray-900">
+              <p className="text-sm text-[color:var(--merchant-muted)] mb-1">Total payout amount</p>
+              <p className="text-2xl font-bold text-[color:var(--merchant-ink)]">
                 ${summary?.total_amount?.toFixed(2) || '0.00'}
               </p>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="merchant-panel p-6">
               <div className="flex items-center justify-between mb-2">
-                <div className="p-2 bg-blue-50 rounded-lg">
-                  <FileText className="w-6 h-6 text-blue-600" />
+                <div className="p-2 bg-[color:var(--merchant-surface-muted)] rounded-lg">
+                  <FileText className="w-6 h-6 text-[color:var(--merchant-brand)]" />
                 </div>
               </div>
-              <p className="text-sm text-gray-600 mb-1">Total Payouts</p>
-              <p className="text-2xl font-bold text-gray-900">
+              <p className="text-sm text-[color:var(--merchant-muted)] mb-1">Payout records</p>
+              <p className="text-2xl font-bold text-[color:var(--merchant-ink)]">
                 {summary?.total_count || 0}
               </p>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="merchant-panel p-6">
               <div className="flex items-center justify-between mb-2">
-                <div className="p-2 bg-green-50 rounded-lg">
-                  <CheckCircle className="w-6 h-6 text-green-600" />
+                <div className="p-2 bg-[color:var(--merchant-success-soft)] rounded-lg">
+                  <CheckCircle className="w-6 h-6 text-[color:var(--merchant-success)]" />
                 </div>
               </div>
-              <p className="text-sm text-gray-600 mb-1">Unique Agents</p>
-              <p className="text-2xl font-bold text-gray-900">
+              <p className="text-sm text-[color:var(--merchant-muted)] mb-1">Paid partners</p>
+              <p className="text-2xl font-bold text-[color:var(--merchant-ink)]">
                 {summary?.unique_agents || 0}
               </p>
             </div>
           </div>
 
         {/* Filters */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
-          <div className="flex flex-col md:flex-row gap-4">
+        <SurfaceCard className="mb-6">
+          <div className="flex flex-col md:flex-row gap-4 p-4">
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[color:var(--merchant-muted)] w-5 h-5" />
               <input
                 type="text"
-                placeholder="Search by agent ID or reference..."
+                placeholder="Search by agent ID or payout reference"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="merchant-input pl-10"
               />
             </div>
             <div className="flex items-center gap-2">
-              <Filter className="w-5 h-5 text-gray-500" />
+              <Filter className="w-5 h-5 text-[color:var(--merchant-muted)]" />
               <select
                 value={selectedStatus}
                 onChange={(e) => setSelectedStatus(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="merchant-select"
               >
                 <option value="all">All Status</option>
                 <option value="pending">Pending</option>
@@ -650,10 +637,10 @@ export default function PayoutsPage() {
               </select>
             </div>
           </div>
-        </div>
+        </SurfaceCard>
 
         {/* Payouts Table */}
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div className="merchant-panel overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
@@ -763,8 +750,6 @@ export default function PayoutsPage() {
             </table>
           </div>
         </div>
-      </main>
-
       {/* Upload Modal */}
       {showUploadModal && selectedPayout && (
         <UploadProofModal

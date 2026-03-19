@@ -1013,17 +1013,17 @@ export default function ProductOptimizationPage() {
                   {readinessSummary.label}
                 </span>
                 <span className="text-sm font-medium text-slate-900">
-                  LLM readiness score {readinessSummary.score ?? '—'}
+                  Catalog health score {readinessSummary.score ?? '—'}
                 </span>
                 <span className="text-sm text-slate-600">
                   {readinessSummary.ready_variant_count} ready / {readinessSummary.blocked_variant_count} blocked variants
                 </span>
               </div>
               <h1 className="mt-3 text-2xl font-bold text-gray-900">
-                {fromReadiness ? 'Readiness optimization plan' : 'Product Optimization'}
+                {fromReadiness ? 'Catalog health plan' : 'Catalog health'}
               </h1>
               <p className="mt-1 text-sm text-slate-700">
-                {readinessSummary.summary_text || 'Use this page to fix the catalog and setup issues that are blocking agent commerce.'}
+                {readinessSummary.summary_text || 'Use this page to fix the catalog and setup issues that are blocking channel launch and merchant readiness.'}
               </p>
               <p className="mt-2 text-sm font-medium text-slate-900">
                 {readinessSummary.action_text || readinessSummary.next_action || 'Start with the issues below, then optimize the affected products.'}

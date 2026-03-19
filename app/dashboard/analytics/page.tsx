@@ -4,6 +4,11 @@ import { useState, useEffect, useRef } from 'react';
 import { BarChart3, TrendingUp, TrendingDown, Activity, DollarSign } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import {
+  MerchantButton,
+  PageHeader,
+  SurfaceCard,
+} from '@/components/ui/merchant-primitives';
+import {
   ResponsiveContainer,
   BarChart,
   Bar,
@@ -224,8 +229,10 @@ export default function AnalyticsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex min-h-[320px] items-center justify-center">
+        <div className="merchant-panel px-8 py-6">
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-[color:var(--merchant-line-strong)] border-t-[color:var(--merchant-brand)]"></div>
+        </div>
       </div>
     );
   }
@@ -252,29 +259,29 @@ export default function AnalyticsPage() {
   const prevPeriodLabel = `vs prev ${timeRange}`;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Performance Analytics</h1>
-          <p className="text-gray-600">Track your store's key performance metrics</p>
-        </div>
-        <select
-          value={timeRange}
-          onChange={(e) => setTimeRange(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg"
-        >
-          <option value="1d">Last 24 hours</option>
-          <option value="7d">Last 7 days</option>
-          <option value="30d">Last 30 days</option>
-          <option value="90d">Last 90 days</option>
-        </select>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Analytics"
+        title="Read merchant performance without losing the operational context."
+        description="Analytics should feel like a calm summary of demand, checkout quality, payment health, and revenue momentum, not a default reporting screen."
+        actions={
+          <select
+            value={timeRange}
+            onChange={(e) => setTimeRange(e.target.value)}
+            className="merchant-select min-w-[180px]"
+          >
+            <option value="1d">Last 24 hours</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+            <option value="90d">Last 90 days</option>
+          </select>
+        }
+      />
 
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Order Generation Rate */}
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="merchant-panel p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="p-2 bg-blue-100 rounded-lg">
               <Activity className="w-6 h-6 text-blue-600" />
@@ -293,14 +300,14 @@ export default function AnalyticsPage() {
           <h3 className="text-2xl font-bold text-gray-900">
             {formatPercent(analytics?.order_generation_rate || 0)}
           </h3>
-          <p className="text-sm text-gray-600">Order Generation Rate</p>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-sm text-[color:var(--merchant-muted-strong)]">Order capture rate</p>
+          <p className="text-xs text-[color:var(--merchant-muted)] mt-1">
             {analytics?.total_order_attempts || 0} attempts
           </p>
         </div>
 
         {/* Order Placement Rate */}
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="merchant-panel p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="p-2 bg-green-100 rounded-lg">
               <BarChart3 className="w-6 h-6 text-green-600" />
@@ -319,14 +326,14 @@ export default function AnalyticsPage() {
           <h3 className="text-2xl font-bold text-gray-900">
             {formatPercent(analytics?.order_placement_rate || 0)}
           </h3>
-          <p className="text-sm text-gray-600">Order Placement Rate</p>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-sm text-[color:var(--merchant-muted-strong)]">Checkout completion</p>
+          <p className="text-xs text-[color:var(--merchant-muted)] mt-1">
             {analytics?.total_orders_placed || 0} placed
           </p>
         </div>
 
         {/* Payment Success Rate */}
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="merchant-panel p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="p-2 bg-purple-100 rounded-lg">
               <DollarSign className="w-6 h-6 text-purple-600" />
@@ -345,14 +352,14 @@ export default function AnalyticsPage() {
           <h3 className="text-2xl font-bold text-gray-900">
             {formatPercent(analytics?.payment_success_rate || 0)}
           </h3>
-          <p className="text-sm text-gray-600">Payment Success Rate</p>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-sm text-[color:var(--merchant-muted-strong)]">Payment success</p>
+          <p className="text-xs text-[color:var(--merchant-muted)] mt-1">
             {analytics?.total_payments_succeeded || 0} succeeded
           </p>
         </div>
 
         {/* Total Revenue */}
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="merchant-panel p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="p-2 bg-orange-100 rounded-lg">
               <DollarSign className="w-6 h-6 text-orange-600" />
@@ -373,8 +380,8 @@ export default function AnalyticsPage() {
           <h3 className="text-2xl font-bold text-gray-900">
             {formatCurrency(displayPaidRevenue)}
           </h3>
-          <p className="text-sm text-gray-600">Paid Revenue</p>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-sm text-[color:var(--merchant-muted-strong)]">Paid revenue</p>
+          <p className="text-xs text-[color:var(--merchant-muted)] mt-1">
             Paid orders only (excludes pending/unpaid)
             {paidRevenueOverrideLoading ? ' • recomputing…' : paidRevenueOverride ? ' • computed from orders' : ''}
           </p>
@@ -383,43 +390,44 @@ export default function AnalyticsPage() {
 
       {/* Performance by PSP */}
       {analytics?.psp_performance && analytics.psp_performance.length > 0 && (
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b">
-            <h2 className="text-lg font-semibold text-gray-900">Performance by PSP</h2>
-          </div>
+        <SurfaceCard
+          title="Payment setup performance"
+          description="A merchant-facing view of transaction quality across your active payment setup."
+        >
           <div className="p-6">
             <div className="space-y-4">
               {analytics.psp_performance.map((psp: any) => (
-                <div key={psp.psp_type} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                <div key={psp.psp_type} className="flex items-center justify-between p-4 rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/70">
                   <div>
-                    <h3 className="font-medium text-gray-900 capitalize">{psp.psp_type}</h3>
-                    <p className="text-sm text-gray-600">
+                    <h3 className="font-medium text-[color:var(--merchant-ink)] capitalize">{psp.psp_type}</h3>
+                    <p className="text-sm text-[color:var(--merchant-muted)]">
                       {psp.transaction_count} transactions
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-lg font-bold text-gray-900">
+                    <p className="text-lg font-bold text-[color:var(--merchant-ink)]">
                       {formatPercent(psp.success_rate || 0)}
                     </p>
-                    <p className="text-sm text-gray-600">Success Rate</p>
+                    <p className="text-sm text-[color:var(--merchant-muted)]">Success rate</p>
                   </div>
                 </div>
               ))}
             </div>
           </div>
-        </div>
+        </SurfaceCard>
       )}
 
       {/* Trends Over Time */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Trends Over Time</h2>
+      <SurfaceCard
+        title="Trends over time"
+        description="Compare demand, conversion, and payment quality over the selected reporting window."
+        action={
           <div className="flex items-center gap-3">
-            <label className="text-sm text-gray-600">Metric</label>
+            <label className="text-sm text-[color:var(--merchant-muted)]">Metric</label>
             <select
               value={metric}
               onChange={(e) => setMetric(e.target.value as any)}
-              className="px-3 py-1.5 border border-gray-300 rounded-md text-sm"
+              className="merchant-select py-2 text-sm"
             >
               <option value="gmv">GMV</option>
               <option value="orders">Orders</option>
@@ -436,9 +444,10 @@ export default function AnalyticsPage() {
               Net after refunds
             </label>
             {trends?.base_currency && (
-              <span className="text-xs text-gray-500">Base: {trends.base_currency}</span>
+              <span className="text-xs text-[color:var(--merchant-muted)]">Base: {trends.base_currency}</span>
             )}
-            <button
+            <MerchantButton
+              type="button"
               onClick={async () => {
                 try {
                   setExportingCsv(true);
@@ -466,16 +475,17 @@ export default function AnalyticsPage() {
                 }
               }}
               disabled={exportingCsv}
-              className="px-3 py-1.5 border border-gray-300 rounded-md text-sm hover:bg-gray-50 disabled:opacity-50"
+              variant="secondary"
             >
               {exportingCsv ? 'Exporting…' : 'Export CSV'}
-            </button>
+            </MerchantButton>
           </div>
-        </div>
+        }
+      >
         <div className="p-6">
           {loadingTrends ? (
             <div className="flex items-center justify-center h-64">
-              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-10 w-10 border-2 border-[color:var(--merchant-line-strong)] border-t-[color:var(--merchant-brand)]"></div>
             </div>
           ) : trends?.series?.length > 0 ? (
             <div className="w-full h-80">
@@ -599,24 +609,24 @@ export default function AnalyticsPage() {
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="flex items-center justify-center h-64 text-gray-500">
+            <div className="flex items-center justify-center h-64 text-[color:var(--merchant-muted)]">
               <div className="text-center">
-                <BarChart3 className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                <BarChart3 className="w-12 h-12 mx-auto mb-3 text-[color:var(--merchant-muted)]" />
                 <p className="text-sm">No trend data available for the selected range.</p>
-                <p className="text-xs mt-1 text-gray-400">Data will appear once you have transactions.</p>
+                <p className="text-xs mt-1 text-[color:var(--merchant-muted)]">Data will appear once you have transactions.</p>
               </div>
             </div>
           )}
         </div>
-      </div>
+      </SurfaceCard>
 
       {/* Summary */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="font-medium text-blue-900 mb-2">📊 Understanding Your Metrics</h3>
-        <ul className="text-sm text-blue-800 space-y-1">
-          <li><strong>Order Generation Rate:</strong> % of customer sessions that create orders</li>
-          <li><strong>Order Placement Rate:</strong> % of created orders that are successfully placed</li>
-          <li><strong>Payment Success Rate:</strong> % of placed orders with successful payments</li>
+      <div className="merchant-panel merchant-panel-muted p-4">
+        <h3 className="font-medium text-[color:var(--merchant-ink)] mb-2">How to read these metrics</h3>
+        <ul className="text-sm text-[color:var(--merchant-muted-strong)] space-y-1">
+          <li><strong>Order capture rate:</strong> share of attempts that become created orders</li>
+          <li><strong>Checkout completion:</strong> share of created orders that are successfully placed</li>
+          <li><strong>Payment success:</strong> share of placed orders with successful payment completion</li>
         </ul>
       </div>
     </div>

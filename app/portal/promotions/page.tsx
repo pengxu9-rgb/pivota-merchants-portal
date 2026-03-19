@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Promotion, PromotionStatus, computePromotionStatus } from '@/types/promotion';
 import { PromotionForm } from '@/components/portal/PromotionForm';
+import {
+  MerchantButton,
+  PageHeader,
+  StatusBadge,
+  SurfaceCard,
+} from '@/components/ui/merchant-primitives';
 
 type FilterStatus = 'ALL' | PromotionStatus;
 type FilterType = 'ALL' | 'FLASH_SALE' | 'MULTI_BUY_DISCOUNT';
@@ -20,7 +26,7 @@ export default function PromotionsPage() {
   const [selectedPromo, setSelectedPromo] = useState<Promotion | undefined>(undefined);
 
   useEffect(() => {
-    loadPromotions();
+    void loadPromotions();
   }, []);
 
   const loadPromotions = async () => {
@@ -57,18 +63,32 @@ export default function PromotionsPage() {
   };
 
   const filteredPromos = useMemo(() => {
-    return promotions.filter((p) => {
-      const st = computePromotionStatus(p);
-      if (filterStatus !== 'ALL' && st !== filterStatus) return false;
-      if (filterType !== 'ALL' && p.type !== filterType) return false;
+    return promotions.filter((promotion) => {
+      const status = computePromotionStatus(promotion);
+      if (filterStatus !== 'ALL' && status !== filterStatus) return false;
+      if (filterType !== 'ALL' && promotion.type !== filterType) return false;
       if (search.trim()) {
         const term = search.toLowerCase();
-        const haystack = `${p.name} ${p.description || ''}`.toLowerCase();
+        const haystack = `${promotion.name} ${promotion.description || ''}`.toLowerCase();
         if (!haystack.includes(term)) return false;
       }
       return true;
     });
   }, [promotions, filterStatus, filterType, search]);
+
+  const statusCounts = useMemo(() => {
+    return promotions.reduce(
+      (acc, promotion) => {
+        const status = computePromotionStatus(promotion);
+        acc.total += 1;
+        if (status === 'ACTIVE') acc.active += 1;
+        if (status === 'UPCOMING') acc.upcoming += 1;
+        if (status === 'ENDED') acc.ended += 1;
+        return acc;
+      },
+      { total: 0, active: 0, upcoming: 0, ended: 0 }
+    );
+  }, [promotions]);
 
   const openCreate = () => {
     setFormMode('create');
@@ -76,21 +96,21 @@ export default function PromotionsPage() {
     setShowForm(true);
   };
 
-  const openEdit = (p: Promotion) => {
+  const openEdit = (promotion: Promotion) => {
     setFormMode('edit');
-    setSelectedPromo(p);
+    setSelectedPromo(promotion);
     setShowForm(true);
   };
 
-  const handleEnd = async (promo: Promotion) => {
-    if (!confirm(`End "${promo.name}" now?`)) return;
+  const handleEnd = async (promotion: Promotion) => {
+    if (!confirm(`End "${promotion.name}" now?`)) return;
     const token =
       typeof window !== 'undefined'
         ? localStorage.getItem('merchant_token') || localStorage.getItem('token')
         : null;
     const merchantId =
       typeof window !== 'undefined' ? localStorage.getItem('merchant_id') : null;
-    const res = await fetch(`/api/portal/promotions/${promo.id}`, {
+    const res = await fetch(`/api/portal/promotions/${promotion.id}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -107,15 +127,15 @@ export default function PromotionsPage() {
     await loadPromotions();
   };
 
-  const handleDelete = async (promo: Promotion) => {
-    if (!confirm(`Delete "${promo.name}"? This will remove the promotion.`)) return;
+  const handleDelete = async (promotion: Promotion) => {
+    if (!confirm(`Delete "${promotion.name}"? This will remove the promotion.`)) return;
     const token =
       typeof window !== 'undefined'
         ? localStorage.getItem('merchant_token') || localStorage.getItem('token')
         : null;
     const merchantId =
       typeof window !== 'undefined' ? localStorage.getItem('merchant_id') : null;
-    const res = await fetch(`/api/portal/promotions/${promo.id}`, {
+    const res = await fetch(`/api/portal/promotions/${promotion.id}`, {
       method: 'DELETE',
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -130,177 +150,222 @@ export default function PromotionsPage() {
     await loadPromotions();
   };
 
-  const renderStatus = (p: Promotion) => {
-    const st = computePromotionStatus(p);
-    const color =
-      st === 'ACTIVE'
-        ? 'bg-emerald-100 text-emerald-700'
-        : st === 'UPCOMING'
-        ? 'bg-blue-100 text-blue-700'
-        : 'bg-gray-100 text-gray-600';
-    return <span className={`px-2 py-1 text-xs rounded-full ${color}`}>{st}</span>;
+  const renderStatus = (promotion: Promotion) => {
+    const status = computePromotionStatus(promotion);
+    const tone = status === 'ACTIVE' ? 'success' : status === 'UPCOMING' ? 'brand' : 'neutral';
+    return <StatusBadge tone={tone}>{status}</StatusBadge>;
   };
 
-  const formatRange = (p: Promotion) => {
-    const fmt = (ts: string) =>
+  const formatRange = (promotion: Promotion) => {
+    const format = (timestamp: string) =>
       new Intl.DateTimeFormat('en', {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
-      }).format(new Date(ts));
-    return `${fmt(p.startAt)} → ${fmt(p.endAt)}`;
+      }).format(new Date(timestamp));
+    return `${format(promotion.startAt)} → ${format(promotion.endAt)}`;
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Promotions</h1>
-          <p className="text-sm text-gray-600">
-            Manage discounts and deals applied to your products and Creator Agents.
-          </p>
-        </div>
-        <button
-          onClick={openCreate}
-          className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
-        >
-          New promotion
-        </button>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Promotions"
+        title="Plan merchant campaigns with clearer timing, targeting, and channel intent."
+        description="Promotions should read like a campaign workspace, not a raw discount table. Use this page to manage live offers, upcoming launches, and creator visibility."
+        actions={
+          <MerchantButton type="button" onClick={openCreate}>
+            New promotion
+          </MerchantButton>
+        }
+      />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex gap-2">
-          {(['ALL', 'ACTIVE', 'UPCOMING', 'ENDED'] as FilterStatus[]).map((s) => (
-            <button
-              key={s}
-              className={`px-3 py-1.5 rounded-lg border ${
-                filterStatus === s
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-gray-200 text-gray-700'
-              }`}
-              onClick={() => setFilterStatus(s)}
-            >
-              {s === 'ALL' ? 'All' : s}
-            </button>
-          ))}
+      <SurfaceCard strong>
+        <div className="grid gap-4 px-6 py-6 lg:grid-cols-4 lg:px-8">
+          <div className="rounded-[1.2rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
+            <div className="text-sm text-[color:var(--merchant-muted)]">Campaigns</div>
+            <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+              {statusCounts.total}
+            </div>
+            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
+              Total configured promotions
+            </div>
+          </div>
+          <div className="rounded-[1.2rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
+            <div className="text-sm text-[color:var(--merchant-muted)]">Live now</div>
+            <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+              {statusCounts.active}
+            </div>
+            <div className="mt-1">
+              <StatusBadge tone="success">Active campaigns</StatusBadge>
+            </div>
+          </div>
+          <div className="rounded-[1.2rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
+            <div className="text-sm text-[color:var(--merchant-muted)]">Scheduled</div>
+            <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+              {statusCounts.upcoming}
+            </div>
+            <div className="mt-1">
+              <StatusBadge tone="brand">Upcoming campaigns</StatusBadge>
+            </div>
+          </div>
+          <div className="rounded-[1.2rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
+            <div className="text-sm text-[color:var(--merchant-muted)]">Creator visibility</div>
+            <div className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
+              {promotions.filter((promotion) => promotion.exposeToCreators).length} promotions exposed
+            </div>
+            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
+              Eligible for creator-led commerce surfaces
+            </div>
+          </div>
         </div>
-        <div className="flex gap-2">
-          {(['ALL', 'FLASH_SALE', 'MULTI_BUY_DISCOUNT'] as FilterType[]).map((t) => (
-            <button
-              key={t}
-              className={`px-3 py-1.5 rounded-lg border ${
-                filterType === t
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-gray-200 text-gray-700'
-              }`}
-              onClick={() => setFilterType(t)}
-            >
-              {t === 'ALL' ? 'All types' : t === 'FLASH_SALE' ? 'Flash sale' : 'Multi-buy'}
-            </button>
-          ))}
+      </SurfaceCard>
+
+      <SurfaceCard>
+        <div className="flex flex-col gap-3 px-6 py-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex gap-2">
+              {(['ALL', 'ACTIVE', 'UPCOMING', 'ENDED'] as FilterStatus[]).map((status) => (
+                <button
+                  key={status}
+                  className={`px-3 py-1.5 rounded-full border text-sm ${
+                    filterStatus === status
+                      ? 'border-[color:var(--merchant-brand)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]'
+                      : 'border-[color:var(--merchant-line-strong)] text-[color:var(--merchant-muted-strong)]'
+                  }`}
+                  onClick={() => setFilterStatus(status)}
+                >
+                  {status === 'ALL' ? 'All statuses' : status}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              {(['ALL', 'FLASH_SALE', 'MULTI_BUY_DISCOUNT'] as FilterType[]).map((type) => (
+                <button
+                  key={type}
+                  className={`px-3 py-1.5 rounded-full border text-sm ${
+                    filterType === type
+                      ? 'border-[color:var(--merchant-brand)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]'
+                      : 'border-[color:var(--merchant-line-strong)] text-[color:var(--merchant-muted-strong)]'
+                  }`}
+                  onClick={() => setFilterType(type)}
+                >
+                  {type === 'ALL' ? 'All types' : type === 'FLASH_SALE' ? 'Flash sale' : 'Multi-buy'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search promotion name or description"
+            className="merchant-input w-full sm:w-80"
+          />
         </div>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name or description"
-          className="w-full sm:w-72 rounded-lg border border-gray-200 px-3 py-2"
-        />
-      </div>
+      </SurfaceCard>
 
       {isLoading ? (
-        <div className="py-12 text-center text-gray-500">Loading promotions...</div>
+        <div className="merchant-panel px-6 py-14 text-center text-[color:var(--merchant-muted)]">
+          Loading promotions...
+        </div>
       ) : error ? (
-        <div className="py-12 text-center text-red-600">{error}</div>
+        <div className="merchant-panel px-6 py-14 text-center text-[color:var(--merchant-critical)]">
+          {error}
+        </div>
       ) : filteredPromos.length === 0 ? (
-        <div className="py-12 text-center text-gray-500">
-          No promotions yet. Create one to start testing deals.
+        <div className="merchant-panel px-6 py-14 text-center text-[color:var(--merchant-muted)]">
+          No promotions yet. Create one to start testing merchant-facing campaigns.
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="text-gray-500">
-              <tr className="border-b">
-                <th className="py-2 text-left font-semibold">Name</th>
-                <th className="py-2 text-left font-semibold">Type</th>
-                <th className="py-2 text-left font-semibold">Status</th>
-                <th className="py-2 text-left font-semibold">Channels</th>
-                <th className="py-2 text-left font-semibold">Creator Agents</th>
-                <th className="py-2 text-left font-semibold">Time window</th>
-                <th className="py-2 text-right font-semibold">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {filteredPromos.map((p) => (
-                <tr key={p.id} className="hover:bg-gray-50">
-                  <td className="py-3">
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-gray-900">{p.name}</span>
-                      {p.description && (
-                        <span className="text-xs text-gray-500">{p.description}</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="py-3">{p.type === 'FLASH_SALE' ? 'Flash sale' : 'Multi-buy'}</td>
-                  <td className="py-3">{renderStatus(p)}</td>
-                  <td className="py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {p.channels.map((ch) => (
-                        <span
-                          key={ch}
-                          className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-xs"
-                        >
-                          {ch === 'creator_agents' ? 'Creator Agents' : ch.toUpperCase()}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="py-3 text-sm text-gray-700">
-                    {p.exposeToCreators ? 'On' : 'Off'}
-                  </td>
-                  <td className="py-3 text-sm text-gray-700">{formatRange(p)}</td>
-                  <td className="py-3 text-right space-x-2">
-                    <button
-                      onClick={() => openEdit(p)}
-                      className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleEnd(p)}
-                      className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
-                    >
-                      End
-                    </button>
-                    <button
-                      onClick={() => handleDelete(p)}
-                      className="px-3 py-1.5 rounded-lg border border-red-200 text-red-700 hover:bg-red-50"
-                    >
-                      Delete
-                    </button>
-                  </td>
+        <SurfaceCard>
+          <div className="overflow-x-auto">
+            <table className="merchant-table min-w-full">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Channels</th>
+                  <th>Creator visibility</th>
+                  <th>Time window</th>
+                  <th className="text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {filteredPromos.map((promotion) => (
+                  <tr key={promotion.id}>
+                    <td>
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-[color:var(--merchant-ink)]">{promotion.name}</span>
+                        {promotion.description ? (
+                          <span className="text-xs text-[color:var(--merchant-muted)]">
+                            {promotion.description}
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="text-[color:var(--merchant-muted-strong)]">
+                      {promotion.type === 'FLASH_SALE' ? 'Flash sale' : 'Multi-buy'}
+                    </td>
+                    <td>{renderStatus(promotion)}</td>
+                    <td>
+                      <div className="flex flex-wrap gap-1">
+                        {promotion.channels.map((channel) => (
+                          <StatusBadge key={channel} tone="neutral" className="text-[11px]">
+                            {channel === 'creator_agents' ? 'Creator agents' : channel.toUpperCase()}
+                          </StatusBadge>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="text-sm text-[color:var(--merchant-muted-strong)]">
+                      {promotion.exposeToCreators ? 'Visible to creator agents' : 'Merchant channels only'}
+                    </td>
+                    <td className="text-sm text-[color:var(--merchant-muted-strong)]">
+                      {formatRange(promotion)}
+                    </td>
+                    <td className="text-right space-x-2">
+                      <button
+                        onClick={() => openEdit(promotion)}
+                        className="merchant-button-secondary"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleEnd(promotion)}
+                        className="merchant-button-ghost"
+                      >
+                        End
+                      </button>
+                      <button
+                        onClick={() => handleDelete(promotion)}
+                        className="merchant-button-ghost text-[color:var(--merchant-critical)]"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </SurfaceCard>
       )}
 
-      {showForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-start justify-center overflow-y-auto py-10 px-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl p-6">
+      {showForm ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-10 backdrop-blur-sm">
+          <div className="merchant-panel w-full max-w-5xl p-6">
             <PromotionForm
               mode={formMode}
               initial={selectedPromo}
               onSubmitSuccess={() => {
                 setShowForm(false);
-                loadPromotions();
+                void loadPromotions();
               }}
               onCancel={() => setShowForm(false)}
             />
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
