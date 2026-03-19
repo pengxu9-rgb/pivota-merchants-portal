@@ -351,7 +351,7 @@ export default function DashboardPage() {
           const currentStartMs = nowMs - 30 * dayMs;
           const prevStartMs = nowMs - 60 * dayMs;
 
-          const pageSize = 200;
+          const pageSize = 100;
           const maxOrders = 5000;
 
           let offset = 0;

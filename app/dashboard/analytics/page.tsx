@@ -108,7 +108,7 @@ export default function AnalyticsPage() {
         const currentStartMs = nowMs - rangeDays * dayMs;
         const prevStartMs = nowMs - rangeDays * 2 * dayMs;
 
-        const pageSize = 200;
+        const pageSize = 100;
         const maxOrders = 20000;
 
         let offset = 0;

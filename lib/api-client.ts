@@ -75,6 +75,30 @@ class ApiClient {
     }
   }
 
+  private normalizeMerchantOrdersParams(params?: Record<string, unknown>) {
+    const normalized: Record<string, unknown> = { ...(params || {}) };
+
+    const limit = Number(normalized.limit);
+    if (Number.isFinite(limit) && limit > 0) {
+      // The merchant orders route currently enforces limit <= 100.
+      normalized.limit = Math.min(Math.trunc(limit), 100);
+    }
+
+    const offset = Number(normalized.offset);
+    if (Number.isFinite(offset) && offset >= 0) {
+      normalized.offset = Math.trunc(offset);
+    }
+
+    return normalized;
+  }
+
+  private shouldFallbackToLegacyMerchantOrders(error: unknown) {
+    if (!axios.isAxiosError(error)) return false;
+
+    const status = error.response?.status;
+    return status === 404 || status === 405 || status === 501;
+  }
+
   // Auth methods
   async login(email: string, password: string) {
     const response = await this.client.post(API_CONFIG.ENDPOINTS.LOGIN, {
@@ -332,10 +356,12 @@ class ApiClient {
   async getOrders(params?: any) {
     const merchantId = localStorage.getItem('merchant_id') || '';
     if (!merchantId) return { orders: [], total: 0, limit: 50, offset: 0 };
-    
+
+    const normalizedParams = this.normalizeMerchantOrdersParams(params);
+
     // Try the new merchant-specific endpoint first
     try {
-      const response = await this.client.get(`/merchant/${merchantId}/orders`, { params });
+      const response = await this.client.get(`/merchant/${merchantId}/orders`, { params: normalizedParams });
       const data = response.data?.data || response.data;
       return {
         orders: data?.orders || [],
@@ -344,14 +370,18 @@ class ApiClient {
         offset: data?.offset || 0
       };
     } catch (error) {
+      if (!this.shouldFallbackToLegacyMerchantOrders(error)) {
+        throw error;
+      }
+
       // Fallback to old endpoint
-      const response = await this.client.get(`/orders/merchant/${merchantId}`, { params });
+      const response = await this.client.get(`/orders/merchant/${merchantId}`, { params: normalizedParams });
       const data = response.data?.data || response.data;
       return {
         orders: data?.orders || [],
-        total: data?.total || 0,
-        limit: data?.limit || 50,
-        offset: data?.offset || 0
+        total: data?.total || data?.total_orders || 0,
+        limit: data?.limit || Number(normalizedParams.limit) || 50,
+        offset: data?.offset || Number(normalizedParams.offset) || 0
       };
     }
   }
