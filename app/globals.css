@@ -202,9 +202,9 @@ textarea {
 }
 
 .merchant-nav-label {
-  padding-left: 0.75rem;
+  padding-left: 0.68rem;
   color: var(--merchant-muted);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -213,10 +213,10 @@ textarea {
 .merchant-nav-link {
   display: flex;
   align-items: flex-start;
-  gap: 0.8rem;
-  border-radius: 1rem;
+  gap: 0.68rem;
+  border-radius: 0.9rem;
   color: var(--merchant-muted-strong);
-  padding: 0.68rem 0.8rem;
+  padding: 0.56rem 0.68rem;
   transition: all 160ms ease;
 }
 
@@ -235,8 +235,8 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 2.25rem;
-  width: 2.25rem;
+  height: 2.1rem;
+  width: 2.1rem;
   border-radius: 999px;
   border: 1px solid var(--merchant-line-strong);
   background: rgba(255, 255, 255, 0.72);
