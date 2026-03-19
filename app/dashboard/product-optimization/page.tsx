@@ -136,6 +136,12 @@ type ProductQueueItem = {
   image_url?: string | null;
   brand?: string | null;
   category?: string | null;
+  price_value?: number | null;
+  price_currency?: string | null;
+  content_quality_score?: number | null;
+  model_readiness_score?: number | null;
+  conversion_potential_score?: number | null;
+  quality_last_evaluated_at?: string | null;
   blocked_variant_count: number;
   ready_variant_count: number;
   top_issues: ProductQueueIssue[];
@@ -350,7 +356,6 @@ export default function ProductOptimizationPage() {
   const focusIssue = searchParams.get('focus');
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<MerchantProductListItem[]>([]);
-  const [productsHydrating, setProductsHydrating] = useState(false);
   const [search, setSearch] = useState('');
   const [optimizationData, setOptimizationData] = useState<ReadinessOptimizationPayload | null>(null);
   const [readinessLoading, setReadinessLoading] = useState(true);
@@ -400,41 +405,6 @@ export default function ProductOptimizationPage() {
     }
   }, [focusIssue]);
 
-  const loadProducts = async () => {
-    try {
-      setProductsHydrating(true);
-      const pageSize = 100;
-      const maxPages = 50;
-      const allItems: MerchantProductListItem[] = [];
-      const seen = new Set<string>();
-
-      for (let page = 1; page <= maxPages; page += 1) {
-        const data = await apiClient.listMerchantProducts({
-          page,
-          page_size: pageSize,
-        });
-        const pageItems = Array.isArray(data.items) ? data.items : [];
-
-        for (const item of pageItems) {
-          const key = `${item.platform}|${item.platform_product_id}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          allItems.push(item);
-        }
-
-        if (pageItems.length < pageSize) {
-          break;
-        }
-      }
-
-      setProducts(allItems);
-    } catch (err) {
-      console.error('Failed to load merchant products', err);
-    } finally {
-      setProductsHydrating(false);
-    }
-  };
-
   const loadOptimizationData = async (options?: {
     refresh?: boolean;
     scope?: 'merchant' | 'product' | 'variant';
@@ -459,12 +429,6 @@ export default function ProductOptimizationPage() {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (!optimizationData?.product_queue?.length) return;
-    if (products.length > 0 || productsHydrating) return;
-    void loadProducts();
-  }, [optimizationData, products.length, productsHydrating]);
 
   const upsertCachedProduct = (nextItem: MerchantProductListItem) => {
     setProducts((prev) => {
@@ -651,13 +615,25 @@ export default function ProductOptimizationPage() {
         platform_product_id: platformProductId,
         standard: {
           title: base?.standard?.title || queueItem.title,
-          price: base?.standard?.price,
+          price:
+            base?.standard?.price ||
+            (typeof queueItem.price_value === 'number'
+              ? {
+                  value: queueItem.price_value,
+                  currency: queueItem.price_currency || 'USD',
+                }
+              : undefined),
           main_image_url:
             base?.standard?.main_image_url || queueItem.image_url || undefined,
           last_synced_at: base?.standard?.last_synced_at,
         },
         enrichment: base?.enrichment,
-        quality: base?.quality,
+        quality: base?.quality || {
+          content_quality_score: queueItem.content_quality_score,
+          model_readiness_score: queueItem.model_readiness_score,
+          conversion_potential_score: queueItem.conversion_potential_score,
+          last_evaluated_at: queueItem.quality_last_evaluated_at,
+        },
         readiness: queueItem,
         readinessIndex: index,
       };
@@ -875,7 +851,6 @@ export default function ProductOptimizationPage() {
         selected.platform,
         selected.platform_product_id
       );
-      await loadProducts();
       setLastOptimizedAt((prev) => ({
         ...prev,
         [key]: Date.now(),
@@ -1106,7 +1081,11 @@ export default function ProductOptimizationPage() {
       ? '/dashboard/integrations'
       : '/dashboard/product-optimization';
 
-  const qualityMetadataReady = products.length > 0;
+  const qualityMetadataReady = queueDrivenProducts.some(
+    (item) =>
+      typeof item.quality?.content_quality_score === 'number' ||
+      typeof item.quality?.model_readiness_score === 'number'
+  );
 
   return (
     <div className="space-y-6">
@@ -1309,7 +1288,6 @@ export default function ProductOptimizationPage() {
                 alert(
                   `Bulk optimization completed.\nProcessed: ${data.processed}\nSkipped: ${data.skipped}`
                 );
-                await loadProducts();
                 await loadOptimizationData({
                   refresh: true,
                   scope: 'merchant',
@@ -1412,12 +1390,7 @@ export default function ProductOptimizationPage() {
               </div>
               {!qualityMetadataReady && (
                 <p className="text-xs text-gray-500">
-                  Loading CQ and MR details in the background. Readiness priority is available immediately.
-                </p>
-              )}
-              {productsHydrating && qualityMetadataReady && (
-                <p className="text-xs text-gray-500">
-                  Refreshing CQ and MR details in the background.
+                  CQ and MR scores are not available for this queue yet. Readiness priority remains the default ranking.
                 </p>
               )}
             </div>
