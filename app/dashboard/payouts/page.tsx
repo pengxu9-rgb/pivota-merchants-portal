@@ -23,6 +23,7 @@ import { apiClient } from '@/lib/api-client';
 import {
   MerchantButton,
   PageHeader,
+  StatusBadge,
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
 import { PaymentsNav } from '@/components/ui/payments-nav';
@@ -424,9 +425,11 @@ export default function PayoutsPage() {
     payout.agent_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
     payout.payout_reference?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  const pendingPayoutCount = payouts.filter((payout) => payout.status === 'pending').length;
+  const uploadedPayoutCount = payouts.filter((payout) => payout.status === 'uploaded').length;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Payments"
         title="Manage merchant payouts with clearer operational context."
@@ -444,175 +447,182 @@ export default function PayoutsPage() {
       />
 
       <PaymentsNav />
-        {/* Pending Commissions Section - Always show if there are unpaid commissions */}
-        {pendingCommissionSummary && pendingCommissionSummary.total_amount > 0 && (
-          <div className="mb-8">
-            {/* Info Banner */}
-            <div className="merchant-panel px-5 py-4 mb-4">
+      {pendingCommissionSummary && pendingCommissionSummary.total_amount > 0 && (
+        <div className="space-y-4">
+          <div className="merchant-panel merchant-panel-muted px-5 py-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-start gap-3">
-                <Clock className="w-5 h-5 text-[color:var(--merchant-warning)] mt-0.5" />
-                <div className="flex-1">
+                <Clock className="mt-0.5 h-5 w-5 text-[color:var(--merchant-warning)]" />
+                <div className="space-y-1">
                   <p className="text-sm font-medium text-[color:var(--merchant-ink)]">
-                    Unpaid Commissions Found
+                    ${pendingCommissionSummary.total_amount.toFixed(2)} is still waiting to be converted into payout records.
                   </p>
-                  <p className="text-sm text-[color:var(--merchant-muted-strong)] mt-1">
-                    You have <strong>${pendingCommissionSummary.total_amount.toFixed(2)}</strong> in commissions 
-                    owed to <strong>{pendingCommissionSummary.unique_agents} agents</strong> from the last 30 days. 
-                    These commissions haven't been converted to payout records yet.
+                  <p className="text-sm text-[color:var(--merchant-muted-strong)]">
+                    {pendingCommissionSummary.unique_agents} agents across {pendingCommissionSummary.total_transactions} transactions are ready for settlement prep.
                   </p>
                 </div>
               </div>
+              <StatusBadge tone="warning">
+                {pendingCommissionSummary.period_days}-day settlement window
+              </StatusBadge>
             </div>
+          </div>
 
-            {/* Pending Commissions Card */}
-            <div className="merchant-panel overflow-hidden">
-              <div className="p-6 border-b border-gray-200">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Unpaid Commissions (Last 30 Days)</h3>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Commission earned by agents but not yet paid
-                    </p>
-                  </div>
-                  <button
-                    onClick={generatePayoutsFromCommissions}
-                    disabled={generatingPayouts}
-                    className="merchant-button-primary disabled:opacity-50"
-                  >
-                    {generatingPayouts ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        <span>Generating...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Plus className="w-5 h-5" />
-                        <span>Generate Payouts</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Commissions Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Agent ID
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Transactions
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Total Commission
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Period
-                      </th>
+          <SurfaceCard
+            title="Unpaid commissions ready to convert"
+            description="Create payout records from earned commissions before exporting bank details and proof of payment."
+            action={
+              <MerchantButton
+                type="button"
+                onClick={generatePayoutsFromCommissions}
+                disabled={generatingPayouts}
+                icon={Plus}
+                className="disabled:opacity-50"
+              >
+                {generatingPayouts ? 'Generating...' : 'Generate payouts'}
+              </MerchantButton>
+            }
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="border-b border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)]/65">
+                  <tr>
+                    <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
+                      Agent ID
+                    </th>
+                    <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
+                      Transactions
+                    </th>
+                    <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
+                      Total commission
+                    </th>
+                    <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
+                      Period
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[color:var(--merchant-line)] bg-white/90">
+                  {pendingCommissions.map((commission) => (
+                    <tr key={commission.agent_id} className="transition hover:bg-[color:var(--merchant-surface-muted)]/55">
+                      <td className="px-5 py-3.5 whitespace-nowrap">
+                        <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                          {commission.agent_id}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5 whitespace-nowrap text-sm text-[color:var(--merchant-muted-strong)]">
+                        {commission.transaction_count} orders
+                      </td>
+                      <td className="px-5 py-3.5 whitespace-nowrap">
+                        <div className="text-sm font-semibold text-[color:var(--merchant-ink)]">
+                          ${Number(commission.total_commission).toFixed(2)} {commission.currency}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5 whitespace-nowrap text-sm text-[color:var(--merchant-muted-strong)]">
+                        {commission.earliest_transaction
+                          ? `${new Date(commission.earliest_transaction).toLocaleDateString()} - ${new Date(commission.latest_transaction!).toLocaleDateString()}`
+                          : 'N/A'}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {pendingCommissions.map((commission) => (
-                      <tr key={commission.agent_id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">
-                            {commission.agent_id}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-600">
-                            {commission.transaction_count} orders
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-semibold text-gray-900">
-                            ${Number(commission.total_commission).toFixed(2)} {commission.currency}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-600">
-                            {commission.earliest_transaction 
-                              ? `${new Date(commission.earliest_transaction).toLocaleDateString()} - ${new Date(commission.latest_transaction!).toLocaleDateString()}`
-                              : 'N/A'
-                            }
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Summary Footer */}
-              <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">
-                    Total: {pendingCommissionSummary.total_transactions} transactions from {pendingCommissionSummary.unique_agents} agents
-                  </span>
-                  <span className="font-semibold text-gray-900">
-                    Total Amount: ${pendingCommissionSummary.total_amount.toFixed(2)}
-                  </span>
-                </div>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
 
-            {/* How it works */}
-            <div className="merchant-panel merchant-panel-muted mt-4 p-4">
-              <p className="text-sm font-medium text-[color:var(--merchant-ink)] mb-2">How payouts flow</p>
-              <ol className="text-sm text-[color:var(--merchant-muted-strong)] space-y-1 ml-4 list-decimal">
-                <li><strong>Generate Payouts</strong>: Click the button above to create payout records from unpaid commissions</li>
-                <li><strong>Pay Agents</strong>: Make the actual payment to agents (bank transfer, Stripe Connect, etc.)</li>
-                <li><strong>Upload Proof</strong>: Upload payment confirmation and reference number</li>
-                <li><strong>Confirm</strong>: Employee reviews and marks as paid - then agents can see the payment</li>
-              </ol>
+            <div className="flex flex-col gap-3 border-t border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)]/55 px-5 py-4 text-sm lg:flex-row lg:items-center lg:justify-between">
+              <span className="text-[color:var(--merchant-muted-strong)]">
+                {pendingCommissionSummary.total_transactions} transactions from {pendingCommissionSummary.unique_agents} agents are waiting to be turned into payout records.
+              </span>
+              <span className="font-semibold text-[color:var(--merchant-ink)]">
+                Total unpaid commissions: ${pendingCommissionSummary.total_amount.toFixed(2)}
+              </span>
+            </div>
+          </SurfaceCard>
+
+          <div className="merchant-panel merchant-panel-muted px-5 py-4">
+            <div className="grid gap-3 text-sm text-[color:var(--merchant-muted-strong)] md:grid-cols-4">
+              <div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">1. Generate</div>
+                <div>Create payout records from unpaid commissions.</div>
+              </div>
+              <div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">2. Settle</div>
+                <div>Pay agents by bank transfer or your usual settlement rail.</div>
+              </div>
+              <div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">3. Upload proof</div>
+                <div>Attach a reference number or confirmation file for each payout.</div>
+              </div>
+              <div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">4. Confirm</div>
+                <div>Employees review the proof and mark the payout as completed.</div>
+              </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Summary Cards - Always show */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="merchant-panel p-6">
-              <div className="flex items-center justify-between mb-2">
-                <div className="p-2 bg-[color:var(--merchant-brand-soft)] rounded-lg">
-                  <DollarSign className="w-6 h-6 text-[color:var(--merchant-brand)]" />
-                </div>
-              </div>
-              <p className="text-sm text-[color:var(--merchant-muted)] mb-1">Total payout amount</p>
-              <p className="text-2xl font-bold text-[color:var(--merchant-ink)]">
-                ${summary?.total_amount?.toFixed(2) || '0.00'}
-              </p>
-            </div>
-
-            <div className="merchant-panel p-6">
-              <div className="flex items-center justify-between mb-2">
-                <div className="p-2 bg-[color:var(--merchant-surface-muted)] rounded-lg">
-                  <FileText className="w-6 h-6 text-[color:var(--merchant-brand)]" />
-                </div>
-              </div>
-              <p className="text-sm text-[color:var(--merchant-muted)] mb-1">Payout records</p>
-              <p className="text-2xl font-bold text-[color:var(--merchant-ink)]">
-                {summary?.total_count || 0}
-              </p>
-            </div>
-
-            <div className="merchant-panel p-6">
-              <div className="flex items-center justify-between mb-2">
-                <div className="p-2 bg-[color:var(--merchant-success-soft)] rounded-lg">
-                  <CheckCircle className="w-6 h-6 text-[color:var(--merchant-success)]" />
-                </div>
-              </div>
-              <p className="text-sm text-[color:var(--merchant-muted)] mb-1">Paid partners</p>
-              <p className="text-2xl font-bold text-[color:var(--merchant-ink)]">
-                {summary?.unique_agents || 0}
-              </p>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="merchant-panel p-5">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="rounded-xl bg-[color:var(--merchant-brand-soft)] p-2">
+              <DollarSign className="h-5 w-5 text-[color:var(--merchant-brand)]" />
             </div>
           </div>
+          <p className="mb-1 text-sm text-[color:var(--merchant-muted)]">Total payout amount</p>
+          <p className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+            ${summary?.total_amount?.toFixed(2) || '0.00'}
+          </p>
+        </div>
+
+        <div className="merchant-panel p-5">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="rounded-xl bg-[color:var(--merchant-surface-muted)] p-2">
+              <FileText className="h-5 w-5 text-[color:var(--merchant-brand)]" />
+            </div>
+          </div>
+          <p className="mb-1 text-sm text-[color:var(--merchant-muted)]">Payout records</p>
+          <p className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+            {summary?.total_count || 0}
+          </p>
+        </div>
+
+        <div className="merchant-panel p-5">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="rounded-xl bg-[color:var(--merchant-success-soft)] p-2">
+              <CheckCircle className="h-5 w-5 text-[color:var(--merchant-success)]" />
+            </div>
+          </div>
+          <p className="mb-1 text-sm text-[color:var(--merchant-muted)]">Paid partners</p>
+          <p className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+            {summary?.unique_agents || 0}
+          </p>
+        </div>
+
+        <div className="merchant-panel p-5">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="rounded-xl bg-[color:var(--merchant-warning-soft)] p-2">
+              <Clock className="h-5 w-5 text-[color:var(--merchant-warning)]" />
+            </div>
+          </div>
+          <p className="mb-1 text-sm text-[color:var(--merchant-muted)]">Pending follow-up</p>
+          <p className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+            {pendingCommissionSummary?.unique_agents || pendingPayoutCount}
+          </p>
+          <p className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
+            {pendingCommissionSummary?.total_amount
+              ? `${pendingCommissionSummary.total_transactions} unpaid commission lines`
+              : `${uploadedPayoutCount} uploaded, ${pendingPayoutCount} pending`}
+          </p>
+        </div>
+      </div>
 
         {/* Filters */}
-        <SurfaceCard className="mb-6">
-          <div className="flex flex-col md:flex-row gap-4 p-4">
+      <SurfaceCard
+        title="Filter payout activity"
+        description="Search by agent or payout reference, then narrow the table to the settlement stage you need."
+        action={<StatusBadge tone="neutral">{filteredPayouts.length} visible</StatusBadge>}
+      >
+          <div className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[color:var(--merchant-muted)] w-5 h-5" />
               <input
@@ -636,83 +646,95 @@ export default function PayoutsPage() {
                 <option value="paid">Paid</option>
               </select>
             </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge tone={pendingPayoutCount > 0 ? 'warning' : 'success'}>
+                {pendingPayoutCount > 0 ? `${pendingPayoutCount} pending` : 'No pending payouts'}
+              </StatusBadge>
+              <StatusBadge tone={uploadedPayoutCount > 0 ? 'brand' : 'neutral'}>
+                {uploadedPayoutCount} proof uploaded
+              </StatusBadge>
+            </div>
           </div>
-        </SurfaceCard>
+      </SurfaceCard>
 
-        {/* Payouts Table */}
-        <div className="merchant-panel overflow-hidden">
+      <SurfaceCard
+        title="Payout activity"
+        description="Track payout records, settlement status, and proof uploads by agent."
+        action={<StatusBadge tone="neutral">{filteredPayouts.length} records</StatusBadge>}
+        className="overflow-hidden"
+      >
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="border-b border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)]/65">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
                     Agent
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
                     Amount
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
                     Period
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
                     Status
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
                     Reference
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="divide-y divide-[color:var(--merchant-line)] bg-white/90">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-2"></div>
+                    <td colSpan={6} className="px-6 py-12 text-center text-[color:var(--merchant-muted-strong)]">
+                      <div className="mx-auto mb-2 h-8 w-8 animate-spin rounded-full border-b-2 border-[color:var(--merchant-brand)]"></div>
                       Loading payouts...
                     </td>
                   </tr>
                 ) : filteredPayouts.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={6} className="px-6 py-12 text-center text-[color:var(--merchant-muted-strong)]">
                       No payouts found
                     </td>
                   </tr>
                 ) : (
                   filteredPayouts.map((payout) => (
-                    <tr key={payout.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">
+                    <tr key={payout.id} className="transition hover:bg-[color:var(--merchant-surface-muted)]/55">
+                      <td className="px-5 py-3.5 whitespace-nowrap">
+                        <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
                           {payout.agent_id}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-semibold text-gray-900">
+                      <td className="px-5 py-3.5 whitespace-nowrap">
+                        <div className="text-sm font-semibold text-[color:var(--merchant-ink)]">
                           ${payout.amount.toFixed(2)} {payout.currency}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-600">
+                      <td className="px-5 py-3.5 whitespace-nowrap">
+                        <div className="text-sm text-[color:var(--merchant-muted-strong)]">
                           {new Date(payout.period_start).toLocaleDateString()} - {new Date(payout.period_end).toLocaleDateString()}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-5 py-3.5 whitespace-nowrap">
                         {getStatusBadge(payout.status)}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-600">
+                      <td className="px-5 py-3.5 whitespace-nowrap">
+                        <div className="text-sm text-[color:var(--merchant-muted-strong)]">
                           {payout.payout_reference || '-'}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-5 py-3.5 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           {payout.status === 'pending' && (
                             <>
                               <button
                                 onClick={() => viewAgentBankDetails(payout.agent_id)}
                                 disabled={loadingBankDetails}
-                                className="text-green-600 hover:text-green-800 font-medium text-sm flex items-center gap-1"
+                                className="flex items-center gap-1 text-sm font-medium text-[color:var(--merchant-success)] hover:text-[color:var(--merchant-success-strong)]"
                               >
                                 <CreditCard className="w-4 h-4" />
                                 View Bank
@@ -722,7 +744,7 @@ export default function PayoutsPage() {
                                   setSelectedPayout(payout);
                                   setShowUploadModal(true);
                                 }}
-                                className="text-purple-600 hover:text-purple-800 font-medium text-sm flex items-center gap-1"
+                                className="flex items-center gap-1 text-sm font-medium text-[color:var(--merchant-brand)] hover:text-[color:var(--merchant-brand-strong)]"
                               >
                                 <Upload className="w-4 h-4" />
                                 Upload Proof
@@ -735,7 +757,7 @@ export default function PayoutsPage() {
                                 setProofUrl(payout.file_url!);
                                 setShowProofModal(true);
                               }}
-                              className="text-blue-600 hover:text-blue-800 font-medium text-sm flex items-center gap-1"
+                              className="flex items-center gap-1 text-sm font-medium text-[color:var(--merchant-brand)] hover:text-[color:var(--merchant-brand-strong)]"
                             >
                               <ExternalLink className="w-4 h-4" />
                               View Proof
@@ -749,7 +771,7 @@ export default function PayoutsPage() {
               </tbody>
             </table>
           </div>
-        </div>
+      </SurfaceCard>
       {/* Upload Modal */}
       {showUploadModal && selectedPayout && (
         <UploadProofModal

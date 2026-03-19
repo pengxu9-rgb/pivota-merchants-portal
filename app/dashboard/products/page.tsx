@@ -172,7 +172,7 @@ export default function ProductsPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Catalog"
         title={heroTitle}
@@ -190,34 +190,41 @@ export default function ProductsPage() {
       />
 
       <SurfaceCard strong className="overflow-hidden">
-        <div className="grid gap-4 px-6 py-6 lg:grid-cols-4 lg:px-8">
-          <div className="rounded-[1.3rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
+        <div className="grid gap-3 px-5 py-5 lg:grid-cols-5 lg:px-6">
+          <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/75 px-4 py-3.5">
             <div className="text-sm text-[color:var(--merchant-muted)]">Catalog items</div>
-            <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+            <div className="mt-1.5 text-[1.7rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
               {products.length}
             </div>
             <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">Current synced assortment</div>
           </div>
-          <div className="rounded-[1.3rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
+          <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/75 px-4 py-3.5">
             <div className="text-sm text-[color:var(--merchant-muted)]">Channel-ready</div>
-            <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+            <div className="mt-1.5 text-[1.7rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
               {sellableCount}
             </div>
             <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">Ready to be merchandised</div>
           </div>
-          <div className="rounded-[1.3rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
+          <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/75 px-4 py-3.5">
             <div className="text-sm text-[color:var(--merchant-muted)]">Blocked items</div>
-            <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+            <div className="mt-1.5 text-[1.7rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
               {blockedCount}
             </div>
             <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">Need sellability or setup fixes</div>
           </div>
-          <div className="rounded-[1.3rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
+          <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/75 px-4 py-3.5">
             <div className="text-sm text-[color:var(--merchant-muted)]">Content gaps</div>
-            <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+            <div className="mt-1.5 text-[1.7rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
               {contentGapCount}
             </div>
             <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">Descriptions or imagery still missing</div>
+          </div>
+          <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/75 px-4 py-3.5">
+            <div className="text-sm text-[color:var(--merchant-muted)]">Live inventory</div>
+            <div className="mt-1.5 text-[1.7rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+              {liveInventoryCount}
+            </div>
+            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">Items with stock available now</div>
           </div>
         </div>
       </SurfaceCard>
@@ -225,11 +232,16 @@ export default function ProductsPage() {
       <SectionHeader
         title="Catalog view"
         description="Search, triage, and resolve the items most likely to affect launch readiness and channel performance."
+        action={
+          <StatusBadge tone="neutral">
+            {filteredProducts.length} visible · {products.length} total
+          </StatusBadge>
+        }
       />
 
       <SurfaceCard>
-        <div className="border-b border-[color:var(--merchant-line)] px-6 py-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="border-b border-[color:var(--merchant-line)] px-5 py-4">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--merchant-muted)]" />
               <input
@@ -237,7 +249,7 @@ export default function ProductsPage() {
                 placeholder="Search titles or SKU"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
-                className="merchant-input pl-11"
+                className="merchant-input pl-14"
               />
             </div>
             <div className="lg:w-64">
@@ -253,6 +265,14 @@ export default function ProductsPage() {
                 <option value="sellable">Channel-ready only</option>
                 <option value="not_sellable">Needs attention</option>
               </select>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-[color:var(--merchant-muted-strong)] xl:justify-end">
+              <StatusBadge tone={blockedCount > 0 ? 'warning' : 'success'}>
+                {blockedCount > 0 ? `${blockedCount} blocked` : 'No blockers'}
+              </StatusBadge>
+              <StatusBadge tone={contentGapCount > 0 ? 'warning' : 'success'}>
+                {contentGapCount > 0 ? `${contentGapCount} content gaps` : 'Content covered'}
+              </StatusBadge>
             </div>
           </div>
         </div>
@@ -302,17 +322,12 @@ export default function ProductsPage() {
                         </div>
                       </td>
                       <td>
-                        <div className="space-y-2">
+                        <div>
                           <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
-                          <p className="text-sm text-[color:var(--merchant-muted)]">
-                            {isProductSellable(product)
-                              ? 'Eligible for channel launch'
-                              : 'Needs setup, inventory, or data fixes'}
-                          </p>
                         </div>
                       </td>
                       <td>
-                        <div className="space-y-2">
+                        <div>
                           {contentGap ? (
                             <StatusBadge tone="warning" icon={FileText}>
                               Needs content
@@ -322,11 +337,6 @@ export default function ProductsPage() {
                               Complete
                             </StatusBadge>
                           )}
-                          <p className="text-sm text-[color:var(--merchant-muted)]">
-                            {contentGap
-                              ? 'Missing description or imagery'
-                              : 'Description and imagery are present'}
-                          </p>
                         </div>
                       </td>
                       <td className="text-sm font-medium text-[color:var(--merchant-ink)]">

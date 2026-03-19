@@ -15,6 +15,7 @@ import PSPRoutingConfig from '@/components/PSPRoutingConfig';
 import ConnectStoreModal from '@/components/ConnectStoreModal';
 import { PSPConfigForm } from '@/components/PSPConfigForm';
 import {
+  EmptyState,
   MerchantButton,
   PageHeader,
   StatusBadge,
@@ -42,6 +43,13 @@ export default function IntegrationsPage() {
   const primaryStoreId = connectedStores.find((s) => s?.is_active)?.id || null;
   const activePSPCount = connectedPSPs.filter((p) => p.is_active).length;
   const showRoutingTab = activePSPCount > 1;
+  const inactiveWebhookCount = webhookConfig?.enabled ? 0 : 1;
+  const tabButtonClass = (tab: 'stores' | 'psps' | 'routing' | 'webhooks') =>
+    `flex min-h-[4.5rem] items-center gap-3 rounded-[1rem] px-4 py-3 text-left transition ${
+      activeTab === tab
+        ? 'bg-white text-[color:var(--merchant-ink)] shadow-[var(--merchant-shadow-panel)]'
+        : 'text-[color:var(--merchant-muted-strong)] hover:bg-white/75'
+    }`;
 
   useEffect(() => {
     const id = localStorage.getItem('merchant_id') || '';
@@ -202,7 +210,7 @@ export default function IntegrationsPage() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Integrations"
         title="Set up sales channels, payments, and merchant-facing commerce plumbing."
@@ -220,8 +228,8 @@ export default function IntegrationsPage() {
       />
 
       <SurfaceCard strong>
-        <div className="grid gap-4 px-6 py-6 lg:grid-cols-4">
-          <div className="rounded-[1.2rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
+        <div className="grid gap-3 px-5 py-5 lg:grid-cols-4">
+          <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-3.5">
             <div className="text-sm text-[color:var(--merchant-muted)]">Sales channels</div>
             <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
               {connectedStores.length}
@@ -230,7 +238,7 @@ export default function IntegrationsPage() {
               Connected storefronts and feeds
             </div>
           </div>
-          <div className="rounded-[1.2rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
+          <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-3.5">
             <div className="text-sm text-[color:var(--merchant-muted)]">Payment setup</div>
             <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
               {activePSPCount}
@@ -239,7 +247,7 @@ export default function IntegrationsPage() {
               Active processors ready to route
             </div>
           </div>
-          <div className="rounded-[1.2rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
+          <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-3.5">
             <div className="text-sm text-[color:var(--merchant-muted)]">Primary channel</div>
             <div className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
               {connectedStores.find((store) => store?.is_active)?.store_name ||
@@ -252,7 +260,7 @@ export default function IntegrationsPage() {
               </StatusBadge>
             </div>
           </div>
-          <div className="rounded-[1.2rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
+          <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-3.5">
             <div className="text-sm text-[color:var(--merchant-muted)]">API & webhooks</div>
             <div className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
               {webhookConfig?.enabled ? 'Configured' : 'Needs attention'}
@@ -267,174 +275,160 @@ export default function IntegrationsPage() {
       </SurfaceCard>
 
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav
-          className={`-mb-px grid ${
-            showRoutingTab ? 'grid-cols-4' : 'grid-cols-3'
-          } gap-1 sm:flex sm:gap-8`}
-        >
+      <div className="merchant-panel merchant-panel-muted p-2">
+        <nav className={`grid gap-2 ${showRoutingTab ? 'grid-cols-2 xl:grid-cols-4' : 'grid-cols-1 md:grid-cols-3'}`}>
           <button
             onClick={() => setActiveTab('stores')}
-            className={`flex flex-col items-center justify-center gap-1 py-2 px-1 border-b-2 font-medium text-xs sm:flex-row sm:justify-start sm:text-sm ${
-              activeTab === 'stores'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
+            className={tabButtonClass('stores')}
           >
-            <Store className="w-4 h-4 sm:mr-2" />
-            <span className="leading-tight text-center sm:text-left">
-              <span className="hidden sm:inline">Sales Channels ({connectedStores.length})</span>
-              <span className="sm:hidden">Channels</span>
-              <span className="sm:hidden block text-[11px] text-gray-500">({connectedStores.length})</span>
-            </span>
+            <Store className="h-4 w-4" />
+            <div className="min-w-0">
+              <div className="text-sm font-medium">Sales channels</div>
+              <div className="text-xs text-[color:var(--merchant-muted)]">
+                {connectedStores.length} connected storefronts and feeds
+              </div>
+            </div>
           </button>
           <button
             onClick={() => setActiveTab('psps')}
-            className={`flex flex-col items-center justify-center gap-1 py-2 px-1 border-b-2 font-medium text-xs sm:flex-row sm:justify-start sm:text-sm ${
-              activeTab === 'psps'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
+            className={tabButtonClass('psps')}
           >
-            <CreditCard className="w-4 h-4 sm:mr-2" />
-            <span className="leading-tight text-center sm:text-left">
-              <span className="hidden sm:inline">Payment Setup ({activePSPCount})</span>
-              <span className="sm:hidden">Payments</span>
-              <span className="sm:hidden block text-[11px] text-gray-500">({activePSPCount})</span>
-            </span>
+            <CreditCard className="h-4 w-4" />
+            <div className="min-w-0">
+              <div className="text-sm font-medium">Payment setup</div>
+              <div className="text-xs text-[color:var(--merchant-muted)]">
+                {activePSPCount} active processors ready to route
+              </div>
+            </div>
           </button>
           {showRoutingTab && (
             <button
               onClick={() => setActiveTab('routing')}
-              className={`flex flex-col items-center justify-center gap-1 py-2 px-1 border-b-2 font-medium text-xs sm:flex-row sm:justify-start sm:text-sm ${
-                activeTab === 'routing'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
+              className={tabButtonClass('routing')}
             >
-              <Settings className="w-4 h-4 sm:mr-2" />
-              Routing
+              <Settings className="h-4 w-4" />
+              <div className="min-w-0">
+                <div className="text-sm font-medium">Routing</div>
+                <div className="text-xs text-[color:var(--merchant-muted)]">
+                  Distribute traffic across active processors
+                </div>
+              </div>
             </button>
           )}
           <button
             onClick={() => setActiveTab('webhooks')}
-            className={`flex flex-col items-center justify-center gap-1 py-2 px-1 border-b-2 font-medium text-xs sm:flex-row sm:justify-start sm:text-sm ${
-              activeTab === 'webhooks'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
+            className={tabButtonClass('webhooks')}
           >
-            <Webhook className="w-4 h-4 sm:mr-2" />
-            <span className="leading-tight text-center sm:text-left">
-              <span className="hidden sm:inline">API & Webhooks</span>
-              <span className="sm:hidden">API</span>
-              <span className="sm:hidden block text-[11px] text-transparent">.</span>
-            </span>
+            <Webhook className="h-4 w-4" />
+            <div className="min-w-0">
+              <div className="text-sm font-medium">API & webhooks</div>
+              <div className="text-xs text-[color:var(--merchant-muted)]">
+                {inactiveWebhookCount === 0 ? 'Delivery is configured' : 'Webhook setup needs attention'}
+              </div>
+            </div>
           </button>
         </nav>
       </div>
 
       {/* Stores Tab */}
       {activeTab === 'stores' && (
-        <div className="space-y-6">
-          {/* Connected Stores */}
-          <div className="bg-white rounded-lg shadow">
-            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-base sm:text-lg font-semibold">Sales Channels</h2>
-              <button
-                onClick={() => setShowConnectStore(true)}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">Connect Store</span>
-                <span className="sm:hidden">Connect</span>
-              </button>
-            </div>
-            <div className="p-4 sm:p-6">
+        <div className="space-y-4">
+          <SurfaceCard
+            title="Sales channels"
+            description="Keep connected storefronts, sync status, and the primary channel in one operational view."
+            action={
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge tone={primaryStoreId ? 'success' : 'warning'}>
+                  {primaryStoreId ? 'Primary selected' : 'Primary not set'}
+                </StatusBadge>
+                <MerchantButton type="button" onClick={() => setShowConnectStore(true)} icon={Plus}>
+                  Connect channel
+                </MerchantButton>
+              </div>
+            }
+          >
+            <div className="space-y-3 p-5">
               {connectedStores.length > 0 ? (
-                <div className="space-y-4">
-                  {connectedStores.map((store, index) => (
-                    <div key={index} className="border rounded-lg p-4">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                          <div className="p-2 bg-blue-100 rounded-lg">
-                            <Store className="w-6 h-6 text-blue-600" />
-                          </div>
-                          <div className="min-w-0">
-                            <h3 className="font-medium text-gray-900 truncate">
-                              {store.store_name || store.domain || 'Store ' + (index + 1)}
-                              {primaryStoreId && store.id === primaryStoreId && (
-                                <span className="ml-2 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full">
-                                  Primary
-                                </span>
-                              )}
-                            </h3>
-                            <p className="text-xs sm:text-sm text-gray-600">
-                              Platform: <span className="capitalize">{store.platform}</span> • 
-                              Products: {store.product_count || 0}
-                            </p>
-                            {store.domain && (
-                              <p className="text-xs text-gray-500 mt-1 break-all">{store.domain}</p>
-                            )}
-                          </div>
+                connectedStores.map((store, index) => (
+                  <div
+                    key={index}
+                    className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-4"
+                  >
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <div className="rounded-xl bg-[color:var(--merchant-brand-soft)] p-2">
+                          <Store className="h-5 w-5 text-[color:var(--merchant-brand)]" />
                         </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs sm:text-sm rounded-full">
-                            Active
-                          </span>
-                          {store?.is_active && primaryStoreId && store.id !== primaryStoreId && (
-                            <button
-                              onClick={() => handleSetPrimaryStore(store)}
-                              className="px-2.5 sm:px-3 py-1 bg-purple-600 text-white text-xs sm:text-sm rounded hover:bg-purple-700"
-                            >
-                              <span className="hidden sm:inline">Make Primary</span>
-                              <span className="sm:hidden">Primary</span>
-                            </button>
-                          )}
-                          {(store.platform === 'shopify' || store.platform === 'wix') && (
-                            <button
-                              onClick={() => handleSyncProducts(store)}
-                              disabled={syncingStoreId === store.id}
-                              className="px-2.5 sm:px-3 py-1 bg-blue-600 text-white text-xs sm:text-sm rounded hover:bg-blue-700 disabled:opacity-50"
-                              aria-label="Sync products"
-                            >
-                              {syncingStoreId === store.id ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <>
-                                  <span className="hidden sm:inline">Sync Products</span>
-                                  <span className="sm:hidden">Sync</span>
-                                </>
-                              )}
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleDeleteStore(store)}
-                            className="px-2.5 sm:px-3 py-1 bg-red-600 text-white text-xs sm:text-sm rounded hover:bg-red-700"
-                          >
-                            <span className="hidden sm:inline">Delete</span>
-                            <span className="sm:hidden">Del</span>
-                          </button>
+                        <div className="min-w-0 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="truncate text-base font-semibold text-[color:var(--merchant-ink)]">
+                              {store.store_name || store.domain || 'Store ' + (index + 1)}
+                            </h3>
+                            {primaryStoreId && store.id === primaryStoreId ? (
+                              <StatusBadge tone="brand">Primary</StatusBadge>
+                            ) : null}
+                            <StatusBadge tone="success">Active</StatusBadge>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted-strong)]">
+                            <span className="capitalize">{store.platform}</span>
+                            <span>•</span>
+                            <span>{store.product_count || 0} products</span>
+                          </div>
+                          {store.domain ? (
+                            <p className="break-all text-sm text-[color:var(--merchant-muted)]">{store.domain}</p>
+                          ) : null}
                         </div>
                       </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {store?.is_active && primaryStoreId && store.id !== primaryStoreId && (
+                          <button
+                            onClick={() => handleSetPrimaryStore(store)}
+                            className="merchant-button-secondary px-3 py-2 text-sm"
+                          >
+                            Make primary
+                          </button>
+                        )}
+                        {(store.platform === 'shopify' || store.platform === 'wix') && (
+                          <button
+                            onClick={() => handleSyncProducts(store)}
+                            disabled={syncingStoreId === store.id}
+                            className="merchant-button-secondary px-3 py-2 text-sm disabled:opacity-50"
+                            aria-label="Sync products"
+                          >
+                            {syncingStoreId === store.id ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <span>Syncing...</span>
+                              </>
+                            ) : (
+                              <span>Sync products</span>
+                            )}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDeleteStore(store)}
+                          className="rounded-full border border-[color:var(--merchant-line)] px-3 py-2 text-sm font-medium text-[color:var(--merchant-muted-strong)] transition hover:bg-[color:var(--merchant-surface-muted)]"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))
               ) : (
-                <div className="text-center py-12">
-                  <Store className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600 mb-4">No stores connected yet</p>
-                  <button
-                    onClick={() => setShowConnectStore(true)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    Connect Your First Store
-                  </button>
-                </div>
+                <EmptyState
+                  icon={Store}
+                  title="No sales channels connected yet"
+                  description="Connect Shopify, Wix, or another storefront so catalog sync and channel readiness can show up here."
+                  action={
+                    <MerchantButton type="button" onClick={() => setShowConnectStore(true)} icon={Plus}>
+                      Connect first channel
+                    </MerchantButton>
+                  }
+                />
               )}
             </div>
-          </div>
+          </SurfaceCard>
 
           {/* Connect Store Modal - supports all platforms */}
           <ConnectStoreModal
@@ -448,85 +442,106 @@ export default function IntegrationsPage() {
 
       {/* PSPs Tab */}
       {activeTab === 'psps' && (
-        <div className="space-y-6">
-          {/* Connected PSPs */}
-          <div className="bg-white rounded-lg shadow">
-            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-base sm:text-lg font-semibold">Payment Setup</h2>
-              <button
-                onClick={() => setShowConnectPSP(true)}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">Connect PSP</span>
-                <span className="sm:hidden">Connect</span>
-              </button>
-            </div>
-            <div className="p-4 sm:p-6">
+        <div className="space-y-4">
+          <SurfaceCard
+            title="Payment setup"
+            description="Review processor health, test connections, and keep routing coverage ready for checkout traffic."
+            action={
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge tone={activePSPCount > 0 ? 'success' : 'warning'}>
+                  {activePSPCount > 0 ? `${activePSPCount} active` : 'No active processors'}
+                </StatusBadge>
+                <MerchantButton type="button" onClick={() => setShowConnectPSP(true)} icon={Plus}>
+                  Connect processor
+                </MerchantButton>
+              </div>
+            }
+          >
+            <div className="space-y-3 p-5">
               {activePSPCount > 0 ? (
-                <div className="space-y-4">
-                  {connectedPSPs.filter((p) => p.is_active).map((psp) => (
-                    <div key={psp.id} className="border rounded-lg p-4">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                          <div className="p-2 bg-purple-100 rounded-lg">
-                            <CreditCard className="w-6 h-6 text-purple-600" />
-                          </div>
-                          <div className="min-w-0">
-                            <h3 className="font-medium text-gray-900 truncate">{psp.name}</h3>
-                            <p className="text-xs sm:text-sm text-gray-600">
-                              Success Rate: {psp.success_rate || 0}% • 
-                              Volume: ${psp.volume_today || 0}
-                            </p>
-                          </div>
+                connectedPSPs.filter((p) => p.is_active).map((psp) => (
+                  <div
+                    key={psp.id}
+                    className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-4"
+                  >
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <div className="rounded-xl bg-[color:var(--merchant-brand-soft)] p-2">
+                          <CreditCard className="h-5 w-5 text-[color:var(--merchant-brand)]" />
                         </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs sm:text-sm rounded-full">
-                            Active
-                          </span>
-                          <button
-                            onClick={() => handleTestPSP(psp.id)}
-                            disabled={testing === psp.id}
-                            className="px-2.5 sm:px-3 py-1 border rounded text-xs sm:text-sm hover:bg-gray-50 disabled:opacity-50"
-                          >
-                            {testing === psp.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Test'}
-                          </button>
-                          <button
-                            onClick={() => handleDeletePSP(psp)}
-                            className="px-2.5 sm:px-3 py-1 bg-red-600 text-white text-xs sm:text-sm rounded hover:bg-red-700"
-                          >
-                            <span className="hidden sm:inline">Delete</span>
-                            <span className="sm:hidden">Del</span>
-                          </button>
+                        <div className="min-w-0 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="truncate text-base font-semibold text-[color:var(--merchant-ink)]">
+                              {psp.name}
+                            </h3>
+                            <StatusBadge tone="success">Active</StatusBadge>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted-strong)]">
+                            <span>{psp.success_rate || 0}% success rate</span>
+                            <span>•</span>
+                            <span>${psp.volume_today || 0} volume today</span>
+                          </div>
                         </div>
                       </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => handleTestPSP(psp.id)}
+                          disabled={testing === psp.id}
+                          className="merchant-button-secondary px-3 py-2 text-sm disabled:opacity-50"
+                        >
+                          {testing === psp.id ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <span>Testing...</span>
+                            </>
+                          ) : (
+                            <span>Run test</span>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleDeletePSP(psp)}
+                          className="rounded-full border border-[color:var(--merchant-line)] px-3 py-2 text-sm font-medium text-[color:var(--merchant-muted-strong)] transition hover:bg-[color:var(--merchant-surface-muted)]"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))
               ) : (
-                <div className="text-center py-12">
-                  <CreditCard className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600 mb-4">No payment processors connected</p>
-                  <button
-                    onClick={() => setShowConnectPSP(true)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    Connect Your PSP
-                  </button>
-                </div>
+                <EmptyState
+                  icon={CreditCard}
+                  title="No payment processors connected"
+                  description="Add at least one processor so checkout traffic, fallback routing, and settlement reporting can be managed from here."
+                  action={
+                    <MerchantButton type="button" onClick={() => setShowConnectPSP(true)} icon={Plus}>
+                      Connect first processor
+                    </MerchantButton>
+                  }
+                />
               )}
             </div>
-          </div>
+          </SurfaceCard>
 
-          {/* Multi-PSP Benefits */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h3 className="font-medium text-blue-900 mb-2">💡 Why Connect Multiple PSPs?</h3>
-            <ul className="text-sm text-blue-800 space-y-1">
-              <li>• Automatic fallback when one PSP fails</li>
-              <li>• Higher overall success rates (up to 98%)</li>
-              <li>• Geographic routing for better acceptance</li>
-              <li>• Lower fees through competition</li>
-            </ul>
+          <div className="merchant-panel merchant-panel-muted px-5 py-4">
+            <div className="grid gap-3 text-sm text-[color:var(--merchant-muted-strong)] md:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">Fallback coverage</div>
+                <div>Route traffic to another processor when one path degrades.</div>
+              </div>
+              <div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">Acceptance lift</div>
+                <div>Improve approval rates by matching processors to geography or card mix.</div>
+              </div>
+              <div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">Operational resilience</div>
+                <div>Keep checkout moving while you test, update, or replace a provider.</div>
+              </div>
+              <div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">Commercial flexibility</div>
+                <div>Compare fees, payout timing, and settlement behavior across providers.</div>
+              </div>
+            </div>
           </div>
 
           {/* Connect PSP - Provider Selection or Config Form */}
@@ -578,84 +593,90 @@ export default function IntegrationsPage() {
 
       {/* Routing Tab */}
       {activeTab === 'routing' && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           <PSPRoutingConfig connectedPSPs={connectedPSPs} />
         </div>
       )}
 
       {/* Webhooks Tab */}
       {activeTab === 'webhooks' && (
-        <div className="space-y-6">
-          {/* API Key */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold mb-4">API Credentials</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Your API Key</label>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
-                  <input
-                    type="text"
-                    value={apiKey}
-                    readOnly
-                    className="w-full sm:flex-1 px-3 py-2 bg-gray-50 border rounded-lg font-mono text-sm"
-                  />
-                  <button
-                    onClick={() => copyToClipboard(apiKey)}
-                    className="w-full sm:w-auto px-3 py-2 border rounded-lg hover:bg-gray-50 flex items-center justify-center"
-                  >
-                    <Copy className="w-4 h-4" />
-                  </button>
-                </div>
+        <div className="space-y-4">
+          <SurfaceCard
+            title="API credentials"
+            description="Keep the current merchant API key available for secure integrations and internal implementation handoff."
+            action={
+              <StatusBadge tone="neutral">
+                {apiKey ? 'Key available' : 'No key found'}
+              </StatusBadge>
+            }
+          >
+            <div className="p-5">
+              <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">Merchant API key</label>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input
+                  type="text"
+                  value={apiKey}
+                  readOnly
+                  className="merchant-input w-full font-mono text-sm sm:flex-1"
+                />
+                <button
+                  onClick={() => copyToClipboard(apiKey)}
+                  className="merchant-button-secondary px-3 py-2"
+                >
+                  <Copy className="h-4 w-4" />
+                  <span>Copy key</span>
+                </button>
               </div>
             </div>
-          </div>
+          </SurfaceCard>
 
-          {/* Webhook Configuration */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold mb-4">Webhook Configuration</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Webhook URL</label>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
-                  <input
-                    type="text"
-                    value={webhookConfig?.url || ''}
-                    placeholder="https://your-domain.com/webhooks/pivota"
-                    className="w-full sm:flex-1 px-3 py-2 border rounded-lg"
-                    readOnly
-                  />
-                  <button
-                    onClick={handleSaveWebhook}
-                    className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-                  >
-                    Configure
-                  </button>
-                </div>
+          <SurfaceCard
+            title="Webhook configuration"
+            description="Point delivery events to your commerce stack so payment and order updates stay in sync."
+            action={
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge tone={webhookConfig?.enabled ? 'success' : 'warning'}>
+                  {webhookConfig?.enabled ? 'Webhook active' : 'Webhook not configured'}
+                </StatusBadge>
+                <MerchantButton type="button" onClick={handleSaveWebhook}>
+                  Configure
+                </MerchantButton>
               </div>
-              
+            }
+          >
+            <div className="space-y-4 p-5">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Events</label>
-                <div className="space-y-2">
+                <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">Webhook URL</label>
+                <input
+                  type="text"
+                  value={webhookConfig?.url || ''}
+                  placeholder="https://your-domain.com/webhooks/pivota"
+                  className="merchant-input w-full"
+                  readOnly
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">Enabled events</label>
+                <div className="flex flex-wrap gap-2">
                   {['order.created', 'payment.completed', 'payment.failed', 'product.out_of_stock'].map((event) => (
-                    <label key={event} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={webhookConfig?.events?.includes(event) || false}
-                        readOnly
-                        className="rounded"
-                      />
-                      <span className="text-sm">{event}</span>
-                    </label>
+                    <StatusBadge
+                      key={event}
+                      tone={webhookConfig?.events?.includes(event) ? 'brand' : 'neutral'}
+                    >
+                      {event}
+                    </StatusBadge>
                   ))}
                 </div>
               </div>
             </div>
-          </div>
+          </SurfaceCard>
 
-          {/* Code Examples */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold mb-4">Quick Start</h2>
-            <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto">
+          <SurfaceCard
+            title="Quick start"
+            description="Use the current merchant token pattern as a starting point for internal engineering or partner setup."
+          >
+            <div className="overflow-x-auto bg-[#15171d] p-4 text-gray-100">
               <pre className="text-sm">
 {`// Example: Create an order
 curl -X POST https://api.pivota.cc/orders \\
@@ -672,7 +693,7 @@ curl -X POST https://api.pivota.cc/orders \\
   }'`}
               </pre>
             </div>
-          </div>
+          </SurfaceCard>
         </div>
       )}
     </div>

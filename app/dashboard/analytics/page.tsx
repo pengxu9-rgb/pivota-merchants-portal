@@ -259,7 +259,7 @@ export default function AnalyticsPage() {
   const prevPeriodLabel = `vs prev ${timeRange}`;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Analytics"
         title="Read merchant performance without losing the operational context."
@@ -279,11 +279,11 @@ export default function AnalyticsPage() {
       />
 
       {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {/* Order Generation Rate */}
-        <div className="merchant-panel p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-2 bg-blue-100 rounded-lg">
+        <div className="merchant-panel p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="rounded-lg bg-blue-100 p-2">
               <Activity className="w-6 h-6 text-blue-600" />
             </div>
             <div className={`flex items-center text-sm ${
@@ -297,19 +297,19 @@ export default function AnalyticsPage() {
               <span>{Math.abs(analytics?.order_generation_rate_change || 0)}%</span>
             </div>
           </div>
-          <h3 className="text-2xl font-bold text-gray-900">
+          <h3 className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             {formatPercent(analytics?.order_generation_rate || 0)}
           </h3>
           <p className="text-sm text-[color:var(--merchant-muted-strong)]">Order capture rate</p>
-          <p className="text-xs text-[color:var(--merchant-muted)] mt-1">
+          <p className="mt-1 text-xs text-[color:var(--merchant-muted)]">
             {analytics?.total_order_attempts || 0} attempts
           </p>
         </div>
 
         {/* Order Placement Rate */}
-        <div className="merchant-panel p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-2 bg-green-100 rounded-lg">
+        <div className="merchant-panel p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="rounded-lg bg-green-100 p-2">
               <BarChart3 className="w-6 h-6 text-green-600" />
             </div>
             <div className={`flex items-center text-sm ${
@@ -323,19 +323,19 @@ export default function AnalyticsPage() {
               <span>{Math.abs(analytics?.order_placement_rate_change || 0)}%</span>
             </div>
           </div>
-          <h3 className="text-2xl font-bold text-gray-900">
+          <h3 className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             {formatPercent(analytics?.order_placement_rate || 0)}
           </h3>
           <p className="text-sm text-[color:var(--merchant-muted-strong)]">Checkout completion</p>
-          <p className="text-xs text-[color:var(--merchant-muted)] mt-1">
+          <p className="mt-1 text-xs text-[color:var(--merchant-muted)]">
             {analytics?.total_orders_placed || 0} placed
           </p>
         </div>
 
         {/* Payment Success Rate */}
-        <div className="merchant-panel p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-2 bg-purple-100 rounded-lg">
+        <div className="merchant-panel p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="rounded-lg bg-purple-100 p-2">
               <DollarSign className="w-6 h-6 text-purple-600" />
             </div>
             <div className={`flex items-center text-sm ${
@@ -349,19 +349,19 @@ export default function AnalyticsPage() {
               <span>{Math.abs(analytics?.payment_success_rate_change || 0)}%</span>
             </div>
           </div>
-          <h3 className="text-2xl font-bold text-gray-900">
+          <h3 className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             {formatPercent(analytics?.payment_success_rate || 0)}
           </h3>
           <p className="text-sm text-[color:var(--merchant-muted-strong)]">Payment success</p>
-          <p className="text-xs text-[color:var(--merchant-muted)] mt-1">
+          <p className="mt-1 text-xs text-[color:var(--merchant-muted)]">
             {analytics?.total_payments_succeeded || 0} succeeded
           </p>
         </div>
 
         {/* Total Revenue */}
-        <div className="merchant-panel p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-2 bg-orange-100 rounded-lg">
+        <div className="merchant-panel p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="rounded-lg bg-orange-100 p-2">
               <DollarSign className="w-6 h-6 text-orange-600" />
             </div>
             <div className={`flex items-center text-sm ${
@@ -377,11 +377,11 @@ export default function AnalyticsPage() {
               </span>
             </div>
           </div>
-          <h3 className="text-2xl font-bold text-gray-900">
+          <h3 className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             {formatCurrency(displayPaidRevenue)}
           </h3>
           <p className="text-sm text-[color:var(--merchant-muted-strong)]">Paid revenue</p>
-          <p className="text-xs text-[color:var(--merchant-muted)] mt-1">
+          <p className="mt-1 text-xs text-[color:var(--merchant-muted)]">
             Paid orders only (excludes pending/unpaid)
             {paidRevenueOverrideLoading ? ' • recomputing…' : paidRevenueOverride ? ' • computed from orders' : ''}
           </p>
@@ -394,7 +394,7 @@ export default function AnalyticsPage() {
           title="Payment setup performance"
           description="A merchant-facing view of transaction quality across your active payment setup."
         >
-          <div className="p-6">
+          <div className="p-5">
             <div className="space-y-4">
               {analytics.psp_performance.map((psp: any) => (
                 <div key={psp.psp_type} className="flex items-center justify-between p-4 rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/70">
@@ -422,7 +422,7 @@ export default function AnalyticsPage() {
         title="Trends over time"
         description="Compare demand, conversion, and payment quality over the selected reporting window."
         action={
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <label className="text-sm text-[color:var(--merchant-muted)]">Metric</label>
             <select
               value={metric}
@@ -482,7 +482,7 @@ export default function AnalyticsPage() {
           </div>
         }
       >
-        <div className="p-6">
+        <div className="p-5">
           {loadingTrends ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin rounded-full h-10 w-10 border-2 border-[color:var(--merchant-line-strong)] border-t-[color:var(--merchant-brand)]"></div>
