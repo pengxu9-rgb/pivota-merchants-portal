@@ -398,11 +398,31 @@ export default function ProductOptimizationPage() {
   const loadProducts = async () => {
     try {
       setLoading(true);
-      const data = await apiClient.listMerchantProducts({
-        page: 1,
-        page_size: 50,
-      });
-      setProducts(data.items || []);
+      const pageSize = 100;
+      const maxPages = 50;
+      const allItems: MerchantProductListItem[] = [];
+      const seen = new Set<string>();
+
+      for (let page = 1; page <= maxPages; page += 1) {
+        const data = await apiClient.listMerchantProducts({
+          page,
+          page_size: pageSize,
+        });
+        const pageItems = Array.isArray(data.items) ? data.items : [];
+
+        for (const item of pageItems) {
+          const key = `${item.platform}|${item.platform_product_id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          allItems.push(item);
+        }
+
+        if (pageItems.length < pageSize) {
+          break;
+        }
+      }
+
+      setProducts(allItems);
     } catch (err) {
       console.error('Failed to load merchant products', err);
     } finally {
