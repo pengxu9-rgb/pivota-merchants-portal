@@ -1,8 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
+  ChevronDown,
   LogOut,
   Menu,
   Store,
@@ -35,16 +36,44 @@ function NavigationGroup({
   items,
   pathname,
   onNavigate,
+  collapsible = false,
 }: {
   label: string;
   items: typeof primaryNavigation;
   pathname: string;
   onNavigate: () => void;
+  collapsible?: boolean;
 }) {
+  const hasActiveItem = items.some((item) => isNavigationItemActive(pathname, item));
+  const [isOpen, setIsOpen] = useState(!collapsible || hasActiveItem);
+
+  useEffect(() => {
+    if (collapsible && hasActiveItem) {
+      setIsOpen(true);
+    }
+  }, [collapsible, hasActiveItem]);
+
   return (
     <div className="space-y-1.5">
-      <p className="merchant-nav-label">{label}</p>
-      <div className="space-y-0.5">
+      {collapsible ? (
+        <button
+          type="button"
+          className="flex w-full items-center justify-between px-[0.68rem] py-1 text-left"
+          onClick={() => setIsOpen((value) => !value)}
+          aria-expanded={isOpen}
+        >
+          <span className="merchant-nav-label !px-0">{label}</span>
+          <ChevronDown
+            className={cx(
+              "h-3.5 w-3.5 text-[color:var(--merchant-muted)] transition-transform",
+              isOpen ? "rotate-180" : ""
+            )}
+          />
+        </button>
+      ) : (
+        <p className="merchant-nav-label">{label}</p>
+      )}
+      <div className={cx("space-y-0.5", !isOpen && "hidden")}>
         {items.map((item) => {
           const isActive = isNavigationItemActive(pathname, item);
           return (
@@ -145,6 +174,7 @@ export function MerchantAppShell({
               items={adminNavigation}
               pathname={pathname}
               onNavigate={() => setSidebarOpen(false)}
+              collapsible
             />
           ) : null}
         </nav>
@@ -162,7 +192,11 @@ export function MerchantAppShell({
             <settingsNavigationItem.icon className="h-4 w-4 flex-shrink-0" />
             <div className="font-medium">{settingsNavigationItem.label}</div>
           </Link>
-          <button type="button" onClick={onLogout} className="merchant-nav-link w-full text-left text-[color:var(--merchant-critical)]">
+          <button
+            type="button"
+            onClick={onLogout}
+            className="merchant-nav-link w-full text-left text-[color:var(--merchant-critical)]"
+          >
             <LogOut className="h-4 w-4" />
             <div className="font-medium">Log out</div>
           </button>

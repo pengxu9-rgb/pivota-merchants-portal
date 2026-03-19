@@ -28,49 +28,49 @@ export const primaryNavigation: MerchantNavigationItem[] = [
     href: "/dashboard",
     icon: LayoutDashboard,
     matchPrefixes: ["/dashboard"],
-    description: "What needs attention now",
+    description: "Attention now",
   },
   {
     label: "Catalog",
     href: "/dashboard/products",
     icon: Package,
     matchPrefixes: ["/dashboard/products", "/dashboard/product-optimization"],
-    description: "Products, variants, and content",
+    description: "Products and content",
   },
   {
     label: "Orders",
     href: "/dashboard/orders",
     icon: ShoppingBag,
     matchPrefixes: ["/dashboard/orders"],
-    description: "Sales, fulfillment, and refunds",
+    description: "Sales and refunds",
   },
   {
     label: "Promotions",
     href: "/portal/promotions",
     icon: Tag,
     matchPrefixes: ["/portal/promotions"],
-    description: "Campaigns and offers",
+    description: "Campaign planning",
   },
   {
     label: "Analytics",
     href: "/dashboard/analytics",
     icon: BarChart3,
     matchPrefixes: ["/dashboard/analytics"],
-    description: "Sales and performance trends",
+    description: "Sales trends",
   },
   {
     label: "Payments",
     href: "/dashboard/payouts",
     icon: Wallet,
     matchPrefixes: ["/dashboard/payouts", "/dashboard/commission"],
-    description: "Payouts, commission, and settlement",
+    description: "Payouts and settlement",
   },
   {
     label: "Integrations",
     href: "/dashboard/integrations",
     icon: Store,
     matchPrefixes: ["/dashboard/integrations"],
-    description: "Sales channels and payment setup",
+    description: "Channels and setup",
   },
 ];
 
@@ -79,7 +79,7 @@ export const settingsNavigationItem: MerchantNavigationItem = {
   href: "/dashboard/settings",
   icon: Settings,
   matchPrefixes: ["/dashboard/settings"],
-  description: "Portal access and preferences",
+  description: "Access and preferences",
 };
 
 export const workflowNavigation: MerchantNavigationItem[] = [
@@ -88,14 +88,14 @@ export const workflowNavigation: MerchantNavigationItem[] = [
     href: "/dashboard/product-optimization",
     icon: Sparkles,
     matchPrefixes: ["/dashboard/product-optimization"],
-    description: "Readiness issues and next actions",
+    description: "Readiness actions",
   },
   {
     label: "Commission offers",
     href: "/dashboard/commission",
     icon: CreditCard,
     matchPrefixes: ["/dashboard/commission"],
-    description: "Merchant-funded incentives",
+    description: "Merchant incentives",
   },
 ];
 
@@ -105,7 +105,7 @@ export const adminNavigation: MerchantNavigationItem[] = [
     href: "/dashboard/mcp",
     icon: Zap,
     matchPrefixes: ["/dashboard/mcp"],
-    description: "Internal merchant control plane",
+    description: "Control plane",
   },
   ...(FEATURE_FLAGS.PLATFORM_ONBOARDING_V2
     ? [
@@ -114,7 +114,7 @@ export const adminNavigation: MerchantNavigationItem[] = [
           href: "/dashboard/platform-onboarding",
           icon: Zap,
           matchPrefixes: ["/dashboard/platform-onboarding"],
-          description: "Internal onboarding workflows",
+          description: "Onboarding ops",
         },
       ]
     : []),
@@ -125,7 +125,7 @@ export const adminNavigation: MerchantNavigationItem[] = [
           href: "/dashboard/platform-orders",
           icon: ShoppingBag,
           matchPrefixes: ["/dashboard/platform-orders"],
-          description: "Internal platform order view",
+          description: "Internal orders",
         },
       ]
     : []),
