@@ -306,6 +306,39 @@ const getIssueBucketCodeForReason = (code: string) => {
   return mapping[code] || 'other';
 };
 
+const formatFieldLabel = (field: string) =>
+  field
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const formatDelta = (value?: number | null) => {
+  const safeValue = typeof value === 'number' ? value : 0;
+  return `${safeValue >= 0 ? '+' : ''}${safeValue.toFixed(1)}`;
+};
+
+const getImpactLabel = (
+  impact: 'discovery_only' | 'checkout' | 'full_agent_commerce'
+) => {
+  if (impact === 'full_agent_commerce') return 'Blocks full agent commerce';
+  if (impact === 'checkout') return 'Blocks checkout';
+  return 'Limits discovery';
+};
+
+const getManualReviewLabel = (
+  fixSurface:
+    | 'product_content'
+    | 'catalog_data'
+    | 'integrations'
+    | 'policy'
+    | 'pivota_managed'
+) => {
+  if (fixSurface === 'integrations') return 'Open integrations';
+  if (fixSurface === 'policy') return 'Review shipping and returns';
+  if (fixSurface === 'catalog_data') return 'Review catalog data';
+  if (fixSurface === 'pivota_managed') return 'Wait for Pivota processing';
+  return 'Review issue details';
+};
+
 export default function ProductOptimizationPage() {
   const searchParams = useSearchParams();
   const fromReadiness = searchParams.get('source') === 'readiness';
@@ -638,7 +671,7 @@ export default function ProductOptimizationPage() {
       await loadOptimizationData({ refresh: true, scope: 'product', reason: 'post_edit' });
     } catch (err) {
       console.error('Failed to save enrichment', err);
-      alert('保存失败，请稍后重试。');
+      alert('Saving changes failed. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -652,7 +685,7 @@ export default function ProductOptimizationPage() {
       setQualityPreview(res.data || res);
     } catch (err) {
       console.error('Failed to preview quality', err);
-      alert('预览质量评分失败，请稍后重试。');
+      alert('Previewing the score failed. Please try again.');
     } finally {
       setPreviewLoading(false);
     }
@@ -695,7 +728,7 @@ export default function ProductOptimizationPage() {
       await loadOptimizationData({ refresh: true, scope: 'product', reason: 'post_edit' });
     } catch (err) {
       console.error('Failed to save & evaluate quality', err);
-      alert('保存并打分失败，请稍后重试。');
+      alert('Saving and rescoring failed. Please try again.');
     } finally {
       setSaving(false);
       setPreviewLoading(false);
@@ -709,7 +742,7 @@ export default function ProductOptimizationPage() {
     const last = lastOptimizedAt[key];
     if (last && now - last < 30_000) {
       const secs = Math.ceil((30_000 - (now - last)) / 1000);
-      alert(`AI 一键优化冷却中，请 ${secs} 秒后再试。`);
+      alert(`Suggested fixes are cooling down. Please try again in ${secs} seconds.`);
       return;
     }
     setOptimizing(true);
@@ -764,7 +797,12 @@ export default function ProductOptimizationPage() {
           'The readiness plan changed while you were working. We refreshed the workspace to the latest plan.'
         );
       } else {
-        alert(getActionErrorMessage(err, 'AI 一键优化失败，请稍后再试。'));
+        alert(
+          getActionErrorMessage(
+            err,
+            'Applying the suggested fix failed. Please try again.'
+          )
+        );
       }
     } finally {
       setOptimizing(false);
@@ -1332,7 +1370,9 @@ export default function ProductOptimizationPage() {
                   </span>
                 </div>
                 <h3 className="mt-2 text-base font-semibold text-slate-900">
-                  Readiness for this product
+                  {selectedQueueItem.blocked_variant_count > 0
+                    ? 'Why this product still needs work'
+                    : 'Why this product is in the current plan'}
                 </h3>
                 <p className="mt-1 text-sm text-slate-700">
                   {selectedQueueItem.primary_action || 'Review this product and improve its enrichment before broader LLM exposure.'}
@@ -1347,7 +1387,9 @@ export default function ProductOptimizationPage() {
                       disabled={actionPreviewLoading}
                       className="inline-flex items-center justify-center rounded-lg bg-slate-50 px-4 py-2 text-sm font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50"
                     >
-                      {actionPreviewLoading ? 'Previewing…' : 'Preview AI fix'}
+                      {actionPreviewLoading
+                        ? 'Preparing preview…'
+                        : 'Preview suggested fix'}
                     </button>
                     <button
                       type="button"
@@ -1355,7 +1397,7 @@ export default function ProductOptimizationPage() {
                       disabled={optimizing || !canApplyPreviewedAction || isInCooldown}
                       className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                     >
-                      {optimizing ? 'Applying…' : 'Apply AI fix'}
+                      {optimizing ? 'Applying…' : 'Apply suggested fix'}
                     </button>
                   </>
                 )}
@@ -1364,9 +1406,7 @@ export default function ProductOptimizationPage() {
                     href={manualReviewHref}
                     className="inline-flex items-center justify-center rounded-lg bg-slate-50 px-4 py-2 text-sm font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-100"
                   >
-                    {['integrations', 'policy'].includes(selectedQueueItem.fix_surface)
-                      ? 'Review integrations'
-                      : 'Review issue details'}
+                    {getManualReviewLabel(selectedQueueItem.fix_surface)}
                   </a>
                 )}
               </div>
@@ -1386,14 +1426,10 @@ export default function ProductOptimizationPage() {
                 <div className="mt-2 space-y-2">
                   {selectedQueueItem.top_issues.length > 0 ? (
                     selectedQueueItem.top_issues.map((issue) => (
-                      <div key={issue.code} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
+                        <div key={issue.code} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
                         <div className="font-medium text-slate-900">{issue.label}</div>
                         <div className="mt-1 text-xs text-slate-600">
-                          {issue.affected_variant_count} affected variants · {issue.impact === 'full_agent_commerce'
-                            ? 'Blocks agent commerce'
-                            : issue.impact === 'checkout'
-                              ? 'Blocks checkout'
-                              : 'Blocks discovery'}
+                          {issue.affected_variant_count} affected variants · {getImpactLabel(issue.impact)}
                         </div>
                       </div>
                     ))
@@ -1412,8 +1448,8 @@ export default function ProductOptimizationPage() {
                   <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
                     <div className="font-medium text-slate-900">
                       {selectedQueueItem.recommended_action_type === 'run_product_enrichment'
-                        ? 'AI enrichment fix is available'
-                        : 'Manual review is required'}
+                        ? 'You can fix the content from this page'
+                        : 'This issue needs a different surface'}
                     </div>
                     <div className="mt-1 text-xs text-slate-600">
                       {selectedQueueItem.priority_reason ||
@@ -1424,11 +1460,14 @@ export default function ProductOptimizationPage() {
                   <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
                     <div className="font-medium text-slate-900">
                       {selectedQueueItem.fixability === 'merchant_fixable'
-                        ? 'You can fix this here'
-                        : 'This needs manual follow-up'}
+                        ? 'Next step for you'
+                        : 'Needs manual follow-up'}
                     </div>
                     <div className="mt-1 text-xs text-slate-600">
-                      Scope: {selectedQueueItem.queue_item_scope} · Priority {selectedQueueItem.priority_score.toFixed(0)}
+                      {canExecuteSelectedAction
+                        ? 'Preview the suggested fix first, then apply it if it looks right.'
+                        : `${getManualReviewLabel(selectedQueueItem.fix_surface)} to continue.`}
+                      {' · '}Priority {selectedQueueItem.priority_score.toFixed(0)}
                     </div>
                   </div>
                 </div>
@@ -1446,17 +1485,19 @@ export default function ProductOptimizationPage() {
                       <div className="mt-1 space-y-1 text-xs text-slate-600">
                         {actionPreview.candidate_patches.slice(0, 3).map((patch) => (
                           <div key={patch.candidate_id}>
-                            {patch.target_field.replaceAll('_', ' ')}
+                            {formatFieldLabel(patch.target_field)}
                           </div>
                         ))}
                         {actionPreview.expected_impact?.targets?.[0]?.delta && (
                           <div className="pt-1 text-slate-700">
-                            Expected CQ delta{' '}
-                            {actionPreview.expected_impact.targets[0].delta
-                              .content_quality_score ?? 0}
-                            {' · '}Expected MR delta{' '}
-                            {actionPreview.expected_impact.targets[0].delta
-                              .model_readiness_score ?? 0}
+                            Expected content score {formatDelta(
+                              actionPreview.expected_impact.targets[0].delta
+                                .content_quality_score
+                            )}
+                            {' · '}Expected agent understanding {formatDelta(
+                              actionPreview.expected_impact.targets[0].delta
+                                .model_readiness_score
+                            )}
                           </div>
                         )}
                       </div>
@@ -1491,7 +1532,7 @@ export default function ProductOptimizationPage() {
                   )}
                   {!verificationResult && !latestJob && !actionPreview && (
                     <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
-                      Use `Preview AI fix` to inspect the exact changes before you apply them.
+                      Preview the suggested fix first so you can see exactly what will change before you apply it.
                     </div>
                   )}
                 </div>
@@ -1594,7 +1635,7 @@ export default function ProductOptimizationPage() {
                     ) : (
                       <Wand2 className="w-3 h-3" />
                     )}
-                    Preview AI fix
+                    Preview suggested fix
                   </button>
                   <button
                     type="button"
@@ -1607,7 +1648,7 @@ export default function ProductOptimizationPage() {
                     ) : (
                       <Wand2 className="w-3 h-3" />
                     )}
-                    Apply AI fix
+                    Apply suggested fix
                   </button>
                   <button
                     type="button"
@@ -1805,19 +1846,19 @@ export default function ProductOptimizationPage() {
         <div className="bg-white rounded-lg shadow border p-4 space-y-2">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-800">
-              Quality scores (Content / Model Readiness)
+              Quality scores (content and agent understanding)
             </h2>
           </div>
           {!qualityPreview ? (
             <p className="text-sm text-gray-500">
-              No scores yet. Use “Preview score” or “Save & score” on the right to compute them.
+              No scores yet. Use “Preview score” or “Save/Score” on the right to see how understandable this product is for agents.
             </p>
           ) : (
             <div className="space-y-3 text-sm">
               <div className="flex flex-wrap gap-3">
                 <div>
                   <div className="text-xs text-gray-500 mb-0.5">
-                    Content Quality
+                    Content score
                   </div>
                   <div className="text-base font-semibold text-blue-700">
                     {qualityPreview.content_quality_score != null
@@ -1827,7 +1868,7 @@ export default function ProductOptimizationPage() {
                 </div>
                 <div>
                   <div className="text-xs text-gray-500 mb-0.5">
-                    Model Readiness
+                    Agent understanding
                   </div>
                   <div className="text-base font-semibold text-emerald-700">
                     {qualityPreview.model_readiness_score != null

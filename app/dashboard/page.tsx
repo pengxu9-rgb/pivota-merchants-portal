@@ -23,6 +23,7 @@ type ReadinessSummary = {
   score?: number | null;
   ready_variant_count: number;
   blocked_variant_count: number;
+  top_blockers?: string[];
 };
 
 export default function DashboardPage() {
@@ -485,6 +486,43 @@ export default function DashboardPage() {
     }
   };
 
+  const getIssueBucketCodeForReason = (code: string) => {
+    const mapping: Record<string, string> = {
+      missing_title: 'catalog_content',
+      missing_primary_image: 'catalog_content',
+      missing_description: 'catalog_content',
+      missing_price: 'price_currency',
+      missing_currency: 'price_currency',
+      out_of_stock: 'inventory_availability',
+      inventory_stale: 'inventory_availability',
+      missing_shipping_profile: 'shipping_returns_setup',
+      merchant_shipping_policy_missing: 'shipping_returns_setup',
+      merchant_return_policy_missing: 'shipping_returns_setup',
+      merchant_checkout_capability_missing: 'checkout_payment_setup',
+      checkout_stub_missing: 'checkout_payment_setup',
+      payment_execution_stubbed: 'checkout_payment_setup',
+      reviews_summary_unavailable: 'reviews_trust',
+      cross_merchant_review_group_unresolved: 'reviews_trust',
+      review_coverage_partial: 'reviews_trust',
+      no_reviews_available: 'reviews_trust',
+      merchant_writeback_unavailable: 'order_sync_operations',
+      order_sync_stubbed: 'order_sync_operations',
+    };
+    return mapping[code] || 'all';
+  };
+
+  const readinessFocus =
+    readinessSummary?.top_blockers && readinessSummary.top_blockers.length > 0
+      ? getIssueBucketCodeForReason(readinessSummary.top_blockers[0])
+      : 'all';
+
+  const readinessHref =
+    readinessFocus && readinessFocus !== 'all'
+      ? `/dashboard/product-optimization?source=readiness&focus=${encodeURIComponent(
+          readinessFocus
+        )}`
+      : '/dashboard/product-optimization?source=readiness';
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -542,7 +580,8 @@ export default function DashboardPage() {
               </span>
             </div>
             <a
-              href="/dashboard/product-optimization?source=readiness"
+              href={readinessHref}
+              title="Open your optimization plan and start with the highest-priority issue."
               className="inline-flex items-center justify-center rounded-2xl bg-white px-5 py-2.5 text-sm font-medium text-slate-900 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
             >
               Optimize now
