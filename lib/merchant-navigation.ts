@@ -72,14 +72,15 @@ export const primaryNavigation: MerchantNavigationItem[] = [
     matchPrefixes: ["/dashboard/integrations"],
     description: "Sales channels and payment setup",
   },
-  {
-    label: "Settings",
-    href: "/dashboard/settings",
-    icon: Settings,
-    matchPrefixes: ["/dashboard/settings"],
-    description: "Portal access and preferences",
-  },
 ];
+
+export const settingsNavigationItem: MerchantNavigationItem = {
+  label: "Portal settings",
+  href: "/dashboard/settings",
+  icon: Settings,
+  matchPrefixes: ["/dashboard/settings"],
+  description: "Portal access and preferences",
+};
 
 export const workflowNavigation: MerchantNavigationItem[] = [
   {
@@ -155,6 +156,10 @@ export function getPrimaryNavigationLabel(pathname: string) {
   const activeWorkflow = workflowNavigation.find((item) =>
     isNavigationItemActive(pathname, item)
   );
+
+  if (isNavigationItemActive(pathname, settingsNavigationItem)) {
+    return settingsNavigationItem.label;
+  }
 
   return activeWorkflow?.label || "Merchant portal";
 }

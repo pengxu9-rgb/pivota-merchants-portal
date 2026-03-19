@@ -13,9 +13,9 @@ import {
   adminNavigation,
   isNavigationItemActive,
   primaryNavigation,
+  settingsNavigationItem,
   workflowNavigation,
 } from "@/lib/merchant-navigation";
-import { InlineLink } from "@/components/ui/merchant-primitives";
 
 type MerchantAppShellProps = {
   children: ReactNode;
@@ -117,35 +117,19 @@ export function MerchantAppShell({
           </button>
         </div>
 
-        <div className="merchant-panel merchant-panel-muted mt-4 px-4 py-4">
-          <div className="space-y-1">
-            <p className="text-base font-semibold text-[color:var(--merchant-ink)]">
-              {user?.business_name || "Merchant workspace"}
+        <div className="mt-3 px-2 pb-2">
+          <div className="space-y-1.5 rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/48 px-3 py-3">
+            <p className="text-sm text-[color:var(--merchant-muted-strong)]">
+              {user?.email || "merchant@pivota.cc"}
             </p>
-            <p className="text-sm text-[color:var(--merchant-muted)]">
-              {user?.email || "Catalog, orders, channels, and payments"}
-            </p>
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-3 rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/60 px-3 py-3 text-xs text-[color:var(--merchant-muted-strong)]">
-            <div className="space-y-1">
-              <div className="merchant-overline">Merchant ID</div>
-              <p className="break-all text-[11px] leading-4 text-[color:var(--merchant-muted)]">
-                {user?.merchant_id || "Pending"}
-              </p>
+            <div className="flex items-start gap-2 text-[11px] leading-4 text-[color:var(--merchant-muted)]">
+              <span className="merchant-overline shrink-0">ID</span>
+              <span className="break-all">{user?.merchant_id || "Pending"}</span>
             </div>
-            <div className="space-y-1">
-              <div className="merchant-overline">Access</div>
-              <p className="text-[11px] leading-4 text-[color:var(--merchant-muted)]">
-                Catalog, orders, channels, and payments
-              </p>
-            </div>
-          </div>
-          <div className="mt-3">
-            <InlineLink href="/dashboard/settings">Portal settings</InlineLink>
           </div>
         </div>
 
-        <nav className="mt-5 flex-1 space-y-5 overflow-y-auto pr-1">
+        <nav className="mt-3 flex-1 space-y-5 overflow-y-auto pr-1">
           <NavigationGroup
             label="Navigate"
             items={primaryNavigation}
@@ -168,7 +152,19 @@ export function MerchantAppShell({
           ) : null}
         </nav>
 
-        <div className="border-t border-[color:var(--merchant-line)] px-2 pt-4">
+        <div className="space-y-1 border-t border-[color:var(--merchant-line)] px-2 pt-4">
+          <Link
+            href={settingsNavigationItem.href}
+            onClick={() => setSidebarOpen(false)}
+            className={cx(
+              "merchant-nav-link",
+              isNavigationItemActive(pathname, settingsNavigationItem) &&
+                "merchant-nav-link-active"
+            )}
+          >
+            <settingsNavigationItem.icon className="h-4 w-4 flex-shrink-0" />
+            <div className="font-medium">{settingsNavigationItem.label}</div>
+          </Link>
           <button type="button" onClick={onLogout} className="merchant-nav-link w-full text-left text-[color:var(--merchant-critical)]">
             <LogOut className="h-4 w-4" />
             <div className="font-medium">Log out</div>
