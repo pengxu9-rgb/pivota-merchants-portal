@@ -2073,8 +2073,8 @@ export default function ProductOptimizationPage() {
 
             {/* Enrichment editor */}
             <div className="bg-white rounded-lg shadow border p-4 space-y-4">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                <div>
+              <div className="space-y-3">
+                <div className="max-w-xl">
                   <h2 className="text-sm font-semibold text-gray-800">
                     Pivota enrichment (editable)
                   </h2>
@@ -2082,14 +2082,14 @@ export default function ProductOptimizationPage() {
                     Keep this cleaner and tighter than the source listing.
                   </p>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2 xl:min-w-[22rem] xl:grid-cols-2">
+                <div className="grid gap-2 sm:grid-cols-2">
                   {canExecuteSelectedAction ? (
                     <>
                       <button
                         type="button"
                         onClick={handlePreviewRecommendedAction}
                         disabled={actionPreviewLoading || !selectedActionRequest}
-                        className="inline-flex items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs hover:bg-gray-50 disabled:opacity-50"
+                        className="inline-flex min-h-10 w-full items-center justify-center gap-1 rounded-md border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-gray-50 disabled:opacity-50"
                       >
                         {actionPreviewLoading ? (
                           <Loader2 className="h-3 w-3 animate-spin" />
@@ -2104,7 +2104,7 @@ export default function ProductOptimizationPage() {
                         disabled={
                           optimizing || !canApplyPreviewedAction || isInCooldown
                         }
-                        className="inline-flex items-center justify-center gap-1 rounded-md bg-blue-600 px-3 py-2 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+                        className="inline-flex min-h-10 w-full items-center justify-center gap-1 rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                       >
                         {optimizing ? (
                           <Loader2 className="h-3 w-3 animate-spin" />
@@ -2117,7 +2117,7 @@ export default function ProductOptimizationPage() {
                   ) : selectedQueueItem ? (
                     <a
                       href={manualReviewHref}
-                      className="inline-flex items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs hover:bg-gray-50"
+                      className="inline-flex min-h-10 w-full items-center justify-center gap-1 rounded-md border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-gray-50 sm:col-span-2"
                     >
                       {getManualReviewLabel(selectedQueueItem.fix_surface)}
                     </a>
@@ -2126,7 +2126,7 @@ export default function ProductOptimizationPage() {
                     type="button"
                     onClick={handlePreviewQuality}
                     disabled={previewLoading || !qualityPayload}
-                    className="inline-flex items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs hover:bg-gray-50 disabled:opacity-50"
+                    className="inline-flex min-h-10 w-full items-center justify-center gap-1 rounded-md border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-gray-50 disabled:opacity-50"
                   >
                     {previewLoading ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
@@ -2139,7 +2139,7 @@ export default function ProductOptimizationPage() {
                     type="button"
                     onClick={handleSaveAndEval}
                     disabled={saving || !qualityPayload}
-                    className="inline-flex items-center justify-center gap-1 rounded-md bg-blue-600 px-3 py-2 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+                    className="inline-flex min-h-10 w-full items-center justify-center gap-1 rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                   >
                     {saving ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
@@ -2304,7 +2304,7 @@ export default function ProductOptimizationPage() {
                     type="button"
                     onClick={handleSave}
                     disabled={saving}
-                    className="px-3 py-1.5 text-xs border rounded-md hover:bg-gray-50 disabled:opacity-50"
+                    className="inline-flex min-h-10 w-full items-center justify-center rounded-md border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-gray-50 disabled:opacity-50 sm:w-auto"
                   >
                     {saving ? 'Saving…' : 'Save enrichment only'}
                   </button>
