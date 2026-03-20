@@ -249,6 +249,14 @@ type SourceDataLaneGroup = {
   sample_skus: string[];
 };
 
+type SourceDataLaneProgress = {
+  group_key: string;
+  pending_variant_count: number;
+  resolved_variant_count: number;
+  total_variant_count: number;
+  looks_resolved_now: boolean;
+};
+
 type SourceDataReasonCode =
   | 'missing_price'
   | 'out_of_stock'
@@ -269,6 +277,18 @@ function formatSourceDataReasonLabel(reasonCode: SourceDataReasonCode) {
   if (reasonCode === 'missing_price') return 'Missing price or currency';
   if (reasonCode === 'out_of_stock') return 'Out of stock';
   return 'Missing primary image';
+}
+
+function buildSourceDataLaneGroupKey(params: {
+  reason_code: SourceDataReasonCode;
+  platform: string;
+  platform_product_id: string;
+}) {
+  return [
+    params.reason_code,
+    String(params.platform || '').toLowerCase(),
+    String(params.platform_product_id || ''),
+  ].join('|');
 }
 
 function getCatalogHealthFocusForReason(reasonCode: SourceDataReasonCode) {
@@ -375,6 +395,7 @@ export default function ProductsPage() {
   const [productBlockerLoading, setProductBlockerLoading] = useState(false);
   const [productBlockerError, setProductBlockerError] = useState<string | null>(null);
   const [sourceDataLaneGroups, setSourceDataLaneGroups] = useState<SourceDataLaneGroup[]>([]);
+  const [sourceDataLaneRows, setSourceDataLaneRows] = useState<SourceDataTriageRow[]>([]);
   const [sourceDataLaneLoading, setSourceDataLaneLoading] = useState(false);
   const [sourceDataLaneError, setSourceDataLaneError] = useState<string | null>(null);
   const [laneActionFeedback, setLaneActionFeedback] = useState<string | null>(null);
@@ -570,6 +591,7 @@ export default function ProductsPage() {
   useEffect(() => {
     if (!showViewModal || reviewSource !== 'readiness' || !reviewReasonCode) {
       setSourceDataLaneGroups([]);
+      setSourceDataLaneRows([]);
       setSourceDataLaneError(null);
       setSourceDataLaneLoading(false);
       setLaneActionFeedback(null);
@@ -578,6 +600,7 @@ export default function ProductsPage() {
 
     if (!catalogReviewPlan?.plan_id) {
       setSourceDataLaneGroups([]);
+      setSourceDataLaneRows([]);
       setSourceDataLaneError(catalogReviewPlanError);
       setSourceDataLaneLoading(true);
       return;
@@ -602,6 +625,7 @@ export default function ProductsPage() {
         if (cancelled) return;
 
         const rows: SourceDataTriageRow[] = Array.isArray(triage?.rows) ? triage.rows : [];
+        setSourceDataLaneRows(rows);
         const grouped = new Map<string, SourceDataLaneGroup>();
 
         for (const row of rows) {
@@ -660,6 +684,7 @@ export default function ProductsPage() {
         }
         console.error('Failed to load source-data lane queue', error);
         if (cancelled) return;
+        setSourceDataLaneRows([]);
         setSourceDataLaneGroups([]);
         setSourceDataLaneError('Could not load the current source-data lane queue.');
       } finally {
@@ -863,6 +888,141 @@ export default function ProductsPage() {
       : -1;
   const currentLaneGroup =
     currentLaneGroupIndex >= 0 ? sourceDataLaneGroups[currentLaneGroupIndex] : null;
+  const normalizedProductsByLaneKey = new Map(
+    products.map((product) => {
+      const normalizedProduct = normalizeProductForReview(product);
+      return [
+        buildSourceDataLaneGroupKey({
+          reason_code: reviewReasonCode || 'missing_price',
+          platform: normalizedProduct.platform || '',
+          platform_product_id: String(
+            normalizedProduct.platform_product_id ||
+              normalizedProduct.product_id ||
+              normalizedProduct.id ||
+              ''
+          ),
+        }),
+        normalizedProduct,
+      ];
+    })
+  );
+  const sourceDataLaneRowsByGroupKey = sourceDataLaneRows.reduce<
+    Map<string, SourceDataTriageRow[]>
+  >((acc, row) => {
+    const key = buildSourceDataLaneGroupKey({
+      reason_code: row.reason_code,
+      platform: row.platform,
+      platform_product_id: row.platform_product_id,
+    });
+    const existing = acc.get(key) || [];
+    existing.push(row);
+    acc.set(key, existing);
+    return acc;
+  }, new Map());
+  const laneGroupProgressByKey = sourceDataLaneGroups.reduce<
+    Map<string, SourceDataLaneProgress>
+  >((acc, group) => {
+    const groupKey = buildSourceDataLaneGroupKey(group);
+    const currentProduct = normalizedProductsByLaneKey.get(groupKey);
+    const matchingRows = sourceDataLaneRowsByGroupKey.get(groupKey) || [];
+
+    if (group.reason_code === 'missing_primary_image') {
+      const looksResolvedNow = Boolean(
+        currentProduct?.image_url || currentProduct?.images?.[0]
+      );
+      const totalVariantCount = Math.max(group.affected_variants, 1);
+      acc.set(groupKey, {
+        group_key: groupKey,
+        pending_variant_count: looksResolvedNow ? 0 : totalVariantCount,
+        resolved_variant_count: looksResolvedNow ? totalVariantCount : 0,
+        total_variant_count: totalVariantCount,
+        looks_resolved_now: looksResolvedNow,
+      });
+      return acc;
+    }
+
+    let pendingVariantCount = 0;
+    let resolvedVariantCount = 0;
+
+    for (const row of matchingRows) {
+      const variantId = String(row.variant_id || '');
+      const currentVariant = (currentProduct?.variants || []).find(
+        (variant: any) => String(variant.variant_id || variant.id || '') === variantId
+      );
+      const currentPrice =
+        typeof currentVariant?.price === 'number'
+          ? currentVariant.price
+          : typeof currentVariant?.price?.value === 'number'
+            ? currentVariant.price.value
+            : 0;
+      const currentCurrency = String(
+        currentVariant?.currency ||
+          currentVariant?.price?.currency ||
+          currentProduct?.currency ||
+          ''
+      ).trim();
+      const currentInventory = Number(currentVariant?.inventory_quantity ?? 0);
+      const looksResolvedNow =
+        group.reason_code === 'missing_price'
+          ? currentPrice > 0 && Boolean(currentCurrency)
+          : currentInventory > 0;
+
+      if (looksResolvedNow) {
+        resolvedVariantCount += 1;
+      } else {
+        pendingVariantCount += 1;
+      }
+    }
+
+    if (!matchingRows.length) {
+      pendingVariantCount = Math.max(group.affected_variants, 1);
+    }
+
+    const totalVariantCount = Math.max(
+      pendingVariantCount + resolvedVariantCount,
+      group.affected_variants,
+      1
+    );
+
+    acc.set(groupKey, {
+      group_key: groupKey,
+      pending_variant_count: pendingVariantCount,
+      resolved_variant_count: resolvedVariantCount,
+      total_variant_count: totalVariantCount,
+      looks_resolved_now: pendingVariantCount === 0,
+    });
+    return acc;
+  }, new Map());
+  const laneGroupProgressList = sourceDataLaneGroups.map((group) => {
+    const groupKey = buildSourceDataLaneGroupKey(group);
+    return {
+      group,
+      progress:
+        laneGroupProgressByKey.get(groupKey) || {
+          group_key: groupKey,
+          pending_variant_count: Math.max(group.affected_variants, 1),
+          resolved_variant_count: 0,
+          total_variant_count: Math.max(group.affected_variants, 1),
+          looks_resolved_now: false,
+        },
+    };
+  });
+  const currentLaneProgress = currentLaneGroup
+    ? laneGroupProgressByKey.get(buildSourceDataLaneGroupKey(currentLaneGroup)) || null
+    : null;
+  const unresolvedLaneGroups = laneGroupProgressList.filter(
+    ({ progress }) => progress.pending_variant_count > 0
+  );
+  const resolvedLaneGroups = laneGroupProgressList.filter(
+    ({ progress }) => progress.pending_variant_count === 0
+  );
+  const nextPendingLaneGroup =
+    currentLaneGroupIndex >= 0
+      ? laneGroupProgressList
+          .slice(currentLaneGroupIndex + 1)
+          .find(({ progress }) => progress.pending_variant_count > 0)?.group || null
+      : unresolvedLaneGroups[0]?.group || null;
+  const firstPendingLaneGroup = unresolvedLaneGroups[0]?.group || null;
 
   const heroTitle =
     blockedCount > 0
@@ -1563,9 +1723,32 @@ export default function ProductsPage() {
                                         {currentLaneGroup.product_title}
                                       </div>
                                       <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
+                                        {currentLaneProgress ? (
+                                          <span
+                                            className={`rounded-full px-2 py-0.5 font-medium ring-1 ring-amber-200 ${
+                                              currentLaneProgress.pending_variant_count > 0
+                                                ? 'bg-slate-100 text-slate-700'
+                                                : 'bg-emerald-100 text-emerald-700'
+                                            }`}
+                                          >
+                                            {currentLaneProgress.pending_variant_count > 0
+                                              ? 'Still needs source fixes'
+                                              : 'Looks fixed now'}
+                                          </span>
+                                        ) : null}
                                         <span className="rounded-full bg-white px-2 py-0.5 font-medium text-slate-700 ring-1 ring-amber-200">
                                           {currentLaneGroup.affected_variants} affected variants
                                         </span>
+                                        {currentLaneProgress ? (
+                                          <>
+                                            <span className="rounded-full bg-white px-2 py-0.5 font-medium text-slate-700 ring-1 ring-amber-200">
+                                              {currentLaneProgress.pending_variant_count} pending now
+                                            </span>
+                                            <span className="rounded-full bg-white px-2 py-0.5 font-medium text-emerald-700 ring-1 ring-amber-200">
+                                              {currentLaneProgress.resolved_variant_count} look fixed now
+                                            </span>
+                                          </>
+                                        ) : null}
                                         <span className="rounded-full bg-white px-2 py-0.5 font-medium text-rose-700 ring-1 ring-amber-200">
                                           {currentLaneGroup.blocked_variant_count} blocked
                                         </span>
@@ -1575,6 +1758,16 @@ export default function ProductsPage() {
                                       </div>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
+                                      {sourceDataLaneGroups.length > 1 ? (
+                                        <div className="flex flex-wrap gap-1 text-[11px]">
+                                          <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700 ring-1 ring-amber-200">
+                                            {unresolvedLaneGroups.length} batches still need fixes
+                                          </span>
+                                          <span className="rounded-full bg-white px-2 py-1 font-medium text-emerald-700 ring-1 ring-amber-200">
+                                            {resolvedLaneGroups.length} already look fixed
+                                          </span>
+                                        </div>
+                                      ) : null}
                                       <button
                                         type="button"
                                         onClick={() => {
@@ -1609,8 +1802,40 @@ export default function ProductsPage() {
                                       >
                                         Next batch
                                       </button>
+                                      {(nextPendingLaneGroup || firstPendingLaneGroup) ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const targetGroup =
+                                              nextPendingLaneGroup ||
+                                              (currentLaneProgress?.pending_variant_count === 0
+                                                ? firstPendingLaneGroup
+                                                : null);
+                                            if (targetGroup) {
+                                              void openLaneGroup(targetGroup);
+                                            }
+                                          }}
+                                          disabled={
+                                            !nextPendingLaneGroup &&
+                                            !(
+                                              currentLaneProgress?.pending_variant_count === 0 &&
+                                              firstPendingLaneGroup
+                                            )
+                                          }
+                                          className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                          {nextPendingLaneGroup
+                                            ? 'Next pending batch'
+                                            : 'Open first pending batch'}
+                                        </button>
+                                      ) : null}
                                     </div>
                                   </div>
+                                  {currentLaneProgress?.pending_variant_count === 0 ? (
+                                    <div className="mt-3 rounded-lg border border-emerald-200 bg-white/80 px-3 py-2 text-[11px] text-emerald-900">
+                                      This batch now looks fixed in the synced catalog. If the next unresolved batch still needs work, jump there directly instead of rechecking already-resolved variants.
+                                    </div>
+                                  ) : null}
                                 </div>
                               ) : null}
 
