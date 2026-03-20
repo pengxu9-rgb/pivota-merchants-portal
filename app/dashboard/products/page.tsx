@@ -162,6 +162,51 @@ function normalizeProductForReview(product: any) {
   };
 }
 
+function formatCurrencyValue(amount: number, currency = 'USD') {
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency || 'USD',
+    }).format(amount);
+  } catch {
+    return formatCurrency(amount);
+  }
+}
+
+function formatReadinessCode(value: string) {
+  return value
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+type ProductBlockerVariant = {
+  variant_id: string;
+  title: string;
+  sku?: string | null;
+  price_value?: number | null;
+  price_currency?: string | null;
+  inventory_quantity?: number | null;
+  readiness_status: 'ready' | 'blocked';
+  readiness_blocker_codes: string[];
+  readiness_warning_codes: string[];
+  agent_push_status: 'eligible_for_agent_push' | 'excluded_from_agent_push';
+  agent_push_reason_codes: string[];
+};
+
+type ProductBlockerDetail = {
+  plan_id: string;
+  snapshot_id: string;
+  summary: {
+    ready_variant_count: number;
+    blocked_variant_count: number;
+    eligible_variant_count: number;
+    excluded_variant_count: number;
+  };
+  variants: ProductBlockerVariant[];
+};
+
 export default function ProductsPage() {
   const searchParams = useSearchParams();
   const [products, setProducts] = useState<any[]>([]);
@@ -173,6 +218,11 @@ export default function ProductsPage() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const [reviewSource, setReviewSource] = useState<string | null>(null);
+  const [productBlockerDetail, setProductBlockerDetail] = useState<ProductBlockerDetail | null>(
+    null
+  );
+  const [productBlockerLoading, setProductBlockerLoading] = useState(false);
+  const [productBlockerError, setProductBlockerError] = useState<string | null>(null);
   const deepLinkResolvedRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -291,6 +341,80 @@ export default function ProductsPage() {
     };
   }, [selectedVariantId, showViewModal]);
 
+  useEffect(() => {
+    if (!showViewModal || !selectedProduct || reviewSource !== 'readiness') {
+      setProductBlockerDetail(null);
+      setProductBlockerError(null);
+      setProductBlockerLoading(false);
+      return;
+    }
+
+    const platform = String(selectedProduct.platform || '').trim();
+    const platformProductId = String(
+      selectedProduct.platform_product_id ||
+        selectedProduct.product_id ||
+        selectedProduct.id ||
+        ''
+    ).trim();
+
+    if (!platform || !platformProductId) {
+      setProductBlockerDetail(null);
+      setProductBlockerError('Readiness context is unavailable for this catalog item.');
+      setProductBlockerLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const isPlanSupersededError = (err: any) =>
+      err?.response?.status === 409 &&
+      err?.response?.data?.detail?.code === 'OPTIMIZATION_PLAN_SUPERSEDED';
+
+    const loadReadinessContext = async (allowRetry = true) => {
+      try {
+        setProductBlockerLoading(true);
+        setProductBlockerError(null);
+        setProductBlockerDetail(null);
+
+        const optimization = await apiClient.getMerchantReadinessOptimization();
+        const planId = optimization?.plan?.plan_id;
+        if (!planId) {
+          throw new Error('Optimization plan unavailable.');
+        }
+
+        const detail = await apiClient.getMerchantProductBlockers(
+          platform,
+          platformProductId,
+          planId
+        );
+        if (cancelled) return;
+        setProductBlockerDetail(detail || null);
+      } catch (error) {
+        if (allowRetry && isPlanSupersededError(error)) {
+          return await loadReadinessContext(false);
+        }
+        console.error('Failed to load readiness context for catalog review', error);
+        if (cancelled) return;
+        setProductBlockerDetail(null);
+        setProductBlockerError('Could not load readiness context for this product yet.');
+      } finally {
+        if (!cancelled) {
+          setProductBlockerLoading(false);
+        }
+      }
+    };
+
+    void loadReadinessContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    reviewSource,
+    selectedProduct,
+    showViewModal,
+  ]);
+
   const handleAddProduct = () => {
     alert(
       'Add catalog item is not wired yet. Use your connected sales channel to sync products into Pivota.'
@@ -318,6 +442,15 @@ export default function ProductsPage() {
     const stock = Number(product?.inventory_quantity ?? product?.stock ?? 0);
     return Number.isFinite(stock) && stock > 0;
   }).length;
+  const selectedReadinessVariant =
+    selectedVariantId && productBlockerDetail
+      ? productBlockerDetail.variants.find(
+          (variant) => String(variant.variant_id) === String(selectedVariantId)
+        ) || null
+      : null;
+  const readinessVariantMap = new Map(
+    (productBlockerDetail?.variants || []).map((variant) => [String(variant.variant_id), variant])
+  );
 
   const heroTitle =
     blockedCount > 0
@@ -517,7 +650,7 @@ export default function ProductsPage() {
                         </div>
                       </td>
                       <td className="text-sm font-medium text-[color:var(--merchant-ink)]">
-                        {formatCurrency(product.price || 0)}
+                        {formatCurrencyValue(product.price || 0, product.currency || 'USD')}
                       </td>
                       <td>
                         <div className="space-y-2">
@@ -651,6 +784,116 @@ export default function ProductsPage() {
                 </div>
               ) : null}
 
+              {reviewSource === 'readiness' ? (
+                <div className="rounded-[1.1rem] border border-amber-200 bg-amber-50/70 p-4">
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-amber-900">Readiness context</div>
+                      <p className="mt-1 text-sm text-amber-900/80">
+                        This is the current blocker and agent-push view for the same product in catalog health.
+                      </p>
+                    </div>
+
+                    {productBlockerLoading ? (
+                      <div className="rounded-xl border border-amber-200 bg-white/80 px-4 py-3 text-sm text-amber-900">
+                        Loading readiness context...
+                      </div>
+                    ) : productBlockerError ? (
+                      <div className="rounded-xl border border-amber-200 bg-white/80 px-4 py-3 text-sm text-amber-900">
+                        {productBlockerError}
+                      </div>
+                    ) : productBlockerDetail ? (
+                      <>
+                        <div className="grid gap-3 sm:grid-cols-4">
+                          <div className="rounded-xl border border-amber-200 bg-white/80 px-4 py-3">
+                            <div className="text-xs uppercase tracking-[0.12em] text-amber-900/65">Ready</div>
+                            <div className="mt-1 text-lg font-semibold text-amber-950">
+                              {productBlockerDetail.summary.ready_variant_count}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-amber-200 bg-white/80 px-4 py-3">
+                            <div className="text-xs uppercase tracking-[0.12em] text-amber-900/65">Blocked</div>
+                            <div className="mt-1 text-lg font-semibold text-amber-950">
+                              {productBlockerDetail.summary.blocked_variant_count}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-amber-200 bg-white/80 px-4 py-3">
+                            <div className="text-xs uppercase tracking-[0.12em] text-amber-900/65">Eligible</div>
+                            <div className="mt-1 text-lg font-semibold text-amber-950">
+                              {productBlockerDetail.summary.eligible_variant_count}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-amber-200 bg-white/80 px-4 py-3">
+                            <div className="text-xs uppercase tracking-[0.12em] text-amber-900/65">Excluded</div>
+                            <div className="mt-1 text-lg font-semibold text-amber-950">
+                              {productBlockerDetail.summary.excluded_variant_count}
+                            </div>
+                          </div>
+                        </div>
+
+                        {selectedReadinessVariant ? (
+                          <div className="rounded-xl border border-amber-200 bg-white/80 p-4">
+                            <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                              Selected variant
+                            </div>
+                            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
+                              {selectedReadinessVariant.title}
+                            </div>
+                            <div className="mt-1 text-xs text-[color:var(--merchant-muted)]">
+                              SKU {selectedReadinessVariant.sku || 'N/A'} · Variant ID{' '}
+                              {selectedReadinessVariant.variant_id}
+                            </div>
+                            <div className="mt-2 text-sm text-[color:var(--merchant-muted-strong)]">
+                              {formatCurrencyValue(
+                                Number(selectedReadinessVariant.price_value || 0),
+                                selectedReadinessVariant.price_currency ||
+                                  selectedProduct.currency ||
+                                  'USD'
+                              )}{' '}
+                              · Stock {selectedReadinessVariant.inventory_quantity ?? 0}
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {selectedReadinessVariant.readiness_blocker_codes.map((code) => (
+                                <span
+                                  key={`blocker-${code}`}
+                                  className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-medium text-rose-700"
+                                >
+                                  {formatReadinessCode(code)}
+                                </span>
+                              ))}
+                              {selectedReadinessVariant.agent_push_reason_codes.map((code) => (
+                                <span
+                                  key={`push-${code}`}
+                                  className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800"
+                                >
+                                  Push: {formatReadinessCode(code)}
+                                </span>
+                              ))}
+                              {selectedReadinessVariant.readiness_warning_codes.map((code) => (
+                                <span
+                                  key={`warning-${code}`}
+                                  className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
+                                >
+                                  Warning: {formatReadinessCode(code)}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="rounded-xl border border-amber-200 bg-white/80 px-4 py-3 text-sm text-amber-900">
+                            Variant-level readiness labels are available below. Pick the highlighted variant to match the same blocker back to your source catalog.
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="rounded-xl border border-amber-200 bg-white/80 px-4 py-3 text-sm text-amber-900">
+                        No readiness context is available for this product yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
               {selectedProduct.image_url || selectedProduct.images?.[0] ? (
                 <img
                   src={selectedProduct.image_url || selectedProduct.images[0]}
@@ -672,7 +915,9 @@ export default function ProductsPage() {
                 </div>
                 <div className="rounded-[1.1rem] bg-white/70 p-4">
                   <div className="text-sm text-[color:var(--merchant-muted)]">Price</div>
-                  <div className="mt-1 text-[color:var(--merchant-ink)]">{formatCurrency(selectedProduct.price || 0)}</div>
+                  <div className="mt-1 text-[color:var(--merchant-ink)]">
+                    {formatCurrencyValue(selectedProduct.price || 0, selectedProduct.currency || 'USD')}
+                  </div>
                 </div>
                 <div className="rounded-[1.1rem] bg-white/70 p-4">
                   <div className="text-sm text-[color:var(--merchant-muted)]">Stock</div>
@@ -701,33 +946,61 @@ export default function ProductsPage() {
                 <div className="rounded-[1.1rem] bg-white/70 p-4">
                   <div className="text-sm text-[color:var(--merchant-muted)]">Variants</div>
                   <div className="mt-3 space-y-2">
-                    {selectedProduct.variants.map((variant: any, index: number) => (
-                      <div
-                        key={variant.variant_id || variant.id || index}
-                        id={`variant-row-${variant.variant_id || variant.id || index}`}
-                        className={`rounded-xl border px-4 py-3 ${
-                          selectedVariantId &&
-                          (variant.variant_id === selectedVariantId ||
-                            variant.id === selectedVariantId)
-                            ? 'border-amber-300 bg-amber-50'
-                            : 'border-[color:var(--merchant-line)] bg-white/70'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-medium text-[color:var(--merchant-muted-strong)]">
-                              {variant.title}
-                            </div>
-                            <div className="mt-1 text-xs text-[color:var(--merchant-muted)]">
-                              SKU {variant.sku || 'N/A'} · Variant ID {variant.variant_id || variant.id || 'N/A'}
+                    {selectedProduct.variants.map((variant: any, index: number) => {
+                        const variantIdentifier = String(variant.variant_id || variant.id || index);
+                        const readinessVariant = readinessVariantMap.get(variantIdentifier);
+                        return (
+                          <div
+                            key={variantIdentifier}
+                            id={`variant-row-${variantIdentifier}`}
+                            className={`rounded-xl border px-4 py-3 ${
+                              selectedVariantId &&
+                              (variant.variant_id === selectedVariantId ||
+                                variant.id === selectedVariantId)
+                                ? 'border-amber-300 bg-amber-50'
+                                : 'border-[color:var(--merchant-line)] bg-white/70'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-sm font-medium text-[color:var(--merchant-muted-strong)]">
+                                  {variant.title}
+                                </div>
+                                <div className="mt-1 text-xs text-[color:var(--merchant-muted)]">
+                                  SKU {variant.sku || 'N/A'} · Variant ID {variant.variant_id || variant.id || 'N/A'}
+                                </div>
+                                {reviewSource === 'readiness' && readinessVariant ? (
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    {readinessVariant.readiness_blocker_codes.map((code) => (
+                                      <span
+                                        key={`${variantIdentifier}-blocker-${code}`}
+                                        className="rounded-full bg-rose-100 px-2 py-1 text-[11px] font-medium text-rose-700"
+                                      >
+                                        {formatReadinessCode(code)}
+                                      </span>
+                                    ))}
+                                    {readinessVariant.agent_push_reason_codes.map((code) => (
+                                      <span
+                                        key={`${variantIdentifier}-push-${code}`}
+                                        className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-800"
+                                      >
+                                        Push: {formatReadinessCode(code)}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                              <span className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                                {formatCurrencyValue(
+                                  variant.price || 0,
+                                  variant.currency || selectedProduct.currency || 'USD'
+                                )}{' '}
+                                · Stock {variant.inventory_quantity || 0}
+                              </span>
                             </div>
                           </div>
-                          <span className="text-sm font-medium text-[color:var(--merchant-ink)]">
-                            {formatCurrency(variant.price || 0)} · Stock {variant.inventory_quantity || 0}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
+                        );
+                      })}
                   </div>
                 </div>
               ) : null}
