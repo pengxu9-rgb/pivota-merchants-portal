@@ -1709,6 +1709,7 @@ export default function ProductOptimizationPage() {
       return a.product_title.localeCompare(b.product_title);
     });
   })();
+  const firstTriageGroup = triageGroups[0] || null;
 
   const buildCatalogReviewHref = ({
     platform,
@@ -2053,6 +2054,18 @@ export default function ProductOptimizationPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              {firstTriageGroup ? (
+                <a
+                  href={buildCatalogReviewHref({
+                    platform: firstTriageGroup.platform,
+                    platformProductId: firstTriageGroup.platform_product_id,
+                    reasonCode: triageReason,
+                  })}
+                  className="inline-flex items-center justify-center rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 ring-1 ring-blue-200 hover:bg-blue-100"
+                >
+                  Review whole lane in catalog
+                </a>
+              ) : null}
               <button
                 type="button"
                 onClick={handleExportCurrentTriageLane}

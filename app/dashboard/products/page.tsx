@@ -207,6 +207,43 @@ type ProductBlockerDetail = {
   variants: ProductBlockerVariant[];
 };
 
+type SourceDataTriageRow = {
+  scope: 'product' | 'variant';
+  reason_code: SourceDataReasonCode;
+  reason_label: string;
+  platform: string;
+  platform_product_id: string;
+  product_id?: string | null;
+  product_title: string;
+  variant_id?: string | null;
+  variant_title?: string | null;
+  sku?: string | null;
+  price_value?: number | null;
+  price_currency?: string | null;
+  inventory_quantity?: number | null;
+  blocked_variant_count: number;
+  excluded_variant_count: number;
+  readiness_blocker_codes: string[];
+  readiness_warning_codes: string[];
+  agent_push_status: 'eligible_for_agent_push' | 'excluded_from_agent_push';
+  agent_push_reason_codes: string[];
+};
+
+type SourceDataLaneGroup = {
+  reason_code: SourceDataReasonCode;
+  reason_label: string;
+  platform: string;
+  platform_product_id: string;
+  product_id?: string | null;
+  product_title: string;
+  affected_rows: number;
+  affected_variants: number;
+  blocked_variant_count: number;
+  excluded_variant_count: number;
+  sample_variant_id: string | null;
+  sample_skus: string[];
+};
+
 type SourceDataReasonCode =
   | 'missing_price'
   | 'out_of_stock'
@@ -227,6 +264,11 @@ function formatSourceDataReasonLabel(reasonCode: SourceDataReasonCode) {
   if (reasonCode === 'missing_price') return 'Missing price or currency';
   if (reasonCode === 'out_of_stock') return 'Out of stock';
   return 'Missing primary image';
+}
+
+function getSourceDataRowAffectedVariantCount(row: SourceDataTriageRow) {
+  if (row.scope === 'variant') return 1;
+  return Math.max(row.blocked_variant_count, row.excluded_variant_count, 1);
 }
 
 function readinessVariantMatchesReason(
@@ -270,6 +312,10 @@ export default function ProductsPage() {
   );
   const [productBlockerLoading, setProductBlockerLoading] = useState(false);
   const [productBlockerError, setProductBlockerError] = useState<string | null>(null);
+  const [sourceDataLaneGroups, setSourceDataLaneGroups] = useState<SourceDataLaneGroup[]>([]);
+  const [sourceDataLaneLoading, setSourceDataLaneLoading] = useState(false);
+  const [sourceDataLaneError, setSourceDataLaneError] = useState<string | null>(null);
+  const [laneCopyFeedback, setLaneCopyFeedback] = useState<string | null>(null);
   const deepLinkResolvedRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -286,6 +332,31 @@ export default function ProductsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const resolveProductForReview = async (
+    platform: string,
+    platformProductId: string
+  ) => {
+    const matchedProduct = products.find((product) => {
+      const normalizedPlatform =
+        String(product?.platform || '').toLowerCase() === platform.toLowerCase();
+      const normalizedProductId =
+        String(
+          product?.platform_product_id ||
+            product?.product_id ||
+            product?.id ||
+            ''
+        ) === platformProductId;
+      return normalizedPlatform && normalizedProductId;
+    });
+
+    if (matchedProduct && Array.isArray(matchedProduct.variants)) {
+      return normalizeProductForReview(matchedProduct);
+    }
+
+    const detail = await apiClient.getMerchantProductDetail(platform, platformProductId);
+    return normalizeProductForReview(detail);
   };
 
   const deepLinkPlatform = searchParams.get('platform');
@@ -320,36 +391,16 @@ export default function ProductsPage() {
     let cancelled = false;
 
     const openDeepLinkedReview = async () => {
-      const matchedProduct = products.find((product) => {
-        const normalizedPlatform =
-          String(product?.platform || '').toLowerCase() ===
-          deepLinkPlatform.toLowerCase();
-        const normalizedProductId =
-          String(
-            product?.platform_product_id ||
-              product?.product_id ||
-              product?.id ||
-              ''
-          ) === deepLinkPlatformProductId;
-        return normalizedPlatform && normalizedProductId;
-      });
+      let normalizedProduct = null;
 
-      let normalizedProduct =
-        matchedProduct && Array.isArray(matchedProduct.variants)
-          ? normalizeProductForReview(matchedProduct)
-          : null;
-
-      if (!normalizedProduct) {
-        try {
-          const detail = await apiClient.getMerchantProductDetail(
-            deepLinkPlatform,
-            deepLinkPlatformProductId
-          );
-          normalizedProduct = normalizeProductForReview(detail);
-        } catch (error) {
-          console.error('Failed to resolve deep-linked product review', error);
-          return;
-        }
+      try {
+        normalizedProduct = await resolveProductForReview(
+          deepLinkPlatform,
+          deepLinkPlatformProductId
+        );
+      } catch (error) {
+        console.error('Failed to resolve deep-linked product review', error);
+        return;
       }
 
       if (cancelled || !normalizedProduct) {
@@ -392,6 +443,111 @@ export default function ProductsPage() {
       window.clearTimeout(timeoutId);
     };
   }, [selectedVariantId, showViewModal]);
+
+  useEffect(() => {
+    if (!showViewModal || reviewSource !== 'readiness' || !reviewReasonCode) {
+      setSourceDataLaneGroups([]);
+      setSourceDataLaneError(null);
+      setSourceDataLaneLoading(false);
+      setLaneCopyFeedback(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const isPlanSupersededError = (err: any) =>
+      err?.response?.status === 409 &&
+      err?.response?.data?.detail?.code === 'OPTIMIZATION_PLAN_SUPERSEDED';
+
+    const loadLaneQueue = async (allowRetry = true) => {
+      try {
+        setSourceDataLaneLoading(true);
+        setSourceDataLaneError(null);
+        const optimization = await apiClient.getMerchantReadinessOptimization();
+        const planId = optimization?.plan?.plan_id;
+        if (!planId) {
+          throw new Error('Optimization plan unavailable.');
+        }
+        const triage = await apiClient.getMerchantSourceDataTriage({
+          plan_id: planId,
+          reason_code: reviewReasonCode,
+          limit: 500,
+        });
+
+        if (cancelled) return;
+
+        const rows: SourceDataTriageRow[] = Array.isArray(triage?.rows) ? triage.rows : [];
+        const grouped = new Map<string, SourceDataLaneGroup>();
+
+        for (const row of rows) {
+          const key = `${row.reason_code}|${row.platform}|${row.platform_product_id}`;
+          const existing = grouped.get(key);
+          if (existing) {
+            existing.affected_rows += 1;
+            existing.affected_variants += getSourceDataRowAffectedVariantCount(row);
+            existing.blocked_variant_count = Math.max(
+              existing.blocked_variant_count,
+              row.blocked_variant_count
+            );
+            existing.excluded_variant_count = Math.max(
+              existing.excluded_variant_count,
+              row.excluded_variant_count
+            );
+            if (row.variant_id && !existing.sample_variant_id) {
+              existing.sample_variant_id = row.variant_id;
+            }
+            if (row.sku && !existing.sample_skus.includes(row.sku)) {
+              existing.sample_skus.push(row.sku);
+            }
+            continue;
+          }
+
+          grouped.set(key, {
+            reason_code: row.reason_code,
+            reason_label: row.reason_label,
+            platform: row.platform,
+            platform_product_id: row.platform_product_id,
+            product_id: row.product_id || null,
+            product_title: row.product_title,
+            affected_rows: 1,
+            affected_variants: getSourceDataRowAffectedVariantCount(row),
+            blocked_variant_count: row.blocked_variant_count,
+            excluded_variant_count: row.excluded_variant_count,
+            sample_variant_id: row.variant_id || null,
+            sample_skus: row.sku ? [row.sku] : [],
+          });
+        }
+
+        setSourceDataLaneGroups(
+          Array.from(grouped.values()).sort((a, b) => {
+            const affectedDiff = b.affected_variants - a.affected_variants;
+            if (affectedDiff !== 0) return affectedDiff;
+            const excludedDiff = b.excluded_variant_count - a.excluded_variant_count;
+            if (excludedDiff !== 0) return excludedDiff;
+            return a.product_title.localeCompare(b.product_title);
+          })
+        );
+      } catch (error) {
+        if (allowRetry && isPlanSupersededError(error)) {
+          return await loadLaneQueue(false);
+        }
+        console.error('Failed to load source-data lane queue', error);
+        if (cancelled) return;
+        setSourceDataLaneGroups([]);
+        setSourceDataLaneError('Could not load the current source-data lane queue.');
+      } finally {
+        if (!cancelled) {
+          setSourceDataLaneLoading(false);
+        }
+      }
+    };
+
+    void loadLaneQueue();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reviewReasonCode, reviewSource, showViewModal]);
 
   useEffect(() => {
     if (!showViewModal || !selectedProduct || reviewSource !== 'readiness') {
@@ -512,6 +668,24 @@ export default function ProductsPage() {
   const focusedReadinessVariantIds = new Set(
     focusedReadinessVariants.map((variant) => String(variant.variant_id))
   );
+  const currentLaneGroupIndex =
+    reviewReasonCode && selectedProduct
+      ? sourceDataLaneGroups.findIndex(
+          (group) =>
+            group.reason_code === reviewReasonCode &&
+            String(group.platform).toLowerCase() ===
+              String(selectedProduct.platform || '').toLowerCase() &&
+            String(group.platform_product_id) ===
+              String(
+                selectedProduct.platform_product_id ||
+                  selectedProduct.product_id ||
+                  selectedProduct.id ||
+                  ''
+              )
+        )
+      : -1;
+  const currentLaneGroup =
+    currentLaneGroupIndex >= 0 ? sourceDataLaneGroups[currentLaneGroupIndex] : null;
 
   const heroTitle =
     blockedCount > 0
@@ -524,6 +698,76 @@ export default function ProductsPage() {
     blockedCount > 0
       ? 'Review blocked variants, missing details, and low-inventory items from one merchant-facing catalog view.'
       : 'Use Catalog to keep product content, pricing, imagery, and sellability aligned before promotions go live.';
+
+  const openLaneGroup = async (group: SourceDataLaneGroup) => {
+    try {
+      const product = await resolveProductForReview(group.platform, group.platform_product_id);
+      setSelectedProduct(product);
+      setSelectedVariantId(group.sample_variant_id || null);
+      setReviewSource('readiness');
+      setReviewReasonCode(group.reason_code);
+      setShowViewModal(true);
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams({
+          platform: group.platform,
+          platformProductId: group.platform_product_id,
+          modal: 'review',
+          source: 'readiness',
+          reasonCode: group.reason_code,
+        });
+        if (group.sample_variant_id) {
+          params.set('variantId', group.sample_variant_id);
+        }
+        window.history.replaceState({}, '', `/dashboard/products?${params.toString()}`);
+      }
+    } catch (error) {
+      console.error('Failed to open lane review group', error);
+    }
+  };
+
+  const handleCopyLaneValues = async (
+    kind: 'sku' | 'variant_id'
+  ) => {
+    const values =
+      kind === 'sku'
+        ? focusedReadinessVariants
+            .map((variant) => String(variant.sku || '').trim())
+            .filter(Boolean)
+        : focusedReadinessVariants
+            .map((variant) => String(variant.variant_id || '').trim())
+            .filter(Boolean);
+
+    if (!values.length) {
+      setLaneCopyFeedback(
+        kind === 'sku'
+          ? 'No matching SKUs are available in this batch yet.'
+          : 'No matching variant IDs are available in this batch yet.'
+      );
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(values.join('\n'));
+      setLaneCopyFeedback(
+        kind === 'sku'
+          ? `Copied ${values.length} matching SKU${values.length === 1 ? '' : 's'}.`
+          : `Copied ${values.length} matching variant ID${values.length === 1 ? '' : 's'}.`
+      );
+    } catch (error) {
+      console.error('Failed to copy lane values', error);
+      setLaneCopyFeedback('Could not copy this batch right now.');
+    }
+  };
+
+  useEffect(() => {
+    if (!laneCopyFeedback) return;
+    const timeoutId = window.setTimeout(() => {
+      setLaneCopyFeedback(null);
+    }, 2500);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [laneCopyFeedback]);
 
   if (loading) {
     return (
@@ -896,16 +1140,124 @@ export default function ProductsPage() {
 
                         {reviewReasonCode ? (
                           <div className="rounded-xl border border-amber-200 bg-white/80 p-4">
-                            <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
-                              Batch triage focus
-                            </div>
-                            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
-                              {formatSourceDataReasonLabel(reviewReasonCode)}
-                            </div>
-                            <div className="mt-2 text-xs text-[color:var(--merchant-muted)]">
-                              {reviewReasonCode === 'missing_primary_image'
-                                ? 'This is a product-level catalog issue. Review the main image and source product imagery for the whole item.'
-                                : `${focusedReadinessVariants.length} variants in this product match the current triage lane. The matching rows are highlighted below.`}
+                            <div className="flex flex-col gap-3">
+                              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                <div>
+                                  <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                                    Batch triage focus
+                                  </div>
+                                  <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
+                                    {formatSourceDataReasonLabel(reviewReasonCode)}
+                                  </div>
+                                  <div className="mt-2 text-xs text-[color:var(--merchant-muted)]">
+                                    {reviewReasonCode === 'missing_primary_image'
+                                      ? 'This is a product-level catalog issue. Review the main image and source product imagery for the whole item.'
+                                      : `${focusedReadinessVariants.length} variants in this product match the current triage lane. The matching rows are highlighted below.`}
+                                  </div>
+                                </div>
+                                {sourceDataLaneLoading ? (
+                                  <div className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-medium text-amber-900">
+                                    Loading lane queue…
+                                  </div>
+                                ) : currentLaneGroup && sourceDataLaneGroups.length > 0 ? (
+                                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+                                    Batch {currentLaneGroupIndex + 1} of {sourceDataLaneGroups.length}
+                                  </div>
+                                ) : null}
+                              </div>
+
+                              {sourceDataLaneError ? (
+                                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                                  {sourceDataLaneError}
+                                </div>
+                              ) : null}
+
+                              {currentLaneGroup && sourceDataLaneGroups.length > 0 ? (
+                                <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                    <div>
+                                      <div className="text-xs uppercase tracking-[0.12em] text-amber-900/65">
+                                        Lane queue
+                                      </div>
+                                      <div className="mt-1 text-sm font-medium text-amber-950">
+                                        {currentLaneGroup.product_title}
+                                      </div>
+                                      <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
+                                        <span className="rounded-full bg-white px-2 py-0.5 font-medium text-slate-700 ring-1 ring-amber-200">
+                                          {currentLaneGroup.affected_variants} affected variants
+                                        </span>
+                                        <span className="rounded-full bg-white px-2 py-0.5 font-medium text-rose-700 ring-1 ring-amber-200">
+                                          {currentLaneGroup.blocked_variant_count} blocked
+                                        </span>
+                                        <span className="rounded-full bg-white px-2 py-0.5 font-medium text-amber-800 ring-1 ring-amber-200">
+                                          {currentLaneGroup.excluded_variant_count} excluded
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (currentLaneGroupIndex > 0) {
+                                            void openLaneGroup(
+                                              sourceDataLaneGroups[currentLaneGroupIndex - 1]
+                                            );
+                                          }
+                                        }}
+                                        disabled={currentLaneGroupIndex <= 0}
+                                        className="inline-flex items-center rounded-md border border-amber-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        Previous batch
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (
+                                            currentLaneGroupIndex >= 0 &&
+                                            currentLaneGroupIndex < sourceDataLaneGroups.length - 1
+                                          ) {
+                                            void openLaneGroup(
+                                              sourceDataLaneGroups[currentLaneGroupIndex + 1]
+                                            );
+                                          }
+                                        }}
+                                        disabled={
+                                          currentLaneGroupIndex < 0 ||
+                                          currentLaneGroupIndex >= sourceDataLaneGroups.length - 1
+                                        }
+                                        className="inline-flex items-center rounded-md border border-amber-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        Next batch
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {reviewReasonCode !== 'missing_primary_image' &&
+                              focusedReadinessVariants.length > 0 ? (
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleCopyLaneValues('sku')}
+                                    className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                                  >
+                                    Copy matching SKUs
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleCopyLaneValues('variant_id')}
+                                    className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                                  >
+                                    Copy variant IDs
+                                  </button>
+                                  {laneCopyFeedback ? (
+                                    <span className="text-[11px] text-slate-600">
+                                      {laneCopyFeedback}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         ) : null}
