@@ -316,6 +316,11 @@ type OutOfStockBatchState =
   | 'restocked_waiting_refresh'
   | 'no_matching_variants';
 
+type OutOfStockDecisionState =
+  | 'restock_candidate'
+  | 'archive_candidate'
+  | 'manual_review';
+
 function getOutOfStockBatchState(
   pendingCount: number,
   resolvedCount: number
@@ -360,6 +365,71 @@ function getOutOfStockQueueActionLabel(state: OutOfStockBatchState) {
     return 'Decide whether to restock the full product batch or archive it as intentionally unavailable.';
   }
   return 'Review the matching variants and confirm whether the batch still needs source-data fixes.';
+}
+
+function getOutOfStockDecisionState(product: any): OutOfStockDecisionState {
+  const rawStatus = String(product?.status || '').trim().toLowerCase();
+  const hasVisibleImage = Boolean(product?.image_url || product?.images?.[0]);
+  const hasDescription = Boolean(String(product?.description || '').trim());
+  const hasAnyPricedVariant = Array.isArray(product?.variants)
+    ? product.variants.some((variant: any) => Number(variant?.price || 0) > 0)
+    : Number(product?.price || 0) > 0;
+
+  if (rawStatus && rawStatus !== 'active') {
+    return 'archive_candidate';
+  }
+
+  if (product?.orderable === false) {
+    return 'archive_candidate';
+  }
+
+  if (isProductSellable(product) && hasAnyPricedVariant && (hasVisibleImage || hasDescription)) {
+    return 'restock_candidate';
+  }
+
+  return 'manual_review';
+}
+
+function getOutOfStockDecisionTitle(state: OutOfStockDecisionState) {
+  if (state === 'restock_candidate') return 'Restock candidates';
+  if (state === 'archive_candidate') return 'Archive / discontinue candidates';
+  return 'Needs manual review';
+}
+
+function getOutOfStockDecisionSummary(state: OutOfStockDecisionState, count: number) {
+  if (state === 'restock_candidate') {
+    return count > 0
+      ? 'These products still look commercially active. Treat them as inventory gaps to replenish.'
+      : 'No whole-product batches currently look like straightforward restock candidates.';
+  }
+  if (state === 'archive_candidate') {
+    return count > 0
+      ? 'These products look unpublished, unsellable, or intentionally inactive. Review them as archive / discontinue decisions.'
+      : 'No whole-product batches currently look like clear archive or discontinue candidates.';
+  }
+  return count > 0
+    ? 'These products need a manual merchant review before choosing between restock and archive.'
+    : 'No whole-product batches currently need manual classification.';
+}
+
+function getOutOfStockDecisionActionLabel(state: OutOfStockDecisionState) {
+  if (state === 'restock_candidate') {
+    return 'Review as replenishment work and restore inventory for the whole product batch.';
+  }
+  if (state === 'archive_candidate') {
+    return 'Review as archive / discontinue work and confirm the product should stay unavailable.';
+  }
+  return 'Review manually to decide whether this whole product batch should be replenished or retired.';
+}
+
+function getOutOfStockDecisionButtonClass(state: OutOfStockDecisionState) {
+  if (state === 'restock_candidate') {
+    return 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100';
+  }
+  if (state === 'archive_candidate') {
+    return 'border-slate-300 bg-slate-100 text-slate-800 hover:bg-slate-200';
+  }
+  return 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100';
 }
 
 function escapeCsvValue(value: unknown) {
@@ -1079,6 +1149,14 @@ export default function ProductsPage() {
   const currentLaneProgress = currentLaneGroup
     ? laneGroupProgressByKey.get(buildSourceDataLaneGroupKey(currentLaneGroup)) || null
     : null;
+  const currentOutOfStockDecisionState =
+    reviewReasonCode === 'out_of_stock' &&
+    currentLaneGroup &&
+    currentLaneProgress?.batch_state === 'whole_product_unavailable'
+      ? getOutOfStockDecisionState(
+          normalizedProductsByLaneKey.get(buildSourceDataLaneGroupKey(currentLaneGroup))
+        )
+      : null;
   const unresolvedLaneGroups = laneGroupProgressList.filter(
     ({ progress }) => progress.pending_variant_count > 0
   );
@@ -1107,6 +1185,28 @@ export default function ProductsPage() {
       group.reason_code === 'out_of_stock' &&
       progress.batch_state === 'restocked_waiting_refresh'
   );
+  const outOfStockWholeUnavailableDecisionQueue = outOfStockWholeUnavailableLaneGroups.map(
+    ({ group, progress }) => {
+      const groupKey = buildSourceDataLaneGroupKey(group);
+      const currentProduct = normalizedProductsByLaneKey.get(groupKey);
+      const decisionState = getOutOfStockDecisionState(currentProduct);
+      return {
+        group,
+        progress,
+        currentProduct,
+        decisionState,
+      };
+    }
+  );
+  const outOfStockRestockCandidateLaneGroups = outOfStockWholeUnavailableDecisionQueue.filter(
+    (item) => item.decisionState === 'restock_candidate'
+  );
+  const outOfStockArchiveCandidateLaneGroups = outOfStockWholeUnavailableDecisionQueue.filter(
+    (item) => item.decisionState === 'archive_candidate'
+  );
+  const outOfStockManualReviewLaneGroups = outOfStockWholeUnavailableDecisionQueue.filter(
+    (item) => item.decisionState === 'manual_review'
+  );
   const nextWholeUnavailableLaneGroup =
     currentLaneGroupIndex >= 0
       ? laneGroupProgressList
@@ -1132,6 +1232,63 @@ export default function ProductsPage() {
         null
       : outOfStockRestockedLaneGroups[0]?.group || null;
   const firstRestockedLaneGroup = outOfStockRestockedLaneGroups[0]?.group || null;
+  const nextRestockCandidateLaneGroup =
+    currentLaneGroupIndex >= 0
+      ? laneGroupProgressList
+          .slice(currentLaneGroupIndex + 1)
+          .find(({ group, progress }) => {
+            if (
+              group.reason_code !== 'out_of_stock' ||
+              progress.batch_state !== 'whole_product_unavailable'
+            ) {
+              return false;
+            }
+            const currentProduct = normalizedProductsByLaneKey.get(
+              buildSourceDataLaneGroupKey(group)
+            );
+            return getOutOfStockDecisionState(currentProduct) === 'restock_candidate';
+          })?.group || null
+      : outOfStockRestockCandidateLaneGroups[0]?.group || null;
+  const firstRestockCandidateLaneGroup =
+    outOfStockRestockCandidateLaneGroups[0]?.group || null;
+  const nextArchiveCandidateLaneGroup =
+    currentLaneGroupIndex >= 0
+      ? laneGroupProgressList
+          .slice(currentLaneGroupIndex + 1)
+          .find(({ group, progress }) => {
+            if (
+              group.reason_code !== 'out_of_stock' ||
+              progress.batch_state !== 'whole_product_unavailable'
+            ) {
+              return false;
+            }
+            const currentProduct = normalizedProductsByLaneKey.get(
+              buildSourceDataLaneGroupKey(group)
+            );
+            return getOutOfStockDecisionState(currentProduct) === 'archive_candidate';
+          })?.group || null
+      : outOfStockArchiveCandidateLaneGroups[0]?.group || null;
+  const firstArchiveCandidateLaneGroup =
+    outOfStockArchiveCandidateLaneGroups[0]?.group || null;
+  const nextManualReviewLaneGroup =
+    currentLaneGroupIndex >= 0
+      ? laneGroupProgressList
+          .slice(currentLaneGroupIndex + 1)
+          .find(({ group, progress }) => {
+            if (
+              group.reason_code !== 'out_of_stock' ||
+              progress.batch_state !== 'whole_product_unavailable'
+            ) {
+              return false;
+            }
+            const currentProduct = normalizedProductsByLaneKey.get(
+              buildSourceDataLaneGroupKey(group)
+            );
+            return getOutOfStockDecisionState(currentProduct) === 'manual_review';
+          })?.group || null
+      : outOfStockManualReviewLaneGroups[0]?.group || null;
+  const firstManualReviewLaneGroup =
+    outOfStockManualReviewLaneGroups[0]?.group || null;
 
   const heroTitle =
     blockedCount > 0
@@ -1353,6 +1510,47 @@ export default function ProductsPage() {
           },
         ]
       : [];
+  const outOfStockDecisionSummary =
+    reviewReasonCode === 'out_of_stock'
+      ? [
+          {
+            state: 'restock_candidate' as OutOfStockDecisionState,
+            title: getOutOfStockDecisionTitle('restock_candidate'),
+            count: outOfStockRestockCandidateLaneGroups.length,
+            summary: getOutOfStockDecisionSummary(
+              'restock_candidate',
+              outOfStockRestockCandidateLaneGroups.length
+            ),
+            nextGroup: nextRestockCandidateLaneGroup,
+            firstGroup: firstRestockCandidateLaneGroup,
+            buttonClass: getOutOfStockDecisionButtonClass('restock_candidate'),
+          },
+          {
+            state: 'archive_candidate' as OutOfStockDecisionState,
+            title: getOutOfStockDecisionTitle('archive_candidate'),
+            count: outOfStockArchiveCandidateLaneGroups.length,
+            summary: getOutOfStockDecisionSummary(
+              'archive_candidate',
+              outOfStockArchiveCandidateLaneGroups.length
+            ),
+            nextGroup: nextArchiveCandidateLaneGroup,
+            firstGroup: firstArchiveCandidateLaneGroup,
+            buttonClass: getOutOfStockDecisionButtonClass('archive_candidate'),
+          },
+          {
+            state: 'manual_review' as OutOfStockDecisionState,
+            title: getOutOfStockDecisionTitle('manual_review'),
+            count: outOfStockManualReviewLaneGroups.length,
+            summary: getOutOfStockDecisionSummary(
+              'manual_review',
+              outOfStockManualReviewLaneGroups.length
+            ),
+            nextGroup: nextManualReviewLaneGroup,
+            firstGroup: firstManualReviewLaneGroup,
+            buttonClass: getOutOfStockDecisionButtonClass('manual_review'),
+          },
+        ]
+      : [];
 
   const handleDownloadOutOfStockQueueCsv = (state: OutOfStockBatchState) => {
     if (reviewReasonCode !== 'out_of_stock') {
@@ -1399,6 +1597,56 @@ export default function ProductsPage() {
             rows.length === 1 ? '' : 'es'
           }.`
         : 'Could not export this out-of-stock queue right now.'
+    );
+  };
+
+  const handleDownloadOutOfStockDecisionQueueCsv = (state: OutOfStockDecisionState) => {
+    if (reviewReasonCode !== 'out_of_stock') {
+      setLaneActionFeedback('Open an out-of-stock review batch before exporting this decision queue.');
+      return;
+    }
+
+    const matchingQueue = outOfStockWholeUnavailableDecisionQueue.filter(
+      (item) => item.decisionState === state
+    );
+
+    if (!matchingQueue.length) {
+      setLaneActionFeedback(
+        `No ${getOutOfStockDecisionTitle(state).toLowerCase()} are available right now.`
+      );
+      return;
+    }
+
+    const rows = matchingQueue.map(({ group, progress, currentProduct }, index) => ({
+      decision_state: getOutOfStockDecisionTitle(state),
+      queue_position: index + 1,
+      product_title: group.product_title,
+      platform: group.platform,
+      platform_product_id: group.platform_product_id,
+      status: currentProduct?.status || '',
+      orderable:
+        typeof currentProduct?.orderable === 'boolean' ? currentProduct.orderable : '',
+      affected_variants: group.affected_variants,
+      pending_variants_now: progress.pending_variant_count,
+      resolved_variants_now: progress.resolved_variant_count,
+      blocked_variants: group.blocked_variant_count,
+      excluded_variants: group.excluded_variant_count,
+      sample_skus: group.sample_skus,
+      merchant_action: getOutOfStockDecisionActionLabel(state),
+    }));
+
+    const filename = [
+      'catalog-review',
+      'out-of-stock',
+      state,
+      'decision-queue',
+    ].join('-') + '.csv';
+
+    const downloaded = downloadCsvFile(filename, rows);
+    setLaneActionFeedback(
+      downloaded
+        ? `Downloaded ${rows.length} ${getOutOfStockDecisionTitle(state).toLowerCase()}.`
+        : 'Could not export this decision queue right now.'
     );
   };
 
@@ -2543,6 +2791,86 @@ export default function ProductsPage() {
                                               {item.nextGroup
                                                 ? `Next ${item.title.toLowerCase()} batch`
                                                 : `Open first ${item.title.toLowerCase()} batch`}
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {reviewReasonCode === 'out_of_stock' &&
+                              outOfStockDecisionSummary.length > 0 ? (
+                                <div className="rounded-xl border border-slate-200 bg-white/80 p-4">
+                                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                    <div>
+                                      <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                                        Whole-product decisions
+                                      </div>
+                                      <div className="mt-1 text-xs leading-5 text-[color:var(--merchant-muted)]">
+                                        Work the fully unavailable products in the right order. Use these three decision queues to separate batches that look like replenishment work from ones that look more like archive / discontinue decisions.
+                                      </div>
+                                    </div>
+                                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-medium text-slate-700">
+                                      {outOfStockWholeUnavailableLaneGroups.length} whole-product batches to classify
+                                    </div>
+                                  </div>
+                                  <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                                    {outOfStockDecisionSummary.map((item) => (
+                                      <div
+                                        key={item.state}
+                                        className="rounded-xl border border-slate-200 bg-slate-50/70 p-3"
+                                      >
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div>
+                                            <div className="text-sm font-medium text-slate-900">
+                                              {item.title}
+                                            </div>
+                                            <div className="mt-1 text-xs text-slate-600">
+                                              {item.summary}
+                                            </div>
+                                          </div>
+                                          <div className="rounded-full bg-white px-2.5 py-1 text-sm font-semibold text-slate-900 ring-1 ring-slate-200">
+                                            {item.count}
+                                          </div>
+                                        </div>
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleDownloadOutOfStockDecisionQueueCsv(item.state)
+                                            }
+                                            disabled={item.count === 0}
+                                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                          >
+                                            Download decision queue CSV
+                                          </button>
+                                          {(item.nextGroup || item.firstGroup) ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                const targetGroup =
+                                                  item.nextGroup ||
+                                                  (currentOutOfStockDecisionState !== item.state
+                                                    ? item.firstGroup
+                                                    : null);
+                                                if (targetGroup) {
+                                                  void openLaneGroup(targetGroup);
+                                                }
+                                              }}
+                                              disabled={
+                                                !item.nextGroup &&
+                                                !(
+                                                  currentOutOfStockDecisionState !== item.state &&
+                                                  item.firstGroup
+                                                )
+                                              }
+                                              className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-50 ${item.buttonClass}`}
+                                            >
+                                              {item.nextGroup
+                                                ? `Next ${item.title.toLowerCase()}`
+                                                : `Open first ${item.title.toLowerCase()}`}
                                             </button>
                                           ) : null}
                                         </div>
