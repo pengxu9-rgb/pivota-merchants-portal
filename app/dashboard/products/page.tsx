@@ -284,6 +284,40 @@ function getLaneResolvedLabel(reasonCode: SourceDataReasonCode) {
   return 'Hero image visible now';
 }
 
+function escapeCsvValue(value: unknown) {
+  const normalized =
+    value === null || value === undefined
+      ? ''
+      : Array.isArray(value)
+        ? value.join('; ')
+        : String(value);
+  return `"${normalized.replace(/"/g, '""')}"`;
+}
+
+function downloadCsvFile(filename: string, rows: Array<Record<string, unknown>>) {
+  if (typeof window === 'undefined' || !rows.length) return false;
+
+  const headers = Object.keys(rows[0]);
+  const csvLines = [
+    headers.map((header) => escapeCsvValue(header)).join(','),
+    ...rows.map((row) =>
+      headers.map((header) => escapeCsvValue(row[header])).join(',')
+    ),
+  ];
+  const blob = new Blob([csvLines.join('\n')], {
+    type: 'text/csv;charset=utf-8;',
+  });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+  return true;
+}
+
 function getSourceDataRowAffectedVariantCount(row: SourceDataTriageRow) {
   if (row.scope === 'variant') return 1;
   return Math.max(row.blocked_variant_count, row.excluded_variant_count, 1);
@@ -333,7 +367,7 @@ export default function ProductsPage() {
   const [sourceDataLaneGroups, setSourceDataLaneGroups] = useState<SourceDataLaneGroup[]>([]);
   const [sourceDataLaneLoading, setSourceDataLaneLoading] = useState(false);
   const [sourceDataLaneError, setSourceDataLaneError] = useState<string | null>(null);
-  const [laneCopyFeedback, setLaneCopyFeedback] = useState<string | null>(null);
+  const [laneActionFeedback, setLaneActionFeedback] = useState<string | null>(null);
   const deepLinkResolvedRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -467,7 +501,7 @@ export default function ProductsPage() {
       setSourceDataLaneGroups([]);
       setSourceDataLaneError(null);
       setSourceDataLaneLoading(false);
-      setLaneCopyFeedback(null);
+      setLaneActionFeedback(null);
       return;
     }
 
@@ -907,7 +941,7 @@ export default function ProductsPage() {
             .filter(Boolean);
 
     if (!values.length) {
-      setLaneCopyFeedback(
+      setLaneActionFeedback(
         kind === 'sku'
           ? scope === 'pending'
             ? 'No pending SKUs are left in this batch.'
@@ -921,7 +955,7 @@ export default function ProductsPage() {
 
     try {
       await navigator.clipboard.writeText(values.join('\n'));
-      setLaneCopyFeedback(
+      setLaneActionFeedback(
         kind === 'sku'
           ? `Copied ${values.length} ${
               scope === 'pending' ? 'pending' : 'matching'
@@ -932,19 +966,102 @@ export default function ProductsPage() {
       );
     } catch (error) {
       console.error('Failed to copy lane values', error);
-      setLaneCopyFeedback('Could not copy this batch right now.');
+      setLaneActionFeedback('Could not copy this batch right now.');
     }
   };
 
+  const handleDownloadLaneCsv = (scope: 'matching' | 'pending' | 'resolved' = 'matching') => {
+    const sourceVariants =
+      scope === 'pending'
+        ? pendingLaneVariants.map((item) => item.blockerVariant)
+        : scope === 'resolved'
+          ? resolvedLaneVariants.map((item) => item.blockerVariant)
+          : focusedReadinessVariants;
+
+    if (!sourceVariants.length || !reviewReasonCode || !selectedProduct) {
+      setLaneActionFeedback('No variant rows are available to export yet.');
+      return;
+    }
+
+    const rows = sourceVariants.map((variant) => {
+      const variantId = String(variant.variant_id || '');
+      const currentVariant = currentSelectedVariantMap.get(variantId);
+      const laneState = laneVariantStateMap.get(variantId);
+      const currentPrice =
+        typeof currentVariant?.price === 'number'
+          ? currentVariant.price
+          : typeof currentVariant?.price?.value === 'number'
+            ? currentVariant.price.value
+            : variant.price_value ?? null;
+      const currentCurrency =
+        currentVariant?.currency ||
+        currentVariant?.price?.currency ||
+        variant.price_currency ||
+        selectedProduct.currency ||
+        null;
+      const currentInventory =
+        currentVariant?.inventory_quantity ??
+        currentVariant?.stock ??
+        variant.inventory_quantity ??
+        null;
+
+      return {
+        reason_code: reviewReasonCode,
+        reason_label: formatSourceDataReasonLabel(reviewReasonCode),
+        batch_scope: scope,
+        batch_product_title: selectedProduct.title || selectedProduct.name || '',
+        platform: selectedProduct.platform || '',
+        platform_product_id:
+          selectedProduct.platform_product_id ||
+          selectedProduct.product_id ||
+          selectedProduct.id ||
+          '',
+        variant_id: variant.variant_id || '',
+        variant_title: variant.title || '',
+        sku: variant.sku || '',
+        readiness_status: variant.readiness_status || '',
+        readiness_blocker_codes: variant.readiness_blocker_codes || [],
+        readiness_warning_codes: variant.readiness_warning_codes || [],
+        agent_push_status: variant.agent_push_status || '',
+        agent_push_reason_codes: variant.agent_push_reason_codes || [],
+        current_price_value: currentPrice,
+        current_price_currency: currentCurrency,
+        current_inventory_quantity: currentInventory,
+        current_state_label:
+          reviewReasonCode === 'missing_primary_image'
+            ? imageRecoveryState?.title || ''
+            : laneState?.looksResolvedNow
+              ? getLaneResolvedLabel(reviewReasonCode)
+              : getLanePendingLabel(reviewReasonCode),
+      };
+    });
+
+    const filename = [
+      'catalog-review',
+      reviewReasonCode,
+      String(selectedProduct.platform_product_id || selectedProduct.product_id || selectedProduct.id || 'product'),
+      scope,
+    ].join('-') + '.csv';
+
+    const downloaded = downloadCsvFile(filename, rows);
+    setLaneActionFeedback(
+      downloaded
+        ? `Downloaded ${rows.length} ${scope === 'matching' ? 'batch' : scope} row${
+            rows.length === 1 ? '' : 's'
+          }.`
+        : 'Could not export this batch right now.'
+    );
+  };
+
   useEffect(() => {
-    if (!laneCopyFeedback) return;
+    if (!laneActionFeedback) return;
     const timeoutId = window.setTimeout(() => {
-      setLaneCopyFeedback(null);
+      setLaneActionFeedback(null);
     }, 2500);
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [laneCopyFeedback]);
+  }, [laneActionFeedback]);
 
   if (loading) {
     return (
@@ -1417,6 +1534,19 @@ export default function ProductsPage() {
                                   <button
                                     type="button"
                                     onClick={() =>
+                                      handleDownloadLaneCsv(
+                                        pendingLaneVariants.length > 0 ? 'pending' : 'matching'
+                                      )
+                                    }
+                                    className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                                  >
+                                    {pendingLaneVariants.length > 0
+                                      ? 'Download pending CSV'
+                                      : 'Download batch CSV'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
                                       void handleCopyLaneValues(
                                         'sku',
                                         pendingLaneVariants.length > 0
@@ -1446,9 +1576,27 @@ export default function ProductsPage() {
                                       ? 'Copy pending variant IDs'
                                       : 'Copy matching variant IDs'}
                                   </button>
-                                  {laneCopyFeedback ? (
+                                  {laneActionFeedback ? (
                                     <span className="text-[11px] text-slate-600">
-                                      {laneCopyFeedback}
+                                      {laneActionFeedback}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ) : null}
+
+                              {reviewReasonCode === 'missing_primary_image' &&
+                              focusedReadinessVariants.length > 0 ? (
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownloadLaneCsv('matching')}
+                                    className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                                  >
+                                    Download batch CSV
+                                  </button>
+                                  {laneActionFeedback ? (
+                                    <span className="text-[11px] text-slate-600">
+                                      {laneActionFeedback}
                                     </span>
                                   ) : null}
                                 </div>
