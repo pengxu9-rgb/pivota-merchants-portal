@@ -207,6 +207,11 @@ type ProductBlockerDetail = {
   variants: ProductBlockerVariant[];
 };
 
+type CatalogReviewPlan = {
+  plan_id: string;
+  snapshot_id?: string | null;
+};
+
 type SourceDataTriageRow = {
   scope: 'product' | 'variant';
   reason_code: SourceDataReasonCode;
@@ -359,6 +364,8 @@ export default function ProductsPage() {
   const [reviewSource, setReviewSource] = useState<string | null>(null);
   const [reviewReasonCode, setReviewReasonCode] =
     useState<SourceDataReasonCode | null>(null);
+  const [catalogReviewPlan, setCatalogReviewPlan] = useState<CatalogReviewPlan | null>(null);
+  const [catalogReviewPlanError, setCatalogReviewPlanError] = useState<string | null>(null);
   const [productBlockerDetail, setProductBlockerDetail] = useState<ProductBlockerDetail | null>(
     null
   );
@@ -369,6 +376,7 @@ export default function ProductsPage() {
   const [sourceDataLaneError, setSourceDataLaneError] = useState<string | null>(null);
   const [laneActionFeedback, setLaneActionFeedback] = useState<string | null>(null);
   const deepLinkResolvedRef = useRef<string | null>(null);
+  const catalogReviewPlanRequestRef = useRef<Promise<CatalogReviewPlan | null> | null>(null);
 
   useEffect(() => {
     void loadProducts();
@@ -496,6 +504,66 @@ export default function ProductsPage() {
     };
   }, [selectedVariantId, showViewModal]);
 
+  const loadCatalogReviewPlan = async () => {
+    if (catalogReviewPlanRequestRef.current) {
+      return await catalogReviewPlanRequestRef.current;
+    }
+
+    const request = (async () => {
+      const optimization = await apiClient.getMerchantReadinessOptimization();
+      const plan = optimization?.plan;
+      if (!plan?.plan_id) {
+        throw new Error('Optimization plan unavailable.');
+      }
+
+      const normalizedPlan: CatalogReviewPlan = {
+        plan_id: plan.plan_id,
+        snapshot_id: plan.snapshot_id ?? null,
+      };
+      setCatalogReviewPlan(normalizedPlan);
+      setCatalogReviewPlanError(null);
+      return normalizedPlan;
+    })()
+      .catch((error) => {
+        setCatalogReviewPlan(null);
+        setCatalogReviewPlanError('Could not load the latest catalog health plan yet.');
+        throw error;
+      })
+      .finally(() => {
+        catalogReviewPlanRequestRef.current = null;
+      });
+
+    catalogReviewPlanRequestRef.current = request;
+    return await request;
+  };
+
+  useEffect(() => {
+    if (!showViewModal || reviewSource !== 'readiness') {
+      setCatalogReviewPlan(null);
+      setCatalogReviewPlanError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const ensureCatalogReviewPlan = async () => {
+      try {
+        const plan = await loadCatalogReviewPlan();
+        if (cancelled) return;
+        setCatalogReviewPlan(plan);
+      } catch (error) {
+        console.error('Failed to load catalog review plan', error);
+        if (cancelled) return;
+      }
+    };
+
+    void ensureCatalogReviewPlan();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reviewSource, showViewModal]);
+
   useEffect(() => {
     if (!showViewModal || reviewSource !== 'readiness' || !reviewReasonCode) {
       setSourceDataLaneGroups([]);
@@ -505,21 +573,23 @@ export default function ProductsPage() {
       return;
     }
 
+    if (!catalogReviewPlan?.plan_id) {
+      setSourceDataLaneGroups([]);
+      setSourceDataLaneError(catalogReviewPlanError);
+      setSourceDataLaneLoading(true);
+      return;
+    }
+
     let cancelled = false;
 
     const isPlanSupersededError = (err: any) =>
       err?.response?.status === 409 &&
       err?.response?.data?.detail?.code === 'OPTIMIZATION_PLAN_SUPERSEDED';
 
-    const loadLaneQueue = async (allowRetry = true) => {
+    const loadLaneQueue = async (planId: string, remainingRetries = 2) => {
       try {
         setSourceDataLaneLoading(true);
         setSourceDataLaneError(null);
-        const optimization = await apiClient.getMerchantReadinessOptimization();
-        const planId = optimization?.plan?.plan_id;
-        if (!planId) {
-          throw new Error('Optimization plan unavailable.');
-        }
         const triage = await apiClient.getMerchantSourceDataTriage({
           plan_id: planId,
           reason_code: reviewReasonCode,
@@ -580,8 +650,10 @@ export default function ProductsPage() {
           })
         );
       } catch (error) {
-        if (allowRetry && isPlanSupersededError(error)) {
-          return await loadLaneQueue(false);
+        if (remainingRetries > 0 && isPlanSupersededError(error)) {
+          const refreshedPlan = await loadCatalogReviewPlan();
+          if (cancelled || !refreshedPlan?.plan_id) return;
+          return await loadLaneQueue(refreshedPlan.plan_id, remainingRetries - 1);
         }
         console.error('Failed to load source-data lane queue', error);
         if (cancelled) return;
@@ -594,18 +666,31 @@ export default function ProductsPage() {
       }
     };
 
-    void loadLaneQueue();
+    void loadLaneQueue(catalogReviewPlan.plan_id);
 
     return () => {
       cancelled = true;
     };
-  }, [reviewReasonCode, reviewSource, showViewModal]);
+  }, [
+    catalogReviewPlan,
+    catalogReviewPlanError,
+    reviewReasonCode,
+    reviewSource,
+    showViewModal,
+  ]);
 
   useEffect(() => {
     if (!showViewModal || !selectedProduct || reviewSource !== 'readiness') {
       setProductBlockerDetail(null);
       setProductBlockerError(null);
       setProductBlockerLoading(false);
+      return;
+    }
+
+    if (!catalogReviewPlan?.plan_id) {
+      setProductBlockerDetail(null);
+      setProductBlockerError(catalogReviewPlanError);
+      setProductBlockerLoading(true);
       return;
     }
 
@@ -630,17 +715,11 @@ export default function ProductsPage() {
       err?.response?.status === 409 &&
       err?.response?.data?.detail?.code === 'OPTIMIZATION_PLAN_SUPERSEDED';
 
-    const loadReadinessContext = async (allowRetry = true) => {
+    const loadReadinessContext = async (planId: string, remainingRetries = 2) => {
       try {
         setProductBlockerLoading(true);
         setProductBlockerError(null);
         setProductBlockerDetail(null);
-
-        const optimization = await apiClient.getMerchantReadinessOptimization();
-        const planId = optimization?.plan?.plan_id;
-        if (!planId) {
-          throw new Error('Optimization plan unavailable.');
-        }
 
         const detail = await apiClient.getMerchantProductBlockers(
           platform,
@@ -650,8 +729,10 @@ export default function ProductsPage() {
         if (cancelled) return;
         setProductBlockerDetail(detail || null);
       } catch (error) {
-        if (allowRetry && isPlanSupersededError(error)) {
-          return await loadReadinessContext(false);
+        if (remainingRetries > 0 && isPlanSupersededError(error)) {
+          const refreshedPlan = await loadCatalogReviewPlan();
+          if (cancelled || !refreshedPlan?.plan_id) return;
+          return await loadReadinessContext(refreshedPlan.plan_id, remainingRetries - 1);
         }
         console.error('Failed to load readiness context for catalog review', error);
         if (cancelled) return;
@@ -664,12 +745,14 @@ export default function ProductsPage() {
       }
     };
 
-    void loadReadinessContext();
+    void loadReadinessContext(catalogReviewPlan.plan_id);
 
     return () => {
       cancelled = true;
     };
   }, [
+    catalogReviewPlan,
+    catalogReviewPlanError,
     reviewSource,
     selectedProduct,
     showViewModal,
