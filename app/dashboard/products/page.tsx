@@ -309,6 +309,45 @@ function getLaneResolvedLabel(reasonCode: SourceDataReasonCode) {
   return 'Hero image visible now';
 }
 
+type OutOfStockBatchState =
+  | 'whole_product_unavailable'
+  | 'partially_recovered'
+  | 'restocked_waiting_refresh'
+  | 'no_matching_variants';
+
+function getOutOfStockBatchState(
+  pendingCount: number,
+  resolvedCount: number
+): OutOfStockBatchState {
+  if (pendingCount <= 0 && resolvedCount <= 0) {
+    return 'no_matching_variants';
+  }
+  if (pendingCount > 0 && resolvedCount <= 0) {
+    return 'whole_product_unavailable';
+  }
+  if (pendingCount > 0 && resolvedCount > 0) {
+    return 'partially_recovered';
+  }
+  return 'restocked_waiting_refresh';
+}
+
+function getOutOfStockBatchStateLabel(state: OutOfStockBatchState) {
+  if (state === 'whole_product_unavailable') return 'Whole product still unavailable';
+  if (state === 'partially_recovered') return 'Partially back in stock';
+  if (state === 'restocked_waiting_refresh') return 'Back in stock now';
+  return 'No matching variants';
+}
+
+function getOutOfStockPendingActionLabel(state: OutOfStockBatchState) {
+  if (state === 'partially_recovered') return 'Finish restocking this SKU';
+  return 'Restock or archive decision';
+}
+
+function getOutOfStockResolvedActionLabel(state: OutOfStockBatchState) {
+  if (state === 'partially_recovered') return 'Already back in stock';
+  return 'Refresh after sync settles';
+}
+
 function escapeCsvValue(value: unknown) {
   const normalized =
     value === null || value === undefined
@@ -861,6 +900,13 @@ export default function ProductsPage() {
   const resolvedLaneVariants = laneVariantStates.filter(
     (item) => item.looksResolvedNow
   );
+  const outOfStockBatchState =
+    reviewReasonCode === 'out_of_stock'
+      ? getOutOfStockBatchState(
+          pendingLaneVariants.length,
+          resolvedLaneVariants.length
+        )
+      : null;
   const laneVariantStateMap = new Map(
     laneVariantStates.map((item) => [
       String(item.blockerVariant.variant_id),
@@ -1078,26 +1124,46 @@ export default function ProductsPage() {
         ? {
           title: 'Resolve stock availability in your source catalog',
           helper:
-            resolvedLaneVariants.length > 0
-              ? `${resolvedLaneVariants.length} variants already show stock in Pivota. If those are newly restocked, refresh Catalog health after the full batch catches up.`
-              : 'The highlighted variants are still excluded because inventory is zero or stale in the current readiness plan.',
+            outOfStockBatchState === 'partially_recovered'
+              ? `${resolvedLaneVariants.length} variants are already back in stock, but ${pendingLaneVariants.length} still need a merchant decision. Finish the remaining SKUs or intentionally leave them unavailable.`
+              : outOfStockBatchState === 'restocked_waiting_refresh'
+                ? 'Every matching variant now shows live stock in Pivota. Refresh Catalog health once the latest sync has fully settled.'
+                : 'The highlighted variants are still excluded because inventory is zero or stale in the current readiness plan.',
           metrics: [
             {
               label: 'Variants in this batch',
               value: focusedReadinessVariants.length,
             },
             {
-              label: 'Still unavailable now',
+              label:
+                outOfStockBatchState === 'partially_recovered'
+                  ? 'Still zero-stock now'
+                  : 'Still unavailable now',
               value: pendingLaneVariants.length,
             },
             {
-              label: 'Looks back in stock now',
+              label:
+                outOfStockBatchState === 'partially_recovered'
+                  ? 'Already back in stock'
+                  : 'Looks back in stock now',
               value: resolvedLaneVariants.length,
+            },
+            {
+              label: 'Batch state',
+              value: getOutOfStockBatchStateLabel(
+                outOfStockBatchState || 'no_matching_variants'
+              ),
             },
           ],
           steps: [
-              'Restock the highlighted SKUs or archive the ones that should stay unavailable.',
-              'Verify the intended variants sync back with live inventory greater than zero.',
+              outOfStockBatchState === 'partially_recovered'
+                ? 'Finish the remaining zero-stock SKUs first, then decide which variants should stay intentionally unavailable.'
+                : outOfStockBatchState === 'restocked_waiting_refresh'
+                  ? 'Wait for the latest stock sync to settle across the whole product, then refresh Catalog health.'
+                  : 'Restock the highlighted SKUs or archive the ones that should stay unavailable.',
+              outOfStockBatchState === 'restocked_waiting_refresh'
+                ? 'Confirm the replenished variants still show live inventory greater than zero in the synced catalog.'
+                : 'Verify the intended variants sync back with live inventory greater than zero.',
               'Return to Catalog health and refresh after availability has stabilized.',
             ],
           }
@@ -1140,6 +1206,44 @@ export default function ProductsPage() {
             : 'No primary image is visible in the current synced catalog yet. Update the product-level hero image in your source catalog first.',
           metricLabel: 'Hero image visible now',
           metricValue: productHasVisibleImage ? 'Yes' : 'No',
+        }
+      : null;
+  const outOfStockBatchGuidance =
+    reviewReasonCode === 'out_of_stock'
+      ? {
+          state: outOfStockBatchState || 'no_matching_variants',
+          title: getOutOfStockBatchStateLabel(
+            outOfStockBatchState || 'no_matching_variants'
+          ),
+          helper:
+            outOfStockBatchState === 'partially_recovered'
+              ? 'Some variants in this product are already back in stock. Prioritize the remaining zero-stock SKUs below so you can clear the whole batch in one pass.'
+              : outOfStockBatchState === 'restocked_waiting_refresh'
+                ? 'No matching variants still look unavailable in the synced catalog. This batch mostly needs a readiness refresh, not more source edits.'
+                : 'Every matching variant in this batch still looks unavailable. Decide whether this product should be restocked again or intentionally stay archived/unavailable.',
+          actionTitle:
+            outOfStockBatchState === 'partially_recovered'
+              ? 'Merchant action now'
+              : outOfStockBatchState === 'restocked_waiting_refresh'
+                ? 'Merchant action now'
+                : 'Merchant decision now',
+          actions:
+            outOfStockBatchState === 'partially_recovered'
+              ? [
+                  `Restock the remaining ${pendingLaneVariants.length} zero-stock SKU${
+                    pendingLaneVariants.length === 1 ? '' : 's'
+                  } if they should come back.`,
+                  'If some sizes or variants are intentionally gone, leave them unavailable or archive them in your source catalog so the batch reflects reality.',
+                ]
+              : outOfStockBatchState === 'restocked_waiting_refresh'
+                ? [
+                    'Refresh Catalog health after the latest inventory sync settles.',
+                    'Only go back into source data if stock drops to zero again.',
+                  ]
+                : [
+                    'Decide whether this whole product batch should return to sale.',
+                    'If yes, restock these SKUs. If not, archive or keep them unavailable so they stop looking like accidental stock gaps.',
+                  ],
         }
       : null;
 
@@ -1273,6 +1377,22 @@ export default function ProductsPage() {
         current_price_value: currentPrice,
         current_price_currency: currentCurrency,
         current_inventory_quantity: currentInventory,
+        batch_state_label:
+          reviewReasonCode === 'out_of_stock'
+            ? getOutOfStockBatchStateLabel(
+                outOfStockBatchState || 'no_matching_variants'
+              )
+            : '',
+        merchant_action_label:
+          reviewReasonCode === 'out_of_stock'
+            ? laneState?.looksResolvedNow
+              ? getOutOfStockResolvedActionLabel(
+                  outOfStockBatchState || 'no_matching_variants'
+                )
+              : getOutOfStockPendingActionLabel(
+                  outOfStockBatchState || 'no_matching_variants'
+                )
+            : '',
         current_state_label:
           reviewReasonCode === 'missing_primary_image'
             ? imageRecoveryState?.title || ''
@@ -2007,6 +2127,75 @@ export default function ProductsPage() {
                                 </div>
                               ) : null}
 
+                              {outOfStockBatchGuidance ? (
+                                <div
+                                  className={`rounded-xl border p-4 ${
+                                    outOfStockBatchGuidance.state ===
+                                    'restocked_waiting_refresh'
+                                      ? 'border-emerald-200 bg-emerald-50/70'
+                                      : outOfStockBatchGuidance.state ===
+                                          'partially_recovered'
+                                        ? 'border-blue-200 bg-blue-50/70'
+                                        : 'border-slate-200 bg-white/80'
+                                  }`}
+                                >
+                                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                    <div>
+                                      <div
+                                        className={`text-sm font-medium ${
+                                          outOfStockBatchGuidance.state ===
+                                          'restocked_waiting_refresh'
+                                            ? 'text-emerald-950'
+                                            : outOfStockBatchGuidance.state ===
+                                                'partially_recovered'
+                                              ? 'text-blue-950'
+                                              : 'text-[color:var(--merchant-ink)]'
+                                        }`}
+                                      >
+                                        {outOfStockBatchGuidance.title}
+                                      </div>
+                                      <div
+                                        className={`mt-1 text-xs leading-5 ${
+                                          outOfStockBatchGuidance.state ===
+                                          'restocked_waiting_refresh'
+                                            ? 'text-emerald-900/80'
+                                            : outOfStockBatchGuidance.state ===
+                                                'partially_recovered'
+                                              ? 'text-blue-900/80'
+                                              : 'text-[color:var(--merchant-muted)]'
+                                        }`}
+                                      >
+                                        {outOfStockBatchGuidance.helper}
+                                      </div>
+                                    </div>
+                                    <div
+                                      className={`rounded-lg px-3 py-2 text-sm font-semibold ${
+                                        outOfStockBatchGuidance.state ===
+                                        'restocked_waiting_refresh'
+                                          ? 'bg-white text-emerald-950 ring-1 ring-emerald-200'
+                                          : outOfStockBatchGuidance.state ===
+                                              'partially_recovered'
+                                            ? 'bg-white text-blue-950 ring-1 ring-blue-200'
+                                            : 'bg-slate-50 text-slate-900 ring-1 ring-slate-200'
+                                      }`}
+                                    >
+                                      {outOfStockBatchGuidance.actionTitle}
+                                    </div>
+                                  </div>
+                                  <div className="mt-3 space-y-2">
+                                    {outOfStockBatchGuidance.actions.map((action) => (
+                                      <div
+                                        key={action}
+                                        className="flex items-start gap-2 text-sm text-slate-700"
+                                      >
+                                        <span className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-slate-400" />
+                                        <span>{action}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
+
                               {reviewReasonCode !== 'missing_primary_image' &&
                               focusedReadinessVariants.length > 0 ? (
                                 <div className="grid gap-3 lg:grid-cols-2">
@@ -2049,6 +2238,16 @@ export default function ProductsPage() {
                                                     item.currentVariant?.inventory_quantity ?? 0
                                                   }`}
                                             </div>
+                                            {reviewReasonCode === 'out_of_stock' ? (
+                                              <div className="mt-2">
+                                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                                                  {getOutOfStockPendingActionLabel(
+                                                    outOfStockBatchState ||
+                                                      'no_matching_variants'
+                                                  )}
+                                                </span>
+                                              </div>
+                                            ) : null}
                                           </div>
                                         ))}
                                         {pendingLaneVariants.length > 6 ? (
@@ -2095,6 +2294,16 @@ export default function ProductsPage() {
                                                     item.currentVariant?.inventory_quantity ?? 0
                                                   }`}
                                             </div>
+                                            {reviewReasonCode === 'out_of_stock' ? (
+                                              <div className="mt-2">
+                                                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                                                  {getOutOfStockResolvedActionLabel(
+                                                    outOfStockBatchState ||
+                                                      'no_matching_variants'
+                                                  )}
+                                                </span>
+                                              </div>
+                                            ) : null}
                                           </div>
                                         ))}
                                         {resolvedLaneVariants.length > 6 ? (
