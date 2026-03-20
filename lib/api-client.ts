@@ -35,7 +35,16 @@ class ApiClient {
         return response;
       },
       (error: AxiosError) => {
-        console.error(`❌ API Error: ${error.response?.status} ${error.config?.url}`);
+        const detailCode =
+          (error.response?.data as any)?.detail?.code ||
+          (error.response?.data as any)?.code;
+        const isExpectedOptimizationConflict =
+          error.response?.status === 409 &&
+          detailCode === 'OPTIMIZATION_PLAN_SUPERSEDED';
+
+        if (!isExpectedOptimizationConflict) {
+          console.error(`❌ API Error: ${error.response?.status} ${error.config?.url}`);
+        }
         
         if (error.response?.status === 401) {
           // Keep login failure feedback visible on /login.
