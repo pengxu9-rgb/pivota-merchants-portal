@@ -255,6 +255,7 @@ type SourceDataLaneProgress = {
   resolved_variant_count: number;
   total_variant_count: number;
   looks_resolved_now: boolean;
+  batch_state?: OutOfStockBatchState | null;
 };
 
 type SourceDataReasonCode =
@@ -983,6 +984,7 @@ export default function ProductsPage() {
         resolved_variant_count: looksResolvedNow ? totalVariantCount : 0,
         total_variant_count: totalVariantCount,
         looks_resolved_now: looksResolvedNow,
+        batch_state: null,
       });
       return acc;
     }
@@ -1036,6 +1038,10 @@ export default function ProductsPage() {
       resolved_variant_count: resolvedVariantCount,
       total_variant_count: totalVariantCount,
       looks_resolved_now: pendingVariantCount === 0,
+      batch_state:
+        group.reason_code === 'out_of_stock'
+          ? getOutOfStockBatchState(pendingVariantCount, resolvedVariantCount)
+          : null,
     });
     return acc;
   }, new Map());
@@ -1050,6 +1056,10 @@ export default function ProductsPage() {
           resolved_variant_count: 0,
           total_variant_count: Math.max(group.affected_variants, 1),
           looks_resolved_now: false,
+          batch_state:
+            group.reason_code === 'out_of_stock'
+              ? getOutOfStockBatchState(Math.max(group.affected_variants, 1), 0)
+              : null,
         },
     };
   });
@@ -1069,6 +1079,46 @@ export default function ProductsPage() {
           .find(({ progress }) => progress.pending_variant_count > 0)?.group || null
       : unresolvedLaneGroups[0]?.group || null;
   const firstPendingLaneGroup = unresolvedLaneGroups[0]?.group || null;
+  const outOfStockWholeUnavailableLaneGroups = laneGroupProgressList.filter(
+    ({ group, progress }) =>
+      group.reason_code === 'out_of_stock' &&
+      progress.batch_state === 'whole_product_unavailable'
+  );
+  const outOfStockPartiallyRecoveredLaneGroups = laneGroupProgressList.filter(
+    ({ group, progress }) =>
+      group.reason_code === 'out_of_stock' &&
+      progress.batch_state === 'partially_recovered'
+  );
+  const outOfStockRestockedLaneGroups = laneGroupProgressList.filter(
+    ({ group, progress }) =>
+      group.reason_code === 'out_of_stock' &&
+      progress.batch_state === 'restocked_waiting_refresh'
+  );
+  const nextWholeUnavailableLaneGroup =
+    currentLaneGroupIndex >= 0
+      ? laneGroupProgressList
+          .slice(currentLaneGroupIndex + 1)
+          .find(({ progress }) => progress.batch_state === 'whole_product_unavailable')?.group ||
+        null
+      : outOfStockWholeUnavailableLaneGroups[0]?.group || null;
+  const firstWholeUnavailableLaneGroup =
+    outOfStockWholeUnavailableLaneGroups[0]?.group || null;
+  const nextPartiallyRecoveredLaneGroup =
+    currentLaneGroupIndex >= 0
+      ? laneGroupProgressList
+          .slice(currentLaneGroupIndex + 1)
+          .find(({ progress }) => progress.batch_state === 'partially_recovered')?.group || null
+      : outOfStockPartiallyRecoveredLaneGroups[0]?.group || null;
+  const firstPartiallyRecoveredLaneGroup =
+    outOfStockPartiallyRecoveredLaneGroups[0]?.group || null;
+  const nextRestockedLaneGroup =
+    currentLaneGroupIndex >= 0
+      ? laneGroupProgressList
+          .slice(currentLaneGroupIndex + 1)
+          .find(({ progress }) => progress.batch_state === 'restocked_waiting_refresh')?.group ||
+        null
+      : outOfStockRestockedLaneGroups[0]?.group || null;
+  const firstRestockedLaneGroup = outOfStockRestockedLaneGroups[0]?.group || null;
 
   const heroTitle =
     blockedCount > 0
@@ -1867,6 +1917,24 @@ export default function ProductsPage() {
                                             <span className="rounded-full bg-white px-2 py-0.5 font-medium text-emerald-700 ring-1 ring-amber-200">
                                               {currentLaneProgress.resolved_variant_count} look fixed now
                                             </span>
+                                            {reviewReasonCode === 'out_of_stock' &&
+                                            currentLaneProgress.batch_state ? (
+                                              <span
+                                                className={`rounded-full bg-white px-2 py-0.5 font-medium ring-1 ring-amber-200 ${
+                                                  currentLaneProgress.batch_state ===
+                                                  'whole_product_unavailable'
+                                                    ? 'text-rose-700'
+                                                    : currentLaneProgress.batch_state ===
+                                                        'partially_recovered'
+                                                      ? 'text-blue-700'
+                                                      : 'text-emerald-700'
+                                                }`}
+                                              >
+                                                {getOutOfStockBatchStateLabel(
+                                                  currentLaneProgress.batch_state
+                                                )}
+                                              </span>
+                                            ) : null}
                                           </>
                                         ) : null}
                                         <span className="rounded-full bg-white px-2 py-0.5 font-medium text-rose-700 ring-1 ring-amber-200">
@@ -1886,6 +1954,19 @@ export default function ProductsPage() {
                                           <span className="rounded-full bg-white px-2 py-1 font-medium text-emerald-700 ring-1 ring-amber-200">
                                             {resolvedLaneGroups.length} already look fixed
                                           </span>
+                                          {reviewReasonCode === 'out_of_stock' ? (
+                                            <>
+                                              <span className="rounded-full bg-white px-2 py-1 font-medium text-rose-700 ring-1 ring-amber-200">
+                                                {outOfStockWholeUnavailableLaneGroups.length} whole product unavailable
+                                              </span>
+                                              <span className="rounded-full bg-white px-2 py-1 font-medium text-blue-700 ring-1 ring-amber-200">
+                                                {outOfStockPartiallyRecoveredLaneGroups.length} partially back in stock
+                                              </span>
+                                              <span className="rounded-full bg-white px-2 py-1 font-medium text-emerald-700 ring-1 ring-amber-200">
+                                                {outOfStockRestockedLaneGroups.length} back in stock now
+                                              </span>
+                                            </>
+                                          ) : null}
                                         </div>
                                       ) : null}
                                       <button
@@ -1947,6 +2028,98 @@ export default function ProductsPage() {
                                           {nextPendingLaneGroup
                                             ? 'Next pending batch'
                                             : 'Open first pending batch'}
+                                        </button>
+                                      ) : null}
+                                      {reviewReasonCode === 'out_of_stock' &&
+                                      (nextWholeUnavailableLaneGroup ||
+                                        firstWholeUnavailableLaneGroup) ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const targetGroup =
+                                              nextWholeUnavailableLaneGroup ||
+                                              (currentLaneProgress?.batch_state !==
+                                              'whole_product_unavailable'
+                                                ? firstWholeUnavailableLaneGroup
+                                                : null);
+                                            if (targetGroup) {
+                                              void openLaneGroup(targetGroup);
+                                            }
+                                          }}
+                                          disabled={
+                                            !nextWholeUnavailableLaneGroup &&
+                                            !(
+                                              currentLaneProgress?.batch_state !==
+                                                'whole_product_unavailable' &&
+                                              firstWholeUnavailableLaneGroup
+                                            )
+                                          }
+                                          className="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[11px] font-medium text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                          {nextWholeUnavailableLaneGroup
+                                            ? 'Next whole-unavailable batch'
+                                            : 'Open first whole-unavailable batch'}
+                                        </button>
+                                      ) : null}
+                                      {reviewReasonCode === 'out_of_stock' &&
+                                      (nextPartiallyRecoveredLaneGroup ||
+                                        firstPartiallyRecoveredLaneGroup) ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const targetGroup =
+                                              nextPartiallyRecoveredLaneGroup ||
+                                              (currentLaneProgress?.batch_state !==
+                                              'partially_recovered'
+                                                ? firstPartiallyRecoveredLaneGroup
+                                                : null);
+                                            if (targetGroup) {
+                                              void openLaneGroup(targetGroup);
+                                            }
+                                          }}
+                                          disabled={
+                                            !nextPartiallyRecoveredLaneGroup &&
+                                            !(
+                                              currentLaneProgress?.batch_state !==
+                                                'partially_recovered' &&
+                                              firstPartiallyRecoveredLaneGroup
+                                            )
+                                          }
+                                          className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                          {nextPartiallyRecoveredLaneGroup
+                                            ? 'Next partially recovered batch'
+                                            : 'Open first partially recovered batch'}
+                                        </button>
+                                      ) : null}
+                                      {reviewReasonCode === 'out_of_stock' &&
+                                      (nextRestockedLaneGroup || firstRestockedLaneGroup) ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const targetGroup =
+                                              nextRestockedLaneGroup ||
+                                              (currentLaneProgress?.batch_state !==
+                                              'restocked_waiting_refresh'
+                                                ? firstRestockedLaneGroup
+                                                : null);
+                                            if (targetGroup) {
+                                              void openLaneGroup(targetGroup);
+                                            }
+                                          }}
+                                          disabled={
+                                            !nextRestockedLaneGroup &&
+                                            !(
+                                              currentLaneProgress?.batch_state !==
+                                                'restocked_waiting_refresh' &&
+                                              firstRestockedLaneGroup
+                                            )
+                                          }
+                                          className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                          {nextRestockedLaneGroup
+                                            ? 'Next back-in-stock batch'
+                                            : 'Open first back-in-stock batch'}
                                         </button>
                                       ) : null}
                                     </div>
