@@ -665,12 +665,45 @@ export default function ProductsPage() {
   const readinessVariantMap = new Map(
     (productBlockerDetail?.variants || []).map((variant) => [String(variant.variant_id), variant])
   );
+  const currentSelectedVariantMap = new Map(
+    ((selectedProduct?.variants as any[]) || []).map((variant: any) => [
+      String(variant.variant_id || variant.id || ''),
+      variant,
+    ])
+  );
   const focusedReadinessVariants =
     reviewReasonCode && productBlockerDetail
       ? productBlockerDetail.variants.filter((variant) =>
           readinessVariantMatchesReason(variant, reviewReasonCode)
         )
       : [];
+  const laneVariantStates =
+    reviewReasonCode && reviewReasonCode !== 'missing_primary_image'
+      ? focusedReadinessVariants.map((variant) => {
+          const currentVariant = currentSelectedVariantMap.get(String(variant.variant_id));
+          const currentPrice =
+            typeof currentVariant?.price === 'number' ? currentVariant.price : 0;
+          const currentCurrency = String(
+            currentVariant?.currency || selectedProduct?.currency || ''
+          ).trim();
+          const currentInventory = Number(currentVariant?.inventory_quantity ?? 0);
+          const looksResolvedNow =
+            reviewReasonCode === 'missing_price'
+              ? currentPrice > 0 && Boolean(currentCurrency)
+              : currentInventory > 0;
+          return {
+            blockerVariant: variant,
+            currentVariant,
+            looksResolvedNow,
+          };
+        })
+      : [];
+  const pendingLaneVariants = laneVariantStates.filter(
+    (item) => !item.looksResolvedNow
+  );
+  const resolvedLaneVariants = laneVariantStates.filter(
+    (item) => item.looksResolvedNow
+  );
   const focusedReadinessVariantIds = new Set(
     focusedReadinessVariants.map((variant) => String(variant.variant_id))
   );
@@ -707,15 +740,6 @@ export default function ProductsPage() {
   const focusedExcludedCount = focusedReadinessVariants.filter(
     (variant) => variant.agent_push_status === 'excluded_from_agent_push'
   ).length;
-  const focusedPricedCount = focusedReadinessVariants.filter(
-    (variant) =>
-      typeof variant.price_value === 'number' &&
-      variant.price_value > 0 &&
-      Boolean(String(variant.price_currency || '').trim())
-  ).length;
-  const focusedInStockCount = focusedReadinessVariants.filter(
-    (variant) => (variant.inventory_quantity ?? 0) > 0
-  ).length;
   const productHasVisibleImage = Boolean(
     selectedProduct?.image_url || selectedProduct?.images?.[0]
   );
@@ -729,8 +753,8 @@ export default function ProductsPage() {
       ? {
           title: 'Fix pricing in your source catalog',
           helper:
-            focusedPricedCount > 0
-              ? `${focusedPricedCount} variants already show a price in Pivota. Finish the remaining SKUs, then refresh Catalog health to clear stale exclusions.`
+            resolvedLaneVariants.length > 0
+              ? `${resolvedLaneVariants.length} variants already show pricing in Pivota. Finish the remaining SKUs, then refresh Catalog health to clear stale exclusions.`
               : 'Every highlighted SKU still needs valid price and currency data before it can be pushed to agents.',
           metrics: [
             {
@@ -738,12 +762,12 @@ export default function ProductsPage() {
               value: focusedReadinessVariants.length,
             },
             {
-              label: 'With visible price now',
-              value: focusedPricedCount,
+              label: 'Still missing price now',
+              value: pendingLaneVariants.length,
             },
             {
-              label: 'Still excluded from push',
-              value: focusedExcludedCount,
+              label: 'Looks fixed in Pivota now',
+              value: resolvedLaneVariants.length,
             },
           ],
           steps: [
@@ -754,26 +778,26 @@ export default function ProductsPage() {
         }
       : reviewReasonCode === 'out_of_stock'
         ? {
-            title: 'Resolve stock availability in your source catalog',
-            helper:
-              focusedInStockCount > 0
-                ? `${focusedInStockCount} variants already show stock in Pivota. If those are newly restocked, refresh Catalog health after the full batch catches up.`
-                : 'The highlighted variants are still excluded because inventory is zero or stale in the current readiness plan.',
-            metrics: [
-              {
-                label: 'Variants in this batch',
-                value: focusedReadinessVariants.length,
-              },
-              {
-                label: 'With stock now',
-                value: focusedInStockCount,
-              },
-              {
-                label: 'Still excluded from push',
-                value: focusedExcludedCount,
-              },
-            ],
-            steps: [
+          title: 'Resolve stock availability in your source catalog',
+          helper:
+            resolvedLaneVariants.length > 0
+              ? `${resolvedLaneVariants.length} variants already show stock in Pivota. If those are newly restocked, refresh Catalog health after the full batch catches up.`
+              : 'The highlighted variants are still excluded because inventory is zero or stale in the current readiness plan.',
+          metrics: [
+            {
+              label: 'Variants in this batch',
+              value: focusedReadinessVariants.length,
+            },
+            {
+              label: 'Still unavailable now',
+              value: pendingLaneVariants.length,
+            },
+            {
+              label: 'Looks back in stock now',
+              value: resolvedLaneVariants.length,
+            },
+          ],
+          steps: [
               'Restock the highlighted SKUs or archive the ones that should stay unavailable.',
               'Verify the intended variants sync back with live inventory greater than zero.',
               'Return to Catalog health and refresh after availability has stabilized.',
@@ -834,22 +858,31 @@ export default function ProductsPage() {
   };
 
   const handleCopyLaneValues = async (
-    kind: 'sku' | 'variant_id'
+    kind: 'sku' | 'variant_id',
+    scope: 'matching' | 'pending' = 'matching'
   ) => {
+    const sourceVariants =
+      scope === 'pending'
+        ? pendingLaneVariants.map((item) => item.blockerVariant)
+        : focusedReadinessVariants;
     const values =
       kind === 'sku'
-        ? focusedReadinessVariants
+        ? sourceVariants
             .map((variant) => String(variant.sku || '').trim())
             .filter(Boolean)
-        : focusedReadinessVariants
+        : sourceVariants
             .map((variant) => String(variant.variant_id || '').trim())
             .filter(Boolean);
 
     if (!values.length) {
       setLaneCopyFeedback(
         kind === 'sku'
-          ? 'No matching SKUs are available in this batch yet.'
-          : 'No matching variant IDs are available in this batch yet.'
+          ? scope === 'pending'
+            ? 'No pending SKUs are left in this batch.'
+            : 'No matching SKUs are available in this batch yet.'
+          : scope === 'pending'
+            ? 'No pending variant IDs are left in this batch.'
+            : 'No matching variant IDs are available in this batch yet.'
       );
       return;
     }
@@ -858,8 +891,12 @@ export default function ProductsPage() {
       await navigator.clipboard.writeText(values.join('\n'));
       setLaneCopyFeedback(
         kind === 'sku'
-          ? `Copied ${values.length} matching SKU${values.length === 1 ? '' : 's'}.`
-          : `Copied ${values.length} matching variant ID${values.length === 1 ? '' : 's'}.`
+          ? `Copied ${values.length} ${
+              scope === 'pending' ? 'pending' : 'matching'
+            } SKU${values.length === 1 ? '' : 's'}.`
+          : `Copied ${values.length} ${
+              scope === 'pending' ? 'pending' : 'matching'
+            } variant ID${values.length === 1 ? '' : 's'}.`
       );
     } catch (error) {
       console.error('Failed to copy lane values', error);
@@ -1347,17 +1384,35 @@ export default function ProductsPage() {
                                 <div className="flex flex-wrap items-center gap-2">
                                   <button
                                     type="button"
-                                    onClick={() => void handleCopyLaneValues('sku')}
+                                    onClick={() =>
+                                      void handleCopyLaneValues(
+                                        'sku',
+                                        pendingLaneVariants.length > 0
+                                          ? 'pending'
+                                          : 'matching'
+                                      )
+                                    }
                                     className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
                                   >
-                                    Copy matching SKUs
+                                    {pendingLaneVariants.length > 0
+                                      ? 'Copy pending SKUs'
+                                      : 'Copy matching SKUs'}
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => void handleCopyLaneValues('variant_id')}
+                                    onClick={() =>
+                                      void handleCopyLaneValues(
+                                        'variant_id',
+                                        pendingLaneVariants.length > 0
+                                          ? 'pending'
+                                          : 'matching'
+                                      )
+                                    }
                                     className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
                                   >
-                                    Copy variant IDs
+                                    {pendingLaneVariants.length > 0
+                                      ? 'Copy pending variant IDs'
+                                      : 'Copy matching variant IDs'}
                                   </button>
                                   {laneCopyFeedback ? (
                                     <span className="text-[11px] text-slate-600">
@@ -1415,6 +1470,107 @@ export default function ProductsPage() {
                                         </div>
                                       ))}
                                     </div>
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {reviewReasonCode !== 'missing_primary_image' &&
+                              focusedReadinessVariants.length > 0 ? (
+                                <div className="grid gap-3 lg:grid-cols-2">
+                                  <div className="rounded-xl border border-slate-200 bg-white/80 p-4">
+                                    <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                                      Still needs source fixes now
+                                    </div>
+                                    <div className="mt-1 text-xs text-[color:var(--merchant-muted)]">
+                                      {pendingLaneVariants.length > 0
+                                        ? `${pendingLaneVariants.length} variants still look unresolved in the current synced catalog.`
+                                        : 'No pending variants are left in the current sync view for this batch.'}
+                                    </div>
+                                    {pendingLaneVariants.length > 0 ? (
+                                      <div className="mt-3 space-y-2">
+                                        {pendingLaneVariants.slice(0, 6).map((item) => (
+                                          <div
+                                            key={`pending-${item.blockerVariant.variant_id}`}
+                                            className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                                          >
+                                            <div className="text-sm font-medium text-slate-900">
+                                              {item.blockerVariant.title}
+                                            </div>
+                                            <div className="mt-1 text-[11px] text-slate-500">
+                                              SKU {item.blockerVariant.sku || 'N/A'} · Variant ID{' '}
+                                              {item.blockerVariant.variant_id}
+                                            </div>
+                                            <div className="mt-1 text-[11px] text-slate-600">
+                                              {reviewReasonCode === 'missing_price'
+                                                ? `Current price ${
+                                                    item.currentVariant
+                                                      ? formatCurrencyValue(
+                                                          Number(item.currentVariant.price || 0),
+                                                          item.currentVariant.currency ||
+                                                            selectedProduct?.currency ||
+                                                            'USD'
+                                                        )
+                                                      : 'unavailable'
+                                                  }`
+                                                : `Current stock ${
+                                                    item.currentVariant?.inventory_quantity ?? 0
+                                                  }`}
+                                            </div>
+                                          </div>
+                                        ))}
+                                        {pendingLaneVariants.length > 6 ? (
+                                          <div className="text-[11px] text-slate-500">
+                                            Showing 6 of {pendingLaneVariants.length} pending variants in this batch.
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
+                                  </div>
+
+                                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+                                    <div className="text-sm font-medium text-emerald-950">
+                                      Looks fixed in Pivota now
+                                    </div>
+                                    <div className="mt-1 text-xs text-emerald-900/75">
+                                      {resolvedLaneVariants.length > 0
+                                        ? `${resolvedLaneVariants.length} variants now look resolved in the synced catalog, but Catalog health still needs a refresh to clear the old plan.`
+                                        : 'No variants in this batch look resolved yet in the current synced catalog.'}
+                                    </div>
+                                    {resolvedLaneVariants.length > 0 ? (
+                                      <div className="mt-3 space-y-2">
+                                        {resolvedLaneVariants.slice(0, 6).map((item) => (
+                                          <div
+                                            key={`resolved-${item.blockerVariant.variant_id}`}
+                                            className="rounded-lg border border-emerald-200 bg-white/80 px-3 py-2"
+                                          >
+                                            <div className="text-sm font-medium text-emerald-950">
+                                              {item.blockerVariant.title}
+                                            </div>
+                                            <div className="mt-1 text-[11px] text-emerald-900/70">
+                                              SKU {item.blockerVariant.sku || 'N/A'} · Variant ID{' '}
+                                              {item.blockerVariant.variant_id}
+                                            </div>
+                                            <div className="mt-1 text-[11px] text-emerald-900/80">
+                                              {reviewReasonCode === 'missing_price'
+                                                ? `Now ${formatCurrencyValue(
+                                                    Number(item.currentVariant?.price || 0),
+                                                    item.currentVariant?.currency ||
+                                                      selectedProduct?.currency ||
+                                                      'USD'
+                                                  )}`
+                                                : `Now stock ${
+                                                    item.currentVariant?.inventory_quantity ?? 0
+                                                  }`}
+                                            </div>
+                                          </div>
+                                        ))}
+                                        {resolvedLaneVariants.length > 6 ? (
+                                          <div className="text-[11px] text-emerald-900/70">
+                                            Showing 6 of {resolvedLaneVariants.length} resolved variants in this batch.
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
                                   </div>
                                 </div>
                               ) : null}
