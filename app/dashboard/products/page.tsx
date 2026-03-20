@@ -272,6 +272,18 @@ function getCatalogHealthFocusForReason(reasonCode: SourceDataReasonCode) {
   return 'catalog_content';
 }
 
+function getLanePendingLabel(reasonCode: SourceDataReasonCode) {
+  if (reasonCode === 'missing_price') return 'Still missing price now';
+  if (reasonCode === 'out_of_stock') return 'Still out of stock now';
+  return 'Hero image still missing';
+}
+
+function getLaneResolvedLabel(reasonCode: SourceDataReasonCode) {
+  if (reasonCode === 'missing_price') return 'Price visible now';
+  if (reasonCode === 'out_of_stock') return 'Back in stock now';
+  return 'Hero image visible now';
+}
+
 function getSourceDataRowAffectedVariantCount(row: SourceDataTriageRow) {
   if (row.scope === 'variant') return 1;
   return Math.max(row.blocked_variant_count, row.excluded_variant_count, 1);
@@ -841,8 +853,8 @@ export default function ProductsPage() {
       ? {
           looksResolvedNow: productHasVisibleImage,
           title: productHasVisibleImage
-            ? 'Looks fixed in Pivota now'
-            : 'Still needs source fix',
+            ? getLaneResolvedLabel('missing_primary_image')
+            : getLanePendingLabel('missing_primary_image'),
           helper: productHasVisibleImage
             ? 'A primary image is visible in the current synced catalog. Refresh Catalog health after the image sync settles to clear the stale blocker.'
             : 'No primary image is visible in the current synced catalog yet. Update the product-level hero image in your source catalog first.',
@@ -1541,7 +1553,7 @@ export default function ProductsPage() {
                                 <div className="grid gap-3 lg:grid-cols-2">
                                   <div className="rounded-xl border border-slate-200 bg-white/80 p-4">
                                     <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
-                                      Still needs source fixes now
+                                      {getLanePendingLabel(reviewReasonCode)}
                                     </div>
                                     <div className="mt-1 text-xs text-[color:var(--merchant-muted)]">
                                       {pendingLaneVariants.length > 0
@@ -1591,7 +1603,7 @@ export default function ProductsPage() {
 
                                   <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
                                     <div className="text-sm font-medium text-emerald-950">
-                                      Looks fixed in Pivota now
+                                      {getLaneResolvedLabel(reviewReasonCode)}
                                     </div>
                                     <div className="mt-1 text-xs text-emerald-900/75">
                                       {resolvedLaneVariants.length > 0
@@ -1802,8 +1814,8 @@ export default function ProductsPage() {
                                         }`}
                                       >
                                         {laneVariantState.looksResolvedNow
-                                          ? 'Looks fixed now'
-                                          : 'Still needs source fix'}
+                                          ? getLaneResolvedLabel(reviewReasonCode)
+                                          : getLanePendingLabel(reviewReasonCode)}
                                       </span>
                                     ) : null}
                                     {readinessVariant.readiness_blocker_codes.map((code) => (
