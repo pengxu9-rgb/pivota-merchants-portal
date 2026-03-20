@@ -550,16 +550,11 @@ export default function ProductOptimizationPage() {
   );
   const [bulkOptimizing, setBulkOptimizing] = useState(false);
   const detailPaneRef = useRef<HTMLDivElement | null>(null);
+  const entryFocusResolutionRef = useRef<string | null>(null);
 
   useEffect(() => {
     void loadOptimizationData();
   }, []);
-
-  useEffect(() => {
-    if (fromReadiness && focusIssue) {
-      setShowBlockedOnly(true);
-    }
-  }, [fromReadiness, focusIssue]);
 
   useEffect(() => {
     if (focusIssue) {
@@ -1326,45 +1321,49 @@ export default function ProductOptimizationPage() {
   })();
 
   useEffect(() => {
-    if (!fromReadiness || !focusIssue || !showBlockedOnly) {
+    if (!fromReadiness || !focusIssue) {
+      entryFocusResolutionRef.current = null;
       return;
     }
-    if (filteredProducts.length > 0) {
+    if (!queueDrivenProducts.length) {
       return;
     }
 
-    const hasExcludedProductsForCurrentIssue = queueDrivenProducts.some((item) => {
+    const resolutionKey = `${focusIssue}:${queueDrivenProducts.length}`;
+    if (entryFocusResolutionRef.current === resolutionKey) {
+      return;
+    }
+
+    const matchesFocusedIssue = (item: MerchantProductWithReadiness) =>
+      (item.readiness?.top_issues || []).some(
+        (issue) => getIssueBucketCodeForReason(issue.code) === focusIssue
+      );
+
+    const hasActiveBlockedProductsForIssue = queueDrivenProducts.some((item) => {
+      const blockedVariantCount = item.readiness?.blocked_variant_count || 0;
+      return blockedVariantCount > 0 && matchesFocusedIssue(item);
+    });
+
+    const hasExcludedProductsForIssue = queueDrivenProducts.some((item) => {
       const excludedVariantCount =
         item.readiness?.excluded_variant_count ??
         item.agent_push?.excluded_variant_count ??
         0;
-      if (excludedVariantCount <= 0) {
-        return false;
-      }
-      if (issueFilter === 'all') {
-        return true;
-      }
-      return (item.readiness?.top_issues || []).some(
-        (issue) => getIssueBucketCodeForReason(issue.code) === issueFilter
-      );
+      return excludedVariantCount > 0 && matchesFocusedIssue(item);
     });
 
-    if (!hasExcludedProductsForCurrentIssue) {
-      return;
+    if (!hasActiveBlockedProductsForIssue && hasExcludedProductsForIssue) {
+      setShowBlockedOnly(false);
+      setEntryFilterNotice(
+        'Showing excluded products because no active blockers matched the current filter.'
+      );
+    } else {
+      setShowBlockedOnly(true);
+      setEntryFilterNotice(null);
     }
 
-    setShowBlockedOnly(false);
-    setEntryFilterNotice(
-      'Showing excluded products because no active blockers matched the current filter.'
-    );
-  }, [
-    filteredProducts.length,
-    focusIssue,
-    fromReadiness,
-    issueFilter,
-    queueDrivenProducts,
-    showBlockedOnly,
-  ]);
+    entryFocusResolutionRef.current = resolutionKey;
+  }, [focusIssue, fromReadiness, queueDrivenProducts]);
 
   useEffect(() => {
     if (!fromReadiness) {
