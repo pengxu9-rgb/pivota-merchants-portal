@@ -266,6 +266,12 @@ function formatSourceDataReasonLabel(reasonCode: SourceDataReasonCode) {
   return 'Missing primary image';
 }
 
+function getCatalogHealthFocusForReason(reasonCode: SourceDataReasonCode) {
+  if (reasonCode === 'missing_price') return 'price_currency';
+  if (reasonCode === 'out_of_stock') return 'inventory_availability';
+  return 'catalog_content';
+}
+
 function getSourceDataRowAffectedVariantCount(row: SourceDataTriageRow) {
   if (row.scope === 'variant') return 1;
   return Math.max(row.blocked_variant_count, row.excluded_variant_count, 1);
@@ -698,6 +704,108 @@ export default function ProductsPage() {
     blockedCount > 0
       ? 'Review blocked variants, missing details, and low-inventory items from one merchant-facing catalog view.'
       : 'Use Catalog to keep product content, pricing, imagery, and sellability aligned before promotions go live.';
+  const focusedExcludedCount = focusedReadinessVariants.filter(
+    (variant) => variant.agent_push_status === 'excluded_from_agent_push'
+  ).length;
+  const focusedPricedCount = focusedReadinessVariants.filter(
+    (variant) =>
+      typeof variant.price_value === 'number' &&
+      variant.price_value > 0 &&
+      Boolean(String(variant.price_currency || '').trim())
+  ).length;
+  const focusedInStockCount = focusedReadinessVariants.filter(
+    (variant) => (variant.inventory_quantity ?? 0) > 0
+  ).length;
+  const productHasVisibleImage = Boolean(
+    selectedProduct?.image_url || selectedProduct?.images?.[0]
+  );
+  const catalogHealthReturnHref = reviewReasonCode
+    ? `/dashboard/product-optimization?source=readiness&focus=${getCatalogHealthFocusForReason(
+        reviewReasonCode
+      )}`
+    : '/dashboard/product-optimization';
+  const laneChecklist =
+    reviewReasonCode === 'missing_price'
+      ? {
+          title: 'Fix pricing in your source catalog',
+          helper:
+            focusedPricedCount > 0
+              ? `${focusedPricedCount} variants already show a price in Pivota. Finish the remaining SKUs, then refresh Catalog health to clear stale exclusions.`
+              : 'Every highlighted SKU still needs valid price and currency data before it can be pushed to agents.',
+          metrics: [
+            {
+              label: 'Variants in this batch',
+              value: focusedReadinessVariants.length,
+            },
+            {
+              label: 'With visible price now',
+              value: focusedPricedCount,
+            },
+            {
+              label: 'Still excluded from push',
+              value: focusedExcludedCount,
+            },
+          ],
+          steps: [
+            'Set a non-zero price and currency for each highlighted SKU in your store platform.',
+            'Confirm the updated price syncs back into Pivota for the same variants listed below.',
+            'Return to Catalog health and refresh once pricing has landed across the batch.',
+          ],
+        }
+      : reviewReasonCode === 'out_of_stock'
+        ? {
+            title: 'Resolve stock availability in your source catalog',
+            helper:
+              focusedInStockCount > 0
+                ? `${focusedInStockCount} variants already show stock in Pivota. If those are newly restocked, refresh Catalog health after the full batch catches up.`
+                : 'The highlighted variants are still excluded because inventory is zero or stale in the current readiness plan.',
+            metrics: [
+              {
+                label: 'Variants in this batch',
+                value: focusedReadinessVariants.length,
+              },
+              {
+                label: 'With stock now',
+                value: focusedInStockCount,
+              },
+              {
+                label: 'Still excluded from push',
+                value: focusedExcludedCount,
+              },
+            ],
+            steps: [
+              'Restock the highlighted SKUs or archive the ones that should stay unavailable.',
+              'Verify the intended variants sync back with live inventory greater than zero.',
+              'Return to Catalog health and refresh after availability has stabilized.',
+            ],
+          }
+        : reviewReasonCode === 'missing_primary_image'
+          ? {
+              title: 'Restore the product hero image',
+              helper: productHasVisibleImage
+                ? 'A primary image is visible in Pivota now. If this was fixed recently, refresh Catalog health to clear stale exclusions.'
+                : 'This is a product-level blocker. Add or sync a primary image for the whole product before retrying agent push.',
+              metrics: [
+                {
+                  label: 'Excluded variants',
+                  value: productBlockerDetail?.summary.excluded_variant_count || 0,
+                },
+                {
+                  label: 'Blocked variants',
+                  value: productBlockerDetail?.summary.blocked_variant_count || 0,
+                },
+                {
+                  label: 'Primary image visible now',
+                  value: productHasVisibleImage ? 'Yes' : 'No',
+                },
+              ],
+              steps: [
+                'Upload or sync a primary image for this product in your source catalog.',
+                'Make sure the hero image is attached to the product record and not only to a hidden variant.',
+                'Return to Catalog health and refresh after imagery sync completes.',
+              ],
+            }
+          : null;
 
   const openLaneGroup = async (group: SourceDataLaneGroup) => {
     try {
@@ -1256,6 +1364,58 @@ export default function ProductsPage() {
                                       {laneCopyFeedback}
                                     </span>
                                   ) : null}
+                                </div>
+                              ) : null}
+
+                              {laneChecklist ? (
+                                <div className="rounded-xl border border-amber-200 bg-white/80 p-4">
+                                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                    <div>
+                                      <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                                        {laneChecklist.title}
+                                      </div>
+                                      <div className="mt-1 text-xs leading-5 text-[color:var(--merchant-muted)]">
+                                        {laneChecklist.helper}
+                                      </div>
+                                    </div>
+                                    <a
+                                      href={catalogHealthReturnHref}
+                                      className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                                    >
+                                      Return to Catalog health
+                                    </a>
+                                  </div>
+                                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                                    {laneChecklist.metrics.map((metric) => (
+                                      <div
+                                        key={metric.label}
+                                        className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                                      >
+                                        <div className="text-[11px] uppercase tracking-[0.08em] text-slate-500">
+                                          {metric.label}
+                                        </div>
+                                        <div className="mt-1 text-sm font-semibold text-slate-900">
+                                          {metric.value}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <div className="mt-3">
+                                    <div className="text-[11px] uppercase tracking-[0.08em] text-slate-500">
+                                      What to do next
+                                    </div>
+                                    <div className="mt-2 space-y-2">
+                                      {laneChecklist.steps.map((step) => (
+                                        <div
+                                          key={step}
+                                          className="flex items-start gap-2 text-sm text-slate-700"
+                                        >
+                                          <span className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-slate-400" />
+                                          <span>{step}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
                                 </div>
                               ) : null}
                             </div>
