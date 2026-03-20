@@ -435,6 +435,32 @@ const getProductStatusLine = (item: WorkspaceProductItem) => {
   return getAgentPushLabel(push?.agent_push_status);
 };
 
+const formatProductPriceLine = (item: WorkspaceProductItem) => {
+  const priceValue = item.standard?.price?.value ?? item.standard?.price;
+  const currency =
+    typeof item.standard?.price === 'number'
+      ? ''
+      : item.standard?.price?.currency || '';
+
+  if (typeof priceValue === 'number') {
+    return `${item.platform.toUpperCase()} · ${priceValue} ${currency}`.trim();
+  }
+
+  return `${item.platform.toUpperCase()} · No price`;
+};
+
+const getSelectedProductSummary = (item: ProductQueueItem) => {
+  if (item.agent_push_status === 'excluded_from_agent_push') {
+    return 'Temporarily excluded from agent push until source data is fixed.';
+  }
+
+  if (item.blocked_variant_count > 0) {
+    return `${item.blocked_variant_count} blocked variants still need work before this product is fully launch-ready.`;
+  }
+
+  return 'This product is already eligible for agent push. Keep the content clean and current.';
+};
+
 export default function ProductOptimizationPage() {
   const searchParams = useSearchParams();
   const fromReadiness = searchParams.get('source') === 'readiness';
@@ -1271,10 +1297,10 @@ export default function ProductOptimizationPage() {
         <div className={`rounded-xl border p-5 ${getReadinessTone(readinessSummary.tier).card}`}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${getReadinessTone(readinessSummary.tier).badge}`}>
-                    {readinessSummary.label}
-                  </span>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${getReadinessTone(readinessSummary.tier).badge}`}>
+                  {readinessSummary.label}
+                </span>
                 <span className="text-sm font-medium text-slate-900">
                   Catalog health score {readinessSummary.score ?? '—'}
                 </span>
@@ -1285,13 +1311,25 @@ export default function ProductOptimizationPage() {
               <h1 className="mt-3 text-2xl font-bold text-gray-900">
                 {fromReadiness ? 'Catalog health plan' : 'Catalog health'}
               </h1>
-              <p className="mt-1 text-sm text-slate-700">
+              <p className="mt-1 max-w-3xl text-sm text-slate-700">
                 {readinessSummary.summary_text || 'Use this page to fix the catalog and setup issues that are blocking channel launch and merchant readiness.'}
               </p>
-              <p className="mt-2 text-sm font-medium text-slate-900">
-                {readinessSummary.action_text || readinessSummary.next_action || 'Start with the issues below, then optimize the affected products.'}
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                  {readinessSummary.action_text || readinessSummary.next_action || 'Start with the highest-priority issues first'}
+                </span>
+                {agentPushSummary && (
+                  <>
+                    <span className="rounded-full bg-white px-3 py-1 font-medium text-emerald-700 ring-1 ring-emerald-200">
+                      {agentPushSummary.eligible_products} push-ready products
+                    </span>
+                    <span className="rounded-full bg-white px-3 py-1 font-medium text-amber-700 ring-1 ring-amber-200">
+                      {agentPushSummary.excluded_products} auto-excluded products
+                    </span>
+                  </>
+                )}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
                 {optimizationData?.last_generated_at && (
                   <span>
                     Last checked {new Date(optimizationData.last_generated_at).toLocaleString()}
@@ -1330,8 +1368,8 @@ export default function ProductOptimizationPage() {
                 </div>
               )}
             </div>
-              <div className="flex flex-wrap gap-2">
-                <button
+            <div className="flex flex-wrap gap-2">
+              <button
                 type="button"
                 onClick={() =>
                   void loadOptimizationData({
@@ -1353,10 +1391,10 @@ export default function ProductOptimizationPage() {
                   Review integrations
                 </a>
               )}
-              </div>
+            </div>
             </div>
 
-            <div className="mt-4 grid gap-3 xl:grid-cols-3">
+          <div className="mt-4 grid gap-3 xl:grid-cols-3">
             <div className="rounded-lg bg-white/80 p-4">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Issue overview
@@ -1371,7 +1409,7 @@ export default function ProductOptimizationPage() {
                           {bucket.affected_count}
                         </span>
                       </div>
-                      <div className="mt-1 text-xs text-slate-600">
+                      <div className="mt-1 truncate text-xs text-slate-600">
                         {bucket.scope === 'merchant' ? 'Store setup' : 'Product fix'} ·{' '}
                         {bucket.impact === 'full_agent_commerce'
                           ? 'Blocks agent commerce'
@@ -1399,7 +1437,8 @@ export default function ProductOptimizationPage() {
                 {(productActions.length > 0 ? productActions : merchantActions).length > 0 ? (
                   (productActions.length > 0 ? productActions : merchantActions).slice(0, 4).map((action) => (
                     <div key={`${action.label}-${action.target_url}`} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
-                      {action.description}
+                      <div className="font-medium text-slate-900">{action.label}</div>
+                      <div className="mt-1 text-xs text-slate-600">{action.description}</div>
                     </div>
                   ))
                 ) : (
@@ -1451,13 +1490,18 @@ export default function ProductOptimizationPage() {
       {/* Left: product list */}
       <div className="space-y-4">
         <div className="space-y-3">
-          <div>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
             <h2 className="max-w-[10ch] text-[1.6rem] font-bold leading-tight text-gray-900">
               Catalog products
             </h2>
-            <p className="mt-1 text-sm text-gray-600">
-              Select a product, review its push status, and tighten the content that still needs work.
-            </p>
+              <p className="mt-1 text-xs text-gray-500">
+                Review queue order, push status, and the products that still need edits.
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">
+              {filteredProducts.length} in view
+            </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -1504,9 +1548,6 @@ export default function ProductOptimizationPage() {
                 </>
               )}
             </button>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">
-              {filteredProducts.length} in view
-            </span>
             {agentPushSummary ? (
               <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
                 {agentPushSummary.excluded_variants} variants excluded from agent push
@@ -1516,7 +1557,7 @@ export default function ProductOptimizationPage() {
         </div>
 
         <div className="overflow-hidden rounded-lg border bg-white shadow">
-          <div className="space-y-3 border-b p-3">
+          <div className="space-y-2 border-b p-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
@@ -1614,17 +1655,10 @@ export default function ProductOptimizationPage() {
                   selected &&
                   selected.platform === item.platform &&
                   selected.platform_product_id === item.platform_product_id;
-                const titleOverride = item.enrichment?.title_override;
-                const title = titleOverride || item.standard?.title || '-';
+                const title = item.enrichment?.title_override || item.standard?.title || '-';
                 const cqScore = item.quality?.content_quality_score;
                 const mrScore = item.quality?.model_readiness_score;
                 const pushStatus = item.agent_push?.agent_push_status;
-                const priceValue =
-                  item.standard?.price?.value ?? item.standard?.price ?? '-';
-                const currency =
-                  typeof item.standard?.price === 'number'
-                    ? ''
-                    : item.standard?.price?.currency || '';
 
                 return (
                   <div
@@ -1633,7 +1667,7 @@ export default function ProductOptimizationPage() {
                       isActive ? 'bg-blue-50/70' : 'bg-white'
                     }`}
                   >
-                    <div className="flex items-start gap-2 px-3 py-2.5">
+                    <div className="flex items-start gap-2 px-3 py-2">
                       <button
                         type="button"
                         onClick={() =>
@@ -1641,7 +1675,7 @@ export default function ProductOptimizationPage() {
                         }
                         className="flex min-w-0 flex-1 items-start gap-3 text-left"
                       >
-                        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded bg-gray-100">
+                        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded bg-gray-100">
                           {item.standard?.main_image_url ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -1653,16 +1687,11 @@ export default function ProductOptimizationPage() {
                             <Package className="h-5 w-5 text-gray-400" />
                           )}
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="line-clamp-2 text-sm font-medium leading-5 text-gray-900">
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <p className="line-clamp-2 text-[13px] font-medium leading-5 text-gray-900">
                             {title}
                           </p>
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                            {titleOverride ? (
-                              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
-                                Optimized title
-                              </span>
-                            ) : null}
+                          <div className="flex flex-wrap items-center gap-1.5">
                             {typeof cqScore === 'number' && (
                               <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
                                 CQ {cqScore.toFixed(0)}
@@ -1683,11 +1712,11 @@ export default function ProductOptimizationPage() {
                                 : 'Push-ready'}
                             </span>
                           </div>
-                          <p className="mt-1 truncate text-[11px] text-slate-600">
+                          <p className="truncate text-[11px] text-slate-600">
                             {getProductStatusLine(item)}
                           </p>
-                          <p className="mt-0.5 text-[11px] text-gray-500">
-                            {item.platform.toUpperCase()} · {priceValue} {currency}
+                          <p className="text-[11px] text-gray-500">
+                            {formatProductPriceLine(item)}
                           </p>
                         </div>
                       </button>
@@ -1698,7 +1727,7 @@ export default function ProductOptimizationPage() {
                             focusDetail: true,
                           })
                         }
-                        className="inline-flex flex-shrink-0 items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                        className="inline-flex flex-shrink-0 items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
                       >
                         {getProductActionLabel(item)}
                         <ArrowRight className="h-3.5 w-3.5" />
@@ -1744,22 +1773,18 @@ export default function ProductOptimizationPage() {
                   ) : null}
                 </div>
                 <h3 className="mt-2 text-base font-semibold text-slate-900">
-                  {selectedQueueItem.agent_push_status === 'excluded_from_agent_push'
-                    ? 'Why this product is temporarily excluded from agent push'
-                    : selectedQueueItem.blocked_variant_count > 0
-                      ? 'Why this product still needs work'
-                      : 'Why this product is in the current plan'}
+                  Selected product
                 </h3>
                 <p className="mt-1 text-sm text-slate-700">
-                  {selectedQueueItem.primary_action || 'Review this product and improve its enrichment before broader LLM exposure.'}
+                  {getSelectedProductSummary(selectedQueueItem)}
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 lg:max-w-[28rem] lg:justify-end">
                 <button
                   type="button"
                   onClick={() => void handleRefreshSelectedStatus()}
                   disabled={readinessLoading}
-                  className="inline-flex items-center justify-center gap-1 rounded-lg bg-slate-50 px-4 py-2 text-sm font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50"
+                  className="inline-flex items-center justify-center gap-1 rounded-lg bg-slate-50 px-3 py-2 text-sm font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50"
                 >
                   <RefreshCw className={`h-4 w-4 ${readinessLoading ? 'animate-spin' : ''}`} />
                   Refresh status
@@ -1770,7 +1795,7 @@ export default function ProductOptimizationPage() {
                       type="button"
                       onClick={handlePreviewRecommendedAction}
                       disabled={actionPreviewLoading}
-                      className="inline-flex items-center justify-center rounded-lg bg-slate-50 px-4 py-2 text-sm font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50"
+                      className="inline-flex items-center justify-center rounded-lg bg-slate-50 px-3 py-2 text-sm font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50"
                     >
                       {actionPreviewLoading
                         ? 'Preparing preview…'
@@ -1780,7 +1805,7 @@ export default function ProductOptimizationPage() {
                       type="button"
                       onClick={handleAutoOptimize}
                       disabled={optimizing || !canApplyPreviewedAction || isInCooldown}
-                      className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                      className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                     >
                       {optimizing ? 'Applying…' : 'Apply suggested fix'}
                     </button>
@@ -1789,7 +1814,7 @@ export default function ProductOptimizationPage() {
                 {!canExecuteSelectedAction && (
                   <a
                     href={manualReviewHref}
-                    className="inline-flex items-center justify-center rounded-lg bg-slate-50 px-4 py-2 text-sm font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-100"
+                    className="inline-flex items-center justify-center rounded-lg bg-slate-50 px-3 py-2 text-sm font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-100"
                   >
                     {getManualReviewLabel(selectedQueueItem.fix_surface)}
                   </a>
@@ -1803,7 +1828,7 @@ export default function ProductOptimizationPage() {
               </div>
             )}
 
-            <div className="mt-4 grid gap-3 xl:grid-cols-4">
+            <div className="mt-4 grid gap-3 xl:grid-cols-2">
               <div className="rounded-lg bg-slate-50 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Main issues
@@ -1811,10 +1836,10 @@ export default function ProductOptimizationPage() {
                 <div className="mt-2 space-y-2">
                   {selectedQueueItem.top_issues.length > 0 ? (
                     selectedQueueItem.top_issues.map((issue) => (
-                        <div key={issue.code} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
+                      <div key={issue.code} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
                         <div className="font-medium text-slate-900">{issue.label}</div>
                         <div className="mt-1 text-xs text-slate-600">
-                          {issue.affected_variant_count} affected variants · {getImpactLabel(issue.impact)}
+                          {issue.affected_variant_count} variants · {getImpactLabel(issue.impact)}
                         </div>
                       </div>
                     ))
@@ -1834,8 +1859,8 @@ export default function ProductOptimizationPage() {
                   <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
                     <div className="font-medium text-slate-900">
                       {selectedQueueItem.recommended_action_type === 'run_product_enrichment'
-                        ? 'You can fix the content from this page'
-                        : 'This issue needs a different surface'}
+                        ? 'Fixable from this page'
+                        : 'Needs a different surface'}
                     </div>
                     <div className="mt-1 text-xs text-slate-600">
                       {selectedQueueItem.priority_reason ||
@@ -1933,7 +1958,7 @@ export default function ProductOptimizationPage() {
                     </div>
                   ) : (
                     <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
-                      Preview the recommended fix before applying it.
+                      Preview before you apply so you can verify the exact fields that will change.
                     </div>
                   )}
                   {verificationResult && (
@@ -1961,7 +1986,7 @@ export default function ProductOptimizationPage() {
                   )}
                   {!verificationResult && !latestJob && !actionPreview && (
                     <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
-                      Preview the suggested fix first so you can see exactly what will change before you apply it.
+                      No preview or execution result yet.
                     </div>
                   )}
                 </div>
@@ -1983,7 +2008,7 @@ export default function ProductOptimizationPage() {
               <h2 className="text-sm font-semibold text-gray-800">
                 Source platform product (read-only)
               </h2>
-              <div className="w-full h-40 rounded bg-gray-100 flex items-center justify-center overflow-hidden">
+              <div className="w-full h-32 rounded bg-gray-100 flex items-center justify-center overflow-hidden">
                 {detail.standard?.image_url || detail.standard?.images?.[0] ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -2037,7 +2062,7 @@ export default function ProductOptimizationPage() {
                 </div>
                 <div>
                   <div className="text-xs text-gray-500 mb-0.5">Description</div>
-                  <div className="text-xs text-gray-700 line-clamp-4">
+                  <div className="text-xs text-gray-700 line-clamp-3">
                     {detail.standard.description ||
                       detail.standard.description_text ||
                       '无描述'}
@@ -2054,10 +2079,10 @@ export default function ProductOptimizationPage() {
                     Pivota enrichment (editable)
                   </h2>
                   <p className="mt-1 text-xs text-gray-500">
-                    Keep the editable content tighter than the source listing, but clearer for agent understanding.
+                    Keep this cleaner and tighter than the source listing.
                   </p>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2 xl:w-56 xl:grid-cols-1">
+                <div className="grid gap-2 sm:grid-cols-2 xl:min-w-[22rem] xl:grid-cols-2">
                   {canExecuteSelectedAction ? (
                     <>
                       <button
