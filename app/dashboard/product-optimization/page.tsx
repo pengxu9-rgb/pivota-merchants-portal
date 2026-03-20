@@ -289,6 +289,42 @@ type ReadinessActionRunResult = {
   after_plan?: OptimizationPlan;
 };
 
+type ProductBlockerSubject = {
+  platform: string;
+  platform_product_id: string;
+  product_id: string;
+  title: string;
+};
+
+type ProductBlockerCounts = {
+  ready_variant_count: number;
+  blocked_variant_count: number;
+  eligible_variant_count: number;
+  excluded_variant_count: number;
+};
+
+type ProductBlockerVariant = {
+  variant_id: string;
+  title: string;
+  sku?: string | null;
+  price_value?: number | null;
+  price_currency?: string | null;
+  inventory_quantity?: number | null;
+  readiness_status: 'ready' | 'blocked';
+  readiness_blocker_codes: string[];
+  readiness_warning_codes: string[];
+  agent_push_status: AgentPushStatus;
+  agent_push_reason_codes: string[];
+};
+
+type ProductBlockerDetail = {
+  plan_id: string;
+  snapshot_id: string;
+  product: ProductBlockerSubject;
+  summary: ProductBlockerCounts;
+  variants: ProductBlockerVariant[];
+};
+
 type WorkspaceProductItem = MerchantProductListItem & {
   readiness: ProductQueueItem | null;
   readinessIndex: number;
@@ -385,7 +421,7 @@ const getManualReviewLabel = (
 ) => {
   if (fixSurface === 'integrations') return 'Open integrations';
   if (fixSurface === 'policy') return 'Review shipping and returns';
-  if (fixSurface === 'catalog_data') return 'Review catalog data';
+  if (fixSurface === 'catalog_data') return 'Review in catalog';
   if (fixSurface === 'pivota_managed') return 'Wait for Pivota processing';
   return 'Review issue details';
 };
@@ -413,6 +449,12 @@ const formatAgentPushReason = (code: string) => {
 const getProductActionLabel = (item: WorkspaceProductItem) => {
   if (item.readiness?.recommended_action_type === 'run_product_enrichment') {
     return 'Optimize';
+  }
+  if (item.readiness?.fix_surface === 'catalog_data') {
+    return 'Review in catalog';
+  }
+  if (item.readiness?.fix_surface === 'integrations') {
+    return 'Open integrations';
   }
   return 'Review store data';
 };
@@ -485,10 +527,15 @@ export default function ProductOptimizationPage() {
   const [qualityPreview, setQualityPreview] = useState<any | null>(null);
   const [actionPreview, setActionPreview] =
     useState<ReadinessActionPreview | null>(null);
+  const [blockerDetail, setBlockerDetail] = useState<ProductBlockerDetail | null>(
+    null
+  );
+  const [blockerDetailLoading, setBlockerDetailLoading] = useState(false);
   const [latestJob, setLatestJob] = useState<ExecutionJob | null>(null);
   const [verificationResult, setVerificationResult] =
     useState<VerificationResult | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [entryFilterNotice, setEntryFilterNotice] = useState<string | null>(null);
   const [lastOptimizedAt, setLastOptimizedAt] = useState<Record<string, number>>(
     {}
   );
@@ -509,10 +556,10 @@ export default function ProductOptimizationPage() {
   }, []);
 
   useEffect(() => {
-    if (fromReadiness) {
+    if (fromReadiness && focusIssue) {
       setShowBlockedOnly(true);
     }
-  }, [fromReadiness]);
+  }, [fromReadiness, focusIssue]);
 
   useEffect(() => {
     if (focusIssue) {
@@ -615,6 +662,29 @@ export default function ProductOptimizationPage() {
     }
   };
 
+  const loadProductBlockerDetail = async (
+    platform: string,
+    platformProductId: string,
+    planId: string
+  ) => {
+    try {
+      setBlockerDetailLoading(true);
+      const data = await apiClient.getMerchantProductBlockers(
+        platform,
+        platformProductId,
+        planId
+      );
+      setBlockerDetail(data || null);
+      return data || null;
+    } catch (err) {
+      console.error('Failed to load product blocker detail', err);
+      setBlockerDetail(null);
+      return null;
+    } finally {
+      setBlockerDetailLoading(false);
+    }
+  };
+
   const handleSelect = async (
     platform: string,
     platformProductId: string,
@@ -625,6 +695,7 @@ export default function ProductOptimizationPage() {
     setQualityPreview(null);
     setForm(emptyForm);
     setActionPreview(null);
+    setBlockerDetail(null);
     setLatestJob(null);
     setVerificationResult(null);
     setActionFeedback(null);
@@ -692,6 +763,7 @@ export default function ProductOptimizationPage() {
 
   useEffect(() => {
     setActionPreview(null);
+    setBlockerDetail(null);
     setLatestJob(null);
     setVerificationResult(null);
     setActionFeedback(null);
@@ -700,6 +772,18 @@ export default function ProductOptimizationPage() {
     selected?.platform_product_id,
     optimizationPlan?.plan_id,
   ]);
+
+  useEffect(() => {
+    if (!selected || !optimizationPlan?.plan_id) {
+      setBlockerDetail(null);
+      return;
+    }
+    void loadProductBlockerDetail(
+      selected.platform,
+      selected.platform_product_id,
+      optimizationPlan.plan_id
+    );
+  }, [selected?.platform, selected?.platform_product_id, optimizationPlan?.plan_id]);
 
   const productQueueMap = useMemo(() => {
     return new Map(
@@ -922,7 +1006,18 @@ export default function ProductOptimizationPage() {
             : item
         )
       );
-      await loadOptimizationData({ refresh: true, scope: 'product', reason: 'post_edit' });
+      const refreshed = await loadOptimizationData({
+        refresh: true,
+        scope: 'product',
+        reason: 'post_edit',
+      });
+      if (refreshed?.plan?.plan_id) {
+        await loadProductBlockerDetail(
+          selected.platform,
+          selected.platform_product_id,
+          refreshed.plan.plan_id
+        );
+      }
     } catch (err) {
       console.error('Failed to save enrichment', err);
       alert('Saving changes failed. Please try again.');
@@ -979,7 +1074,18 @@ export default function ProductOptimizationPage() {
           )
         );
       }
-      await loadOptimizationData({ refresh: true, scope: 'product', reason: 'post_edit' });
+      const refreshed = await loadOptimizationData({
+        refresh: true,
+        scope: 'product',
+        reason: 'post_edit',
+      });
+      if (refreshed?.plan?.plan_id) {
+        await loadProductBlockerDetail(
+          selected.platform,
+          selected.platform_product_id,
+          refreshed.plan.plan_id
+        );
+      }
     } catch (err) {
       console.error('Failed to save & evaluate quality', err);
       alert('Saving and rescoring failed. Please try again.');
@@ -1029,11 +1135,18 @@ export default function ProductOptimizationPage() {
         ...prev,
         [key]: Date.now(),
       }));
-      await loadOptimizationData({
+      const refreshed = await loadOptimizationData({
         refresh: true,
         scope: 'product',
         reason: 'post_action',
       });
+      if (refreshed?.plan?.plan_id) {
+        await loadProductBlockerDetail(
+          selected.platform,
+          selected.platform_product_id,
+          refreshed.plan.plan_id
+        );
+      }
       setActionFeedback(
         result.verification?.merchant_visible_impact ||
           'Applied the recommended AI fix and refreshed readiness.'
@@ -1109,12 +1222,19 @@ export default function ProductOptimizationPage() {
       return;
     }
 
-    await loadOptimizationData({
-      refresh: true,
-      scope: 'product',
-      reason: 'manual',
-    });
-    await loadProductDetail(selected.platform, selected.platform_product_id);
+      const refreshed = await loadOptimizationData({
+        refresh: true,
+        scope: 'product',
+        reason: 'manual',
+      });
+      if (refreshed?.plan?.plan_id) {
+        await loadProductBlockerDetail(
+          selected.platform,
+          selected.platform_product_id,
+          refreshed.plan.plan_id
+        );
+      }
+      await loadProductDetail(selected.platform, selected.platform_product_id);
   };
 
   const filteredProducts = (() => {
@@ -1206,6 +1326,53 @@ export default function ProductOptimizationPage() {
   })();
 
   useEffect(() => {
+    if (!fromReadiness || !focusIssue || !showBlockedOnly) {
+      return;
+    }
+    if (filteredProducts.length > 0) {
+      return;
+    }
+
+    const hasExcludedProductsForCurrentIssue = queueDrivenProducts.some((item) => {
+      const excludedVariantCount =
+        item.readiness?.excluded_variant_count ??
+        item.agent_push?.excluded_variant_count ??
+        0;
+      if (excludedVariantCount <= 0) {
+        return false;
+      }
+      if (issueFilter === 'all') {
+        return true;
+      }
+      return (item.readiness?.top_issues || []).some(
+        (issue) => getIssueBucketCodeForReason(issue.code) === issueFilter
+      );
+    });
+
+    if (!hasExcludedProductsForCurrentIssue) {
+      return;
+    }
+
+    setShowBlockedOnly(false);
+    setEntryFilterNotice(
+      'Showing excluded products because no active blockers matched the current filter.'
+    );
+  }, [
+    filteredProducts.length,
+    focusIssue,
+    fromReadiness,
+    issueFilter,
+    queueDrivenProducts,
+    showBlockedOnly,
+  ]);
+
+  useEffect(() => {
+    if (!fromReadiness) {
+      setEntryFilterNotice(null);
+    }
+  }, [fromReadiness]);
+
+  useEffect(() => {
     if (selected || filteredProducts.length === 0) return;
     const first = filteredProducts[0];
     void handleSelect(first.platform, first.platform_product_id);
@@ -1283,7 +1450,35 @@ export default function ProductOptimizationPage() {
     selectedQueueItem?.fix_surface === 'integrations' ||
     selectedQueueItem?.fix_surface === 'policy'
       ? '/dashboard/integrations'
-      : '/dashboard/product-optimization';
+      : selectedQueueItem
+        ? (() => {
+            const params = new URLSearchParams({
+              platform: selectedQueueItem.platform,
+              platformProductId:
+                selectedQueueItem.platform_product_id ||
+                selectedQueueItem.product_id,
+              modal: 'review',
+              source: 'readiness',
+            });
+            const priorityVariant = blockerDetail?.variants.find(
+              (variant) =>
+                variant.readiness_status === 'blocked' ||
+                variant.agent_push_status === 'excluded_from_agent_push'
+            );
+            if (priorityVariant?.variant_id) {
+              params.set('variantId', priorityVariant.variant_id);
+            }
+            return `/dashboard/products?${params.toString()}`;
+          })()
+        : '/dashboard/products';
+
+  const blockerVariants = blockerDetail?.variants || [];
+  const activeBlockedVariants = blockerVariants.filter(
+    (variant) => variant.readiness_status === 'blocked'
+  );
+  const excludedVariants = blockerVariants.filter(
+    (variant) => variant.agent_push_status === 'excluded_from_agent_push'
+  );
 
   const qualityMetadataReady = queueDrivenProducts.some(
     (item) =>
@@ -1641,6 +1836,11 @@ export default function ProductOptimizationPage() {
                 </label>
               </div>
             </div>
+            {entryFilterNotice && (
+              <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
+                {entryFilterNotice}
+              </div>
+            )}
           </div>
           <div className="max-h-[660px] overflow-y-auto">
             {filteredProducts.length === 0 ? (
@@ -1860,7 +2060,9 @@ export default function ProductOptimizationPage() {
                     <div className="font-medium text-slate-900">
                       {selectedQueueItem.recommended_action_type === 'run_product_enrichment'
                         ? 'Fixable from this page'
-                        : 'Needs a different surface'}
+                        : selectedQueueItem.fix_surface === 'catalog_data'
+                          ? 'Needs catalog review'
+                          : 'Needs a different surface'}
                     </div>
                     <div className="mt-1 text-xs text-slate-600">
                       {selectedQueueItem.priority_reason ||
@@ -1877,7 +2079,9 @@ export default function ProductOptimizationPage() {
                     <div className="mt-1 text-xs text-slate-600">
                       {canExecuteSelectedAction
                         ? 'Preview the suggested fix first, then apply it if it looks right.'
-                        : `${getManualReviewLabel(selectedQueueItem.fix_surface)} to continue.`}
+                        : selectedQueueItem.fix_surface === 'catalog_data'
+                          ? 'Open this product in Catalog, compare the affected variants below, and fix the source data in your store.'
+                          : `${getManualReviewLabel(selectedQueueItem.fix_surface)} to continue.`}
                       {' · '}Priority {selectedQueueItem.priority_score.toFixed(0)}
                     </div>
                   </div>
@@ -1926,6 +2130,142 @@ export default function ProductOptimizationPage() {
                 </div>
               </div>
 
+              <div className="rounded-lg bg-slate-50 p-3 xl:col-span-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Affected variants
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">
+                      Cross-check these variants against your source catalog before you review or edit the product.
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-[11px]">
+                    <span className="rounded-full bg-rose-100 px-2 py-0.5 font-medium text-rose-700">
+                      Active blockers {activeBlockedVariants.length}
+                    </span>
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800">
+                      Auto-excluded {excludedVariants.length}
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-3 space-y-2">
+                  <div className="rounded-lg bg-white px-3 py-2 text-xs text-slate-600 ring-1 ring-slate-200">
+                    <span className="font-medium text-slate-900">
+                      Active blockers still need source-data fixes:
+                    </span>{' '}
+                    {activeBlockedVariants.length > 0
+                      ? `${activeBlockedVariants.length} variants are still blocked in the current readiness plan.`
+                      : 'No variants are actively blocked right now.'}
+                  </div>
+                  <div className="rounded-lg bg-white px-3 py-2 text-xs text-slate-600 ring-1 ring-slate-200">
+                    <span className="font-medium text-slate-900">
+                      Auto-excluded from agent push:
+                    </span>{' '}
+                    {excludedVariants.length > 0
+                      ? `${excludedVariants.length} variants are being held back until source data becomes usable again.`
+                      : 'No variants are currently auto-excluded from push.'}
+                  </div>
+                </div>
+                <div className="mt-3 overflow-x-auto rounded-lg bg-white ring-1 ring-slate-200">
+                  {blockerDetailLoading ? (
+                    <div className="px-4 py-5 text-sm text-slate-600">
+                      Loading affected variants…
+                    </div>
+                  ) : blockerVariants.length > 0 ? (
+                    <table className="min-w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">Variant</th>
+                          <th className="px-3 py-2 font-medium">Price</th>
+                          <th className="px-3 py-2 font-medium">Stock</th>
+                          <th className="px-3 py-2 font-medium">Readiness</th>
+                          <th className="px-3 py-2 font-medium">Agent push</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {blockerVariants.map((variant) => (
+                          <tr
+                            key={variant.variant_id}
+                            className="border-t border-slate-100 align-top"
+                          >
+                            <td className="px-3 py-2">
+                              <div className="font-medium text-slate-900">
+                                {variant.title}
+                              </div>
+                              <div className="mt-1 text-[11px] text-slate-500">
+                                SKU {variant.sku || 'N/A'} · ID {variant.variant_id}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 text-slate-700">
+                              {typeof variant.price_value === 'number'
+                                ? `${variant.price_value} ${variant.price_currency || ''}`.trim()
+                                : 'No price'}
+                            </td>
+                            <td className="px-3 py-2 text-slate-700">
+                              {typeof variant.inventory_quantity === 'number'
+                                ? variant.inventory_quantity
+                                : '—'}
+                            </td>
+                            <td className="px-3 py-2">
+                              {variant.readiness_blocker_codes.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {variant.readiness_blocker_codes.map((code) => (
+                                    <span
+                                      key={code}
+                                      className="rounded-full bg-rose-100 px-2 py-0.5 font-medium text-rose-700"
+                                    >
+                                      {formatReadinessCode(code)}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : variant.readiness_warning_codes.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {variant.readiness_warning_codes.map((code) => (
+                                    <span
+                                      key={code}
+                                      className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800"
+                                    >
+                                      {formatReadinessCode(code)}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700">
+                                  Ready
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              {variant.agent_push_reason_codes.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {variant.agent_push_reason_codes.map((code) => (
+                                    <span
+                                      key={code}
+                                      className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800"
+                                    >
+                                      {formatAgentPushReason(code)}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700">
+                                  Eligible
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="px-4 py-5 text-sm text-slate-600">
+                      No variant-level blocker details are available for this product yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="rounded-lg bg-slate-50 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Preview and verification
@@ -1958,7 +2298,9 @@ export default function ProductOptimizationPage() {
                     </div>
                   ) : (
                     <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
-                      Preview before you apply so you can verify the exact fields that will change.
+                      {canExecuteSelectedAction
+                        ? 'Preview before you apply so you can verify the exact fields that will change.'
+                        : 'This issue is not auto-fixable from this page. Review the affected variants and continue in the catalog or setup surface.'}
                     </div>
                   )}
                   {verificationResult && (

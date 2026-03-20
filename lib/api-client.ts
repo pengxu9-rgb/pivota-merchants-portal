@@ -324,6 +324,23 @@ class ApiClient {
     return response.data;
   }
 
+  async getMerchantProductBlockers(
+    platform: string,
+    platformProductId: string,
+    planId: string
+  ) {
+    const encodedId = encodeURIComponent(platformProductId);
+    const response = await this.client.get(
+      `/merchant/readiness/optimization/products/${platform}/${encodedId}/blockers`,
+      {
+        params: {
+          plan_id: planId,
+        },
+      }
+    );
+    return response.data?.data || response.data;
+  }
+
   async updateMerchantProductEnrichment(
     platform: string,
     platformProductId: string,

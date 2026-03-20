@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   AlertCircle,
   ArrowRight,
@@ -90,7 +91,79 @@ function formatCurrency(amount: number) {
   }).format(amount);
 }
 
+function normalizeProductForReview(product: any) {
+  const standard = product?.standard || product || {};
+  const priceValue =
+    typeof standard.price === 'number'
+      ? standard.price
+      : typeof standard.price?.value === 'number'
+        ? standard.price.value
+        : 0;
+  const priceCurrency =
+    typeof standard.price === 'number'
+      ? standard.currency || 'USD'
+      : standard.price?.currency || standard.currency || 'USD';
+  const inventoryQuantity =
+    standard.inventory_quantity ?? standard.stock ?? standard.inventory ?? 0;
+
+  return {
+    ...product,
+    id:
+      standard.product_id ||
+      standard.id ||
+      product?.platform_product_id ||
+      product?.product_id,
+    platform: product?.platform || standard.platform,
+    platform_product_id:
+      product?.platform_product_id || standard.product_id || standard.id,
+    product_id: standard.product_id || standard.id || product?.product_id,
+    title: standard.title || product?.title || product?.name,
+    name: standard.title || product?.title || product?.name,
+    description:
+      standard.description ||
+      standard.description_text ||
+      product?.description ||
+      '',
+    sku: standard.sku || product?.sku || null,
+    price: priceValue,
+    currency: priceCurrency,
+    inventory_quantity: inventoryQuantity,
+    stock: inventoryQuantity,
+    status: standard.status || product?.status,
+    orderable:
+      typeof standard.orderable === 'boolean'
+        ? standard.orderable
+        : product?.orderable,
+    image_url:
+      standard.image_url ||
+      standard.main_image_url ||
+      product?.image_url ||
+      product?.image,
+    images: standard.images || product?.images || [],
+    variants: (standard.variants || product?.variants || []).map((variant: any) => ({
+      ...variant,
+      id: variant?.variant_id || variant?.id,
+      variant_id: variant?.variant_id || variant?.id,
+      title: variant?.title || variant?.name || variant?.variant_id || variant?.id,
+      sku: variant?.sku || null,
+      price:
+        typeof variant?.price === 'number'
+          ? variant.price
+          : typeof variant?.price?.value === 'number'
+            ? variant.price.value
+            : 0,
+      currency:
+        typeof variant?.price === 'number'
+          ? priceCurrency
+          : variant?.price?.currency || priceCurrency,
+      inventory_quantity:
+        variant?.inventory_quantity ?? variant?.stock ?? variant?.inventory ?? 0,
+    })),
+  };
+}
+
 export default function ProductsPage() {
+  const searchParams = useSearchParams();
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -98,6 +171,9 @@ export default function ProductsPage() {
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
+  const [reviewSource, setReviewSource] = useState<string | null>(null);
+  const deepLinkResolvedRef = useRef<string | null>(null);
 
   useEffect(() => {
     void loadProducts();
@@ -114,6 +190,106 @@ export default function ProductsPage() {
       setLoading(false);
     }
   };
+
+  const deepLinkPlatform = searchParams.get('platform');
+  const deepLinkPlatformProductId = searchParams.get('platformProductId');
+  const deepLinkVariantId = searchParams.get('variantId');
+  const deepLinkModal = searchParams.get('modal');
+  const deepLinkSource = searchParams.get('source');
+
+  useEffect(() => {
+    if (loading) return;
+    if (
+      deepLinkModal !== 'review' ||
+      !deepLinkPlatform ||
+      !deepLinkPlatformProductId
+    ) {
+      return;
+    }
+
+    const deepLinkKey = [
+      deepLinkPlatform,
+      deepLinkPlatformProductId,
+      deepLinkVariantId || '',
+      deepLinkSource || '',
+    ].join('|');
+    if (deepLinkResolvedRef.current === deepLinkKey) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const openDeepLinkedReview = async () => {
+      const matchedProduct = products.find((product) => {
+        const normalizedPlatform =
+          String(product?.platform || '').toLowerCase() ===
+          deepLinkPlatform.toLowerCase();
+        const normalizedProductId =
+          String(
+            product?.platform_product_id ||
+              product?.product_id ||
+              product?.id ||
+              ''
+          ) === deepLinkPlatformProductId;
+        return normalizedPlatform && normalizedProductId;
+      });
+
+      let normalizedProduct =
+        matchedProduct && Array.isArray(matchedProduct.variants)
+          ? normalizeProductForReview(matchedProduct)
+          : null;
+
+      if (!normalizedProduct) {
+        try {
+          const detail = await apiClient.getMerchantProductDetail(
+            deepLinkPlatform,
+            deepLinkPlatformProductId
+          );
+          normalizedProduct = normalizeProductForReview(detail);
+        } catch (error) {
+          console.error('Failed to resolve deep-linked product review', error);
+          return;
+        }
+      }
+
+      if (cancelled || !normalizedProduct) {
+        return;
+      }
+
+      setSelectedProduct(normalizedProduct);
+      setSelectedVariantId(deepLinkVariantId || null);
+      setReviewSource(deepLinkSource || null);
+      setShowViewModal(true);
+      deepLinkResolvedRef.current = deepLinkKey;
+    };
+
+    void openDeepLinkedReview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    deepLinkModal,
+    deepLinkPlatform,
+    deepLinkPlatformProductId,
+    deepLinkSource,
+    deepLinkVariantId,
+    loading,
+    products,
+  ]);
+
+  useEffect(() => {
+    if (!showViewModal || !selectedVariantId) return;
+
+    const timeoutId = window.setTimeout(() => {
+      const row = document.getElementById(`variant-row-${selectedVariantId}`);
+      row?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 80);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [selectedVariantId, showViewModal]);
 
   const handleAddProduct = () => {
     alert(
@@ -359,7 +535,9 @@ export default function ProductsPage() {
                             type="button"
                             variant="secondary"
                             onClick={() => {
-                              setSelectedProduct(product);
+                              setSelectedProduct(normalizeProductForReview(product));
+                              setSelectedVariantId(null);
+                              setReviewSource(null);
                               setShowViewModal(true);
                             }}
                           >
@@ -369,7 +547,9 @@ export default function ProductsPage() {
                             type="button"
                             variant="ghost"
                             onClick={() => {
-                              setSelectedProduct(product);
+                              setSelectedProduct(normalizeProductForReview(product));
+                              setSelectedVariantId(null);
+                              setReviewSource(null);
                               setShowEditModal(true);
                             }}
                           >
@@ -465,6 +645,12 @@ export default function ProductsPage() {
                 </h3>
               </div>
 
+              {reviewSource === 'readiness' ? (
+                <div className="rounded-[1.1rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  Opened from catalog health. Use the identifiers and variants below to fix the same product in your source catalog.
+                </div>
+              ) : null}
+
               {selectedProduct.image_url || selectedProduct.images?.[0] ? (
                 <img
                   src={selectedProduct.image_url || selectedProduct.images[0]}
@@ -477,6 +663,12 @@ export default function ProductsPage() {
                 <div className="rounded-[1.1rem] bg-white/70 p-4">
                   <div className="text-sm text-[color:var(--merchant-muted)]">SKU</div>
                   <div className="mt-1 text-[color:var(--merchant-ink)]">{selectedProduct.sku || 'N/A'}</div>
+                </div>
+                <div className="rounded-[1.1rem] bg-white/70 p-4">
+                  <div className="text-sm text-[color:var(--merchant-muted)]">Platform product id</div>
+                  <div className="mt-1 break-all text-[color:var(--merchant-ink)]">
+                    {selectedProduct.platform_product_id || selectedProduct.product_id || 'N/A'}
+                  </div>
                 </div>
                 <div className="rounded-[1.1rem] bg-white/70 p-4">
                   <div className="text-sm text-[color:var(--merchant-muted)]">Price</div>
@@ -510,11 +702,30 @@ export default function ProductsPage() {
                   <div className="text-sm text-[color:var(--merchant-muted)]">Variants</div>
                   <div className="mt-3 space-y-2">
                     {selectedProduct.variants.map((variant: any, index: number) => (
-                      <div key={index} className="flex items-center justify-between rounded-xl border border-[color:var(--merchant-line)] bg-white/70 px-4 py-3">
-                        <span className="text-sm text-[color:var(--merchant-muted-strong)]">{variant.title}</span>
-                        <span className="text-sm font-medium text-[color:var(--merchant-ink)]">
-                          {formatCurrency(variant.price)} · Stock {variant.inventory_quantity || 0}
-                        </span>
+                      <div
+                        key={variant.variant_id || variant.id || index}
+                        id={`variant-row-${variant.variant_id || variant.id || index}`}
+                        className={`rounded-xl border px-4 py-3 ${
+                          selectedVariantId &&
+                          (variant.variant_id === selectedVariantId ||
+                            variant.id === selectedVariantId)
+                            ? 'border-amber-300 bg-amber-50'
+                            : 'border-[color:var(--merchant-line)] bg-white/70'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-medium text-[color:var(--merchant-muted-strong)]">
+                              {variant.title}
+                            </div>
+                            <div className="mt-1 text-xs text-[color:var(--merchant-muted)]">
+                              SKU {variant.sku || 'N/A'} · Variant ID {variant.variant_id || variant.id || 'N/A'}
+                            </div>
+                          </div>
+                          <span className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                            {formatCurrency(variant.price || 0)} · Stock {variant.inventory_quantity || 0}
+                          </span>
+                        </div>
                       </div>
                     ))}
                   </div>
