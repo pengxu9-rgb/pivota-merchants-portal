@@ -325,6 +325,58 @@ type ProductBlockerDetail = {
   variants: ProductBlockerVariant[];
 };
 
+type SourceDataReasonCode =
+  | 'missing_price'
+  | 'out_of_stock'
+  | 'missing_primary_image';
+
+type SourceDataTriageSummaryBucket = {
+  code: SourceDataReasonCode;
+  label: string;
+  scope: 'product' | 'variant';
+  affected_products: number;
+  affected_variants: number;
+};
+
+type SourceDataTriageRow = {
+  scope: 'product' | 'variant';
+  reason_code: SourceDataReasonCode;
+  reason_label: string;
+  platform: string;
+  platform_product_id: string;
+  product_id: string;
+  product_title: string;
+  variant_id?: string | null;
+  variant_title?: string | null;
+  sku?: string | null;
+  price_value?: number | null;
+  price_currency?: string | null;
+  inventory_quantity?: number | null;
+  blocked_variant_count: number;
+  excluded_variant_count: number;
+  readiness_blocker_codes: string[];
+  readiness_warning_codes: string[];
+  agent_push_status: AgentPushStatus;
+  agent_push_reason_codes: string[];
+  recommended_action_type?: string | null;
+  fix_surface?:
+    | 'product_content'
+    | 'catalog_data'
+    | 'integrations'
+    | 'policy'
+    | 'pivota_managed'
+    | null;
+};
+
+type SourceDataTriagePayload = {
+  plan_id: string;
+  snapshot_id: string;
+  reason_code?: SourceDataReasonCode | null;
+  summary: SourceDataTriageSummaryBucket[];
+  rows: SourceDataTriageRow[];
+  total_rows: number;
+};
+
 type WorkspaceProductItem = MerchantProductListItem & {
   readiness: ProductQueueItem | null;
   readinessIndex: number;
@@ -478,7 +530,10 @@ const getProductStatusLine = (item: WorkspaceProductItem) => {
 };
 
 const formatProductPriceLine = (item: WorkspaceProductItem) => {
-  const priceValue = item.standard?.price?.value ?? item.standard?.price;
+  const priceValue =
+    typeof item.standard?.price === 'number'
+      ? item.standard.price
+      : item.standard?.price?.value;
   const currency =
     typeof item.standard?.price === 'number'
       ? ''
@@ -501,6 +556,51 @@ const getSelectedProductSummary = (item: ProductQueueItem) => {
   }
 
   return 'This product is already eligible for agent push. Keep the content clean and current.';
+};
+
+const SOURCE_DATA_REASON_CONFIG: Record<
+  SourceDataReasonCode,
+  {
+    label: string;
+    helper: string;
+    issueFilter: string;
+    pushFilter: 'all' | 'eligible' | 'excluded';
+    blockedOnly: boolean;
+  }
+> = {
+  missing_price: {
+    label: 'Missing price',
+    helper: 'Variants missing price or currency. These stay excluded until store data is fixed.',
+    issueFilter: 'price_currency',
+    pushFilter: 'excluded',
+    blockedOnly: false,
+  },
+  out_of_stock: {
+    label: 'Out of stock',
+    helper: 'Variants with zero stock or stale availability. Review and restock from your source catalog.',
+    issueFilter: 'inventory_availability',
+    pushFilter: 'excluded',
+    blockedOnly: false,
+  },
+  missing_primary_image: {
+    label: 'Missing primary image',
+    helper: 'Products missing hero imagery. These need a product-level catalog fix rather than AI text enrichment.',
+    issueFilter: 'catalog_content',
+    pushFilter: 'all',
+    blockedOnly: true,
+  },
+};
+
+const SOURCE_DATA_REASON_ORDER: SourceDataReasonCode[] = [
+  'missing_price',
+  'out_of_stock',
+  'missing_primary_image',
+];
+
+const getInitialTriageReason = (focusIssue: string | null): SourceDataReasonCode => {
+  if (focusIssue === 'inventory_availability') return 'out_of_stock';
+  if (focusIssue === 'catalog_content') return 'missing_primary_image';
+  return 'missing_price';
 };
 
 export default function ProductOptimizationPage() {
@@ -539,6 +639,16 @@ export default function ProductOptimizationPage() {
   const [lastOptimizedAt, setLastOptimizedAt] = useState<Record<string, number>>(
     {}
   );
+  const [triageReason, setTriageReason] = useState<SourceDataReasonCode>(
+    getInitialTriageReason(focusIssue)
+  );
+  const [sourceDataTriage, setSourceDataTriage] =
+    useState<SourceDataTriagePayload | null>(null);
+  const [sourceDataTriageLoading, setSourceDataTriageLoading] = useState(false);
+  const [sourceDataTriageError, setSourceDataTriageError] = useState<string | null>(
+    null
+  );
+  const [triageExporting, setTriageExporting] = useState(false);
   const [sortBy, setSortBy] = useState<'default' | 'cq_desc' | 'mr_desc'>(
     'default'
   );
@@ -560,6 +670,10 @@ export default function ProductOptimizationPage() {
     if (focusIssue) {
       setIssueFilter(focusIssue);
     }
+  }, [focusIssue]);
+
+  useEffect(() => {
+    setTriageReason(getInitialTriageReason(focusIssue));
   }, [focusIssue]);
 
   const loadOptimizationData = async (options?: {
@@ -697,6 +811,55 @@ export default function ProductOptimizationPage() {
     }
   };
 
+  const applyTriageReasonFilters = (reasonCode: SourceDataReasonCode) => {
+    const config = SOURCE_DATA_REASON_CONFIG[reasonCode];
+    setIssueFilter(config.issueFilter);
+    setPushFilter(config.pushFilter);
+    setShowBlockedOnly(config.blockedOnly);
+    setShowOnlyLowQuality(false);
+  };
+
+  const loadSourceDataTriage = async (
+    planId: string,
+    reasonCode: SourceDataReasonCode,
+    allowRetry = true
+  ) => {
+    try {
+      setSourceDataTriageLoading(true);
+      setSourceDataTriageError(null);
+      const data = await apiClient.getMerchantSourceDataTriage({
+        plan_id: planId,
+        reason_code: reasonCode,
+        limit: 500,
+      });
+      setSourceDataTriage(data || null);
+      return data || null;
+    } catch (err) {
+      if (allowRetry && isPlanSupersededError(err)) {
+        const refreshed = await loadOptimizationData({
+          refresh: true,
+          scope: 'merchant',
+          reason: 'plan_superseded',
+        });
+        const nextPlanId = refreshed?.plan?.plan_id;
+        if (nextPlanId && nextPlanId !== planId) {
+          return await loadSourceDataTriage(nextPlanId, reasonCode, false);
+        }
+      }
+      console.error('Failed to load source-data triage', err);
+      setSourceDataTriage(null);
+      setSourceDataTriageError(
+        getActionErrorMessage(
+          err,
+          'Could not load source-data triage right now.'
+        )
+      );
+      return null;
+    } finally {
+      setSourceDataTriageLoading(false);
+    }
+  };
+
   const handleSelect = async (
     platform: string,
     platformProductId: string,
@@ -796,6 +959,15 @@ export default function ProductOptimizationPage() {
       optimizationPlan.plan_id
     );
   }, [selected?.platform, selected?.platform_product_id, optimizationPlan?.plan_id]);
+
+  useEffect(() => {
+    if (!optimizationPlan?.plan_id) {
+      setSourceDataTriage(null);
+      setSourceDataTriageError(null);
+      return;
+    }
+    void loadSourceDataTriage(optimizationPlan.plan_id, triageReason);
+  }, [optimizationPlan?.plan_id, triageReason]);
 
   const productQueueMap = useMemo(() => {
     return new Map(
@@ -1351,7 +1523,7 @@ export default function ProductOptimizationPage() {
       return;
     }
 
-    const matchesFocusedIssue = (item: MerchantProductWithReadiness) =>
+    const matchesFocusedIssue = (item: WorkspaceProductItem) =>
       (item.readiness?.top_issues || []).some(
         (issue) => getIssueBucketCodeForReason(issue.code) === focusIssue
       );
@@ -1462,29 +1634,53 @@ export default function ProductOptimizationPage() {
     (action) => action.fix_surface === 'pivota_managed'
   );
 
+  const triageConfig = SOURCE_DATA_REASON_CONFIG[triageReason];
+  const triageSummaryByCode = useMemo(() => {
+    return new Map(
+      (sourceDataTriage?.summary || []).map((bucket) => [bucket.code, bucket])
+    );
+  }, [sourceDataTriage]);
+  const triageRows = sourceDataTriage?.rows || [];
+
+  const buildCatalogReviewHref = ({
+    platform,
+    platformProductId,
+    variantId,
+  }: {
+    platform: string;
+    platformProductId: string;
+    variantId?: string | null;
+  }) => {
+    const params = new URLSearchParams({
+      platform,
+      platformProductId,
+      modal: 'review',
+      source: 'readiness',
+    });
+    if (variantId) {
+      params.set('variantId', variantId);
+    }
+    return `/dashboard/products?${params.toString()}`;
+  };
+
   const manualReviewHref =
     selectedQueueItem?.fix_surface === 'integrations' ||
     selectedQueueItem?.fix_surface === 'policy'
       ? '/dashboard/integrations'
       : selectedQueueItem
         ? (() => {
-            const params = new URLSearchParams({
-              platform: selectedQueueItem.platform,
-              platformProductId:
-                selectedQueueItem.platform_product_id ||
-                selectedQueueItem.product_id,
-              modal: 'review',
-              source: 'readiness',
-            });
             const priorityVariant = blockerDetail?.variants.find(
               (variant) =>
                 variant.readiness_status === 'blocked' ||
                 variant.agent_push_status === 'excluded_from_agent_push'
             );
-            if (priorityVariant?.variant_id) {
-              params.set('variantId', priorityVariant.variant_id);
-            }
-            return `/dashboard/products?${params.toString()}`;
+            return buildCatalogReviewHref({
+              platform: selectedQueueItem.platform,
+              platformProductId:
+                selectedQueueItem.platform_product_id ||
+                selectedQueueItem.product_id,
+              variantId: priorityVariant?.variant_id || null,
+            });
           })()
         : '/dashboard/products';
 
@@ -1501,6 +1697,47 @@ export default function ProductOptimizationPage() {
       typeof item.quality?.content_quality_score === 'number' ||
       typeof item.quality?.model_readiness_score === 'number'
   );
+
+  const handleSelectTriageReason = (reasonCode: SourceDataReasonCode) => {
+    setTriageReason(reasonCode);
+    applyTriageReasonFilters(reasonCode);
+  };
+
+  const handleInspectTriageRow = async (row: SourceDataTriageRow) => {
+    handleSelectTriageReason(row.reason_code);
+    await handleSelect(row.platform, row.platform_product_id, {
+      focusDetail: true,
+    });
+  };
+
+  const handleExportCurrentTriageLane = async () => {
+    if (!optimizationPlan?.plan_id) return;
+    setTriageExporting(true);
+    try {
+      const blob = await apiClient.exportMerchantSourceDataTriageCSV({
+        plan_id: optimizationPlan.plan_id,
+        reason_code: triageReason,
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `catalog-health-${triageReason}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export source-data triage CSV', err);
+      alert(
+        getActionErrorMessage(
+          err,
+          'Could not export the current triage lane.'
+        )
+      );
+    } finally {
+      setTriageExporting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -1692,6 +1929,237 @@ export default function ProductOptimizationPage() {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {optimizationPlan && (
+        <div className="rounded-xl border bg-white p-5 shadow">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Source-data triage
+              </div>
+              <h2 className="mt-2 text-lg font-semibold text-slate-900">
+                Batch-govern excluded and blocked variants
+              </h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-600">
+                Use these three lanes to work through the source-data blockers that AI cannot fix from this page. Pick a lane, inspect the affected products and variants, then jump straight into Catalog review.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleExportCurrentTriageLane}
+                disabled={!optimizationPlan?.plan_id || triageExporting || sourceDataTriageLoading}
+                className="inline-flex items-center justify-center rounded-lg bg-slate-50 px-3 py-2 text-sm font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50"
+              >
+                {triageExporting ? 'Exporting…' : 'Export current lane'}
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            {SOURCE_DATA_REASON_ORDER.map((reasonCode) => {
+              const bucket = triageSummaryByCode.get(reasonCode);
+              const active = triageReason === reasonCode;
+              const config = SOURCE_DATA_REASON_CONFIG[reasonCode];
+              return (
+                <button
+                  key={reasonCode}
+                  type="button"
+                  onClick={() => handleSelectTriageReason(reasonCode)}
+                  className={`rounded-xl border px-4 py-4 text-left transition ${
+                    active
+                      ? 'border-blue-300 bg-blue-50 shadow-sm'
+                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">
+                        {config.label}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-600">
+                        {config.helper}
+                      </div>
+                    </div>
+                    {active && (
+                      <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+                        Active
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
+                    <span className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700">
+                      {bucket?.affected_products ?? 0} products
+                    </span>
+                    <span className="rounded-full bg-amber-100 px-2 py-1 font-medium text-amber-800">
+                      {bucket?.affected_variants ?? 0} variants
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {sourceDataTriageError && (
+            <div className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800 ring-1 ring-rose-200">
+              {sourceDataTriageError}
+            </div>
+          )}
+
+          <div className="mt-4 rounded-xl border border-slate-200">
+            <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">
+                  {triageConfig.label} lane
+                </div>
+                <div className="mt-1 text-xs text-slate-600">
+                  {triageRows.length} rows in view · Queue is automatically scoped to{' '}
+                  {triageConfig.label.toLowerCase()} for faster review.
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 text-[11px]">
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                  Issue {triageConfig.issueFilter.replaceAll('_', ' ')}
+                </span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                  Push {triageConfig.pushFilter}
+                </span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                  {triageConfig.blockedOnly ? 'Blocked only' : 'Includes exclusions'}
+                </span>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              {sourceDataTriageLoading ? (
+                <div className="px-4 py-5 text-sm text-slate-600">
+                  Loading current triage lane…
+                </div>
+              ) : triageRows.length > 0 ? (
+                <table className="min-w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr>
+                      <th className="px-4 py-2 font-medium">Catalog item</th>
+                      <th className="px-4 py-2 font-medium">Store data</th>
+                      <th className="px-4 py-2 font-medium">Readiness / push</th>
+                      <th className="px-4 py-2 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {triageRows.map((row) => (
+                      <tr
+                        key={[
+                          row.reason_code,
+                          row.platform,
+                          row.platform_product_id,
+                          row.variant_id || 'product',
+                        ].join('|')}
+                        className="border-t border-slate-100 align-top"
+                      >
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-slate-900">
+                            {row.product_title}
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            {row.scope === 'variant'
+                              ? `${row.variant_title || 'Variant'} · SKU ${row.sku || 'N/A'} · ID ${row.variant_id || 'N/A'}`
+                              : `Product ${row.platform.toUpperCase()} · ${row.platform_product_id}`}
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                              {row.reason_label}
+                            </span>
+                            <span className="rounded-full bg-rose-100 px-2 py-0.5 font-medium text-rose-700">
+                              {row.blocked_variant_count} blocked
+                            </span>
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800">
+                              {row.excluded_variant_count} excluded
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-700">
+                          <div>
+                            {typeof row.price_value === 'number'
+                              ? `${row.price_value} ${row.price_currency || ''}`.trim()
+                              : row.scope === 'variant'
+                                ? 'No price'
+                                : 'Review at product level'}
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            {row.scope === 'variant'
+                              ? `Stock ${
+                                  typeof row.inventory_quantity === 'number'
+                                    ? row.inventory_quantity
+                                    : '—'
+                                }`
+                              : `${row.platform.toUpperCase()} · ${row.platform_product_id}`}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-1">
+                            {row.readiness_blocker_codes.length > 0 ? (
+                              row.readiness_blocker_codes.map((code) => (
+                                <span
+                                  key={`${row.platform_product_id}-${row.variant_id || 'product'}-readiness-${code}`}
+                                  className="rounded-full bg-rose-100 px-2 py-0.5 font-medium text-rose-700"
+                                >
+                                  {formatReadinessCode(code)}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700">
+                                Ready
+                              </span>
+                            )}
+                            {row.agent_push_reason_codes.length > 0
+                              ? row.agent_push_reason_codes.map((code) => (
+                                  <span
+                                    key={`${row.platform_product_id}-${row.variant_id || 'product'}-push-${code}`}
+                                    className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800"
+                                  >
+                                    Push: {formatAgentPushReason(code)}
+                                  </span>
+                                ))
+                              : (
+                                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700">
+                                    Push-ready
+                                  </span>
+                                )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleInspectTriageRow(row)}
+                              className="inline-flex items-center rounded-md border border-slate-200 px-2.5 py-1.5 font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              Inspect here
+                            </button>
+                            <a
+                              href={buildCatalogReviewHref({
+                                platform: row.platform,
+                                platformProductId: row.platform_product_id,
+                                variantId: row.variant_id || null,
+                              })}
+                              className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 font-medium text-blue-700 hover:bg-blue-100"
+                            >
+                              Review in catalog
+                            </a>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="px-4 py-5 text-sm text-slate-600">
+                  No rows are currently active in the {triageConfig.label.toLowerCase()} lane.
+                </div>
+              )}
             </div>
           </div>
         </div>

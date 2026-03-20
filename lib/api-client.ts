@@ -341,6 +341,41 @@ class ApiClient {
     return response.data?.data || response.data;
   }
 
+  async getMerchantSourceDataTriage(params: {
+    plan_id: string;
+    reason_code?: string;
+    limit?: number;
+  }) {
+    const response = await this.client.get(
+      '/merchant/readiness/optimization/source-data-triage',
+      {
+        params: {
+          plan_id: params.plan_id,
+          reason_code: params.reason_code,
+          limit: params.limit ?? 500,
+        },
+      }
+    );
+    return response.data?.data || response.data;
+  }
+
+  async exportMerchantSourceDataTriageCSV(params: {
+    plan_id: string;
+    reason_code?: string;
+  }) {
+    const response = await this.client.get(
+      '/merchant/readiness/optimization/source-data-triage/export.csv',
+      {
+        params: {
+          plan_id: params.plan_id,
+          reason_code: params.reason_code,
+        },
+        responseType: 'blob',
+      }
+    );
+    return response.data as Blob;
+  }
+
   async updateMerchantProductEnrichment(
     platform: string,
     platformProductId: string,
