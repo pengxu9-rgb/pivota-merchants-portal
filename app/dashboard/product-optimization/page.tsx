@@ -1635,11 +1635,9 @@ export default function ProductOptimizationPage() {
   );
 
   const triageConfig = SOURCE_DATA_REASON_CONFIG[triageReason];
-  const triageSummaryByCode = useMemo(() => {
-    return new Map(
-      (sourceDataTriage?.summary || []).map((bucket) => [bucket.code, bucket])
-    );
-  }, [sourceDataTriage]);
+  const triageSummaryByCode = new Map(
+    (sourceDataTriage?.summary || []).map((bucket) => [bucket.code, bucket])
+  );
   const triageRows = sourceDataTriage?.rows || [];
 
   const buildCatalogReviewHref = ({
