@@ -46,9 +46,9 @@ export const primaryNavigation: MerchantNavigationItem[] = [
   },
   {
     label: "Promotions",
-    href: "/portal/promotions",
+    href: "/dashboard/promotions",
     icon: Tag,
-    matchPrefixes: ["/portal/promotions"],
+    matchPrefixes: ["/dashboard/promotions", "/portal/promotions"],
     description: "Campaign planning",
   },
   {

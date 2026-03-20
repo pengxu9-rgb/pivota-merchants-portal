@@ -1,9 +1,41 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Package, Search, Loader2, Wand2, CheckCircle2 } from 'lucide-react';
+import {
+  ArrowRight,
+  CheckCircle2,
+  Loader2,
+  Package,
+  RefreshCw,
+  Search,
+  Wand2,
+} from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+
+type AgentPushStatus = 'eligible_for_agent_push' | 'excluded_from_agent_push';
+
+type AgentPushProjection = {
+  agent_push_status?: AgentPushStatus | null;
+  agent_push_reason_codes?: string[];
+  eligible_variant_count?: number;
+  excluded_variant_count?: number;
+  store_data_last_checked_at?: string | null;
+};
+
+type AgentPushSummary = {
+  total_products: number;
+  eligible_products: number;
+  excluded_products: number;
+  eligible_variants: number;
+  excluded_variants: number;
+  active_blocked_variants: number;
+  top_reason_codes?: Array<{
+    code: string;
+    count: number;
+  }>;
+  last_checked_at?: string | null;
+};
 
 type MerchantProductListItem = {
   merchant_id: string;
@@ -22,6 +54,7 @@ type MerchantProductListItem = {
     conversion_potential_score?: number | null;
     last_evaluated_at?: string | null;
   };
+  agent_push?: AgentPushProjection;
 };
 
 type MerchantProductDetail = {
@@ -31,6 +64,7 @@ type MerchantProductDetail = {
   standard: any;
   enrichment?: any;
   quality?: any;
+  agent_push?: AgentPushProjection;
 };
 
 type EnrichmentFormState = {
@@ -144,6 +178,11 @@ type ProductQueueItem = {
   quality_last_evaluated_at?: string | null;
   blocked_variant_count: number;
   ready_variant_count: number;
+  agent_push_status?: AgentPushStatus | null;
+  agent_push_reason_codes?: string[];
+  eligible_variant_count?: number;
+  excluded_variant_count?: number;
+  store_data_last_checked_at?: string | null;
   top_issues: ProductQueueIssue[];
   primary_action?: string | null;
   fix_surface:
@@ -167,6 +206,7 @@ type ReadinessOptimizationPayload = {
   issue_buckets: ReadinessIssueBucket[];
   merchant_actions: MerchantReadinessAction[];
   product_queue: ProductQueueItem[];
+  agent_push_summary?: AgentPushSummary;
   last_generated_at?: string | null;
 };
 
@@ -350,6 +390,51 @@ const getManualReviewLabel = (
   return 'Review issue details';
 };
 
+const getAgentPushLabel = (status?: AgentPushStatus | null) =>
+  status === 'excluded_from_agent_push'
+    ? 'Excluded from agent push'
+    : 'Eligible for agent push';
+
+const getAgentPushTone = (status?: AgentPushStatus | null) =>
+  status === 'excluded_from_agent_push'
+    ? 'bg-amber-100 text-amber-800'
+    : 'bg-emerald-100 text-emerald-700';
+
+const formatAgentPushReason = (code: string) => {
+  if (code === 'missing_price' || code === 'missing_currency') {
+    return 'Missing price';
+  }
+  if (code === 'out_of_stock') {
+    return 'Out of stock';
+  }
+  return formatReadinessCode(code);
+};
+
+const getProductActionLabel = (item: WorkspaceProductItem) => {
+  if (item.readiness?.recommended_action_type === 'run_product_enrichment') {
+    return 'Optimize';
+  }
+  return 'Review store data';
+};
+
+const getProductStatusLine = (item: WorkspaceProductItem) => {
+  const push = item.agent_push;
+  if (push?.agent_push_status === 'excluded_from_agent_push') {
+    const reason = (push.agent_push_reason_codes || []).map(formatAgentPushReason).slice(0, 2).join(' · ');
+    return reason ? `${getAgentPushLabel(push.agent_push_status)} · ${reason}` : getAgentPushLabel(push.agent_push_status);
+  }
+
+  if (item.readiness?.blocked_variant_count) {
+    return `${item.readiness.blocked_variant_count} active blockers · ${item.readiness.top_issues[0]?.label || 'Needs review'}`;
+  }
+
+  if (item.readiness?.top_issues?.length) {
+    return item.readiness.top_issues[0]?.label || 'Needs review';
+  }
+
+  return getAgentPushLabel(push?.agent_push_status);
+};
+
 export default function ProductOptimizationPage() {
   const searchParams = useSearchParams();
   const fromReadiness = searchParams.get('source') === 'readiness';
@@ -387,7 +472,11 @@ export default function ProductOptimizationPage() {
   const [showBlockedOnly, setShowBlockedOnly] = useState(false);
   const [showOnlyLowQuality, setShowOnlyLowQuality] = useState(false);
   const [issueFilter, setIssueFilter] = useState<string>('all');
+  const [pushFilter, setPushFilter] = useState<'all' | 'eligible' | 'excluded'>(
+    'all'
+  );
   const [bulkOptimizing, setBulkOptimizing] = useState(false);
+  const detailPaneRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     void loadOptimizationData();
@@ -488,6 +577,7 @@ export default function ProductOptimizationPage() {
         },
         enrichment: data.enrichment,
         quality: data.quality,
+        agent_push: data.agent_push,
       });
       if (data.quality) {
         setQualityPreview(data.quality);
@@ -499,7 +589,11 @@ export default function ProductOptimizationPage() {
     }
   };
 
-  const handleSelect = async (platform: string, platformProductId: string) => {
+  const handleSelect = async (
+    platform: string,
+    platformProductId: string,
+    options?: { focusDetail?: boolean }
+  ) => {
     setSelected({ platform, platform_product_id: platformProductId });
     setDetail(null);
     setQualityPreview(null);
@@ -509,6 +603,14 @@ export default function ProductOptimizationPage() {
     setVerificationResult(null);
     setActionFeedback(null);
     await loadProductDetail(platform, platformProductId);
+    if (options?.focusDetail) {
+      window.setTimeout(() => {
+        detailPaneRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+      }, 80);
+    }
   };
 
   const isPlanSupersededError = (err: any) =>
@@ -557,6 +659,7 @@ export default function ProductOptimizationPage() {
   const optimizationPlan = optimizationData?.plan || null;
   const scoreBundle = optimizationData?.score_bundle || null;
   const readinessSummary = optimizationData?.readiness_summary || null;
+  const agentPushSummary = optimizationData?.agent_push_summary || null;
   const issueBuckets = optimizationData?.issue_buckets || [];
   const merchantActions = optimizationData?.merchant_actions || [];
   const productQueue = optimizationData?.product_queue || [];
@@ -651,6 +754,32 @@ export default function ProductOptimizationPage() {
           last_evaluated_at:
             baseQuality.last_evaluated_at ||
             queueItem.quality_last_evaluated_at ||
+            null,
+        },
+        agent_push: {
+          agent_push_status:
+            base?.agent_push?.agent_push_status ||
+            queueItem.agent_push_status ||
+            'eligible_for_agent_push',
+          agent_push_reason_codes:
+            base?.agent_push?.agent_push_reason_codes ||
+            queueItem.agent_push_reason_codes ||
+            [],
+          eligible_variant_count:
+            typeof base?.agent_push?.eligible_variant_count === 'number'
+              ? base.agent_push.eligible_variant_count
+              : typeof queueItem.eligible_variant_count === 'number'
+                ? queueItem.eligible_variant_count
+                : queueItem.ready_variant_count,
+          excluded_variant_count:
+            typeof base?.agent_push?.excluded_variant_count === 'number'
+              ? base.agent_push.excluded_variant_count
+              : typeof queueItem.excluded_variant_count === 'number'
+                ? queueItem.excluded_variant_count
+                : 0,
+          store_data_last_checked_at:
+            base?.agent_push?.store_data_last_checked_at ||
+            queueItem.store_data_last_checked_at ||
             null,
         },
         readiness: queueItem,
@@ -944,6 +1073,24 @@ export default function ProductOptimizationPage() {
     }
   };
 
+  const handleRefreshSelectedStatus = async () => {
+    if (!selected) {
+      await loadOptimizationData({
+        refresh: true,
+        scope: 'merchant',
+        reason: 'manual',
+      });
+      return;
+    }
+
+    await loadOptimizationData({
+      refresh: true,
+      scope: 'product',
+      reason: 'manual',
+    });
+    await loadProductDetail(selected.platform, selected.platform_product_id);
+  };
+
   const filteredProducts = (() => {
     // Text search
     const base = queueDrivenProducts.filter((item) => {
@@ -960,6 +1107,18 @@ export default function ProductOptimizationPage() {
     // Optional low-quality filter
     const filtered = base.filter((item) => {
       if (showBlockedOnly && !item.readiness?.blocked_variant_count) return false;
+      if (
+        pushFilter === 'excluded' &&
+        item.agent_push?.agent_push_status !== 'excluded_from_agent_push'
+      ) {
+        return false;
+      }
+      if (
+        pushFilter === 'eligible' &&
+        item.agent_push?.agent_push_status === 'excluded_from_agent_push'
+      ) {
+        return false;
+      }
       if (!showOnlyLowQuality) return true;
       const cq = item.quality?.content_quality_score;
       // Treat undefined scores as "not low-quality" for this filter
@@ -1158,6 +1317,16 @@ export default function ProductOptimizationPage() {
                   <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
                     Conversion {scoreBundle.conversion_score ?? '—'}
                   </span>
+                  {agentPushSummary && (
+                    <>
+                      <span className="rounded-full bg-white px-3 py-1 font-medium text-emerald-700 ring-1 ring-emerald-200">
+                        {agentPushSummary.eligible_variants} eligible for agent push
+                      </span>
+                      <span className="rounded-full bg-white px-3 py-1 font-medium text-amber-700 ring-1 ring-amber-200">
+                        {agentPushSummary.excluded_variants} excluded from agent push
+                      </span>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -1278,113 +1447,136 @@ export default function ProductOptimizationPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
       {/* Left: product list */}
-      <div className="lg:col-span-1 space-y-4">
-        <div className="flex items-start justify-between gap-3">
+      <div className="space-y-4">
+        <div className="space-y-3">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Catalog products</h2>
-            <p className="text-gray-600 text-sm mt-1">
-              Improve titles, summaries, and quality scores for the products that still need work.
+            <h2 className="max-w-[10ch] text-[1.6rem] font-bold leading-tight text-gray-900">
+              Catalog products
+            </h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Select a product, review its push status, and tighten the content that still needs work.
             </p>
           </div>
-          <button
-            type="button"
-            disabled={bulkOptimizing}
-            onClick={async () => {
-              if (bulkOptimizing) return;
-              const confirmed = window.confirm(
-                'Run AI enrichment and scoring for a batch of products?\n\nThis may take a little while and will process recently synced items first.'
-              );
-              if (!confirmed) return;
-              setBulkOptimizing(true);
-              try {
-                const res = await apiClient.runMerchantBulkEnrichment({
-                  // v1: let backend decide platforms & limit defaults
-                  limit: 100,
-                });
-                const data = res.data || res;
-                alert(
-                  `Bulk optimization completed.\nProcessed: ${data.processed}\nSkipped: ${data.skipped}`
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={bulkOptimizing}
+              onClick={async () => {
+                if (bulkOptimizing) return;
+                const confirmed = window.confirm(
+                  'Run AI enrichment and scoring for a batch of products?\n\nThis may take a little while and will process recently synced items first.'
                 );
-                await loadOptimizationData({
-                  refresh: true,
-                  scope: 'merchant',
-                  reason: 'post_action',
-                });
-              } catch (err) {
-                console.error('Bulk enrichment failed', err);
-                alert('Bulk optimization failed, please try again later.');
-              } finally {
-                setBulkOptimizing(false);
-              }
-            }}
-            className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
-          >
-            {bulkOptimizing ? (
-              <>
-                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                Running...
-              </>
-            ) : (
-              <>
-                <Wand2 className="w-3 h-3 mr-1" />
-                Bulk optimize
-              </>
-            )}
-          </button>
+                if (!confirmed) return;
+                setBulkOptimizing(true);
+                try {
+                  const res = await apiClient.runMerchantBulkEnrichment({
+                    limit: 100,
+                  });
+                  const data = res.data || res;
+                  alert(
+                    `Bulk optimization completed.\nProcessed: ${data.processed}\nSkipped: ${data.skipped}`
+                  );
+                  await loadOptimizationData({
+                    refresh: true,
+                    scope: 'merchant',
+                    reason: 'post_action',
+                  });
+                } catch (err) {
+                  console.error('Bulk enrichment failed', err);
+                  alert('Bulk optimization failed, please try again later.');
+                } finally {
+                  setBulkOptimizing(false);
+                }
+              }}
+              className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+            >
+              {bulkOptimizing ? (
+                <>
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  Running...
+                </>
+              ) : (
+                <>
+                  <Wand2 className="mr-1 h-3 w-3" />
+                  Bulk optimize
+                </>
+              )}
+            </button>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">
+              {filteredProducts.length} in view
+            </span>
+            {agentPushSummary ? (
+              <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
+                {agentPushSummary.excluded_variants} variants excluded from agent push
+              </span>
+            ) : null}
+          </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow border">
-          <div className="p-3 border-b space-y-2">
+        <div className="overflow-hidden rounded-lg border bg-white shadow">
+          <div className="space-y-3 border-b p-3">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 placeholder="Search products by title..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 border rounded-md text-sm"
+                className="w-full rounded-md border py-2 pl-10 pr-3 text-sm"
               />
             </div>
-            <div className="flex items-center justify-between gap-2 text-[11px]">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1">
-                  <span className="text-gray-500">Sort:</span>
-                  <select
-                    value={sortBy}
-                    disabled={!qualityMetadataReady && sortBy !== 'default'}
-                    onChange={(e) =>
-                      setSortBy(e.target.value as 'default' | 'cq_desc' | 'mr_desc')
-                    }
-                    className="border rounded px-2 py-0.5 text-[11px] bg-white"
-                  >
-                    <option value="default">Readiness priority</option>
-                    <option value="cq_desc" disabled={!qualityMetadataReady}>
-                      CQ ↓
-                    </option>
-                    <option value="mr_desc" disabled={!qualityMetadataReady}>
-                      MR ↓
-                    </option>
-                  </select>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-gray-500">Issue:</span>
-                  <select
-                    value={issueFilter}
-                    onChange={(e) => setIssueFilter(e.target.value)}
-                    className="border rounded px-2 py-0.5 text-[11px] bg-white"
-                  >
-                    <option value="all">All issues</option>
-                    {issueBuckets.map((bucket) => (
-                      <option key={bucket.code} value={bucket.code}>
-                        {bucket.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+            <div className="grid gap-2 text-[11px] md:grid-cols-2">
+              <div className="flex items-center gap-1">
+                <span className="text-gray-500">Sort:</span>
+                <select
+                  value={sortBy}
+                  disabled={!qualityMetadataReady && sortBy !== 'default'}
+                  onChange={(e) =>
+                    setSortBy(e.target.value as 'default' | 'cq_desc' | 'mr_desc')
+                  }
+                  className="min-w-0 flex-1 rounded border bg-white px-2 py-1 text-[11px]"
+                >
+                  <option value="default">Readiness priority</option>
+                  <option value="cq_desc" disabled={!qualityMetadataReady}>
+                    CQ ↓
+                  </option>
+                  <option value="mr_desc" disabled={!qualityMetadataReady}>
+                    MR ↓
+                  </option>
+                </select>
               </div>
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1">
+                <span className="text-gray-500">Issue:</span>
+                <select
+                  value={issueFilter}
+                  onChange={(e) => setIssueFilter(e.target.value)}
+                  className="min-w-0 flex-1 rounded border bg-white px-2 py-1 text-[11px]"
+                >
+                  <option value="all">All issues</option>
+                  {issueBuckets.map((bucket) => (
+                    <option key={bucket.code} value={bucket.code}>
+                      {bucket.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-gray-500">Push:</span>
+                <select
+                  value={pushFilter}
+                  onChange={(e) =>
+                    setPushFilter(e.target.value as 'all' | 'eligible' | 'excluded')
+                  }
+                  className="min-w-0 flex-1 rounded border bg-white px-2 py-1 text-[11px]"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="eligible">Eligible for agent push</option>
+                  <option value="excluded">Excluded from agent push</option>
+                </select>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-3">
                 <label className="flex items-center gap-1 text-gray-500">
                   <input
                     type="checkbox"
@@ -1392,7 +1584,7 @@ export default function ProductOptimizationPage() {
                     checked={showBlockedOnly}
                     onChange={(e) => setShowBlockedOnly(e.target.checked)}
                   />
-                  <span>Blocked only</span>
+                  <span>Active blockers only</span>
                 </label>
                 <label className="flex items-center gap-1 text-gray-500">
                   <input
@@ -1407,18 +1599,13 @@ export default function ProductOptimizationPage() {
                   </span>
                 </label>
               </div>
-              {!qualityMetadataReady && (
-                <p className="text-xs text-gray-500">
-                  CQ and MR scores are not available for this queue yet. Readiness priority remains the default ranking.
-                </p>
-              )}
             </div>
           </div>
-          <div className="max-h-[520px] overflow-y-auto">
+          <div className="max-h-[660px] overflow-y-auto">
             {filteredProducts.length === 0 ? (
-              <div className="p-6 text-center text-gray-500 text-sm">
+              <div className="p-6 text-center text-sm text-gray-500">
                 {showBlockedOnly
-                  ? 'No blocked products match the current filters.'
+                  ? 'No actively blocked products match the current filters.'
                   : 'No products match the current filters.'}
               </div>
             ) : (
@@ -1431,74 +1618,93 @@ export default function ProductOptimizationPage() {
                 const title = titleOverride || item.standard?.title || '-';
                 const cqScore = item.quality?.content_quality_score;
                 const mrScore = item.quality?.model_readiness_score;
-                const readiness = item.readiness;
-                const mainIssue = readiness?.top_issues?.[0];
+                const pushStatus = item.agent_push?.agent_push_status;
+                const priceValue =
+                  item.standard?.price?.value ?? item.standard?.price ?? '-';
+                const currency =
+                  typeof item.standard?.price === 'number'
+                    ? ''
+                    : item.standard?.price?.currency || '';
 
                 return (
-                  <button
+                  <div
                     key={`${item.platform}-${item.platform_product_id}`}
-                    onClick={() =>
-                      handleSelect(item.platform, item.platform_product_id)
-                    }
-                    className={`w-full flex items-start gap-3 px-3 py-2 text-left text-sm border-b last:border-b-0 hover:bg-gray-50 ${
-                      isActive ? 'bg-blue-50/70' : ''
+                    className={`border-b last:border-b-0 ${
+                      isActive ? 'bg-blue-50/70' : 'bg-white'
                     }`}
                   >
-                    <div className="w-10 h-10 rounded bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-                      {item.standard?.main_image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={item.standard.main_image_url}
-                          alt={title}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <Package className="w-5 h-5 text-gray-400" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-medium text-gray-900 truncate">
-                          {title}
-                        </p>
-                        <div className="flex flex-col items-end gap-1">
-                          {typeof cqScore === 'number' && (
-                            <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
-                              CQ {cqScore.toFixed(0)}
-                            </span>
-                          )}
-                          {typeof mrScore === 'number' && (
-                            <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium">
-                              MR {mrScore.toFixed(0)}
-                            </span>
+                    <div className="flex items-start gap-2 px-3 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void handleSelect(item.platform, item.platform_product_id)
+                        }
+                        className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                      >
+                        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded bg-gray-100">
+                          {item.standard?.main_image_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={item.standard.main_image_url}
+                              alt={title}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <Package className="h-5 w-5 text-gray-400" />
                           )}
                         </div>
-                      </div>
-                      {titleOverride && (
-                        <p className="text-[11px] text-blue-600 mt-0.5 truncate">
-                          Optimized title
-                        </p>
-                      )}
-                      {readiness?.blocked_variant_count ? (
-                        <p className="text-[11px] text-amber-700 mt-0.5 truncate">
-                          {readiness.blocked_variant_count} blocked · {mainIssue?.label || 'Needs optimization'}
-                        </p>
-                      ) : readiness?.top_issues?.length ? (
-                        <p className="text-[11px] text-slate-600 mt-0.5 truncate">
-                          {mainIssue?.label || 'At-risk product'}
-                        </p>
-                      ) : null}
-                      <p className="text-[11px] text-gray-500 mt-0.5">
-                        {item.platform.toUpperCase()} ·{' '}
-                        {item.standard?.price?.value ??
-                          item.standard?.price ??
-                          '-'}{' '}
-                        {typeof item.standard?.price === 'number'
-                          ? ''
-                          : item.standard?.price?.currency || ''}
-                      </p>
+                        <div className="min-w-0 flex-1">
+                          <p className="line-clamp-2 text-sm font-medium leading-5 text-gray-900">
+                            {title}
+                          </p>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            {titleOverride ? (
+                              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                                Optimized title
+                              </span>
+                            ) : null}
+                            {typeof cqScore === 'number' && (
+                              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                                CQ {cqScore.toFixed(0)}
+                              </span>
+                            )}
+                            {typeof mrScore === 'number' && (
+                              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                                MR {mrScore.toFixed(0)}
+                              </span>
+                            )}
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${getAgentPushTone(
+                                pushStatus
+                              )}`}
+                            >
+                              {pushStatus === 'excluded_from_agent_push'
+                                ? 'Excluded'
+                                : 'Push-ready'}
+                            </span>
+                          </div>
+                          <p className="mt-1 truncate text-[11px] text-slate-600">
+                            {getProductStatusLine(item)}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-gray-500">
+                            {item.platform.toUpperCase()} · {priceValue} {currency}
+                          </p>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void handleSelect(item.platform, item.platform_product_id, {
+                            focusDetail: true,
+                          })
+                        }
+                        className="inline-flex flex-shrink-0 items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        {getProductActionLabel(item)}
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                  </button>
+                  </div>
                 );
               })
             )}
@@ -1507,29 +1713,57 @@ export default function ProductOptimizationPage() {
       </div>
 
       {/* Right: detail & enrichment editor */}
-      <div className="lg:col-span-2 space-y-4">
+      <div ref={detailPaneRef} className="space-y-4">
         {selectedQueueItem && (
           <div className="rounded-lg border bg-white p-4 shadow">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${selectedQueueItem.blocked_variant_count > 0 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>
-                    {selectedQueueItem.blocked_variant_count > 0 ? 'Needs work' : 'Ready'}
+                  <span
+                    className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                      selectedQueueItem.agent_push_status === 'excluded_from_agent_push'
+                        ? 'bg-amber-100 text-amber-800'
+                        : selectedQueueItem.blocked_variant_count > 0
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-emerald-100 text-emerald-700'
+                    }`}
+                  >
+                    {selectedQueueItem.agent_push_status === 'excluded_from_agent_push'
+                      ? 'Excluded from push'
+                      : selectedQueueItem.blocked_variant_count > 0
+                        ? 'Needs work'
+                        : 'Ready for push'}
                   </span>
                   <span className="text-sm text-slate-600">
-                    {selectedQueueItem.ready_variant_count} ready / {selectedQueueItem.blocked_variant_count} blocked variants
+                    {selectedQueueItem.eligible_variant_count ?? selectedQueueItem.ready_variant_count} eligible / {selectedQueueItem.excluded_variant_count ?? 0} excluded
                   </span>
+                  {selectedQueueItem.blocked_variant_count > 0 ? (
+                    <span className="text-sm text-slate-600">
+                      {selectedQueueItem.blocked_variant_count} active blockers still need review
+                    </span>
+                  ) : null}
                 </div>
                 <h3 className="mt-2 text-base font-semibold text-slate-900">
-                  {selectedQueueItem.blocked_variant_count > 0
-                    ? 'Why this product still needs work'
-                    : 'Why this product is in the current plan'}
+                  {selectedQueueItem.agent_push_status === 'excluded_from_agent_push'
+                    ? 'Why this product is temporarily excluded from agent push'
+                    : selectedQueueItem.blocked_variant_count > 0
+                      ? 'Why this product still needs work'
+                      : 'Why this product is in the current plan'}
                 </h3>
                 <p className="mt-1 text-sm text-slate-700">
                   {selectedQueueItem.primary_action || 'Review this product and improve its enrichment before broader LLM exposure.'}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleRefreshSelectedStatus()}
+                  disabled={readinessLoading}
+                  className="inline-flex items-center justify-center gap-1 rounded-lg bg-slate-50 px-4 py-2 text-sm font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-4 w-4 ${readinessLoading ? 'animate-spin' : ''}`} />
+                  Refresh status
+                </button>
                 {canExecuteSelectedAction && (
                   <>
                     <button
@@ -1563,13 +1797,13 @@ export default function ProductOptimizationPage() {
               </div>
             </div>
 
-            {actionFeedback && (
+                {actionFeedback && (
               <div className="mt-4 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-900 ring-1 ring-blue-200">
                 {actionFeedback}
               </div>
             )}
 
-            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            <div className="mt-4 grid gap-3 xl:grid-cols-4">
               <div className="rounded-lg bg-slate-50 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Main issues
@@ -1591,6 +1825,7 @@ export default function ProductOptimizationPage() {
                   )}
                 </div>
               </div>
+
               <div className="rounded-lg bg-slate-50 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Recommended action
@@ -1623,6 +1858,49 @@ export default function ProductOptimizationPage() {
                   </div>
                 </div>
               </div>
+
+              <div className="rounded-lg bg-slate-50 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Agent push status
+                  </div>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${getAgentPushTone(
+                      selectedQueueItem.agent_push_status
+                    )}`}
+                  >
+                    {getAgentPushLabel(selectedQueueItem.agent_push_status)}
+                  </span>
+                </div>
+                <div className="mt-2 space-y-2">
+                  <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
+                    <div className="font-medium text-slate-900">
+                      {selectedQueueItem.eligible_variant_count ?? selectedQueueItem.ready_variant_count} eligible variants
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">
+                      {selectedQueueItem.excluded_variant_count ?? 0} variants are currently excluded from agent push.
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
+                    <div className="font-medium text-slate-900">
+                      {selectedQueueItem.agent_push_reason_codes?.length
+                        ? selectedQueueItem.agent_push_reason_codes
+                            .map(formatAgentPushReason)
+                            .slice(0, 3)
+                            .join(' · ')
+                        : 'No auto-exclusion reasons active'}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">
+                      {selectedQueueItem.store_data_last_checked_at
+                        ? `Last checked ${new Date(
+                            selectedQueueItem.store_data_last_checked_at
+                          ).toLocaleString()}`
+                        : 'Status refresh follows the latest synced store data.'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="rounded-lg bg-slate-50 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Preview and verification
@@ -1699,7 +1977,7 @@ export default function ProductOptimizationPage() {
               </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
             {/* Standard view */}
             <div className="bg-white rounded-lg shadow border p-4 space-y-3">
               <h2 className="text-sm font-semibold text-gray-800">
@@ -1770,23 +2048,28 @@ export default function ProductOptimizationPage() {
 
             {/* Enrichment editor */}
             <div className="bg-white rounded-lg shadow border p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-gray-800">
-                  Pivota enrichment (editable)
-                </h2>
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-800">
+                    Pivota enrichment (editable)
+                  </h2>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Keep the editable content tighter than the source listing, but clearer for agent understanding.
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2 xl:w-56 xl:grid-cols-1">
                   {canExecuteSelectedAction ? (
                     <>
                       <button
                         type="button"
                         onClick={handlePreviewRecommendedAction}
                         disabled={actionPreviewLoading || !selectedActionRequest}
-                        className="inline-flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap border rounded-md hover:bg-gray-50 disabled:opacity-50"
+                        className="inline-flex items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs hover:bg-gray-50 disabled:opacity-50"
                       >
                         {actionPreviewLoading ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <Loader2 className="h-3 w-3 animate-spin" />
                         ) : (
-                          <Wand2 className="w-3 h-3" />
+                          <Wand2 className="h-3 w-3" />
                         )}
                         Preview suggested fix
                       </button>
@@ -1796,12 +2079,12 @@ export default function ProductOptimizationPage() {
                         disabled={
                           optimizing || !canApplyPreviewedAction || isInCooldown
                         }
-                        className="inline-flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                        className="inline-flex items-center justify-center gap-1 rounded-md bg-blue-600 px-3 py-2 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
                       >
                         {optimizing ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <Loader2 className="h-3 w-3 animate-spin" />
                         ) : (
-                          <Wand2 className="w-3 h-3" />
+                          <Wand2 className="h-3 w-3" />
                         )}
                         Apply suggested fix
                       </button>
@@ -1809,7 +2092,7 @@ export default function ProductOptimizationPage() {
                   ) : selectedQueueItem ? (
                     <a
                       href={manualReviewHref}
-                      className="inline-flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap border rounded-md hover:bg-gray-50"
+                      className="inline-flex items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs hover:bg-gray-50"
                     >
                       {getManualReviewLabel(selectedQueueItem.fix_surface)}
                     </a>
@@ -1818,12 +2101,12 @@ export default function ProductOptimizationPage() {
                     type="button"
                     onClick={handlePreviewQuality}
                     disabled={previewLoading || !qualityPayload}
-                    className="inline-flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap border rounded-md hover:bg-gray-50 disabled:opacity-50"
+                    className="inline-flex items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs hover:bg-gray-50 disabled:opacity-50"
                   >
                     {previewLoading ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <Loader2 className="h-3 w-3 animate-spin" />
                     ) : (
-                      <Wand2 className="w-3 h-3" />
+                      <Wand2 className="h-3 w-3" />
                     )}
                     Preview score
                   </button>
@@ -1831,12 +2114,12 @@ export default function ProductOptimizationPage() {
                     type="button"
                     onClick={handleSaveAndEval}
                     disabled={saving || !qualityPayload}
-                    className="inline-flex items-center gap-1 px-3 py-1 text-xs whitespace-nowrap bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                    className="inline-flex items-center justify-center gap-1 rounded-md bg-blue-600 px-3 py-2 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
                   >
                     {saving ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <Loader2 className="h-3 w-3 animate-spin" />
                     ) : (
-                      <CheckCircle2 className="w-3 h-3" />
+                      <CheckCircle2 className="h-3 w-3" />
                     )}
                     Save/Score
                   </button>
