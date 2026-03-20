@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { cx } from "@/lib/cx";
 import {
-  adminNavigation,
   isNavigationItemActive,
   primaryNavigation,
   settingsNavigationItem,
@@ -161,15 +160,6 @@ export function MerchantAppShell({
             pathname={pathname}
             onNavigate={() => setSidebarOpen(false)}
           />
-          {adminNavigation.length > 0 ? (
-            <NavigationGroup
-              label="Internal"
-              items={adminNavigation}
-              pathname={pathname}
-              onNavigate={() => setSidebarOpen(false)}
-              collapsible
-            />
-          ) : null}
         </nav>
 
         <div className="space-y-0.5 border-t border-[color:var(--merchant-line)] px-2 pt-3">
