@@ -348,7 +348,10 @@ function readinessVariantMatchesReason(
     return blockerCodes.has('out_of_stock') || pushCodes.has('out_of_stock');
   }
 
-  return false;
+  return (
+    blockerCodes.has('missing_primary_image') ||
+    pushCodes.has('missing_primary_image')
+  );
 }
 
 export default function ProductsPage() {
