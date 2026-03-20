@@ -349,6 +349,19 @@ function getOutOfStockResolvedActionLabel(state: OutOfStockBatchState) {
   return 'Refresh after sync settles';
 }
 
+function getOutOfStockQueueActionLabel(state: OutOfStockBatchState) {
+  if (state === 'partially_recovered') {
+    return 'Finish the remaining zero-stock SKUs, then archive the variants that should stay unavailable.';
+  }
+  if (state === 'restocked_waiting_refresh') {
+    return 'Refresh Catalog health after the latest sync settles.';
+  }
+  if (state === 'whole_product_unavailable') {
+    return 'Decide whether to restock the full product batch or archive it as intentionally unavailable.';
+  }
+  return 'Review the matching variants and confirm whether the batch still needs source-data fixes.';
+}
+
 function escapeCsvValue(value: unknown) {
   const normalized =
     value === null || value === undefined
@@ -1290,12 +1303,104 @@ export default function ProductsPage() {
                     'Refresh Catalog health after the latest inventory sync settles.',
                     'Only go back into source data if stock drops to zero again.',
                   ]
-                : [
-                    'Decide whether this whole product batch should return to sale.',
-                    'If yes, restock these SKUs. If not, archive or keep them unavailable so they stop looking like accidental stock gaps.',
-                  ],
+              : [
+                  'Decide whether this whole product batch should return to sale.',
+                  'If yes, restock these SKUs. If not, archive or keep them unavailable so they stop looking like accidental stock gaps.',
+                ],
         }
       : null;
+  const outOfStockQueueSummary =
+    reviewReasonCode === 'out_of_stock'
+      ? [
+          {
+            state: 'whole_product_unavailable' as OutOfStockBatchState,
+            title: 'Whole product unavailable',
+            count: outOfStockWholeUnavailableLaneGroups.length,
+            summary:
+              outOfStockWholeUnavailableLaneGroups.length > 0
+                ? 'These products still look fully unavailable and need a clear merchant restock-or-archive decision.'
+                : 'No product batches currently look fully unavailable.',
+            nextGroup: nextWholeUnavailableLaneGroup,
+            firstGroup: firstWholeUnavailableLaneGroup,
+            buttonClass:
+              'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100',
+          },
+          {
+            state: 'partially_recovered' as OutOfStockBatchState,
+            title: 'Partially back in stock',
+            count: outOfStockPartiallyRecoveredLaneGroups.length,
+            summary:
+              outOfStockPartiallyRecoveredLaneGroups.length > 0
+                ? 'These products already have some live inventory again, but a smaller set of SKUs still needs cleanup.'
+                : 'No product batches currently show a mixed recovered / unresolved stock state.',
+            nextGroup: nextPartiallyRecoveredLaneGroup,
+            firstGroup: firstPartiallyRecoveredLaneGroup,
+            buttonClass:
+              'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100',
+          },
+          {
+            state: 'restocked_waiting_refresh' as OutOfStockBatchState,
+            title: 'Back in stock now',
+            count: outOfStockRestockedLaneGroups.length,
+            summary:
+              outOfStockRestockedLaneGroups.length > 0
+                ? 'These products now look stocked again in Pivota and mostly need a readiness refresh.'
+                : 'No product batches currently look fully restocked and waiting on refresh only.',
+            nextGroup: nextRestockedLaneGroup,
+            firstGroup: firstRestockedLaneGroup,
+            buttonClass:
+              'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
+          },
+        ]
+      : [];
+
+  const handleDownloadOutOfStockQueueCsv = (state: OutOfStockBatchState) => {
+    if (reviewReasonCode !== 'out_of_stock') {
+      setLaneActionFeedback('Open an out-of-stock review batch before exporting this queue.');
+      return;
+    }
+
+    const matchingQueue = laneGroupProgressList.filter(
+      ({ group, progress }) =>
+        group.reason_code === 'out_of_stock' && progress.batch_state === state
+    );
+
+    if (!matchingQueue.length) {
+      setLaneActionFeedback(`No ${getOutOfStockBatchStateLabel(state).toLowerCase()} batches are available right now.`);
+      return;
+    }
+
+    const rows = matchingQueue.map(({ group, progress }, index) => ({
+      queue_state: getOutOfStockBatchStateLabel(state),
+      queue_position: index + 1,
+      product_title: group.product_title,
+      platform: group.platform,
+      platform_product_id: group.platform_product_id,
+      affected_variants: group.affected_variants,
+      pending_variants_now: progress.pending_variant_count,
+      resolved_variants_now: progress.resolved_variant_count,
+      blocked_variants: group.blocked_variant_count,
+      excluded_variants: group.excluded_variant_count,
+      sample_skus: group.sample_skus,
+      merchant_action: getOutOfStockQueueActionLabel(state),
+    }));
+
+    const filename = [
+      'catalog-review',
+      'out-of-stock',
+      state,
+      'products',
+    ].join('-') + '.csv';
+
+    const downloaded = downloadCsvFile(filename, rows);
+    setLaneActionFeedback(
+      downloaded
+        ? `Downloaded ${rows.length} ${getOutOfStockBatchStateLabel(state).toLowerCase()} product batch${
+            rows.length === 1 ? '' : 'es'
+          }.`
+        : 'Could not export this out-of-stock queue right now.'
+    );
+  };
 
   const openLaneGroup = async (group: SourceDataLaneGroup) => {
     try {
@@ -2363,6 +2468,84 @@ export default function ProductsPage() {
                                       >
                                         <span className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-slate-400" />
                                         <span>{action}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {reviewReasonCode === 'out_of_stock' &&
+                              outOfStockQueueSummary.length > 0 ? (
+                                <div className="rounded-xl border border-slate-200 bg-white/80 p-4">
+                                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                    <div>
+                                      <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                                        Product-level out-of-stock queue
+                                      </div>
+                                      <div className="mt-1 text-xs leading-5 text-[color:var(--merchant-muted)]">
+                                        Export the exact product queue that still needs a restock-or-archive decision, or jump straight to the next batch in the same state. This lets you handle whole-product stock gaps differently from partially recovered batches.
+                                      </div>
+                                    </div>
+                                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-medium text-slate-700">
+                                      {outOfStockWholeUnavailableLaneGroups.length} whole-product decisions left
+                                    </div>
+                                  </div>
+                                  <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                                    {outOfStockQueueSummary.map((item) => (
+                                      <div
+                                        key={item.state}
+                                        className="rounded-xl border border-slate-200 bg-slate-50/70 p-3"
+                                      >
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div>
+                                            <div className="text-sm font-medium text-slate-900">
+                                              {item.title}
+                                            </div>
+                                            <div className="mt-1 text-xs text-slate-600">
+                                              {item.summary}
+                                            </div>
+                                          </div>
+                                          <div className="rounded-full bg-white px-2.5 py-1 text-sm font-semibold text-slate-900 ring-1 ring-slate-200">
+                                            {item.count}
+                                          </div>
+                                        </div>
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDownloadOutOfStockQueueCsv(item.state)}
+                                            disabled={item.count === 0}
+                                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                          >
+                                            Download product queue CSV
+                                          </button>
+                                          {(item.nextGroup || item.firstGroup) ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                const targetGroup =
+                                                  item.nextGroup ||
+                                                  (currentLaneProgress?.batch_state !== item.state
+                                                    ? item.firstGroup
+                                                    : null);
+                                                if (targetGroup) {
+                                                  void openLaneGroup(targetGroup);
+                                                }
+                                              }}
+                                              disabled={
+                                                !item.nextGroup &&
+                                                !(
+                                                  currentLaneProgress?.batch_state !== item.state &&
+                                                  item.firstGroup
+                                                )
+                                              }
+                                              className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-50 ${item.buttonClass}`}
+                                            >
+                                              {item.nextGroup
+                                                ? `Next ${item.title.toLowerCase()} batch`
+                                                : `Open first ${item.title.toLowerCase()} batch`}
+                                            </button>
+                                          ) : null}
+                                        </div>
                                       </div>
                                     ))}
                                   </div>
