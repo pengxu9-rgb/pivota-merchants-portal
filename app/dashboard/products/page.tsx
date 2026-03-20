@@ -704,6 +704,12 @@ export default function ProductsPage() {
   const resolvedLaneVariants = laneVariantStates.filter(
     (item) => item.looksResolvedNow
   );
+  const laneVariantStateMap = new Map(
+    laneVariantStates.map((item) => [
+      String(item.blockerVariant.variant_id),
+      item,
+    ])
+  );
   const focusedReadinessVariantIds = new Set(
     focusedReadinessVariants.map((variant) => String(variant.variant_id))
   );
@@ -830,6 +836,20 @@ export default function ProductsPage() {
               ],
             }
           : null;
+  const imageRecoveryState =
+    reviewReasonCode === 'missing_primary_image'
+      ? {
+          looksResolvedNow: productHasVisibleImage,
+          title: productHasVisibleImage
+            ? 'Looks fixed in Pivota now'
+            : 'Still needs source fix',
+          helper: productHasVisibleImage
+            ? 'A primary image is visible in the current synced catalog. Refresh Catalog health after the image sync settles to clear the stale blocker.'
+            : 'No primary image is visible in the current synced catalog yet. Update the product-level hero image in your source catalog first.',
+          metricLabel: 'Hero image visible now',
+          metricValue: productHasVisibleImage ? 'Yes' : 'No',
+        }
+      : null;
 
   const openLaneGroup = async (group: SourceDataLaneGroup) => {
     try {
@@ -1474,6 +1494,48 @@ export default function ProductsPage() {
                                 </div>
                               ) : null}
 
+                              {imageRecoveryState ? (
+                                <div
+                                  className={`rounded-xl border p-4 ${
+                                    imageRecoveryState.looksResolvedNow
+                                      ? 'border-emerald-200 bg-emerald-50/70'
+                                      : 'border-slate-200 bg-white/80'
+                                  }`}
+                                >
+                                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                    <div>
+                                      <div
+                                        className={`text-sm font-medium ${
+                                          imageRecoveryState.looksResolvedNow
+                                            ? 'text-emerald-950'
+                                            : 'text-[color:var(--merchant-ink)]'
+                                        }`}
+                                      >
+                                        {imageRecoveryState.title}
+                                      </div>
+                                      <div
+                                        className={`mt-1 text-xs leading-5 ${
+                                          imageRecoveryState.looksResolvedNow
+                                            ? 'text-emerald-900/80'
+                                            : 'text-[color:var(--merchant-muted)]'
+                                        }`}
+                                      >
+                                        {imageRecoveryState.helper}
+                                      </div>
+                                    </div>
+                                    <div
+                                      className={`rounded-lg px-3 py-2 text-sm font-semibold ${
+                                        imageRecoveryState.looksResolvedNow
+                                          ? 'bg-white text-emerald-950 ring-1 ring-emerald-200'
+                                          : 'bg-slate-50 text-slate-900 ring-1 ring-slate-200'
+                                      }`}
+                                    >
+                                      {imageRecoveryState.metricLabel}: {imageRecoveryState.metricValue}
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : null}
+
                               {reviewReasonCode !== 'missing_primary_image' &&
                               focusedReadinessVariants.length > 0 ? (
                                 <div className="grid gap-3 lg:grid-cols-2">
@@ -1700,6 +1762,7 @@ export default function ProductsPage() {
                     {selectedProduct.variants.map((variant: any, index: number) => {
                         const variantIdentifier = String(variant.variant_id || variant.id || index);
                         const readinessVariant = readinessVariantMap.get(variantIdentifier);
+                        const laneVariantState = laneVariantStateMap.get(variantIdentifier);
                         const isSelectedVariant =
                           Boolean(selectedVariantId) &&
                           (variant.variant_id === selectedVariantId ||
@@ -1730,6 +1793,19 @@ export default function ProductsPage() {
                                 </div>
                                 {reviewSource === 'readiness' && readinessVariant ? (
                                   <div className="mt-2 flex flex-wrap gap-2">
+                                    {isFocusedBatchVariant && laneVariantState ? (
+                                      <span
+                                        className={`rounded-full px-2 py-1 text-[11px] font-medium ${
+                                          laneVariantState.looksResolvedNow
+                                            ? 'bg-emerald-100 text-emerald-700'
+                                            : 'bg-slate-100 text-slate-700'
+                                        }`}
+                                      >
+                                        {laneVariantState.looksResolvedNow
+                                          ? 'Looks fixed now'
+                                          : 'Still needs source fix'}
+                                      </span>
+                                    ) : null}
                                     {readinessVariant.readiness_blocker_codes.map((code) => (
                                       <span
                                         key={`${variantIdentifier}-blocker-${code}`}
