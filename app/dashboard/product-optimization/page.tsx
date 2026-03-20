@@ -660,7 +660,8 @@ export default function ProductOptimizationPage() {
   const loadProductBlockerDetail = async (
     platform: string,
     platformProductId: string,
-    planId: string
+    planId: string,
+    allowRetry = true
   ) => {
     try {
       setBlockerDetailLoading(true);
@@ -672,6 +673,22 @@ export default function ProductOptimizationPage() {
       setBlockerDetail(data || null);
       return data || null;
     } catch (err) {
+      if (allowRetry && isPlanSupersededError(err)) {
+        const refreshed = await loadOptimizationData({
+          refresh: true,
+          scope: 'product',
+          reason: 'plan_superseded',
+        });
+        const nextPlanId = refreshed?.plan?.plan_id;
+        if (nextPlanId && nextPlanId !== planId) {
+          return await loadProductBlockerDetail(
+            platform,
+            platformProductId,
+            nextPlanId,
+            false
+          );
+        }
+      }
       console.error('Failed to load product blocker detail', err);
       setBlockerDetail(null);
       return null;
