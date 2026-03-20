@@ -377,6 +377,21 @@ type SourceDataTriagePayload = {
   total_rows: number;
 };
 
+type SourceDataProductGroup = {
+  reason_code: SourceDataReasonCode;
+  reason_label: string;
+  platform: string;
+  platform_product_id: string;
+  product_id: string;
+  product_title: string;
+  affected_rows: number;
+  affected_variants: number;
+  blocked_variant_count: number;
+  excluded_variant_count: number;
+  sample_variant_id?: string | null;
+  sample_skus: string[];
+};
+
 type WorkspaceProductItem = MerchantProductListItem & {
   readiness: ProductQueueItem | null;
   readinessIndex: number;
@@ -596,6 +611,11 @@ const SOURCE_DATA_REASON_ORDER: SourceDataReasonCode[] = [
   'out_of_stock',
   'missing_primary_image',
 ];
+
+const getSourceDataRowAffectedVariantCount = (row: SourceDataTriageRow) => {
+  if (row.scope === 'variant') return 1;
+  return Math.max(row.blocked_variant_count, row.excluded_variant_count, 1);
+};
 
 const getInitialTriageReason = (focusIssue: string | null): SourceDataReasonCode => {
   if (focusIssue === 'inventory_availability') return 'out_of_stock';
@@ -1639,15 +1659,67 @@ export default function ProductOptimizationPage() {
     (sourceDataTriage?.summary || []).map((bucket) => [bucket.code, bucket])
   );
   const triageRows = sourceDataTriage?.rows || [];
+  const triageGroups = (() => {
+    const grouped = new Map<string, SourceDataProductGroup>();
+
+    for (const row of triageRows) {
+      const key = `${row.reason_code}|${row.platform}|${row.platform_product_id}`;
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.affected_rows += 1;
+        existing.affected_variants += getSourceDataRowAffectedVariantCount(row);
+        existing.blocked_variant_count = Math.max(
+          existing.blocked_variant_count,
+          row.blocked_variant_count
+        );
+        existing.excluded_variant_count = Math.max(
+          existing.excluded_variant_count,
+          row.excluded_variant_count
+        );
+        if (row.variant_id && !existing.sample_variant_id) {
+          existing.sample_variant_id = row.variant_id;
+        }
+        if (row.sku && !existing.sample_skus.includes(row.sku)) {
+          existing.sample_skus.push(row.sku);
+        }
+        continue;
+      }
+
+      grouped.set(key, {
+        reason_code: row.reason_code,
+        reason_label: row.reason_label,
+        platform: row.platform,
+        platform_product_id: row.platform_product_id,
+        product_id: row.product_id,
+        product_title: row.product_title,
+        affected_rows: 1,
+        affected_variants: getSourceDataRowAffectedVariantCount(row),
+        blocked_variant_count: row.blocked_variant_count,
+        excluded_variant_count: row.excluded_variant_count,
+        sample_variant_id: row.variant_id || null,
+        sample_skus: row.sku ? [row.sku] : [],
+      });
+    }
+
+    return Array.from(grouped.values()).sort((a, b) => {
+      const affectedDiff = b.affected_variants - a.affected_variants;
+      if (affectedDiff !== 0) return affectedDiff;
+      const excludedDiff = b.excluded_variant_count - a.excluded_variant_count;
+      if (excludedDiff !== 0) return excludedDiff;
+      return a.product_title.localeCompare(b.product_title);
+    });
+  })();
 
   const buildCatalogReviewHref = ({
     platform,
     platformProductId,
     variantId,
+    reasonCode,
   }: {
     platform: string;
     platformProductId: string;
     variantId?: string | null;
+    reasonCode?: SourceDataReasonCode | null;
   }) => {
     const params = new URLSearchParams({
       platform,
@@ -1658,6 +1730,9 @@ export default function ProductOptimizationPage() {
     if (variantId) {
       params.set('variantId', variantId);
     }
+    if (reasonCode) {
+      params.set('reasonCode', reasonCode);
+    }
     return `/dashboard/products?${params.toString()}`;
   };
 
@@ -1667,6 +1742,27 @@ export default function ProductOptimizationPage() {
       ? '/dashboard/integrations'
       : selectedQueueItem
         ? (() => {
+            const selectedQueueMatchesCurrentTriageReason =
+              triageReason === 'missing_primary_image'
+                ? selectedQueueItem.top_issues.some(
+                    (issue) => issue.code === 'missing_primary_image'
+                  )
+                : triageReason === 'out_of_stock'
+                  ? selectedQueueItem.top_issues.some(
+                      (issue) => issue.code === 'out_of_stock'
+                    ) ||
+                    (selectedQueueItem.agent_push_reason_codes || []).includes(
+                      'out_of_stock'
+                    )
+                  : selectedQueueItem.top_issues.some(
+                      (issue) =>
+                        issue.code === 'missing_price' ||
+                        issue.code === 'missing_currency'
+                    ) ||
+                    (selectedQueueItem.agent_push_reason_codes || []).some(
+                      (code) =>
+                        code === 'missing_price' || code === 'missing_currency'
+                    );
             const priorityVariant = blockerDetail?.variants.find(
               (variant) =>
                 variant.readiness_status === 'blocked' ||
@@ -1678,6 +1774,9 @@ export default function ProductOptimizationPage() {
                 selectedQueueItem.platform_product_id ||
                 selectedQueueItem.product_id,
               variantId: priorityVariant?.variant_id || null,
+              reasonCode: selectedQueueMatchesCurrentTriageReason
+                ? triageReason
+                : null,
             });
           })()
         : '/dashboard/products';
@@ -1704,6 +1803,13 @@ export default function ProductOptimizationPage() {
   const handleInspectTriageRow = async (row: SourceDataTriageRow) => {
     handleSelectTriageReason(row.reason_code);
     await handleSelect(row.platform, row.platform_product_id, {
+      focusDetail: true,
+    });
+  };
+
+  const handleInspectTriageGroup = async (group: SourceDataProductGroup) => {
+    handleSelectTriageReason(group.reason_code);
+    await handleSelect(group.platform, group.platform_product_id, {
       focusDetail: true,
     });
   };
@@ -2031,6 +2137,76 @@ export default function ProductOptimizationPage() {
                 </span>
               </div>
             </div>
+            <div className="border-b border-slate-200 px-4 py-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">
+                    Products to review next
+                  </div>
+                  <div className="mt-1 text-xs text-slate-600">
+                    Work this lane product-by-product. Open a product batch in Catalog to review every affected variant under the same blocker.
+                  </div>
+                </div>
+                <div className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700">
+                  {triageGroups.length} product batches
+                </div>
+              </div>
+              {triageGroups.length > 0 ? (
+                <div className="mt-3 grid gap-2 lg:grid-cols-2">
+                  {triageGroups.slice(0, 8).map((group) => (
+                    <div
+                      key={`${group.reason_code}|${group.platform}|${group.platform_product_id}`}
+                      className="rounded-lg border border-slate-200 bg-white p-3"
+                    >
+                      <div className="text-sm font-medium text-slate-900">
+                        {group.product_title}
+                      </div>
+                      <div className="mt-1 text-[11px] text-slate-500">
+                        {group.platform.toUpperCase()} · {group.platform_product_id}
+                        {group.sample_skus.length > 0
+                          ? ` · SKU ${group.sample_skus.slice(0, 3).join(', ')}`
+                          : ''}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                          {group.affected_variants} affected variants
+                        </span>
+                        <span className="rounded-full bg-rose-100 px-2 py-0.5 font-medium text-rose-700">
+                          {group.blocked_variant_count} blocked
+                        </span>
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800">
+                          {group.excluded_variant_count} excluded
+                        </span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleInspectTriageGroup(group)}
+                          className="inline-flex items-center rounded-md border border-slate-200 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Inspect batch
+                        </button>
+                        <a
+                          href={buildCatalogReviewHref({
+                            platform: group.platform,
+                            platformProductId: group.platform_product_id,
+                            reasonCode: group.reason_code,
+                          })}
+                          className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100"
+                        >
+                          Review batch in catalog
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {triageGroups.length > 8 ? (
+                <div className="mt-3 text-xs text-slate-500">
+                  Showing the first 8 product batches here. Use the detailed table below for the full variant-level evidence.
+                </div>
+              ) : null}
+            </div>
             <div className="overflow-x-auto">
               {sourceDataTriageLoading ? (
                 <div className="px-4 py-5 text-sm text-slate-600">
@@ -2142,6 +2318,7 @@ export default function ProductOptimizationPage() {
                                 platform: row.platform,
                                 platformProductId: row.platform_product_id,
                                 variantId: row.variant_id || null,
+                                reasonCode: row.reason_code,
                               })}
                               className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 font-medium text-blue-700 hover:bg-blue-100"
                             >

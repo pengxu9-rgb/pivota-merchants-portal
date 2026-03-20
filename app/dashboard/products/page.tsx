@@ -207,6 +207,51 @@ type ProductBlockerDetail = {
   variants: ProductBlockerVariant[];
 };
 
+type SourceDataReasonCode =
+  | 'missing_price'
+  | 'out_of_stock'
+  | 'missing_primary_image';
+
+function normalizeSourceDataReasonCode(value: string | null): SourceDataReasonCode | null {
+  if (
+    value === 'missing_price' ||
+    value === 'out_of_stock' ||
+    value === 'missing_primary_image'
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function formatSourceDataReasonLabel(reasonCode: SourceDataReasonCode) {
+  if (reasonCode === 'missing_price') return 'Missing price or currency';
+  if (reasonCode === 'out_of_stock') return 'Out of stock';
+  return 'Missing primary image';
+}
+
+function readinessVariantMatchesReason(
+  variant: ProductBlockerVariant,
+  reasonCode: SourceDataReasonCode
+) {
+  const blockerCodes = new Set(variant.readiness_blocker_codes || []);
+  const pushCodes = new Set(variant.agent_push_reason_codes || []);
+
+  if (reasonCode === 'missing_price') {
+    return (
+      blockerCodes.has('missing_price') ||
+      blockerCodes.has('missing_currency') ||
+      pushCodes.has('missing_price') ||
+      pushCodes.has('missing_currency')
+    );
+  }
+
+  if (reasonCode === 'out_of_stock') {
+    return blockerCodes.has('out_of_stock') || pushCodes.has('out_of_stock');
+  }
+
+  return false;
+}
+
 export default function ProductsPage() {
   const searchParams = useSearchParams();
   const [products, setProducts] = useState<any[]>([]);
@@ -218,6 +263,8 @@ export default function ProductsPage() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const [reviewSource, setReviewSource] = useState<string | null>(null);
+  const [reviewReasonCode, setReviewReasonCode] =
+    useState<SourceDataReasonCode | null>(null);
   const [productBlockerDetail, setProductBlockerDetail] = useState<ProductBlockerDetail | null>(
     null
   );
@@ -246,6 +293,9 @@ export default function ProductsPage() {
   const deepLinkVariantId = searchParams.get('variantId');
   const deepLinkModal = searchParams.get('modal');
   const deepLinkSource = searchParams.get('source');
+  const deepLinkReasonCode = normalizeSourceDataReasonCode(
+    searchParams.get('reasonCode')
+  );
 
   useEffect(() => {
     if (loading) return;
@@ -309,6 +359,7 @@ export default function ProductsPage() {
       setSelectedProduct(normalizedProduct);
       setSelectedVariantId(deepLinkVariantId || null);
       setReviewSource(deepLinkSource || null);
+      setReviewReasonCode(deepLinkReasonCode);
       setShowViewModal(true);
       deepLinkResolvedRef.current = deepLinkKey;
     };
@@ -322,6 +373,7 @@ export default function ProductsPage() {
     deepLinkModal,
     deepLinkPlatform,
     deepLinkPlatformProductId,
+    deepLinkReasonCode,
     deepLinkSource,
     deepLinkVariantId,
     loading,
@@ -450,6 +502,15 @@ export default function ProductsPage() {
       : null;
   const readinessVariantMap = new Map(
     (productBlockerDetail?.variants || []).map((variant) => [String(variant.variant_id), variant])
+  );
+  const focusedReadinessVariants =
+    reviewReasonCode && productBlockerDetail
+      ? productBlockerDetail.variants.filter((variant) =>
+          readinessVariantMatchesReason(variant, reviewReasonCode)
+        )
+      : [];
+  const focusedReadinessVariantIds = new Set(
+    focusedReadinessVariants.map((variant) => String(variant.variant_id))
   );
 
   const heroTitle =
@@ -671,6 +732,7 @@ export default function ProductsPage() {
                               setSelectedProduct(normalizeProductForReview(product));
                               setSelectedVariantId(null);
                               setReviewSource(null);
+                              setReviewReasonCode(null);
                               setShowViewModal(true);
                             }}
                           >
@@ -683,6 +745,7 @@ export default function ProductsPage() {
                               setSelectedProduct(normalizeProductForReview(product));
                               setSelectedVariantId(null);
                               setReviewSource(null);
+                              setReviewReasonCode(null);
                               setShowEditModal(true);
                             }}
                           >
@@ -831,6 +894,22 @@ export default function ProductsPage() {
                           </div>
                         </div>
 
+                        {reviewReasonCode ? (
+                          <div className="rounded-xl border border-amber-200 bg-white/80 p-4">
+                            <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                              Batch triage focus
+                            </div>
+                            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
+                              {formatSourceDataReasonLabel(reviewReasonCode)}
+                            </div>
+                            <div className="mt-2 text-xs text-[color:var(--merchant-muted)]">
+                              {reviewReasonCode === 'missing_primary_image'
+                                ? 'This is a product-level catalog issue. Review the main image and source product imagery for the whole item.'
+                                : `${focusedReadinessVariants.length} variants in this product match the current triage lane. The matching rows are highlighted below.`}
+                            </div>
+                          </div>
+                        ) : null}
+
                         {selectedReadinessVariant ? (
                           <div className="rounded-xl border border-amber-200 bg-white/80 p-4">
                             <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
@@ -881,7 +960,11 @@ export default function ProductsPage() {
                           </div>
                         ) : (
                           <div className="rounded-xl border border-amber-200 bg-white/80 px-4 py-3 text-sm text-amber-900">
-                            Variant-level readiness labels are available below. Pick the highlighted variant to match the same blocker back to your source catalog.
+                            {reviewReasonCode === 'missing_primary_image'
+                              ? 'This batch is product-level. Review imagery for the whole product, then use the variant identifiers below only for cross-reference.'
+                              : focusedReadinessVariants.length > 0
+                                ? 'The variants matching this triage lane are highlighted below so you can review the whole batch without guessing.'
+                                : 'Variant-level readiness labels are available below. Pick the highlighted variant to match the same blocker back to your source catalog.'}
                           </div>
                         )}
                       </>
@@ -949,15 +1032,23 @@ export default function ProductsPage() {
                     {selectedProduct.variants.map((variant: any, index: number) => {
                         const variantIdentifier = String(variant.variant_id || variant.id || index);
                         const readinessVariant = readinessVariantMap.get(variantIdentifier);
+                        const isSelectedVariant =
+                          Boolean(selectedVariantId) &&
+                          (variant.variant_id === selectedVariantId ||
+                            variant.id === selectedVariantId);
+                        const isFocusedBatchVariant =
+                          reviewSource === 'readiness' &&
+                          reviewReasonCode !== 'missing_primary_image' &&
+                          focusedReadinessVariantIds.has(variantIdentifier);
                         return (
                           <div
                             key={variantIdentifier}
                             id={`variant-row-${variantIdentifier}`}
                             className={`rounded-xl border px-4 py-3 ${
-                              selectedVariantId &&
-                              (variant.variant_id === selectedVariantId ||
-                                variant.id === selectedVariantId)
+                              isSelectedVariant
                                 ? 'border-amber-300 bg-amber-50'
+                                : isFocusedBatchVariant
+                                  ? 'border-blue-200 bg-blue-50/70'
                                 : 'border-[color:var(--merchant-line)] bg-white/70'
                             }`}
                           >
