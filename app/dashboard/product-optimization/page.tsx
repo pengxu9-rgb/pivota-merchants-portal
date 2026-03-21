@@ -1147,7 +1147,6 @@ export default function ProductOptimizationPage() {
 
   const loadSourceDataTriage = async (
     planId: string,
-    reasonCode: SourceDataReasonCode,
     allowRetry = true
   ) => {
     try {
@@ -1155,8 +1154,7 @@ export default function ProductOptimizationPage() {
       setSourceDataTriageError(null);
       const data = await apiClient.getMerchantSourceDataTriage({
         plan_id: planId,
-        reason_code: reasonCode,
-        limit: 500,
+        limit: 1000,
       });
       setSourceDataTriage(data || null);
       return data || null;
@@ -1169,10 +1167,10 @@ export default function ProductOptimizationPage() {
         });
         const nextPlanId = refreshed?.plan?.plan_id || planId;
         if (nextPlanId && nextPlanId !== planId) {
-          return await loadSourceDataTriage(nextPlanId, reasonCode, false);
+          return await loadSourceDataTriage(nextPlanId, false);
         }
         if (isRetryableOptimizationError(err)) {
-          return await loadSourceDataTriage(planId, reasonCode, false);
+          return await loadSourceDataTriage(planId, false);
         }
       }
       console.error('Failed to load source-data triage', err);
@@ -1306,8 +1304,8 @@ export default function ProductOptimizationPage() {
       setSourceDataTriageError(null);
       return;
     }
-    void loadSourceDataTriage(optimizationPlan.plan_id, triageReason);
-  }, [optimizationPlan?.plan_id, triageReason]);
+    void loadSourceDataTriage(optimizationPlan.plan_id);
+  }, [optimizationPlan?.plan_id]);
 
   const productQueueMap = useMemo(() => {
     return new Map(
@@ -1978,11 +1976,11 @@ export default function ProductOptimizationPage() {
   const triageSummaryByCode = new Map(
     (sourceDataTriage?.summary || []).map((bucket) => [bucket.code, bucket])
   );
-  const triageRows = sourceDataTriage?.rows || [];
-  const triageGroups = (() => {
+  const allTriageRows = sourceDataTriage?.rows || [];
+  const allTriageGroups = (() => {
     const grouped = new Map<string, SourceDataProductGroup>();
 
-    for (const row of triageRows) {
+    for (const row of allTriageRows) {
       const key = `${row.reason_code}|${row.platform}|${row.platform_product_id}`;
       const existing = grouped.get(key);
       if (existing) {
@@ -2029,6 +2027,10 @@ export default function ProductOptimizationPage() {
       return a.product_title.localeCompare(b.product_title);
     });
   })();
+  const triageRows = allTriageRows.filter((row) => row.reason_code === triageReason);
+  const triageGroups = allTriageGroups.filter(
+    (group) => group.reason_code === triageReason
+  );
   const normalizedProductsBySourceDataKey = new Map(
     queueDrivenProducts.map((item) => [
       buildSourceDataProductKey({
@@ -2038,7 +2040,7 @@ export default function ProductOptimizationPage() {
       normalizeWorkspaceProductForTriage(item),
     ])
   );
-  const sourceDataRowsByGroupKey = triageRows.reduce<
+  const sourceDataRowsByGroupKey = allTriageRows.reduce<
     Map<string, SourceDataTriageRow[]>
   >((acc, row) => {
     const key = buildSourceDataLaneGroupKey({
@@ -2051,7 +2053,7 @@ export default function ProductOptimizationPage() {
     acc.set(key, existing);
     return acc;
   }, new Map());
-  const laneGroupProgressByKey = triageGroups.reduce<
+  const laneGroupProgressByKey = allTriageGroups.reduce<
     Map<string, SourceDataLaneProgress>
   >((acc, group) => {
     const groupKey = buildSourceDataLaneGroupKey(group);
@@ -2146,7 +2148,9 @@ export default function ProductOptimizationPage() {
     SourceDataLaneWorklist['status_summary']
   >(
     SOURCE_DATA_REASON_ORDER.map((reasonCode) => {
-      const laneGroups = triageGroups.filter((group) => group.reason_code === reasonCode);
+      const laneGroups = allTriageGroups.filter(
+        (group) => group.reason_code === reasonCode
+      );
       if (reasonCode === 'missing_price') {
         return [
           reasonCode,
