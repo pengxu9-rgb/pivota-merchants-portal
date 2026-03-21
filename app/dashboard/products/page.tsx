@@ -571,9 +571,43 @@ export default function ProductsPage() {
   const deepLinkVariantId = searchParams.get('variantId');
   const deepLinkModal = searchParams.get('modal');
   const deepLinkSource = searchParams.get('source');
+  const deepLinkPlanId = searchParams.get('planId');
   const deepLinkReasonCode = normalizeSourceDataReasonCode(
     searchParams.get('reasonCode')
   );
+
+  const replaceReadinessReviewUrl = ({
+    platform,
+    platformProductId,
+    variantId,
+    reasonCode,
+    planId,
+  }: {
+    platform: string;
+    platformProductId: string;
+    variantId?: string | null;
+    reasonCode?: SourceDataReasonCode | null;
+    planId?: string | null;
+  }) => {
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams({
+      platform,
+      platformProductId,
+      modal: 'review',
+      source: 'readiness',
+    });
+    if (variantId) {
+      params.set('variantId', variantId);
+    }
+    if (reasonCode) {
+      params.set('reasonCode', reasonCode);
+    }
+    if (planId) {
+      params.set('planId', planId);
+    }
+    window.history.replaceState({}, '', `/dashboard/products?${params.toString()}`);
+  };
 
   useEffect(() => {
     if (loading) return;
@@ -590,6 +624,7 @@ export default function ProductsPage() {
       deepLinkPlatformProductId,
       deepLinkVariantId || '',
       deepLinkSource || '',
+      deepLinkPlanId || '',
     ].join('|');
     if (deepLinkResolvedRef.current === deepLinkKey) {
       return;
@@ -633,9 +668,44 @@ export default function ProductsPage() {
     deepLinkPlatformProductId,
     deepLinkReasonCode,
     deepLinkSource,
+    deepLinkPlanId,
     deepLinkVariantId,
     loading,
     products,
+  ]);
+
+  useEffect(() => {
+    if (!showViewModal || reviewSource !== 'readiness' || !selectedProduct) {
+      return;
+    }
+
+    const platform = String(selectedProduct.platform || '').trim();
+    const platformProductId = String(
+      selectedProduct.platform_product_id ||
+        selectedProduct.product_id ||
+        selectedProduct.id ||
+        ''
+    ).trim();
+
+    if (!platform || !platformProductId) {
+      return;
+    }
+
+    replaceReadinessReviewUrl({
+      platform,
+      platformProductId,
+      variantId: selectedVariantId,
+      reasonCode: reviewReasonCode,
+      planId: catalogReviewPlan?.plan_id || deepLinkPlanId,
+    });
+  }, [
+    catalogReviewPlan?.plan_id,
+    deepLinkPlanId,
+    reviewReasonCode,
+    reviewSource,
+    selectedProduct,
+    selectedVariantId,
+    showViewModal,
   ]);
 
   useEffect(() => {
@@ -651,8 +721,24 @@ export default function ProductsPage() {
     };
   }, [selectedVariantId, showViewModal]);
 
-  const loadCatalogReviewPlan = async () => {
-    if (catalogReviewPlanRequestRef.current) {
+  const loadCatalogReviewPlan = async (options?: { forceRefresh?: boolean }) => {
+    const forceRefresh = options?.forceRefresh === true;
+
+    if (!forceRefresh && catalogReviewPlan?.plan_id) {
+      return catalogReviewPlan;
+    }
+
+    if (!forceRefresh && deepLinkPlanId) {
+      const normalizedPlan: CatalogReviewPlan = {
+        plan_id: deepLinkPlanId,
+        snapshot_id: catalogReviewPlan?.snapshot_id ?? null,
+      };
+      setCatalogReviewPlan(normalizedPlan);
+      setCatalogReviewPlanError(null);
+      return normalizedPlan;
+    }
+
+    if (!forceRefresh && catalogReviewPlanRequestRef.current) {
       return await catalogReviewPlanRequestRef.current;
     }
 
@@ -734,6 +820,16 @@ export default function ProductsPage() {
     const isPlanSupersededError = (err: any) =>
       err?.response?.status === 409 &&
       err?.response?.data?.detail?.code === 'OPTIMIZATION_PLAN_SUPERSEDED';
+    const isRetryableCatalogReviewError = (err: any) => {
+      if (err?.response?.status) return false;
+      const code = String(err?.code || '');
+      const message = String(err?.message || '').toLowerCase();
+      return (
+        code === 'ERR_NETWORK' ||
+        message.includes('network error') ||
+        message.includes('connection closed')
+      );
+    };
 
     const loadLaneQueue = async (planId: string, remainingRetries = 2) => {
       try {
@@ -800,10 +896,14 @@ export default function ProductsPage() {
           })
         );
       } catch (error) {
-        if (remainingRetries > 0 && isPlanSupersededError(error)) {
-          const refreshedPlan = await loadCatalogReviewPlan();
-          if (cancelled || !refreshedPlan?.plan_id) return;
-          return await loadLaneQueue(refreshedPlan.plan_id, remainingRetries - 1);
+        if (
+          remainingRetries > 0 &&
+          (isPlanSupersededError(error) || isRetryableCatalogReviewError(error))
+        ) {
+          const refreshedPlan = await loadCatalogReviewPlan({ forceRefresh: true });
+          const nextPlanId = refreshedPlan?.plan_id || planId;
+          if (cancelled || !nextPlanId) return;
+          return await loadLaneQueue(nextPlanId, remainingRetries - 1);
         }
         console.error('Failed to load source-data lane queue', error);
         if (cancelled) return;
@@ -865,6 +965,16 @@ export default function ProductsPage() {
     const isPlanSupersededError = (err: any) =>
       err?.response?.status === 409 &&
       err?.response?.data?.detail?.code === 'OPTIMIZATION_PLAN_SUPERSEDED';
+    const isRetryableCatalogReviewError = (err: any) => {
+      if (err?.response?.status) return false;
+      const code = String(err?.code || '');
+      const message = String(err?.message || '').toLowerCase();
+      return (
+        code === 'ERR_NETWORK' ||
+        message.includes('network error') ||
+        message.includes('connection closed')
+      );
+    };
 
     const loadReadinessContext = async (planId: string, remainingRetries = 2) => {
       try {
@@ -880,10 +990,14 @@ export default function ProductsPage() {
         if (cancelled) return;
         setProductBlockerDetail(detail || null);
       } catch (error) {
-        if (remainingRetries > 0 && isPlanSupersededError(error)) {
-          const refreshedPlan = await loadCatalogReviewPlan();
-          if (cancelled || !refreshedPlan?.plan_id) return;
-          return await loadReadinessContext(refreshedPlan.plan_id, remainingRetries - 1);
+        if (
+          remainingRetries > 0 &&
+          (isPlanSupersededError(error) || isRetryableCatalogReviewError(error))
+        ) {
+          const refreshedPlan = await loadCatalogReviewPlan({ forceRefresh: true });
+          const nextPlanId = refreshedPlan?.plan_id || planId;
+          if (cancelled || !nextPlanId) return;
+          return await loadReadinessContext(nextPlanId, remainingRetries - 1);
         }
         console.error('Failed to load readiness context for catalog review', error);
         if (cancelled) return;
@@ -1658,19 +1772,13 @@ export default function ProductsPage() {
       setReviewSource('readiness');
       setReviewReasonCode(group.reason_code);
       setShowViewModal(true);
-      if (typeof window !== 'undefined') {
-        const params = new URLSearchParams({
-          platform: group.platform,
-          platformProductId: group.platform_product_id,
-          modal: 'review',
-          source: 'readiness',
-          reasonCode: group.reason_code,
-        });
-        if (group.sample_variant_id) {
-          params.set('variantId', group.sample_variant_id);
-        }
-        window.history.replaceState({}, '', `/dashboard/products?${params.toString()}`);
-      }
+      replaceReadinessReviewUrl({
+        platform: group.platform,
+        platformProductId: group.platform_product_id,
+        variantId: group.sample_variant_id,
+        reasonCode: group.reason_code,
+        planId: catalogReviewPlan?.plan_id || deepLinkPlanId,
+      });
     } catch (error) {
       console.error('Failed to open lane review group', error);
     }

@@ -807,18 +807,26 @@ export default function ProductOptimizationPage() {
       setBlockerDetail(data || null);
       return data || null;
     } catch (err) {
-      if (allowRetry && isPlanSupersededError(err)) {
+      if (allowRetry && (isPlanSupersededError(err) || isRetryableOptimizationError(err))) {
         const refreshed = await loadOptimizationData({
           refresh: true,
           scope: 'product',
-          reason: 'plan_superseded',
+          reason: isPlanSupersededError(err) ? 'plan_superseded' : 'network_retry',
         });
-        const nextPlanId = refreshed?.plan?.plan_id;
+        const nextPlanId = refreshed?.plan?.plan_id || planId;
         if (nextPlanId && nextPlanId !== planId) {
           return await loadProductBlockerDetail(
             platform,
             platformProductId,
             nextPlanId,
+            false
+          );
+        }
+        if (isRetryableOptimizationError(err)) {
+          return await loadProductBlockerDetail(
+            platform,
+            platformProductId,
+            planId,
             false
           );
         }
@@ -855,15 +863,18 @@ export default function ProductOptimizationPage() {
       setSourceDataTriage(data || null);
       return data || null;
     } catch (err) {
-      if (allowRetry && isPlanSupersededError(err)) {
+      if (allowRetry && (isPlanSupersededError(err) || isRetryableOptimizationError(err))) {
         const refreshed = await loadOptimizationData({
           refresh: true,
           scope: 'merchant',
-          reason: 'plan_superseded',
+          reason: isPlanSupersededError(err) ? 'plan_superseded' : 'network_retry',
         });
-        const nextPlanId = refreshed?.plan?.plan_id;
+        const nextPlanId = refreshed?.plan?.plan_id || planId;
         if (nextPlanId && nextPlanId !== planId) {
           return await loadSourceDataTriage(nextPlanId, reasonCode, false);
+        }
+        if (isRetryableOptimizationError(err)) {
+          return await loadSourceDataTriage(planId, reasonCode, false);
         }
       }
       console.error('Failed to load source-data triage', err);
@@ -908,6 +919,17 @@ export default function ProductOptimizationPage() {
   const isPlanSupersededError = (err: any) =>
     err?.response?.status === 409 &&
     err?.response?.data?.detail?.code === 'OPTIMIZATION_PLAN_SUPERSEDED';
+
+  const isRetryableOptimizationError = (err: any) => {
+    if (err?.response?.status) return false;
+    const code = String(err?.code || '');
+    const message = String(err?.message || '').toLowerCase();
+    return (
+      code === 'ERR_NETWORK' ||
+      message.includes('network error') ||
+      message.includes('connection closed')
+    );
+  };
 
   const getActionErrorMessage = (err: any, fallback: string) => {
     const detailMessage =
@@ -1733,6 +1755,9 @@ export default function ProductOptimizationPage() {
     }
     if (reasonCode) {
       params.set('reasonCode', reasonCode);
+    }
+    if (optimizationPlan?.plan_id) {
+      params.set('planId', optimizationPlan.plan_id);
     }
     return `/dashboard/products?${params.toString()}`;
   };
