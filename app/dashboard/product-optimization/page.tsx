@@ -1883,12 +1883,14 @@ export default function ProductOptimizationPage() {
     variantId,
     reasonCode,
     queueState,
+    includePlanId = true,
   }: {
     platform: string;
     platformProductId: string;
     variantId?: string | null;
     reasonCode?: SourceDataReasonCode | null;
     queueState?: CatalogReviewQueueState | null;
+    includePlanId?: boolean;
   }) => {
     const params = new URLSearchParams({
       platform,
@@ -1905,7 +1907,7 @@ export default function ProductOptimizationPage() {
     if (queueState) {
       params.set('queueState', queueState);
     }
-    if (optimizationPlan?.plan_id) {
+    if (includePlanId && optimizationPlan?.plan_id) {
       params.set('planId', optimizationPlan.plan_id);
     }
     return `/dashboard/products?${params.toString()}`;
@@ -2476,6 +2478,7 @@ export default function ProductOptimizationPage() {
                                 platformProductId: nextProduct.platform_product_id,
                                 reasonCode: lane.reason_code,
                                 queueState: shortcut.queueState,
+                                includePlanId: false,
                               })}
                               className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-[11px] font-medium ${shortcut.className}`}
                             >
