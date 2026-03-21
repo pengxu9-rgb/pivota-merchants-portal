@@ -432,6 +432,13 @@ function getOutOfStockDecisionButtonClass(state: OutOfStockDecisionState) {
   return 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100';
 }
 
+function getOutOfStockDecisionCopyLabel(state: OutOfStockDecisionState) {
+  if (state === 'archive_candidate') {
+    return 'Copy product IDs';
+  }
+  return 'Copy sample SKUs';
+}
+
 function escapeCsvValue(value: unknown) {
   const normalized =
     value === null || value === undefined
@@ -1638,6 +1645,8 @@ export default function ProductsPage() {
             nextGroup: nextRestockCandidateLaneGroup,
             firstGroup: firstRestockCandidateLaneGroup,
             buttonClass: getOutOfStockDecisionButtonClass('restock_candidate'),
+            copyLabel: getOutOfStockDecisionCopyLabel('restock_candidate'),
+            previewGroups: outOfStockRestockCandidateLaneGroups.slice(0, 3),
           },
           {
             state: 'archive_candidate' as OutOfStockDecisionState,
@@ -1650,6 +1659,8 @@ export default function ProductsPage() {
             nextGroup: nextArchiveCandidateLaneGroup,
             firstGroup: firstArchiveCandidateLaneGroup,
             buttonClass: getOutOfStockDecisionButtonClass('archive_candidate'),
+            copyLabel: getOutOfStockDecisionCopyLabel('archive_candidate'),
+            previewGroups: outOfStockArchiveCandidateLaneGroups.slice(0, 3),
           },
           {
             state: 'manual_review' as OutOfStockDecisionState,
@@ -1662,6 +1673,8 @@ export default function ProductsPage() {
             nextGroup: nextManualReviewLaneGroup,
             firstGroup: firstManualReviewLaneGroup,
             buttonClass: getOutOfStockDecisionButtonClass('manual_review'),
+            copyLabel: getOutOfStockDecisionCopyLabel('manual_review'),
+            previewGroups: outOfStockManualReviewLaneGroups.slice(0, 3),
           },
         ]
       : [];
@@ -1762,6 +1775,63 @@ export default function ProductsPage() {
         ? `Downloaded ${rows.length} ${getOutOfStockDecisionTitle(state).toLowerCase()}.`
         : 'Could not export this decision queue right now.'
     );
+  };
+
+  const handleCopyOutOfStockDecisionValues = async (
+    state: OutOfStockDecisionState
+  ) => {
+    if (reviewReasonCode !== 'out_of_stock') {
+      setLaneActionFeedback('Open an out-of-stock review batch before copying this decision queue.');
+      return;
+    }
+
+    const matchingQueue = outOfStockWholeUnavailableDecisionQueue.filter(
+      (item) => item.decisionState === state
+    );
+
+    if (!matchingQueue.length) {
+      setLaneActionFeedback(
+        `No ${getOutOfStockDecisionTitle(state).toLowerCase()} are available right now.`
+      );
+      return;
+    }
+
+    const values =
+      state === 'archive_candidate'
+        ? Array.from(
+            new Set(
+              matchingQueue
+                .map(({ group }) => String(group.platform_product_id || '').trim())
+                .filter(Boolean)
+            )
+          )
+        : Array.from(
+            new Set(
+              matchingQueue.flatMap(({ group }) =>
+                (group.sample_skus || []).map((sku) => String(sku || '').trim()).filter(Boolean)
+              )
+            )
+          );
+
+    if (!values.length) {
+      setLaneActionFeedback(
+        state === 'archive_candidate'
+          ? 'No product IDs are available to copy for this queue yet.'
+          : 'No sample SKUs are available to copy for this queue yet.'
+      );
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(values.join('\n'));
+      setLaneActionFeedback(
+        state === 'archive_candidate'
+          ? `Copied ${values.length} product IDs from ${getOutOfStockDecisionTitle(state).toLowerCase()}.`
+          : `Copied ${values.length} sample SKUs from ${getOutOfStockDecisionTitle(state).toLowerCase()}.`
+      );
+    } catch {
+      setLaneActionFeedback('Could not copy this decision queue right now.');
+    }
   };
 
   const openLaneGroup = async (group: SourceDataLaneGroup) => {
@@ -2954,6 +3024,16 @@ export default function ProductsPage() {
                                           >
                                             Download decision queue CSV
                                           </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              void handleCopyOutOfStockDecisionValues(item.state)
+                                            }
+                                            disabled={item.count === 0}
+                                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                          >
+                                            {item.copyLabel}
+                                          </button>
                                           {(item.nextGroup || item.firstGroup) ? (
                                             <button
                                               type="button"
@@ -2982,6 +3062,35 @@ export default function ProductsPage() {
                                             </button>
                                           ) : null}
                                         </div>
+                                        {item.previewGroups.length > 0 ? (
+                                          <div className="mt-3 space-y-2">
+                                            <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                                              Queue preview
+                                            </div>
+                                            {item.previewGroups.map(({ group, progress }) => (
+                                              <button
+                                                key={`${item.state}-${group.platform}-${group.platform_product_id}`}
+                                                type="button"
+                                                onClick={() => {
+                                                  void openLaneGroup(group);
+                                                }}
+                                                className="flex w-full items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left hover:bg-slate-100"
+                                              >
+                                                <div className="min-w-0">
+                                                  <div className="truncate text-xs font-medium text-slate-900">
+                                                    {group.product_title}
+                                                  </div>
+                                                  <div className="mt-1 text-[11px] text-slate-600">
+                                                    {group.affected_variants} affected · {progress.pending_variant_count} pending now
+                                                  </div>
+                                                </div>
+                                                <div className="shrink-0 rounded-full bg-slate-50 px-2 py-1 text-[10px] font-medium text-slate-700 ring-1 ring-slate-200">
+                                                  Open
+                                                </div>
+                                              </button>
+                                            ))}
+                                          </div>
+                                        ) : null}
                                       </div>
                                     ))}
                                   </div>
