@@ -14,21 +14,21 @@ import { apiClient } from '@/lib/api-client';
 
 const merchantHighlights = [
   {
-    title: 'Catalog health',
+    title: 'Ready for LLM and agent traffic',
     description:
-      'Review blocked variants, content gaps, and channel readiness before products go live.',
+      'Prepare your catalog and storefront experience for product discovery and buyer traffic coming from LLMs and agents.',
     icon: Sparkles,
   },
   {
-    title: 'Sales channels and setup',
+    title: 'Catalog readiness and exposure',
     description:
-      'Keep store connections, payment setup, and launch readiness visible from one workspace.',
+      'Review readiness issues and optimize product content so more items are eligible for strong LLM and agent exposure.',
     icon: Store,
   },
   {
-    title: 'Orders, promotions, and visibility',
+    title: 'Smooth product view to transaction',
     description:
-      'Monitor order flow, plan promotions, and keep merchant-facing activity close to the surface.',
+      'Keep product view, order generation, and transaction flow clear and reliable from discovery through checkout.',
     icon: ShoppingBag,
   },
 ];
@@ -90,7 +90,7 @@ export default function LoginPage() {
               Sign in to the Pivota Merchant Portal
             </h1>
             <p className="mt-5 max-w-lg text-base leading-7 text-[color:var(--merchant-muted-strong)]">
-              Manage catalog health, channels, promotions, and orders from one merchant workspace.
+              Help your catalog get ready for LLM and agent traffic, improve product exposure, and keep commerce execution smooth.
             </p>
 
             <div className="mt-10 grid gap-4">
@@ -132,7 +132,7 @@ export default function LoginPage() {
               Sign in to the Pivota Merchant Portal
             </h1>
             <p className="mt-3 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-              Review readiness issues, launch channels, and keep product content aligned before products go live.
+              Get your catalog ready for LLM and agent traffic, improve exposure, and keep the path to transaction smooth.
             </p>
           </div>
 
@@ -156,7 +156,7 @@ export default function LoginPage() {
                 Sign in
               </h2>
               <p className="mt-2 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-                Use your merchant account to manage catalog health, channels, promotions, and orders.
+                Use your merchant account to review readiness, improve LLM and agent exposure, and keep order flow moving cleanly.
               </p>
             </div>
 
@@ -229,7 +229,7 @@ export default function LoginPage() {
             <div className="mt-6 rounded-2xl border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-4 py-4">
               <p className="text-sm font-medium text-[color:var(--merchant-ink)]">Need access?</p>
               <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-                Create a merchant account to connect your store, set up payments, and start launching catalog-ready products.
+                Create a merchant account to prepare your catalog for agent-driven demand and build a smoother path from product discovery to checkout.
               </p>
               <Link
                 href="/signup"
