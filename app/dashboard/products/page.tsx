@@ -1631,6 +1631,18 @@ export default function ProductsPage() {
   const outOfStockManualReviewLaneGroups = outOfStockWholeUnavailableDecisionQueue.filter(
     (item) => item.decisionState === 'manual_review'
   );
+  const outOfStockPersistedRestockLaneGroups = outOfStockWholeUnavailableDecisionQueue.filter(
+    (item) => item.persistedDecisionState === 'restock_planned'
+  );
+  const outOfStockPersistedArchiveLaneGroups = outOfStockWholeUnavailableDecisionQueue.filter(
+    (item) => item.persistedDecisionState === 'archive_planned'
+  );
+  const outOfStockPersistedManualReviewLaneGroups = outOfStockWholeUnavailableDecisionQueue.filter(
+    (item) => item.persistedDecisionState === 'manual_review'
+  );
+  const outOfStockUndecidedLaneGroups = outOfStockWholeUnavailableDecisionQueue.filter(
+    (item) => !item.persistedDecisionState
+  );
   const nextWholeUnavailableLaneGroup =
     currentLaneGroupIndex >= 0
       ? laneGroupProgressList
@@ -2131,6 +2143,10 @@ export default function ProductsPage() {
           },
         ]
       : [];
+  const outOfStockSavedDecisionCount =
+    outOfStockPersistedRestockLaneGroups.length +
+    outOfStockPersistedArchiveLaneGroups.length +
+    outOfStockPersistedManualReviewLaneGroups.length;
 
   const applyOutOfStockDecisionStateToLocalQueue = (
     platform: string,
@@ -2157,6 +2173,38 @@ export default function ProductsPage() {
     );
   };
 
+  const getNextOutOfStockUndecidedLaneGroup = () => {
+    if (!currentLaneGroup) {
+      return outOfStockUndecidedLaneGroups[0]?.group || null;
+    }
+
+    const isSameGroup = (group: SourceDataLaneGroup) =>
+      group.reason_code === 'out_of_stock' &&
+      group.platform === currentLaneGroup.platform &&
+      group.platform_product_id === currentLaneGroup.platform_product_id;
+
+    const afterCurrent =
+      currentLaneGroupIndex >= 0
+        ? laneGroupProgressList
+            .slice(currentLaneGroupIndex + 1)
+            .find(
+              ({ group, progress }) =>
+                group.reason_code === 'out_of_stock' &&
+                progress.batch_state === 'whole_product_unavailable' &&
+                !normalizePersistedOutOfStockDecisionState(group.decision_state)
+            )?.group || null
+        : null;
+
+    if (afterCurrent) {
+      return afterCurrent;
+    }
+
+    return (
+      outOfStockUndecidedLaneGroups.find(({ group }) => !isSameGroup(group))?.group ||
+      null
+    );
+  };
+
   const handleSetOutOfStockDecision = async (
     decisionState: PersistedOutOfStockDecisionState | null
   ) => {
@@ -2168,7 +2216,7 @@ export default function ProductsPage() {
       setLaneActionFeedback(
         'Open a whole-product out-of-stock batch before saving a merchant decision.'
       );
-      return;
+      return false;
     }
 
     const platform = currentLaneGroup.platform;
@@ -2203,6 +2251,7 @@ export default function ProductsPage() {
             ).toLowerCase()}.`
           : 'Cleared the saved merchant decision for this batch.'
       );
+      return true;
     } catch (error) {
       console.error('Failed to save out-of-stock merchant decision', error);
       setLaneActionFeedback(
@@ -2210,9 +2259,36 @@ export default function ProductsPage() {
           ? 'Could not save this merchant decision right now.'
           : 'Could not clear this merchant decision right now.'
       );
+      return false;
     } finally {
       setDecisionSaving(false);
     }
+  };
+
+  const handleSetOutOfStockDecisionAndAdvance = async (
+    decisionState: PersistedOutOfStockDecisionState
+  ) => {
+    const nextUndecidedGroup = getNextOutOfStockUndecidedLaneGroup();
+    const saved = await handleSetOutOfStockDecision(decisionState);
+    if (!saved) {
+      return;
+    }
+
+    if (nextUndecidedGroup) {
+      await openLaneGroup(nextUndecidedGroup);
+      setLaneActionFeedback(
+        `Saved merchant decision: ${getPersistedOutOfStockDecisionLabel(
+          decisionState
+        ).toLowerCase()}. Opened the next undecided batch.`
+      );
+      return;
+    }
+
+    setLaneActionFeedback(
+      `Saved merchant decision: ${getPersistedOutOfStockDecisionLabel(
+        decisionState
+      ).toLowerCase()}. No undecided whole-product batches are left in this lane.`
+    );
   };
 
   const handleDownloadOutOfStockQueueCsv = (state: OutOfStockBatchState) => {
@@ -3282,6 +3358,14 @@ export default function ProductsPage() {
                                                 currentPersistedOutOfStockDecisionState
                                               )}
                                             </span>
+                                            <span className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-amber-200">
+                                              {outOfStockSavedDecisionCount} saved
+                                            </span>
+                                            <span className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200">
+                                              {outOfStockUndecidedLaneGroups.length} undecided
+                                            </span>
+                                          </div>
+                                          <div className="flex flex-wrap gap-2">
                                             <button
                                               type="button"
                                               onClick={() =>
@@ -3330,6 +3414,44 @@ export default function ProductsPage() {
                                                 Clear decision
                                               </button>
                                             ) : null}
+                                          </div>
+                                          <div className="flex flex-wrap gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void handleSetOutOfStockDecisionAndAdvance(
+                                                  'restock_planned'
+                                                )
+                                              }
+                                              disabled={decisionSaving}
+                                              className="inline-flex items-center rounded-md border border-blue-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                                            >
+                                              Restock + next undecided
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void handleSetOutOfStockDecisionAndAdvance(
+                                                  'archive_planned'
+                                                )
+                                              }
+                                              disabled={decisionSaving}
+                                              className="inline-flex items-center rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                                            >
+                                              Archive + next undecided
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void handleSetOutOfStockDecisionAndAdvance(
+                                                  'manual_review'
+                                                )
+                                              }
+                                              disabled={decisionSaving}
+                                              className="inline-flex items-center rounded-md border border-amber-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-50"
+                                            >
+                                              Manual review + next undecided
+                                            </button>
                                           </div>
                                         </div>
                                       ) : null}
@@ -3417,6 +3539,37 @@ export default function ProductsPage() {
                                           {nextPendingLaneGroup
                                             ? 'Next pending batch'
                                             : 'Open first pending batch'}
+                                        </button>
+                                      ) : null}
+                                      {reviewReasonCode === 'out_of_stock' &&
+                                      (getNextOutOfStockUndecidedLaneGroup() ||
+                                        (currentPersistedOutOfStockDecisionState
+                                          ? outOfStockUndecidedLaneGroups[0]?.group
+                                          : null)) ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const targetGroup =
+                                              getNextOutOfStockUndecidedLaneGroup() ||
+                                              (currentPersistedOutOfStockDecisionState
+                                                ? outOfStockUndecidedLaneGroups[0]?.group || null
+                                                : null);
+                                            if (targetGroup) {
+                                              void openLaneGroup(targetGroup);
+                                            }
+                                          }}
+                                          disabled={
+                                            !getNextOutOfStockUndecidedLaneGroup() &&
+                                            !(
+                                              currentPersistedOutOfStockDecisionState &&
+                                              outOfStockUndecidedLaneGroups[0]?.group
+                                            )
+                                          }
+                                          className="inline-flex items-center rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-[11px] font-medium text-sky-700 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                          {getNextOutOfStockUndecidedLaneGroup()
+                                            ? 'Next undecided batch'
+                                            : 'Open first undecided batch'}
                                         </button>
                                       ) : null}
                                       {reviewReasonCode === 'out_of_stock' &&
@@ -3897,6 +4050,23 @@ export default function ProductsPage() {
                                     <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-medium text-slate-700">
                                       {outOfStockWholeUnavailableLaneGroups.length} whole-product decisions left
                                     </div>
+                                  </div>
+                                  <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                                    <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                                      {outOfStockSavedDecisionCount} saved merchant decisions
+                                    </span>
+                                    <span className="rounded-full bg-white px-2 py-1 font-medium text-amber-800 ring-1 ring-amber-200">
+                                      {outOfStockUndecidedLaneGroups.length} still undecided
+                                    </span>
+                                    <span className="rounded-full bg-white px-2 py-1 font-medium text-blue-700 ring-1 ring-blue-200">
+                                      {outOfStockPersistedRestockLaneGroups.length} saved as restock
+                                    </span>
+                                    <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                                      {outOfStockPersistedArchiveLaneGroups.length} saved as archive
+                                    </span>
+                                    <span className="rounded-full bg-white px-2 py-1 font-medium text-amber-800 ring-1 ring-amber-200">
+                                      {outOfStockPersistedManualReviewLaneGroups.length} saved as manual review
+                                    </span>
                                   </div>
                                   <div className="mt-3 grid gap-3 lg:grid-cols-3">
                                     {outOfStockQueueSummary.map((item) => (
