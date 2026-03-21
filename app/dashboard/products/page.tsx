@@ -256,6 +256,7 @@ type SourceDataLaneProgress = {
   total_variant_count: number;
   looks_resolved_now: boolean;
   batch_state?: OutOfStockBatchState | null;
+  missing_price_state?: MissingPriceBatchState | null;
 };
 
 type SourceDataReasonCode =
@@ -316,6 +317,12 @@ type OutOfStockBatchState =
   | 'restocked_waiting_refresh'
   | 'no_matching_variants';
 
+type MissingPriceBatchState =
+  | 'whole_product_missing_price'
+  | 'partially_priced'
+  | 'priced_waiting_refresh'
+  | 'no_matching_variants';
+
 type OutOfStockDecisionState =
   | 'restock_candidate'
   | 'archive_candidate'
@@ -335,6 +342,52 @@ function getOutOfStockBatchState(
     return 'partially_recovered';
   }
   return 'restocked_waiting_refresh';
+}
+
+function getMissingPriceBatchState(
+  pendingCount: number,
+  resolvedCount: number
+): MissingPriceBatchState {
+  if (pendingCount <= 0 && resolvedCount <= 0) {
+    return 'no_matching_variants';
+  }
+  if (pendingCount > 0 && resolvedCount <= 0) {
+    return 'whole_product_missing_price';
+  }
+  if (pendingCount > 0 && resolvedCount > 0) {
+    return 'partially_priced';
+  }
+  return 'priced_waiting_refresh';
+}
+
+function getMissingPriceBatchStateLabel(state: MissingPriceBatchState) {
+  if (state === 'whole_product_missing_price') return 'Whole product still missing price';
+  if (state === 'partially_priced') return 'Partially priced now';
+  if (state === 'priced_waiting_refresh') return 'Price visible now';
+  return 'No matching variants';
+}
+
+function getMissingPriceQueueActionLabel(state: MissingPriceBatchState) {
+  if (state === 'partially_priced') {
+    return 'Finish pricing the remaining SKUs, then refresh Catalog health after the price sync settles.';
+  }
+  if (state === 'priced_waiting_refresh') {
+    return 'Refresh Catalog health after the latest price sync settles.';
+  }
+  if (state === 'whole_product_missing_price') {
+    return 'Add valid price and currency data across the full product batch before retrying agent push.';
+  }
+  return 'Review the matching variants and confirm whether the product batch still needs price data.';
+}
+
+function getMissingPriceQueueButtonClass(state: MissingPriceBatchState) {
+  if (state === 'whole_product_missing_price') {
+    return 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100';
+  }
+  if (state === 'partially_priced') {
+    return 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100';
+  }
+  return 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100';
 }
 
 function getOutOfStockBatchStateLabel(state: OutOfStockBatchState) {
@@ -1210,6 +1263,7 @@ export default function ProductsPage() {
         total_variant_count: totalVariantCount,
         looks_resolved_now: looksResolvedNow,
         batch_state: null,
+        missing_price_state: null,
       });
       return acc;
     }
@@ -1267,6 +1321,10 @@ export default function ProductsPage() {
         group.reason_code === 'out_of_stock'
           ? getOutOfStockBatchState(pendingVariantCount, resolvedVariantCount)
           : null,
+      missing_price_state:
+        group.reason_code === 'missing_price'
+          ? getMissingPriceBatchState(pendingVariantCount, resolvedVariantCount)
+          : null,
     });
     return acc;
   }, new Map());
@@ -1284,6 +1342,10 @@ export default function ProductsPage() {
           batch_state:
             group.reason_code === 'out_of_stock'
               ? getOutOfStockBatchState(Math.max(group.affected_variants, 1), 0)
+              : null,
+          missing_price_state:
+            group.reason_code === 'missing_price'
+              ? getMissingPriceBatchState(Math.max(group.affected_variants, 1), 0)
               : null,
         },
     };
@@ -1312,6 +1374,59 @@ export default function ProductsPage() {
           .find(({ progress }) => progress.pending_variant_count > 0)?.group || null
       : unresolvedLaneGroups[0]?.group || null;
   const firstPendingLaneGroup = unresolvedLaneGroups[0]?.group || null;
+  const missingPriceWholeMissingLaneGroups = laneGroupProgressList.filter(
+    ({ group, progress }) =>
+      group.reason_code === 'missing_price' &&
+      progress.missing_price_state === 'whole_product_missing_price'
+  );
+  const missingPricePartiallyPricedLaneGroups = laneGroupProgressList.filter(
+    ({ group, progress }) =>
+      group.reason_code === 'missing_price' &&
+      progress.missing_price_state === 'partially_priced'
+  );
+  const missingPricePricedWaitingRefreshLaneGroups = laneGroupProgressList.filter(
+    ({ group, progress }) =>
+      group.reason_code === 'missing_price' &&
+      progress.missing_price_state === 'priced_waiting_refresh'
+  );
+  const currentMissingPriceBatchState =
+    reviewReasonCode === 'missing_price' ? currentLaneProgress?.missing_price_state || null : null;
+  const nextWholeMissingPriceLaneGroup =
+    currentLaneGroupIndex >= 0
+      ? laneGroupProgressList
+          .slice(currentLaneGroupIndex + 1)
+          .find(
+            ({ group, progress }) =>
+              group.reason_code === 'missing_price' &&
+              progress.missing_price_state === 'whole_product_missing_price'
+          )?.group || null
+      : missingPriceWholeMissingLaneGroups[0]?.group || null;
+  const firstWholeMissingPriceLaneGroup =
+    missingPriceWholeMissingLaneGroups[0]?.group || null;
+  const nextPartiallyPricedLaneGroup =
+    currentLaneGroupIndex >= 0
+      ? laneGroupProgressList
+          .slice(currentLaneGroupIndex + 1)
+          .find(
+            ({ group, progress }) =>
+              group.reason_code === 'missing_price' &&
+              progress.missing_price_state === 'partially_priced'
+          )?.group || null
+      : missingPricePartiallyPricedLaneGroups[0]?.group || null;
+  const firstPartiallyPricedLaneGroup =
+    missingPricePartiallyPricedLaneGroups[0]?.group || null;
+  const nextPricedWaitingRefreshLaneGroup =
+    currentLaneGroupIndex >= 0
+      ? laneGroupProgressList
+          .slice(currentLaneGroupIndex + 1)
+          .find(
+            ({ group, progress }) =>
+              group.reason_code === 'missing_price' &&
+              progress.missing_price_state === 'priced_waiting_refresh'
+          )?.group || null
+      : missingPricePricedWaitingRefreshLaneGroups[0]?.group || null;
+  const firstPricedWaitingRefreshLaneGroup =
+    missingPricePricedWaitingRefreshLaneGroups[0]?.group || null;
   const outOfStockWholeUnavailableLaneGroups = laneGroupProgressList.filter(
     ({ group, progress }) =>
       group.reason_code === 'out_of_stock' &&
@@ -1652,6 +1767,50 @@ export default function ProductsPage() {
           },
         ]
       : [];
+  const missingPriceQueueSummary =
+    reviewReasonCode === 'missing_price'
+      ? [
+          {
+            state: 'whole_product_missing_price' as MissingPriceBatchState,
+            title: 'Whole product still missing price',
+            count: missingPriceWholeMissingLaneGroups.length,
+            summary:
+              missingPriceWholeMissingLaneGroups.length > 0
+                ? 'These products still have no visible price across the whole affected batch. Treat them as full pricing repair work.'
+                : 'No product batches currently look fully unpriced.',
+            nextGroup: nextWholeMissingPriceLaneGroup,
+            firstGroup: firstWholeMissingPriceLaneGroup,
+            buttonClass: getMissingPriceQueueButtonClass('whole_product_missing_price'),
+            previewGroups: missingPriceWholeMissingLaneGroups.slice(0, 3),
+          },
+          {
+            state: 'partially_priced' as MissingPriceBatchState,
+            title: 'Partially priced now',
+            count: missingPricePartiallyPricedLaneGroups.length,
+            summary:
+              missingPricePartiallyPricedLaneGroups.length > 0
+                ? 'These products already have some priced variants again, but the remaining SKUs still need cleanup.'
+                : 'No product batches currently show a mixed priced / missing-price state.',
+            nextGroup: nextPartiallyPricedLaneGroup,
+            firstGroup: firstPartiallyPricedLaneGroup,
+            buttonClass: getMissingPriceQueueButtonClass('partially_priced'),
+            previewGroups: missingPricePartiallyPricedLaneGroups.slice(0, 3),
+          },
+          {
+            state: 'priced_waiting_refresh' as MissingPriceBatchState,
+            title: 'Price visible now',
+            count: missingPricePricedWaitingRefreshLaneGroups.length,
+            summary:
+              missingPricePricedWaitingRefreshLaneGroups.length > 0
+                ? 'These products now look priced again in Pivota and mostly need a readiness refresh.'
+                : 'No product batches currently look fully priced and waiting on refresh only.',
+            nextGroup: nextPricedWaitingRefreshLaneGroup,
+            firstGroup: firstPricedWaitingRefreshLaneGroup,
+            buttonClass: getMissingPriceQueueButtonClass('priced_waiting_refresh'),
+            previewGroups: missingPricePricedWaitingRefreshLaneGroups.slice(0, 3),
+          },
+        ]
+      : [];
   const outOfStockDecisionSummary =
     reviewReasonCode === 'out_of_stock'
       ? [
@@ -1746,6 +1905,99 @@ export default function ProductsPage() {
           }.`
         : 'Could not export this out-of-stock queue right now.'
     );
+  };
+
+  const handleDownloadMissingPriceQueueCsv = (state: MissingPriceBatchState) => {
+    if (reviewReasonCode !== 'missing_price') {
+      setLaneActionFeedback('Open a missing-price review batch before exporting this queue.');
+      return;
+    }
+
+    const matchingQueue = laneGroupProgressList.filter(
+      ({ group, progress }) =>
+        group.reason_code === 'missing_price' &&
+        progress.missing_price_state === state
+    );
+
+    if (!matchingQueue.length) {
+      setLaneActionFeedback(
+        `No ${getMissingPriceBatchStateLabel(state).toLowerCase()} batches are available right now.`
+      );
+      return;
+    }
+
+    const rows = matchingQueue.map(({ group, progress }, index) => ({
+      queue_state: getMissingPriceBatchStateLabel(state),
+      queue_position: index + 1,
+      product_title: group.product_title,
+      platform: group.platform,
+      platform_product_id: group.platform_product_id,
+      affected_variants: group.affected_variants,
+      pending_variants_now: progress.pending_variant_count,
+      resolved_variants_now: progress.resolved_variant_count,
+      blocked_variants: group.blocked_variant_count,
+      excluded_variants: group.excluded_variant_count,
+      sample_skus: group.sample_skus,
+      merchant_action: getMissingPriceQueueActionLabel(state),
+    }));
+
+    const filename = [
+      'catalog-review',
+      'missing-price',
+      state,
+      'products',
+    ].join('-') + '.csv';
+
+    const downloaded = downloadCsvFile(filename, rows);
+    setLaneActionFeedback(
+      downloaded
+        ? `Downloaded ${rows.length} ${getMissingPriceBatchStateLabel(state).toLowerCase()} product batch${
+            rows.length === 1 ? '' : 'es'
+          }.`
+        : 'Could not export this pricing queue right now.'
+    );
+  };
+
+  const handleCopyMissingPriceQueueValues = async (state: MissingPriceBatchState) => {
+    if (reviewReasonCode !== 'missing_price') {
+      setLaneActionFeedback('Open a missing-price review batch before copying this queue.');
+      return;
+    }
+
+    const matchingQueue = laneGroupProgressList.filter(
+      ({ group, progress }) =>
+        group.reason_code === 'missing_price' &&
+        progress.missing_price_state === state
+    );
+
+    if (!matchingQueue.length) {
+      setLaneActionFeedback(
+        `No ${getMissingPriceBatchStateLabel(state).toLowerCase()} batches are available right now.`
+      );
+      return;
+    }
+
+    const values = Array.from(
+      new Set(
+        matchingQueue.flatMap(({ group }) =>
+          (group.sample_skus || []).map((sku) => String(sku || '').trim()).filter(Boolean)
+        )
+      )
+    );
+
+    if (!values.length) {
+      setLaneActionFeedback('No sample SKUs are available to copy for this pricing queue yet.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(values.join('\n'));
+      setLaneActionFeedback(
+        `Copied ${values.length} sample SKUs from ${getMissingPriceBatchStateLabel(state).toLowerCase()}.`
+      );
+    } catch {
+      setLaneActionFeedback('Could not copy this pricing queue right now.');
+    }
   };
 
   const handleDownloadOutOfStockDecisionQueueCsv = (state: OutOfStockDecisionState) => {
@@ -3000,6 +3252,125 @@ export default function ProductsPage() {
                                             </button>
                                           ) : null}
                                         </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {reviewReasonCode === 'missing_price' &&
+                              missingPriceQueueSummary.length > 0 ? (
+                                <div className="rounded-xl border border-slate-200 bg-white/80 p-4">
+                                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                    <div>
+                                      <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                                        Product-level pricing repair queue
+                                      </div>
+                                      <div className="mt-1 text-xs leading-5 text-[color:var(--merchant-muted)]">
+                                        Work missing-price products by queue state instead of one variant at a time. Export the exact product queue that still needs pricing fixes, copy sample SKUs, or jump straight to the next batch in the same state.
+                                      </div>
+                                    </div>
+                                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-medium text-slate-700">
+                                      {missingPriceWholeMissingLaneGroups.length} whole-product pricing batches left
+                                    </div>
+                                  </div>
+                                  <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                                    {missingPriceQueueSummary.map((item) => (
+                                      <div
+                                        key={item.state}
+                                        className="rounded-xl border border-slate-200 bg-slate-50/70 p-3"
+                                      >
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div>
+                                            <div className="text-sm font-medium text-slate-900">
+                                              {item.title}
+                                            </div>
+                                            <div className="mt-1 text-xs text-slate-600">
+                                              {item.summary}
+                                            </div>
+                                          </div>
+                                          <div className="rounded-full bg-white px-2.5 py-1 text-sm font-semibold text-slate-900 ring-1 ring-slate-200">
+                                            {item.count}
+                                          </div>
+                                        </div>
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleDownloadMissingPriceQueueCsv(item.state)
+                                            }
+                                            disabled={item.count === 0}
+                                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                          >
+                                            Download product queue CSV
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              void handleCopyMissingPriceQueueValues(item.state)
+                                            }
+                                            disabled={item.count === 0}
+                                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                          >
+                                            Copy sample SKUs
+                                          </button>
+                                          {(item.nextGroup || item.firstGroup) ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                const targetGroup =
+                                                  item.nextGroup ||
+                                                  (currentMissingPriceBatchState !== item.state
+                                                    ? item.firstGroup
+                                                    : null);
+                                                if (targetGroup) {
+                                                  void openLaneGroup(targetGroup);
+                                                }
+                                              }}
+                                              disabled={
+                                                !item.nextGroup &&
+                                                !(
+                                                  currentMissingPriceBatchState !== item.state &&
+                                                  item.firstGroup
+                                                )
+                                              }
+                                              className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-50 ${item.buttonClass}`}
+                                            >
+                                              {item.nextGroup
+                                                ? `Next ${item.title.toLowerCase()} batch`
+                                                : `Open first ${item.title.toLowerCase()} batch`}
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                        {item.previewGroups.length > 0 ? (
+                                          <div className="mt-3 space-y-2">
+                                            <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                                              Queue preview
+                                            </div>
+                                            {item.previewGroups.map(({ group, progress }) => (
+                                              <button
+                                                key={`${item.state}-${group.platform}-${group.platform_product_id}`}
+                                                type="button"
+                                                onClick={() => {
+                                                  void openLaneGroup(group);
+                                                }}
+                                                className="flex w-full items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left hover:bg-slate-100"
+                                              >
+                                                <div className="min-w-0">
+                                                  <div className="truncate text-xs font-medium text-slate-900">
+                                                    {group.product_title}
+                                                  </div>
+                                                  <div className="mt-1 text-[11px] text-slate-600">
+                                                    {group.affected_variants} affected · {progress.pending_variant_count} still missing now
+                                                  </div>
+                                                </div>
+                                                <div className="shrink-0 rounded-full bg-slate-50 px-2 py-1 text-[10px] font-medium text-slate-700 ring-1 ring-slate-200">
+                                                  Open
+                                                </div>
+                                              </button>
+                                            ))}
+                                          </div>
+                                        ) : null}
                                       </div>
                                     ))}
                                   </div>
