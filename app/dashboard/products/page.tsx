@@ -2111,7 +2111,11 @@ export default function ProductsPage() {
     try {
       const latestPlan =
         reviewSource === 'readiness'
-          ? await loadCatalogReviewPlan()
+          ? await loadCatalogReviewPlan({
+              forceRefresh: true,
+              scope: 'product',
+              reason: 'lane_group_navigation',
+            })
           : null;
       const product = await resolveProductForReview(group.platform, group.platform_product_id);
       setSelectedProduct(product);
