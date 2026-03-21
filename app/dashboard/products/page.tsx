@@ -1836,6 +1836,10 @@ export default function ProductsPage() {
 
   const openLaneGroup = async (group: SourceDataLaneGroup) => {
     try {
+      const latestPlan =
+        reviewSource === 'readiness'
+          ? await loadCatalogReviewPlan({ forceRefresh: true })
+          : null;
       const product = await resolveProductForReview(group.platform, group.platform_product_id);
       setSelectedProduct(product);
       setSelectedVariantId(group.sample_variant_id || null);
@@ -1847,7 +1851,10 @@ export default function ProductsPage() {
         platformProductId: group.platform_product_id,
         variantId: group.sample_variant_id,
         reasonCode: group.reason_code,
-        planId: catalogReviewPlan?.plan_id || deepLinkPlanId,
+        planId:
+          latestPlan?.plan_id ||
+          catalogReviewPlan?.plan_id ||
+          deepLinkPlanId,
       });
     } catch (error) {
       console.error('Failed to open lane review group', error);
