@@ -401,6 +401,34 @@ type SourceDataLaneWorklist = {
   blocked_products: number;
   excluded_products: number;
   next_product: WorkspaceProductItem | null;
+  status_summary: Array<{
+    key: string;
+    label: string;
+    count: number;
+    className: string;
+  }>;
+};
+
+type OutOfStockBatchState =
+  | 'whole_product_unavailable'
+  | 'partially_recovered'
+  | 'restocked_waiting_refresh'
+  | 'no_matching_variants';
+
+type MissingPriceBatchState =
+  | 'whole_product_missing_price'
+  | 'partially_priced'
+  | 'priced_waiting_refresh'
+  | 'no_matching_variants';
+
+type SourceDataLaneProgress = {
+  group_key: string;
+  pending_variant_count: number;
+  resolved_variant_count: number;
+  total_variant_count: number;
+  looks_resolved_now: boolean;
+  batch_state?: OutOfStockBatchState | null;
+  missing_price_state?: MissingPriceBatchState | null;
 };
 
 type CatalogReviewQueueState =
@@ -636,6 +664,179 @@ const SOURCE_DATA_REASON_ORDER: SourceDataReasonCode[] = [
 const getSourceDataRowAffectedVariantCount = (row: SourceDataTriageRow) => {
   if (row.scope === 'variant') return 1;
   return Math.max(row.blocked_variant_count, row.excluded_variant_count, 1);
+};
+
+const buildSourceDataLaneGroupKey = (params: {
+  reason_code: SourceDataReasonCode;
+  platform: string;
+  platform_product_id: string;
+}) =>
+  [
+    params.reason_code,
+    String(params.platform || '').toLowerCase(),
+    String(params.platform_product_id || ''),
+  ].join('|');
+
+const buildSourceDataProductKey = (params: {
+  platform: string;
+  platform_product_id: string;
+}) =>
+  [
+    String(params.platform || '').toLowerCase(),
+    String(params.platform_product_id || ''),
+  ].join('|');
+
+const normalizeWorkspaceProductForTriage = (product: WorkspaceProductItem) => {
+  const standard = product?.standard || {};
+  const priceValue =
+    typeof standard.price === 'number'
+      ? standard.price
+      : typeof standard.price?.value === 'number'
+        ? standard.price.value
+        : 0;
+  const priceCurrency =
+    typeof standard.price === 'number'
+      ? (standard as any).currency || 'USD'
+      : standard.price?.currency || (standard as any).currency || 'USD';
+  const inventoryQuantity =
+    (standard as any).inventory_quantity ??
+    (standard as any).stock ??
+    (standard as any).inventory ??
+    0;
+
+  return {
+    ...product,
+    id:
+      (standard as any).product_id ||
+      (standard as any).id ||
+      product?.platform_product_id,
+    platform: product?.platform || (standard as any).platform,
+    platform_product_id:
+      product?.platform_product_id ||
+      (standard as any).product_id ||
+      (standard as any).id,
+    product_id:
+      (standard as any).product_id || (standard as any).id || product?.platform_product_id,
+    title: standard.title || (product as any)?.title || (product as any)?.name,
+    description:
+      (standard as any).description ||
+      (standard as any).description_text ||
+      (product as any)?.description ||
+      '',
+    price: priceValue,
+    currency: priceCurrency,
+    inventory_quantity: inventoryQuantity,
+    stock: inventoryQuantity,
+    status: (standard as any).status || (product as any)?.status,
+    orderable:
+      typeof (standard as any).orderable === 'boolean'
+        ? (standard as any).orderable
+        : (product as any)?.orderable,
+    image_url:
+      (standard as any).image_url ||
+      standard.main_image_url ||
+      (product as any)?.image_url,
+    images: (standard as any).images || (product as any)?.images || [],
+    variants: (((standard as any).variants || (product as any)?.variants || []) as any[]).map(
+      (variant: any) => ({
+        ...variant,
+        id: variant?.variant_id || variant?.id,
+        variant_id: variant?.variant_id || variant?.id,
+        title:
+          variant?.title ||
+          variant?.name ||
+          variant?.variant_id ||
+          variant?.id,
+        sku: variant?.sku || null,
+        price:
+          typeof variant?.price === 'number'
+            ? variant.price
+            : typeof variant?.price?.value === 'number'
+              ? variant.price.value
+              : 0,
+        currency:
+          typeof variant?.price === 'number'
+            ? priceCurrency
+            : variant?.price?.currency || priceCurrency,
+        inventory_quantity:
+          variant?.inventory_quantity ?? variant?.stock ?? variant?.inventory ?? 0,
+      })
+    ),
+  };
+};
+
+const isWorkspaceProductSellable = (product: any): boolean => {
+  const explicit =
+    product?.sellable ??
+    product?.is_sellable ??
+    product?.isSellable ??
+    product?.sellable_status;
+  if (typeof explicit === 'boolean') return explicit;
+  if (typeof explicit === 'number') return explicit === 1;
+  if (typeof explicit === 'string') {
+    const normalized = explicit.trim().toLowerCase();
+    if (['sellable', 'true', '1', 'yes', 'y'].includes(normalized)) return true;
+    if (
+      ['not_sellable', 'not sellable', 'false', '0', 'no', 'n'].includes(normalized)
+    ) {
+      return false;
+    }
+  }
+
+  const rawStatus = (product?.status ?? '').toString().toLowerCase();
+  const orderable = product?.orderable;
+  return rawStatus === 'active' && orderable !== false;
+};
+
+const getOutOfStockBatchState = (
+  pendingVariantCount: number,
+  resolvedVariantCount: number
+): OutOfStockBatchState => {
+  if (pendingVariantCount <= 0 && resolvedVariantCount <= 0) {
+    return 'no_matching_variants';
+  }
+  if (pendingVariantCount <= 0) return 'restocked_waiting_refresh';
+  if (resolvedVariantCount > 0) return 'partially_recovered';
+  return 'whole_product_unavailable';
+};
+
+const getMissingPriceBatchState = (
+  pendingVariantCount: number,
+  resolvedVariantCount: number
+): MissingPriceBatchState => {
+  if (pendingVariantCount <= 0 && resolvedVariantCount <= 0) {
+    return 'no_matching_variants';
+  }
+  if (pendingVariantCount <= 0) return 'priced_waiting_refresh';
+  if (resolvedVariantCount > 0) return 'partially_priced';
+  return 'whole_product_missing_price';
+};
+
+const getOutOfStockDecisionState = (product: any) => {
+  const rawStatus = String(product?.status || '').trim().toLowerCase();
+  const hasVisibleImage = Boolean(product?.image_url || product?.images?.[0]);
+  const hasDescription = Boolean(String(product?.description || '').trim());
+  const hasAnyPricedVariant = Array.isArray(product?.variants)
+    ? product.variants.some((variant: any) => Number(variant?.price || 0) > 0)
+    : Number(product?.price || 0) > 0;
+
+  if (rawStatus && rawStatus !== 'active') {
+    return 'archive_candidate';
+  }
+
+  if (product?.orderable === false) {
+    return 'archive_candidate';
+  }
+
+  if (
+    isWorkspaceProductSellable(product) &&
+    hasAnyPricedVariant &&
+    (hasVisibleImage || hasDescription)
+  ) {
+    return 'restock_candidate';
+  }
+
+  return 'manual_review';
 };
 
 const getLaneQueueShortcuts = (
@@ -1828,6 +2029,242 @@ export default function ProductOptimizationPage() {
       return a.product_title.localeCompare(b.product_title);
     });
   })();
+  const normalizedProductsBySourceDataKey = new Map(
+    queueDrivenProducts.map((item) => [
+      buildSourceDataProductKey({
+        platform: item.platform,
+        platform_product_id: item.platform_product_id,
+      }),
+      normalizeWorkspaceProductForTriage(item),
+    ])
+  );
+  const sourceDataRowsByGroupKey = triageRows.reduce<
+    Map<string, SourceDataTriageRow[]>
+  >((acc, row) => {
+    const key = buildSourceDataLaneGroupKey({
+      reason_code: row.reason_code,
+      platform: row.platform,
+      platform_product_id: row.platform_product_id,
+    });
+    const existing = acc.get(key) || [];
+    existing.push(row);
+    acc.set(key, existing);
+    return acc;
+  }, new Map());
+  const laneGroupProgressByKey = triageGroups.reduce<
+    Map<string, SourceDataLaneProgress>
+  >((acc, group) => {
+    const groupKey = buildSourceDataLaneGroupKey(group);
+    const currentProduct = normalizedProductsBySourceDataKey.get(
+      buildSourceDataProductKey({
+        platform: group.platform,
+        platform_product_id: group.platform_product_id,
+      })
+    );
+    const matchingRows = sourceDataRowsByGroupKey.get(groupKey) || [];
+
+    if (group.reason_code === 'missing_primary_image') {
+      const looksResolvedNow = Boolean(
+        currentProduct?.image_url || currentProduct?.images?.[0]
+      );
+      const totalVariantCount = Math.max(group.affected_variants, 1);
+      acc.set(groupKey, {
+        group_key: groupKey,
+        pending_variant_count: looksResolvedNow ? 0 : totalVariantCount,
+        resolved_variant_count: looksResolvedNow ? totalVariantCount : 0,
+        total_variant_count: totalVariantCount,
+        looks_resolved_now: looksResolvedNow,
+        batch_state: null,
+        missing_price_state: null,
+      });
+      return acc;
+    }
+
+    let pendingVariantCount = 0;
+    let resolvedVariantCount = 0;
+
+    for (const row of matchingRows) {
+      const variantId = String(row.variant_id || '');
+      const currentVariant = variantId
+        ? (currentProduct?.variants || []).find(
+            (variant: any) => String(variant.variant_id || variant.id || '') === variantId
+          )
+        : null;
+      const currentPrice =
+        typeof currentVariant?.price === 'number'
+          ? currentVariant.price
+          : typeof row.price_value === 'number'
+            ? row.price_value
+            : 0;
+      const currentCurrency = String(
+        currentVariant?.currency || row.price_currency || currentProduct?.currency || ''
+      ).trim();
+      const currentInventory = Number(
+        currentVariant?.inventory_quantity ?? row.inventory_quantity ?? 0
+      );
+      const looksResolvedNow =
+        group.reason_code === 'missing_price'
+          ? currentPrice > 0 && Boolean(currentCurrency)
+          : currentInventory > 0;
+
+      if (looksResolvedNow) {
+        resolvedVariantCount += 1;
+      } else {
+        pendingVariantCount += 1;
+      }
+    }
+
+    if (!matchingRows.length) {
+      pendingVariantCount = Math.max(group.affected_variants, 1);
+    }
+
+    const totalVariantCount = Math.max(
+      pendingVariantCount + resolvedVariantCount,
+      group.affected_variants,
+      1
+    );
+
+    acc.set(groupKey, {
+      group_key: groupKey,
+      pending_variant_count: pendingVariantCount,
+      resolved_variant_count: resolvedVariantCount,
+      total_variant_count: totalVariantCount,
+      looks_resolved_now: pendingVariantCount === 0,
+      batch_state:
+        group.reason_code === 'out_of_stock'
+          ? getOutOfStockBatchState(pendingVariantCount, resolvedVariantCount)
+          : null,
+      missing_price_state:
+        group.reason_code === 'missing_price'
+          ? getMissingPriceBatchState(pendingVariantCount, resolvedVariantCount)
+          : null,
+    });
+    return acc;
+  }, new Map());
+  const triageLaneStatusSummaryByCode = new Map<
+    SourceDataReasonCode,
+    SourceDataLaneWorklist['status_summary']
+  >(
+    SOURCE_DATA_REASON_ORDER.map((reasonCode) => {
+      const laneGroups = triageGroups.filter((group) => group.reason_code === reasonCode);
+      if (reasonCode === 'missing_price') {
+        return [
+          reasonCode,
+          [
+            {
+              key: 'whole_product_missing_price',
+              label: 'Whole product still missing price',
+              count: laneGroups.filter(
+                (group) =>
+                  laneGroupProgressByKey.get(buildSourceDataLaneGroupKey(group))
+                    ?.missing_price_state === 'whole_product_missing_price'
+              ).length,
+              className: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
+            },
+            {
+              key: 'partially_priced',
+              label: 'Partially priced now',
+              count: laneGroups.filter(
+                (group) =>
+                  laneGroupProgressByKey.get(buildSourceDataLaneGroupKey(group))
+                    ?.missing_price_state === 'partially_priced'
+              ).length,
+              className: 'bg-amber-50 text-amber-800 ring-1 ring-amber-200',
+            },
+            {
+              key: 'priced_waiting_refresh',
+              label: 'Price visible now',
+              count: laneGroups.filter(
+                (group) =>
+                  laneGroupProgressByKey.get(buildSourceDataLaneGroupKey(group))
+                    ?.missing_price_state === 'priced_waiting_refresh'
+              ).length,
+              className: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+            },
+          ],
+        ] as const;
+      }
+
+      if (reasonCode === 'out_of_stock') {
+        const wholeUnavailableGroups = laneGroups.filter(
+          (group) =>
+            laneGroupProgressByKey.get(buildSourceDataLaneGroupKey(group))
+              ?.batch_state === 'whole_product_unavailable'
+        );
+        return [
+          reasonCode,
+          [
+            {
+              key: 'whole_product_unavailable',
+              label: 'Whole product unavailable',
+              count: wholeUnavailableGroups.length,
+              className: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
+            },
+            {
+              key: 'partially_recovered',
+              label: 'Partially back in stock',
+              count: laneGroups.filter(
+                (group) =>
+                  laneGroupProgressByKey.get(buildSourceDataLaneGroupKey(group))
+                    ?.batch_state === 'partially_recovered'
+              ).length,
+              className: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
+            },
+            {
+              key: 'restocked_waiting_refresh',
+              label: 'Back in stock now',
+              count: laneGroups.filter(
+                (group) =>
+                  laneGroupProgressByKey.get(buildSourceDataLaneGroupKey(group))
+                    ?.batch_state === 'restocked_waiting_refresh'
+              ).length,
+              className: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+            },
+            {
+              key: 'decision_hint',
+              label: 'Archive candidates inside unavailable queue',
+              count: wholeUnavailableGroups.filter((group) => {
+                const currentProduct = normalizedProductsBySourceDataKey.get(
+                  buildSourceDataProductKey({
+                    platform: group.platform,
+                    platform_product_id: group.platform_product_id,
+                  })
+                );
+                return getOutOfStockDecisionState(currentProduct) === 'archive_candidate';
+              }).length,
+              className: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
+            },
+          ],
+        ] as const;
+      }
+
+      return [
+        reasonCode,
+        [
+          {
+            key: 'hero_image_missing',
+            label: 'Hero image still missing',
+            count: laneGroups.filter(
+              (group) =>
+                laneGroupProgressByKey.get(buildSourceDataLaneGroupKey(group))
+                  ?.looks_resolved_now === false
+            ).length,
+            className: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200',
+          },
+          {
+            key: 'image_visible_now',
+            label: 'Primary image visible now',
+            count: laneGroups.filter(
+              (group) =>
+                laneGroupProgressByKey.get(buildSourceDataLaneGroupKey(group))
+                  ?.looks_resolved_now === true
+            ).length,
+            className: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+          },
+        ],
+      ] as const;
+    })
+  );
   const firstTriageGroup = triageGroups[0] || null;
   const triageLaneWorklists: SourceDataLaneWorklist[] = SOURCE_DATA_REASON_ORDER.map(
     (reasonCode) => {
@@ -1856,6 +2293,7 @@ export default function ProductOptimizationPage() {
         blocked_products: blockedProducts,
         excluded_products: excludedProducts,
         next_product: laneProducts[0] || null,
+        status_summary: triageLaneStatusSummaryByCode.get(reasonCode) || [],
       };
     }
   );
@@ -2414,6 +2852,24 @@ export default function ProductOptimizationPage() {
                         {lane.excluded_products} excluded now
                       </span>
                     </div>
+
+                    {lane.status_summary.length > 0 ? (
+                      <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          Current queue status
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                          {lane.status_summary.map((item) => (
+                            <span
+                              key={`${lane.reason_code}-${item.key}`}
+                              className={`rounded-full px-2 py-1 font-medium ${item.className}`}
+                            >
+                              {item.count} {item.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
 
                     {nextProduct ? (
                       <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
