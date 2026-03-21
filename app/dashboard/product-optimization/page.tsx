@@ -1915,15 +1915,26 @@ export default function ProductOptimizationPage() {
     applyTriageReasonFilters(reasonCode);
   };
 
+  const handleOpenTriageLane = async (reasonCode: SourceDataReasonCode) => {
+    if (reasonCode !== triageReason && optimizationPlan?.plan_id) {
+      await loadOptimizationData({
+        refresh: true,
+        scope: 'merchant',
+        reason: 'lane_switch',
+      });
+    }
+    handleSelectTriageReason(reasonCode);
+  };
+
   const handleInspectTriageRow = async (row: SourceDataTriageRow) => {
-    handleSelectTriageReason(row.reason_code);
+    await handleOpenTriageLane(row.reason_code);
     await handleSelect(row.platform, row.platform_product_id, {
       focusDetail: true,
     });
   };
 
   const handleInspectTriageGroup = async (group: SourceDataProductGroup) => {
-    handleSelectTriageReason(group.reason_code);
+    await handleOpenTriageLane(group.reason_code);
     await handleSelect(group.platform, group.platform_product_id, {
       focusDetail: true,
     });
@@ -1932,20 +1943,49 @@ export default function ProductOptimizationPage() {
   const handleExportTriageLane = async (reasonCode: SourceDataReasonCode) => {
     if (!optimizationPlan?.plan_id) return;
     setTriageExporting(true);
-    try {
-      const blob = await apiClient.exportMerchantSourceDataTriageCSV({
-        plan_id: optimizationPlan.plan_id,
-        reason_code: reasonCode,
-      });
+    const triggerDownload = (blob: Blob, laneCode: SourceDataReasonCode) => {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `catalog-health-${reasonCode}.csv`;
+      link.download = `catalog-health-${laneCode}.csv`;
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+    };
+
+    const attemptExport = async (planId: string) => {
+      const blob = await apiClient.exportMerchantSourceDataTriageCSV({
+        plan_id: planId,
+        reason_code: reasonCode,
+      });
+      triggerDownload(blob, reasonCode);
+    };
+
+    try {
+      await attemptExport(optimizationPlan.plan_id);
     } catch (err) {
+      if (isPlanSupersededError(err) || isRetryableOptimizationError(err)) {
+        try {
+          const refreshed = await loadOptimizationData({
+            refresh: true,
+            scope: 'merchant',
+            reason: isPlanSupersededError(err) ? 'plan_superseded' : 'network_retry',
+          });
+          const nextPlanId = refreshed?.plan?.plan_id || optimizationPlan.plan_id;
+          await attemptExport(nextPlanId);
+          return;
+        } catch (retryErr) {
+          console.error('Failed to export source-data triage CSV after retry', retryErr);
+          alert(
+            getActionErrorMessage(
+              retryErr,
+              'Could not export the current triage lane.'
+            )
+          );
+          return;
+        }
+      }
       console.error('Failed to export source-data triage CSV', err);
       alert(
         getActionErrorMessage(
@@ -2204,7 +2244,7 @@ export default function ProductOptimizationPage() {
                 <button
                   key={reasonCode}
                   type="button"
-                  onClick={() => handleSelectTriageReason(reasonCode)}
+                  onClick={() => void handleOpenTriageLane(reasonCode)}
                   className={`rounded-xl border px-4 py-4 text-left transition ${
                     active
                       ? 'border-blue-300 bg-blue-50 shadow-sm'
@@ -2349,7 +2389,7 @@ export default function ProductOptimizationPage() {
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => handleSelectTriageReason(lane.reason_code)}
+                        onClick={() => void handleOpenTriageLane(lane.reason_code)}
                         className="inline-flex items-center rounded-md border border-slate-200 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
                       >
                         Open lane
