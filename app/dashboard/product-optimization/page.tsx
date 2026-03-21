@@ -765,29 +765,6 @@ const normalizeWorkspaceProductForTriage = (product: WorkspaceProductItem) => {
   };
 };
 
-const isWorkspaceProductSellable = (product: any): boolean => {
-  const explicit =
-    product?.sellable ??
-    product?.is_sellable ??
-    product?.isSellable ??
-    product?.sellable_status;
-  if (typeof explicit === 'boolean') return explicit;
-  if (typeof explicit === 'number') return explicit === 1;
-  if (typeof explicit === 'string') {
-    const normalized = explicit.trim().toLowerCase();
-    if (['sellable', 'true', '1', 'yes', 'y'].includes(normalized)) return true;
-    if (
-      ['not_sellable', 'not sellable', 'false', '0', 'no', 'n'].includes(normalized)
-    ) {
-      return false;
-    }
-  }
-
-  const rawStatus = (product?.status ?? '').toString().toLowerCase();
-  const orderable = product?.orderable;
-  return rawStatus === 'active' && orderable !== false;
-};
-
 const getOutOfStockBatchState = (
   pendingVariantCount: number,
   resolvedVariantCount: number
@@ -810,33 +787,6 @@ const getMissingPriceBatchState = (
   if (pendingVariantCount <= 0) return 'priced_waiting_refresh';
   if (resolvedVariantCount > 0) return 'partially_priced';
   return 'whole_product_missing_price';
-};
-
-const getOutOfStockDecisionState = (product: any) => {
-  const rawStatus = String(product?.status || '').trim().toLowerCase();
-  const hasVisibleImage = Boolean(product?.image_url || product?.images?.[0]);
-  const hasDescription = Boolean(String(product?.description || '').trim());
-  const hasAnyPricedVariant = Array.isArray(product?.variants)
-    ? product.variants.some((variant: any) => Number(variant?.price || 0) > 0)
-    : Number(product?.price || 0) > 0;
-
-  if (rawStatus && rawStatus !== 'active') {
-    return 'archive_candidate';
-  }
-
-  if (product?.orderable === false) {
-    return 'archive_candidate';
-  }
-
-  if (
-    isWorkspaceProductSellable(product) &&
-    hasAnyPricedVariant &&
-    (hasVisibleImage || hasDescription)
-  ) {
-    return 'restock_candidate';
-  }
-
-  return 'manual_review';
 };
 
 const getLaneQueueShortcuts = (
@@ -2190,18 +2140,17 @@ export default function ProductOptimizationPage() {
       }
 
       if (reasonCode === 'out_of_stock') {
-        const wholeUnavailableGroups = laneGroups.filter(
-          (group) =>
-            laneGroupProgressByKey.get(buildSourceDataLaneGroupKey(group))
-              ?.batch_state === 'whole_product_unavailable'
-        );
         return [
           reasonCode,
           [
             {
               key: 'whole_product_unavailable',
               label: 'Whole product unavailable',
-              count: wholeUnavailableGroups.length,
+              count: laneGroups.filter(
+                (group) =>
+                  laneGroupProgressByKey.get(buildSourceDataLaneGroupKey(group))
+                    ?.batch_state === 'whole_product_unavailable'
+              ).length,
               className: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
             },
             {
@@ -2223,20 +2172,6 @@ export default function ProductOptimizationPage() {
                     ?.batch_state === 'restocked_waiting_refresh'
               ).length,
               className: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-            },
-            {
-              key: 'decision_hint',
-              label: 'Archive candidates inside unavailable queue',
-              count: wholeUnavailableGroups.filter((group) => {
-                const currentProduct = normalizedProductsBySourceDataKey.get(
-                  buildSourceDataProductKey({
-                    platform: group.platform,
-                    platform_product_id: group.platform_product_id,
-                  })
-                );
-                return getOutOfStockDecisionState(currentProduct) === 'archive_candidate';
-              }).length,
-              className: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
             },
           ],
         ] as const;
