@@ -323,6 +323,10 @@ type MissingPriceBatchState =
   | 'priced_waiting_refresh'
   | 'no_matching_variants';
 
+type MissingImageBatchState =
+  | 'hero_image_missing'
+  | 'image_visible_now';
+
 type OutOfStockDecisionState =
   | 'restock_candidate'
   | 'archive_candidate'
@@ -386,6 +390,25 @@ function getMissingPriceQueueButtonClass(state: MissingPriceBatchState) {
   }
   if (state === 'partially_priced') {
     return 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100';
+  }
+  return 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100';
+}
+
+function getMissingImageBatchStateLabel(state: MissingImageBatchState) {
+  if (state === 'hero_image_missing') return 'Hero image still missing';
+  return 'Primary image visible now';
+}
+
+function getMissingImageQueueActionLabel(state: MissingImageBatchState) {
+  if (state === 'hero_image_missing') {
+    return 'Add or sync the main product image in your source catalog, then refresh Catalog health once the image lands in Pivota.';
+  }
+  return 'Refresh Catalog health after the image sync settles to clear the stale blocker.';
+}
+
+function getMissingImageQueueButtonClass(state: MissingImageBatchState) {
+  if (state === 'hero_image_missing') {
+    return 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100';
   }
   return 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100';
 }
@@ -1427,6 +1450,46 @@ export default function ProductsPage() {
       : missingPricePricedWaitingRefreshLaneGroups[0]?.group || null;
   const firstPricedWaitingRefreshLaneGroup =
     missingPricePricedWaitingRefreshLaneGroups[0]?.group || null;
+  const missingImageUnresolvedLaneGroups = laneGroupProgressList.filter(
+    ({ group, progress }) =>
+      group.reason_code === 'missing_primary_image' &&
+      progress.looks_resolved_now === false
+  );
+  const missingImageResolvedLaneGroups = laneGroupProgressList.filter(
+    ({ group, progress }) =>
+      group.reason_code === 'missing_primary_image' &&
+      progress.looks_resolved_now === true
+  );
+  const currentMissingImageBatchState =
+    reviewReasonCode === 'missing_primary_image'
+      ? currentLaneProgress?.looks_resolved_now
+        ? ('image_visible_now' as MissingImageBatchState)
+        : ('hero_image_missing' as MissingImageBatchState)
+      : null;
+  const nextMissingImageUnresolvedLaneGroup =
+    currentLaneGroupIndex >= 0
+      ? laneGroupProgressList
+          .slice(currentLaneGroupIndex + 1)
+          .find(
+            ({ group, progress }) =>
+              group.reason_code === 'missing_primary_image' &&
+              progress.looks_resolved_now === false
+          )?.group || null
+      : missingImageUnresolvedLaneGroups[0]?.group || null;
+  const firstMissingImageUnresolvedLaneGroup =
+    missingImageUnresolvedLaneGroups[0]?.group || null;
+  const nextMissingImageResolvedLaneGroup =
+    currentLaneGroupIndex >= 0
+      ? laneGroupProgressList
+          .slice(currentLaneGroupIndex + 1)
+          .find(
+            ({ group, progress }) =>
+              group.reason_code === 'missing_primary_image' &&
+              progress.looks_resolved_now === true
+          )?.group || null
+      : missingImageResolvedLaneGroups[0]?.group || null;
+  const firstMissingImageResolvedLaneGroup =
+    missingImageResolvedLaneGroups[0]?.group || null;
   const outOfStockWholeUnavailableLaneGroups = laneGroupProgressList.filter(
     ({ group, progress }) =>
       group.reason_code === 'out_of_stock' &&
@@ -1811,6 +1874,37 @@ export default function ProductsPage() {
           },
         ]
       : [];
+  const missingImageQueueSummary =
+    reviewReasonCode === 'missing_primary_image'
+      ? [
+          {
+            state: 'hero_image_missing' as MissingImageBatchState,
+            title: getMissingImageBatchStateLabel('hero_image_missing'),
+            count: missingImageUnresolvedLaneGroups.length,
+            summary:
+              missingImageUnresolvedLaneGroups.length > 0
+                ? 'These products still have no visible primary image in Pivota. Treat them as product-level image repair work.'
+                : 'No product batches currently look like they are still missing a hero image.',
+            nextGroup: nextMissingImageUnresolvedLaneGroup,
+            firstGroup: firstMissingImageUnresolvedLaneGroup,
+            buttonClass: getMissingImageQueueButtonClass('hero_image_missing'),
+            previewGroups: missingImageUnresolvedLaneGroups.slice(0, 3),
+          },
+          {
+            state: 'image_visible_now' as MissingImageBatchState,
+            title: getMissingImageBatchStateLabel('image_visible_now'),
+            count: missingImageResolvedLaneGroups.length,
+            summary:
+              missingImageResolvedLaneGroups.length > 0
+                ? 'These products now show a primary image in Pivota and mostly need a readiness refresh.'
+                : 'No product batches currently look fully resolved and waiting on refresh only.',
+            nextGroup: nextMissingImageResolvedLaneGroup,
+            firstGroup: firstMissingImageResolvedLaneGroup,
+            buttonClass: getMissingImageQueueButtonClass('image_visible_now'),
+            previewGroups: missingImageResolvedLaneGroups.slice(0, 3),
+          },
+        ]
+      : [];
   const outOfStockDecisionSummary =
     reviewReasonCode === 'out_of_stock'
       ? [
@@ -1956,6 +2050,103 @@ export default function ProductsPage() {
           }.`
         : 'Could not export this pricing queue right now.'
     );
+  };
+
+  const handleDownloadMissingImageQueueCsv = (state: MissingImageBatchState) => {
+    if (reviewReasonCode !== 'missing_primary_image') {
+      setLaneActionFeedback('Open a missing-image review batch before exporting this queue.');
+      return;
+    }
+
+    const matchingQueue = laneGroupProgressList.filter(
+      ({ group, progress }) =>
+        group.reason_code === 'missing_primary_image' &&
+        (state === 'image_visible_now'
+          ? progress.looks_resolved_now === true
+          : progress.looks_resolved_now === false)
+    );
+
+    if (!matchingQueue.length) {
+      setLaneActionFeedback(
+        `No ${getMissingImageBatchStateLabel(state).toLowerCase()} batches are available right now.`
+      );
+      return;
+    }
+
+    const rows = matchingQueue.map(({ group, progress }, index) => ({
+      queue_state: getMissingImageBatchStateLabel(state),
+      queue_position: index + 1,
+      product_title: group.product_title,
+      platform: group.platform,
+      platform_product_id: group.platform_product_id,
+      affected_variants: group.affected_variants,
+      blocked_variants: group.blocked_variant_count,
+      excluded_variants: group.excluded_variant_count,
+      hero_image_visible_now: progress.looks_resolved_now,
+      merchant_action: getMissingImageQueueActionLabel(state),
+    }));
+
+    const filename = [
+      'catalog-review',
+      'missing-primary-image',
+      state,
+      'products',
+    ].join('-') + '.csv';
+
+    const downloaded = downloadCsvFile(filename, rows);
+    setLaneActionFeedback(
+      downloaded
+        ? `Downloaded ${rows.length} ${getMissingImageBatchStateLabel(state).toLowerCase()} product batch${
+            rows.length === 1 ? '' : 'es'
+          }.`
+        : 'Could not export this image queue right now.'
+    );
+  };
+
+  const handleCopyMissingImageQueueProductIds = async (
+    state: MissingImageBatchState
+  ) => {
+    if (reviewReasonCode !== 'missing_primary_image') {
+      setLaneActionFeedback('Open a missing-image review batch before copying this queue.');
+      return;
+    }
+
+    const matchingQueue = laneGroupProgressList.filter(
+      ({ group, progress }) =>
+        group.reason_code === 'missing_primary_image' &&
+        (state === 'image_visible_now'
+          ? progress.looks_resolved_now === true
+          : progress.looks_resolved_now === false)
+    );
+
+    if (!matchingQueue.length) {
+      setLaneActionFeedback(
+        `No ${getMissingImageBatchStateLabel(state).toLowerCase()} batches are available right now.`
+      );
+      return;
+    }
+
+    const values = Array.from(
+      new Set(
+        matchingQueue
+          .map(({ group }) => String(group.platform_product_id || '').trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (!values.length) {
+      setLaneActionFeedback('No product IDs are available to copy for this image queue yet.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(values.join('\n'));
+      setLaneActionFeedback(
+        `Copied ${values.length} product IDs from ${getMissingImageBatchStateLabel(state).toLowerCase()}.`
+      );
+    } catch {
+      setLaneActionFeedback('Could not copy this image queue right now.');
+    }
   };
 
   const handleCopyMissingPriceQueueValues = async (state: MissingPriceBatchState) => {
@@ -3018,6 +3209,125 @@ export default function ProductsPage() {
                                       {laneActionFeedback}
                                     </span>
                                   ) : null}
+                                </div>
+                              ) : null}
+
+                              {reviewReasonCode === 'missing_primary_image' &&
+                              missingImageQueueSummary.length > 0 ? (
+                                <div className="rounded-xl border border-slate-200 bg-white/80 p-4">
+                                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                    <div>
+                                      <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                                        Product-level image completion queue
+                                      </div>
+                                      <div className="mt-1 text-xs leading-5 text-[color:var(--merchant-muted)]">
+                                        Work missing-image products by completion state instead of rechecking each variant row. Export the queue, copy product IDs, or jump straight to the next product batch in the same state.
+                                      </div>
+                                    </div>
+                                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-medium text-slate-700">
+                                      {missingImageUnresolvedLaneGroups.length} image-repair batches left
+                                    </div>
+                                  </div>
+                                  <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                                    {missingImageQueueSummary.map((item) => (
+                                      <div
+                                        key={item.state}
+                                        className="rounded-xl border border-slate-200 bg-slate-50/70 p-3"
+                                      >
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div>
+                                            <div className="text-sm font-medium text-slate-900">
+                                              {item.title}
+                                            </div>
+                                            <div className="mt-1 text-xs text-slate-600">
+                                              {item.summary}
+                                            </div>
+                                          </div>
+                                          <div className="rounded-full bg-white px-2.5 py-1 text-sm font-semibold text-slate-900 ring-1 ring-slate-200">
+                                            {item.count}
+                                          </div>
+                                        </div>
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleDownloadMissingImageQueueCsv(item.state)
+                                            }
+                                            disabled={item.count === 0}
+                                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                          >
+                                            Download product queue CSV
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              void handleCopyMissingImageQueueProductIds(item.state)
+                                            }
+                                            disabled={item.count === 0}
+                                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                          >
+                                            Copy product IDs
+                                          </button>
+                                          {(item.nextGroup || item.firstGroup) ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                const targetGroup =
+                                                  item.nextGroup ||
+                                                  (currentMissingImageBatchState !== item.state
+                                                    ? item.firstGroup
+                                                    : null);
+                                                if (targetGroup) {
+                                                  void openLaneGroup(targetGroup);
+                                                }
+                                              }}
+                                              disabled={
+                                                !item.nextGroup &&
+                                                !(
+                                                  currentMissingImageBatchState !== item.state &&
+                                                  item.firstGroup
+                                                )
+                                              }
+                                              className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-50 ${item.buttonClass}`}
+                                            >
+                                              {item.nextGroup
+                                                ? `Next ${item.title.toLowerCase()} batch`
+                                                : `Open first ${item.title.toLowerCase()} batch`}
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                        {item.previewGroups.length > 0 ? (
+                                          <div className="mt-3 space-y-2">
+                                            <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                                              Queue preview
+                                            </div>
+                                            {item.previewGroups.map(({ group, progress }) => (
+                                              <button
+                                                key={`${item.state}-${group.platform}-${group.platform_product_id}`}
+                                                type="button"
+                                                onClick={() => {
+                                                  void openLaneGroup(group);
+                                                }}
+                                                className="flex w-full items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left hover:bg-slate-100"
+                                              >
+                                                <div className="min-w-0">
+                                                  <div className="truncate text-xs font-medium text-slate-900">
+                                                    {group.product_title}
+                                                  </div>
+                                                  <div className="mt-1 text-[11px] text-slate-600">
+                                                    {group.affected_variants} affected · {progress.looks_resolved_now ? 'primary image visible now' : 'hero image still missing'}
+                                                  </div>
+                                                </div>
+                                                <div className="shrink-0 rounded-full bg-slate-50 px-2 py-1 text-[10px] font-medium text-slate-700 ring-1 ring-slate-200">
+                                                  Open
+                                                </div>
+                                              </button>
+                                            ))}
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                               ) : null}
 
