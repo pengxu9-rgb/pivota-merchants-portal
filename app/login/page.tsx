@@ -1,9 +1,37 @@
 'use client';
 
-import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Store, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import {
+  ArrowRight,
+  Loader2,
+  ShoppingBag,
+  Sparkles,
+  Store,
+} from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+
+const merchantHighlights = [
+  {
+    title: 'Catalog health',
+    description:
+      'Review blocked variants, content gaps, and channel readiness before products go live.',
+    icon: Sparkles,
+  },
+  {
+    title: 'Sales channels and setup',
+    description:
+      'Keep store connections, payment setup, and launch readiness visible from one workspace.',
+    icon: Store,
+  },
+  {
+    title: 'Orders, promotions, and visibility',
+    description:
+      'Monitor order flow, plan promotions, and keep merchant-facing activity close to the surface.',
+    icon: ShoppingBag,
+  },
+];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,133 +40,207 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setLoading(true);
     setError('');
 
     try {
       const response = await apiClient.login(email, password);
-      
-      // New API returns success: true instead of status: 'success'
+
       if (response.success === true || response.status === 'success') {
-        console.log('✅ Login successful, redirecting to dashboard...');
-        // Store merchant_id from response if available
         try {
           if (response.user?.merchant_id) {
             localStorage.setItem('merchant_id', response.user.merchant_id);
           } else if (response.user?.id) {
-            // Fallback: use user.id as merchant_id
             localStorage.setItem('merchant_id', response.user.id);
           }
-        } catch (e) {
+        } catch {
           // no-op
         }
+
         router.push('/dashboard');
-      } else {
-        setError(response.message || response.detail || 'Login failed');
+        return;
       }
+
+      setError(response.message || response.detail || 'Login failed');
     } catch (err: any) {
-      console.error('❌ Login error:', err);
       setError(
         err?.response?.data?.detail ||
-        err?.response?.data?.error?.message ||
-        err?.message ||
-        'Failed to login. Please try again.'
+          err?.response?.data?.error?.message ||
+          err?.message ||
+          'Failed to login. Please try again.'
       );
     } finally {
       setLoading(false);
     }
   };
 
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          {/* Logo and Title */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
-              <Store className="w-8 h-8 text-blue-600" />
+    <div className="min-h-screen bg-[color:var(--merchant-canvas)] text-[color:var(--merchant-ink)]">
+      <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-6 py-8 lg:grid lg:grid-cols-[1.08fr_0.92fr] lg:items-center lg:gap-10 lg:px-10">
+        <section className="hidden lg:block">
+          <div className="max-w-xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[color:var(--merchant-line-strong)] bg-white/72 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)] shadow-[var(--merchant-shadow-panel)]">
+              <Store className="h-3.5 w-3.5 text-[color:var(--merchant-brand)]" />
+              Merchant control center
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">Merchant Portal</h1>
-            <p className="text-gray-600 mt-2">Sign in to manage your store</p>
+
+            <h1 className="mt-6 text-5xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+              Sign in to the Pivota Merchant Portal
+            </h1>
+            <p className="mt-5 max-w-lg text-base leading-7 text-[color:var(--merchant-muted-strong)]">
+              Manage catalog health, channels, promotions, and orders from one merchant workspace.
+            </p>
+
+            <div className="mt-10 grid gap-4">
+              {merchantHighlights.map((item) => {
+                const Icon = item.icon;
+
+                return (
+                  <div
+                    key={item.title}
+                    className="rounded-3xl border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface)] px-5 py-4 shadow-[var(--merchant-shadow-panel)]"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[color:var(--merchant-line-strong)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]">
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
+                          {item.title}
+                        </p>
+                        <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+                          {item.description}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
+        </section>
 
-          {/* Error Message */}
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm text-red-800">{error}</p>
+        <section className="mx-auto flex w-full max-w-md flex-col justify-center">
+          <div className="mb-6 lg:hidden">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[color:var(--merchant-line-strong)] bg-white/72 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)] shadow-[var(--merchant-shadow-panel)]">
+              <Store className="h-3.5 w-3.5 text-[color:var(--merchant-brand)]" />
+              Merchant control center
             </div>
-          )}
-
-          {/* Login Form */}
-          <form onSubmit={handleLogin} className="space-y-6">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-                placeholder="merchant@example.com"
-              />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                  Password
-                </label>
-                <button
-                  type="button"
-                  onClick={() => router.push('/forgot-password')}
-                  className="text-sm text-blue-600 hover:text-blue-700"
-                >
-                  Forgot password?
-                </button>
-              </div>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-                placeholder="••••••••"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Signing in...
-                </>
-              ) : (
-                'Sign In'
-              )}
-            </button>
-          </form>
-
-          {/* Sign Up Link */}
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-600">
-              Don't have an account?{' '}
-              <a href="/signup" className="text-blue-600 hover:text-blue-800 font-medium">
-                Sign up for free
-              </a>
+            <h1 className="mt-4 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+              Sign in to the Pivota Merchant Portal
+            </h1>
+            <p className="mt-3 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+              Review readiness issues, launch channels, and keep product content aligned before products go live.
             </p>
           </div>
-        </div>
+
+          <div className="rounded-[28px] border border-[color:var(--merchant-line-strong)] bg-[color:var(--merchant-surface-strong)] p-7 shadow-[var(--merchant-shadow-soft)] sm:p-8">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--merchant-line-strong)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]">
+                <Store className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold tracking-[0.01em] text-[color:var(--merchant-ink)]">
+                  Pivota
+                </p>
+                <p className="text-xs uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
+                  Merchant Portal
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-8">
+              <h2 className="text-3xl font-semibold tracking-[-0.04em] text-[color:var(--merchant-ink)]">
+                Sign in
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+                Use your merchant account to manage catalog health, channels, promotions, and orders.
+              </p>
+            </div>
+
+            {error ? (
+              <div className="mt-6 rounded-2xl border border-[color:var(--merchant-critical)] bg-[color:var(--merchant-critical-soft)] px-4 py-3 text-sm text-[color:var(--merchant-critical)]">
+                {error}
+              </div>
+            ) : null}
+
+            <form onSubmit={handleLogin} className="mt-6 space-y-5">
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
+                  Email
+                </span>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                  autoComplete="email"
+                  className="w-full rounded-2xl border border-[color:var(--merchant-line-strong)] bg-white px-4 py-3 text-sm text-[color:var(--merchant-ink)] outline-none ring-0 transition focus:border-[color:var(--merchant-brand)] focus:ring-4 focus:ring-[rgba(51,75,133,0.12)]"
+                  placeholder="merchant@brand.com"
+                />
+              </label>
+
+              <label className="block">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                    Password
+                  </span>
+                  <Link
+                    href="/forgot-password"
+                    className="text-xs font-medium text-[color:var(--merchant-brand)] hover:text-[color:var(--merchant-brand-strong)]"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                  autoComplete="current-password"
+                  className="w-full rounded-2xl border border-[color:var(--merchant-line-strong)] bg-white px-4 py-3 text-sm text-[color:var(--merchant-ink)] outline-none ring-0 transition focus:border-[color:var(--merchant-brand)] focus:ring-4 focus:ring-[rgba(51,75,133,0.12)]"
+                  placeholder="Enter your password"
+                />
+              </label>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[color:var(--merchant-brand)] px-4 py-3 text-sm font-medium text-white shadow-[0_14px_30px_rgba(51,75,133,0.18)] transition hover:bg-[color:var(--merchant-brand-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Signing in...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Sign in</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-6 rounded-2xl border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-4 py-4">
+              <p className="text-sm font-medium text-[color:var(--merchant-ink)]">Need access?</p>
+              <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+                Create a merchant account to connect your store, set up payments, and start launching catalog-ready products.
+              </p>
+              <Link
+                href="/signup"
+                className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-[color:var(--merchant-brand)] hover:text-[color:var(--merchant-brand-strong)]"
+              >
+                <span>Start merchant onboarding</span>
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );
