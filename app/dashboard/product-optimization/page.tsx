@@ -392,6 +392,17 @@ type SourceDataProductGroup = {
   sample_skus: string[];
 };
 
+type SourceDataLaneWorklist = {
+  reason_code: SourceDataReasonCode;
+  label: string;
+  helper: string;
+  affected_products: number;
+  affected_variants: number;
+  blocked_products: number;
+  excluded_products: number;
+  next_product: WorkspaceProductItem | null;
+};
+
 type WorkspaceProductItem = MerchantProductListItem & {
   readiness: ProductQueueItem | null;
   readinessIndex: number;
@@ -615,6 +626,37 @@ const SOURCE_DATA_REASON_ORDER: SourceDataReasonCode[] = [
 const getSourceDataRowAffectedVariantCount = (row: SourceDataTriageRow) => {
   if (row.scope === 'variant') return 1;
   return Math.max(row.blocked_variant_count, row.excluded_variant_count, 1);
+};
+
+const matchesSourceDataReason = (
+  item: WorkspaceProductItem,
+  reasonCode: SourceDataReasonCode
+) => {
+  const issueCodes = (item.readiness?.top_issues || []).map((issue) => issue.code);
+  const pushReasonCodes = item.agent_push?.agent_push_reason_codes || [];
+
+  if (reasonCode === 'missing_price') {
+    return (
+      issueCodes.some(
+        (code) => code === 'missing_price' || code === 'missing_currency'
+      ) ||
+      pushReasonCodes.some(
+        (code) => code === 'missing_price' || code === 'missing_currency'
+      )
+    );
+  }
+
+  if (reasonCode === 'out_of_stock') {
+    return (
+      issueCodes.some((code) => code === 'out_of_stock' || code === 'inventory_stale') ||
+      pushReasonCodes.includes('out_of_stock')
+    );
+  }
+
+  return (
+    issueCodes.includes('missing_primary_image') ||
+    pushReasonCodes.includes('missing_primary_image')
+  );
 };
 
 const getInitialTriageReason = (focusIssue: string | null): SourceDataReasonCode => {
@@ -1732,6 +1774,53 @@ export default function ProductOptimizationPage() {
     });
   })();
   const firstTriageGroup = triageGroups[0] || null;
+  const triageLaneWorklists: SourceDataLaneWorklist[] = SOURCE_DATA_REASON_ORDER.map(
+    (reasonCode) => {
+      const config = SOURCE_DATA_REASON_CONFIG[reasonCode];
+      const bucket = triageSummaryByCode.get(reasonCode);
+      const laneProducts = queueDrivenProducts.filter((item) =>
+        matchesSourceDataReason(item, reasonCode)
+      );
+      const blockedProducts = laneProducts.filter(
+        (item) => (item.readiness?.blocked_variant_count || 0) > 0
+      ).length;
+      const excludedProducts = laneProducts.filter((item) => {
+        const excludedVariantCount =
+          item.readiness?.excluded_variant_count ??
+          item.agent_push?.excluded_variant_count ??
+          0;
+        return excludedVariantCount > 0;
+      }).length;
+
+      return {
+        reason_code: reasonCode,
+        label: config.label,
+        helper: config.helper,
+        affected_products: bucket?.affected_products ?? laneProducts.length,
+        affected_variants: bucket?.affected_variants ?? 0,
+        blocked_products: blockedProducts,
+        excluded_products: excludedProducts,
+        next_product: laneProducts[0] || null,
+      };
+    }
+  );
+  const totalTriageProducts = triageLaneWorklists.reduce(
+    (sum, lane) => sum + lane.affected_products,
+    0
+  );
+  const totalTriageVariants = triageLaneWorklists.reduce(
+    (sum, lane) => sum + lane.affected_variants,
+    0
+  );
+  const triageActiveLaneCount = triageLaneWorklists.filter(
+    (lane) => lane.affected_products > 0
+  ).length;
+  const busiestTriageLane =
+    [...triageLaneWorklists].sort((a, b) => {
+      const productDiff = b.affected_products - a.affected_products;
+      if (productDiff !== 0) return productDiff;
+      return b.affected_variants - a.affected_variants;
+    })[0] || null;
 
   const buildCatalogReviewHref = ({
     platform,
@@ -1840,18 +1929,18 @@ export default function ProductOptimizationPage() {
     });
   };
 
-  const handleExportCurrentTriageLane = async () => {
+  const handleExportTriageLane = async (reasonCode: SourceDataReasonCode) => {
     if (!optimizationPlan?.plan_id) return;
     setTriageExporting(true);
     try {
       const blob = await apiClient.exportMerchantSourceDataTriageCSV({
         plan_id: optimizationPlan.plan_id,
-        reason_code: triageReason,
+        reason_code: reasonCode,
       });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `catalog-health-${triageReason}.csv`;
+      link.download = `catalog-health-${reasonCode}.csv`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -1867,6 +1956,10 @@ export default function ProductOptimizationPage() {
     } finally {
       setTriageExporting(false);
     }
+  };
+
+  const handleExportCurrentTriageLane = async () => {
+    await handleExportTriageLane(triageReason);
   };
 
   return (
@@ -2144,6 +2237,148 @@ export default function ProductOptimizationPage() {
                 </button>
               );
             })}
+          </div>
+
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">
+                  Merchant bulk worklist
+                </div>
+                <div className="mt-1 text-xs text-slate-600">
+                  Start with the biggest lane, then jump straight into the next
+                  product batch that still needs source-data fixes.
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 text-[11px]">
+                <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                  {triageActiveLaneCount} active lanes
+                </span>
+                <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                  {totalTriageProducts} product batches
+                </span>
+                <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                  {totalTriageVariants} affected variants
+                </span>
+                {busiestTriageLane && busiestTriageLane.affected_products > 0 ? (
+                  <span className="rounded-full bg-blue-50 px-2 py-1 font-medium text-blue-700 ring-1 ring-blue-200">
+                    Largest lane: {busiestTriageLane.label}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="mt-3 grid gap-3 xl:grid-cols-3">
+              {triageLaneWorklists.map((lane) => {
+                const isActiveLane = triageReason === lane.reason_code;
+                const nextProduct = lane.next_product;
+                return (
+                  <div
+                    key={lane.reason_code}
+                    className={`rounded-xl border p-4 ${
+                      isActiveLane
+                        ? 'border-blue-300 bg-white shadow-sm'
+                        : 'border-slate-200 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">
+                          {lane.label}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-600">
+                          {lane.helper}
+                        </div>
+                      </div>
+                      {isActiveLane ? (
+                        <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+                          Active lane
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                      <span className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700">
+                        {lane.affected_products} product batches
+                      </span>
+                      <span className="rounded-full bg-amber-100 px-2 py-1 font-medium text-amber-800">
+                        {lane.affected_variants} affected variants
+                      </span>
+                      <span className="rounded-full bg-rose-100 px-2 py-1 font-medium text-rose-700">
+                        {lane.blocked_products} with active blockers
+                      </span>
+                      <span className="rounded-full bg-yellow-100 px-2 py-1 font-medium text-yellow-800">
+                        {lane.excluded_products} excluded now
+                      </span>
+                    </div>
+
+                    {nextProduct ? (
+                      <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          Next product batch
+                        </div>
+                        <div className="mt-1 text-sm font-medium text-slate-900">
+                          {nextProduct.enrichment?.title_override ||
+                            nextProduct.standard?.title ||
+                            nextProduct.readiness?.title ||
+                            'Untitled product'}
+                        </div>
+                        <div className="mt-1 text-[11px] text-slate-500">
+                          {nextProduct.platform.toUpperCase()} ·{' '}
+                          {nextProduct.platform_product_id}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          <span className="rounded-full bg-white px-2 py-0.5 font-medium text-slate-700 ring-1 ring-slate-200">
+                            {nextProduct.readiness?.blocked_variant_count || 0}{' '}
+                            blocked
+                          </span>
+                          <span className="rounded-full bg-white px-2 py-0.5 font-medium text-slate-700 ring-1 ring-slate-200">
+                            {nextProduct.readiness?.excluded_variant_count ??
+                              nextProduct.agent_push?.excluded_variant_count ??
+                              0}{' '}
+                            excluded
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800 ring-1 ring-emerald-200">
+                        No products are currently active in this lane.
+                      </div>
+                    )}
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleSelectTriageReason(lane.reason_code)}
+                        className="inline-flex items-center rounded-md border border-slate-200 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Open lane
+                      </button>
+                      {nextProduct ? (
+                        <a
+                          href={buildCatalogReviewHref({
+                            platform: nextProduct.platform,
+                            platformProductId: nextProduct.platform_product_id,
+                            reasonCode: lane.reason_code,
+                          })}
+                          className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100"
+                        >
+                          Review next batch
+                        </a>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void handleExportTriageLane(lane.reason_code)}
+                        disabled={!optimizationPlan?.plan_id || triageExporting}
+                        className="inline-flex items-center rounded-md border border-slate-200 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {triageExporting ? 'Exporting…' : 'Export lane CSV'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {sourceDataTriageError && (
