@@ -232,6 +232,7 @@ type SourceDataTriageRow = {
   readiness_warning_codes: string[];
   agent_push_status: 'eligible_for_agent_push' | 'excluded_from_agent_push';
   agent_push_reason_codes: string[];
+  decision_state?: 'restock_planned' | 'archive_planned' | 'manual_review' | null;
 };
 
 type SourceDataLaneGroup = {
@@ -247,6 +248,7 @@ type SourceDataLaneGroup = {
   excluded_variant_count: number;
   sample_variant_id: string | null;
   sample_skus: string[];
+  decision_state?: 'restock_planned' | 'archive_planned' | 'manual_review' | null;
 };
 
 type SourceDataLaneProgress = {
@@ -330,6 +332,11 @@ type MissingImageBatchState =
 type OutOfStockDecisionState =
   | 'restock_candidate'
   | 'archive_candidate'
+  | 'manual_review';
+
+type PersistedOutOfStockDecisionState =
+  | 'restock_planned'
+  | 'archive_planned'
   | 'manual_review';
 
 type CatalogReviewQueueState =
@@ -489,6 +496,47 @@ function getOutOfStockDecisionState(product: any): OutOfStockDecisionState {
   return 'manual_review';
 }
 
+function normalizePersistedOutOfStockDecisionState(
+  value: string | null | undefined
+): PersistedOutOfStockDecisionState | null {
+  if (
+    value === 'restock_planned' ||
+    value === 'archive_planned' ||
+    value === 'manual_review'
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function getOutOfStockDecisionStateFromPersisted(
+  value: PersistedOutOfStockDecisionState | null
+): OutOfStockDecisionState | null {
+  if (value === 'restock_planned') return 'restock_candidate';
+  if (value === 'archive_planned') return 'archive_candidate';
+  if (value === 'manual_review') return 'manual_review';
+  return null;
+}
+
+function getEffectiveOutOfStockDecisionState(
+  product: any,
+  persistedDecisionState: PersistedOutOfStockDecisionState | null
+): OutOfStockDecisionState {
+  return (
+    getOutOfStockDecisionStateFromPersisted(persistedDecisionState) ||
+    getOutOfStockDecisionState(product)
+  );
+}
+
+function getPersistedOutOfStockDecisionLabel(
+  value: PersistedOutOfStockDecisionState | null
+) {
+  if (value === 'restock_planned') return 'Restock planned';
+  if (value === 'archive_planned') return 'Archive / discontinue planned';
+  if (value === 'manual_review') return 'Marked for manual review';
+  return 'No saved merchant decision yet';
+}
+
 function getOutOfStockDecisionTitle(state: OutOfStockDecisionState) {
   if (state === 'restock_candidate') return 'Restock candidates';
   if (state === 'archive_candidate') return 'Archive / discontinue candidates';
@@ -628,6 +676,7 @@ export default function ProductsPage() {
   const [sourceDataLaneLoading, setSourceDataLaneLoading] = useState(false);
   const [sourceDataLaneError, setSourceDataLaneError] = useState<string | null>(null);
   const [laneActionFeedback, setLaneActionFeedback] = useState<string | null>(null);
+  const [decisionSaving, setDecisionSaving] = useState(false);
   const deepLinkResolvedRef = useRef<string | null>(null);
   const deepLinkQueueResolvedRef = useRef<string | null>(null);
   const catalogReviewPlanRequestRef = useRef<Promise<CatalogReviewPlan | null> | null>(null);
@@ -977,6 +1026,9 @@ export default function ProductsPage() {
 
         for (const row of rows) {
           const key = `${row.reason_code}|${row.platform}|${row.platform_product_id}`;
+          const normalizedDecisionState = normalizePersistedOutOfStockDecisionState(
+            row.decision_state
+          );
           const existing = grouped.get(key);
           if (existing) {
             existing.affected_rows += 1;
@@ -995,6 +1047,9 @@ export default function ProductsPage() {
             if (row.sku && !existing.sample_skus.includes(row.sku)) {
               existing.sample_skus.push(row.sku);
             }
+            if (normalizedDecisionState && !existing.decision_state) {
+              existing.decision_state = normalizedDecisionState;
+            }
             continue;
           }
 
@@ -1011,6 +1066,7 @@ export default function ProductsPage() {
             excluded_variant_count: row.excluded_variant_count,
             sample_variant_id: row.variant_id || null,
             sample_skus: row.sku ? [row.sku] : [],
+            decision_state: normalizedDecisionState,
           });
         }
 
@@ -1416,9 +1472,14 @@ export default function ProductsPage() {
     reviewReasonCode === 'out_of_stock' &&
     currentLaneGroup &&
     currentLaneProgress?.batch_state === 'whole_product_unavailable'
-      ? getOutOfStockDecisionState(
-          normalizedProductsByLaneKey.get(buildSourceDataLaneGroupKey(currentLaneGroup))
+      ? getEffectiveOutOfStockDecisionState(
+          normalizedProductsByLaneKey.get(buildSourceDataLaneGroupKey(currentLaneGroup)),
+          normalizePersistedOutOfStockDecisionState(currentLaneGroup.decision_state)
         )
+      : null;
+  const currentPersistedOutOfStockDecisionState =
+    reviewReasonCode === 'out_of_stock' && currentLaneGroup
+      ? normalizePersistedOutOfStockDecisionState(currentLaneGroup.decision_state)
       : null;
   const unresolvedLaneGroups = laneGroupProgressList.filter(
     ({ progress }) => progress.pending_variant_count > 0
@@ -1545,11 +1606,18 @@ export default function ProductsPage() {
     ({ group, progress }) => {
       const groupKey = buildSourceDataLaneGroupKey(group);
       const currentProduct = normalizedProductsByLaneKey.get(groupKey);
-      const decisionState = getOutOfStockDecisionState(currentProduct);
+      const persistedDecisionState = normalizePersistedOutOfStockDecisionState(
+        group.decision_state
+      );
+      const decisionState = getEffectiveOutOfStockDecisionState(
+        currentProduct,
+        persistedDecisionState
+      );
       return {
         group,
         progress,
         currentProduct,
+        persistedDecisionState,
         decisionState,
       };
     }
@@ -1602,7 +1670,12 @@ export default function ProductsPage() {
             const currentProduct = normalizedProductsByLaneKey.get(
               buildSourceDataLaneGroupKey(group)
             );
-            return getOutOfStockDecisionState(currentProduct) === 'restock_candidate';
+            return (
+              getEffectiveOutOfStockDecisionState(
+                currentProduct,
+                normalizePersistedOutOfStockDecisionState(group.decision_state)
+              ) === 'restock_candidate'
+            );
           })?.group || null
       : outOfStockRestockCandidateLaneGroups[0]?.group || null;
   const firstRestockCandidateLaneGroup =
@@ -1621,7 +1694,12 @@ export default function ProductsPage() {
             const currentProduct = normalizedProductsByLaneKey.get(
               buildSourceDataLaneGroupKey(group)
             );
-            return getOutOfStockDecisionState(currentProduct) === 'archive_candidate';
+            return (
+              getEffectiveOutOfStockDecisionState(
+                currentProduct,
+                normalizePersistedOutOfStockDecisionState(group.decision_state)
+              ) === 'archive_candidate'
+            );
           })?.group || null
       : outOfStockArchiveCandidateLaneGroups[0]?.group || null;
   const firstArchiveCandidateLaneGroup =
@@ -1640,7 +1718,12 @@ export default function ProductsPage() {
             const currentProduct = normalizedProductsByLaneKey.get(
               buildSourceDataLaneGroupKey(group)
             );
-            return getOutOfStockDecisionState(currentProduct) === 'manual_review';
+            return (
+              getEffectiveOutOfStockDecisionState(
+                currentProduct,
+                normalizePersistedOutOfStockDecisionState(group.decision_state)
+              ) === 'manual_review'
+            );
           })?.group || null
       : outOfStockManualReviewLaneGroups[0]?.group || null;
   const firstManualReviewLaneGroup =
@@ -2049,6 +2132,89 @@ export default function ProductsPage() {
         ]
       : [];
 
+  const applyOutOfStockDecisionStateToLocalQueue = (
+    platform: string,
+    platformProductId: string,
+    decisionState: PersistedOutOfStockDecisionState | null
+  ) => {
+    setSourceDataLaneRows((prev) =>
+      prev.map((row) =>
+        row.reason_code === 'out_of_stock' &&
+        row.platform === platform &&
+        row.platform_product_id === platformProductId
+          ? { ...row, decision_state: decisionState }
+          : row
+      )
+    );
+    setSourceDataLaneGroups((prev) =>
+      prev.map((group) =>
+        group.reason_code === 'out_of_stock' &&
+        group.platform === platform &&
+        group.platform_product_id === platformProductId
+          ? { ...group, decision_state: decisionState }
+          : group
+      )
+    );
+  };
+
+  const handleSetOutOfStockDecision = async (
+    decisionState: PersistedOutOfStockDecisionState | null
+  ) => {
+    if (
+      reviewReasonCode !== 'out_of_stock' ||
+      !currentLaneGroup ||
+      currentLaneProgress?.batch_state !== 'whole_product_unavailable'
+    ) {
+      setLaneActionFeedback(
+        'Open a whole-product out-of-stock batch before saving a merchant decision.'
+      );
+      return;
+    }
+
+    const platform = currentLaneGroup.platform;
+    const platformProductId = currentLaneGroup.platform_product_id;
+
+    try {
+      setDecisionSaving(true);
+      if (decisionState) {
+        await apiClient.putMerchantSourceDataDecision({
+          reason_code: 'out_of_stock',
+          platform,
+          platform_product_id: platformProductId,
+          decision_state: decisionState,
+        });
+      } else {
+        await apiClient.deleteMerchantSourceDataDecision({
+          reason_code: 'out_of_stock',
+          platform,
+          platform_product_id: platformProductId,
+        });
+      }
+
+      applyOutOfStockDecisionStateToLocalQueue(
+        platform,
+        platformProductId,
+        decisionState
+      );
+      setLaneActionFeedback(
+        decisionState
+          ? `Saved merchant decision: ${getPersistedOutOfStockDecisionLabel(
+              decisionState
+            ).toLowerCase()}.`
+          : 'Cleared the saved merchant decision for this batch.'
+      );
+    } catch (error) {
+      console.error('Failed to save out-of-stock merchant decision', error);
+      setLaneActionFeedback(
+        decisionState
+          ? 'Could not save this merchant decision right now.'
+          : 'Could not clear this merchant decision right now.'
+      );
+    } finally {
+      setDecisionSaving(false);
+    }
+  };
+
   const handleDownloadOutOfStockQueueCsv = (state: OutOfStockBatchState) => {
     if (reviewReasonCode !== 'out_of_stock') {
       setLaneActionFeedback('Open an out-of-stock review batch before exporting this queue.');
@@ -2304,8 +2470,12 @@ export default function ProductsPage() {
       return;
     }
 
-    const rows = matchingQueue.map(({ group, progress, currentProduct }, index) => ({
+    const rows = matchingQueue.map(
+      ({ group, progress, currentProduct, persistedDecisionState }, index) => ({
       decision_state: getOutOfStockDecisionTitle(state),
+      saved_decision_state: persistedDecisionState
+        ? getPersistedOutOfStockDecisionLabel(persistedDecisionState)
+        : '',
       queue_position: index + 1,
       product_title: group.product_title,
       platform: group.platform,
@@ -2320,7 +2490,8 @@ export default function ProductsPage() {
       excluded_variants: group.excluded_variant_count,
       sample_skus: group.sample_skus,
       merchant_action: getOutOfStockDecisionActionLabel(state),
-    }));
+      })
+    );
 
     const filename = [
       'catalog-review',
@@ -3098,6 +3269,70 @@ export default function ProductsPage() {
                                           {currentLaneGroup.excluded_variant_count} excluded
                                         </span>
                                       </div>
+                                      {reviewReasonCode === 'out_of_stock' &&
+                                      currentLaneProgress?.batch_state ===
+                                        'whole_product_unavailable' ? (
+                                        <div className="mt-3 space-y-2">
+                                          <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-amber-900/65">
+                                            Merchant decision now
+                                          </div>
+                                          <div className="flex flex-wrap gap-2">
+                                            <span className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-amber-200">
+                                              {getPersistedOutOfStockDecisionLabel(
+                                                currentPersistedOutOfStockDecisionState
+                                              )}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void handleSetOutOfStockDecision(
+                                                  'restock_planned'
+                                                )
+                                              }
+                                              disabled={decisionSaving}
+                                              className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                                            >
+                                              Mark as restock planned
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void handleSetOutOfStockDecision(
+                                                  'archive_planned'
+                                                )
+                                              }
+                                              disabled={decisionSaving}
+                                              className="inline-flex items-center rounded-md border border-slate-300 bg-slate-100 px-2.5 py-1.5 text-[11px] font-medium text-slate-800 hover:bg-slate-200 disabled:opacity-50"
+                                            >
+                                              Mark as archive / discontinue
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void handleSetOutOfStockDecision(
+                                                  'manual_review'
+                                                )
+                                              }
+                                              disabled={decisionSaving}
+                                              className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                                            >
+                                              Mark for manual review
+                                            </button>
+                                            {currentPersistedOutOfStockDecisionState ? (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  void handleSetOutOfStockDecision(null)
+                                                }
+                                                disabled={decisionSaving}
+                                                className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                              >
+                                                Clear decision
+                                              </button>
+                                            ) : null}
+                                          </div>
+                                        </div>
+                                      ) : null}
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                       {sourceDataLaneGroups.length > 1 ? (
@@ -3449,7 +3684,12 @@ export default function ProductsPage() {
                                             <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
                                               Queue preview
                                             </div>
-                                            {item.previewGroups.map(({ group, progress }) => (
+                                            {item.previewGroups.map(
+                                              ({
+                                                group,
+                                                progress,
+                                                persistedDecisionState,
+                                              }) => (
                                               <button
                                                 key={`${item.state}-${group.platform}-${group.platform_product_id}`}
                                                 type="button"
@@ -3928,28 +4168,42 @@ export default function ProductsPage() {
                                             <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
                                               Queue preview
                                             </div>
-                                            {item.previewGroups.map(({ group, progress }) => (
-                                              <button
-                                                key={`${item.state}-${group.platform}-${group.platform_product_id}`}
-                                                type="button"
-                                                onClick={() => {
-                                                  void openLaneGroup(group);
-                                                }}
-                                                className="flex w-full items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left hover:bg-slate-100"
-                                              >
-                                                <div className="min-w-0">
-                                                  <div className="truncate text-xs font-medium text-slate-900">
-                                                    {group.product_title}
+                                            {item.previewGroups.map(
+                                              ({
+                                                group,
+                                                progress,
+                                                persistedDecisionState,
+                                              }) => (
+                                                <button
+                                                  key={`${item.state}-${group.platform}-${group.platform_product_id}`}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    void openLaneGroup(group);
+                                                  }}
+                                                  className="flex w-full items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left hover:bg-slate-100"
+                                                >
+                                                  <div className="min-w-0">
+                                                    <div className="truncate text-xs font-medium text-slate-900">
+                                                      {group.product_title}
+                                                    </div>
+                                                    <div className="mt-1 text-[11px] text-slate-600">
+                                                      {group.affected_variants} affected · {progress.pending_variant_count} pending now
+                                                    </div>
+                                                    {persistedDecisionState ? (
+                                                      <div className="mt-1 text-[11px] text-slate-500">
+                                                        Saved decision:{' '}
+                                                        {getPersistedOutOfStockDecisionLabel(
+                                                          persistedDecisionState
+                                                        ).toLowerCase()}
+                                                      </div>
+                                                    ) : null}
                                                   </div>
-                                                  <div className="mt-1 text-[11px] text-slate-600">
-                                                    {group.affected_variants} affected · {progress.pending_variant_count} pending now
+                                                  <div className="shrink-0 rounded-full bg-slate-50 px-2 py-1 text-[10px] font-medium text-slate-700 ring-1 ring-slate-200">
+                                                    Open
                                                   </div>
-                                                </div>
-                                                <div className="shrink-0 rounded-full bg-slate-50 px-2 py-1 text-[10px] font-medium text-slate-700 ring-1 ring-slate-200">
-                                                  Open
-                                                </div>
-                                              </button>
-                                            ))}
+                                                </button>
+                                              )
+                                            )}
                                           </div>
                                         ) : null}
                                       </div>

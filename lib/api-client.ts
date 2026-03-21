@@ -251,15 +251,26 @@ class ApiClient {
   async refreshMerchantReadinessOptimization(params?: {
     scope?: string;
     reason?: string;
+    reason_code?: string;
+  }) {
+    const response = await this.refreshMerchantReadinessOptimizationDetailed(params);
+    return response?.data || response;
+  }
+
+  async refreshMerchantReadinessOptimizationDetailed(params?: {
+    scope?: string;
+    reason?: string;
+    reason_code?: string;
   }) {
     const response = await this.client.post(
       '/merchant/readiness/actions/refresh',
       {
         scope: params?.scope ?? 'merchant',
         reason: params?.reason ?? 'manual',
+        reason_code: params?.reason_code,
       }
     );
-    return response.data?.data || response.data;
+    return response.data;
   }
 
   async previewMerchantReadinessAction(body: {
@@ -383,6 +394,34 @@ class ApiClient {
       }
     );
     return response.data as Blob;
+  }
+
+  async putMerchantSourceDataDecision(params: {
+    reason_code: string;
+    platform: string;
+    platform_product_id: string;
+    decision_state: string;
+  }) {
+    const encodedProductId = encodeURIComponent(params.platform_product_id);
+    const response = await this.client.put(
+      `/merchant/readiness/source-data-decisions/${params.reason_code}/${params.platform}/${encodedProductId}`,
+      {
+        decision_state: params.decision_state,
+      }
+    );
+    return response.data?.data || response.data;
+  }
+
+  async deleteMerchantSourceDataDecision(params: {
+    reason_code: string;
+    platform: string;
+    platform_product_id: string;
+  }) {
+    const encodedProductId = encodeURIComponent(params.platform_product_id);
+    const response = await this.client.delete(
+      `/merchant/readiness/source-data-decisions/${params.reason_code}/${params.platform}/${encodedProductId}`
+    );
+    return response.data?.data || response.data;
   }
 
   async updateMerchantProductEnrichment(

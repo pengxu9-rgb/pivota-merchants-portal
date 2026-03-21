@@ -206,6 +206,8 @@ type ReadinessOptimizationPayload = {
   issue_buckets: ReadinessIssueBucket[];
   merchant_actions: MerchantReadinessAction[];
   product_queue: ProductQueueItem[];
+  content_opportunity_count?: number;
+  source_data_lanes?: SourceDataLaneSummary[];
   agent_push_summary?: AgentPushSummary;
   last_generated_at?: string | null;
 };
@@ -359,6 +361,7 @@ type SourceDataTriageRow = {
   agent_push_status: AgentPushStatus;
   agent_push_reason_codes: string[];
   recommended_action_type?: string | null;
+  decision_state?: 'restock_planned' | 'archive_planned' | 'manual_review' | null;
   fix_surface?:
     | 'product_content'
     | 'catalog_data'
@@ -375,6 +378,52 @@ type SourceDataTriagePayload = {
   summary: SourceDataTriageSummaryBucket[];
   rows: SourceDataTriageRow[];
   total_rows: number;
+};
+
+type SourceDataLaneStateCount = {
+  key: string;
+  label: string;
+  count: number;
+};
+
+type SourceDataLaneDecisionCount = {
+  key: 'restock_planned' | 'archive_planned' | 'manual_review';
+  label: string;
+  count: number;
+};
+
+type SourceDataLaneNextProduct = {
+  platform: string;
+  platform_product_id: string;
+  product_id: string;
+  title: string;
+  blocked_variant_count: number;
+  excluded_variant_count: number;
+  sample_variant_id?: string | null;
+};
+
+type SourceDataLaneSummary = {
+  reason_code: SourceDataReasonCode;
+  label: string;
+  affected_products: number;
+  affected_variants: number;
+  blocked_products: number;
+  excluded_products: number;
+  next_product?: SourceDataLaneNextProduct | null;
+  queue_state_counts: SourceDataLaneStateCount[];
+  decision_counts?: SourceDataLaneDecisionCount[];
+};
+
+type ReadinessLaneDelta = {
+  reason_code: SourceDataReasonCode;
+  before_products: number;
+  after_products: number;
+  before_variants: number;
+  after_variants: number;
+  resolved_products: number;
+  resolved_variants: number;
+  state_counts_before: SourceDataLaneStateCount[];
+  state_counts_after: SourceDataLaneStateCount[];
 };
 
 type SourceDataProductGroup = {
@@ -400,13 +449,14 @@ type SourceDataLaneWorklist = {
   affected_variants: number;
   blocked_products: number;
   excluded_products: number;
-  next_product: WorkspaceProductItem | null;
+  next_product: SourceDataLaneNextProduct | null;
   status_summary: Array<{
     key: string;
     label: string;
     count: number;
     className: string;
   }>;
+  decision_counts: SourceDataLaneDecisionCount[];
 };
 
 type OutOfStockBatchState =
@@ -871,6 +921,36 @@ const getInitialTriageReason = (focusIssue: string | null): SourceDataReasonCode
   return 'missing_price';
 };
 
+const getLaneStatusBadgeClassName = (
+  reasonCode: SourceDataReasonCode,
+  stateKey: string
+) => {
+  if (reasonCode === 'missing_price') {
+    if (stateKey === 'whole_product_missing_price') {
+      return 'bg-rose-50 text-rose-700 ring-1 ring-rose-200';
+    }
+    if (stateKey === 'partially_priced') {
+      return 'bg-amber-50 text-amber-800 ring-1 ring-amber-200';
+    }
+    return 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200';
+  }
+
+  if (reasonCode === 'out_of_stock') {
+    if (stateKey === 'whole_product_unavailable') {
+      return 'bg-rose-50 text-rose-700 ring-1 ring-rose-200';
+    }
+    if (stateKey === 'partially_recovered') {
+      return 'bg-blue-50 text-blue-700 ring-1 ring-blue-200';
+    }
+    return 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200';
+  }
+
+  if (stateKey === 'hero_image_missing') {
+    return 'bg-violet-50 text-violet-700 ring-1 ring-violet-200';
+  }
+  return 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200';
+};
+
 export default function ProductOptimizationPage() {
   const searchParams = useSearchParams();
   const fromReadiness = searchParams.get('source') === 'readiness';
@@ -880,6 +960,11 @@ export default function ProductOptimizationPage() {
   const [search, setSearch] = useState('');
   const [optimizationData, setOptimizationData] = useState<ReadinessOptimizationPayload | null>(null);
   const [readinessLoading, setReadinessLoading] = useState(true);
+  const [lastLaneDelta, setLastLaneDelta] = useState<ReadinessLaneDelta | null>(
+    null
+  );
+  const [lastLaneDeltaReason, setLastLaneDeltaReason] =
+    useState<SourceDataReasonCode | null>(null);
 
   const [selected, setSelected] = useState<{
     platform: string;
@@ -948,15 +1033,28 @@ export default function ProductOptimizationPage() {
     refresh?: boolean;
     scope?: 'merchant' | 'product' | 'variant';
     reason?: string;
+    reasonCode?: SourceDataReasonCode;
   }) => {
     try {
       setReadinessLoading(true);
-      const data = options?.refresh
-        ? await apiClient.refreshMerchantReadinessOptimization({
+      const response = options?.refresh
+        ? await apiClient.refreshMerchantReadinessOptimizationDetailed({
             scope: options.scope ?? 'merchant',
             reason: options.reason ?? 'manual',
+            reason_code: options.reasonCode,
           })
         : await apiClient.getMerchantReadinessOptimization();
+      const data = options?.refresh ? response?.data || response : response;
+      if (options?.refresh) {
+        const laneDelta = (response as any)?.meta?.lane_delta || null;
+        setLastLaneDelta(laneDelta);
+        setLastLaneDeltaReason(
+          laneDelta?.reason_code || options.reasonCode || null
+        );
+      } else {
+        setLastLaneDelta(null);
+        setLastLaneDeltaReason(null);
+      }
       setOptimizationData(data || null);
       return data || null;
     } catch (err) {
@@ -1223,6 +1321,8 @@ export default function ProductOptimizationPage() {
   const issueBuckets = optimizationData?.issue_buckets || [];
   const merchantActions = optimizationData?.merchant_actions || [];
   const productQueue = optimizationData?.product_queue || [];
+  const contentOpportunityCount = optimizationData?.content_opportunity_count || 0;
+  const sourceDataLaneSummaries = optimizationData?.source_data_lanes || [];
 
   useEffect(() => {
     setActionPreview(null);
@@ -1926,6 +2026,9 @@ export default function ProductOptimizationPage() {
   const triageSummaryByCode = new Map(
     (sourceDataTriage?.summary || []).map((bucket) => [bucket.code, bucket])
   );
+  const sourceDataLaneSummaryByCode = new Map(
+    sourceDataLaneSummaries.map((lane) => [lane.reason_code, lane])
+  );
   const allTriageRows = sourceDataTriage?.rows || [];
   const allTriageGroups = (() => {
     const grouped = new Map<string, SourceDataProductGroup>();
@@ -2209,6 +2312,7 @@ export default function ProductOptimizationPage() {
     (reasonCode) => {
       const config = SOURCE_DATA_REASON_CONFIG[reasonCode];
       const bucket = triageSummaryByCode.get(reasonCode);
+      const backendLane = sourceDataLaneSummaryByCode.get(reasonCode);
       const laneProducts = queueDrivenProducts.filter((item) =>
         matchesSourceDataReason(item, reasonCode)
       );
@@ -2227,12 +2331,23 @@ export default function ProductOptimizationPage() {
         reason_code: reasonCode,
         label: config.label,
         helper: config.helper,
-        affected_products: bucket?.affected_products ?? laneProducts.length,
-        affected_variants: bucket?.affected_variants ?? 0,
-        blocked_products: blockedProducts,
-        excluded_products: excludedProducts,
-        next_product: laneProducts[0] || null,
-        status_summary: triageLaneStatusSummaryByCode.get(reasonCode) || [],
+        affected_products:
+          backendLane?.affected_products ?? bucket?.affected_products ?? laneProducts.length,
+        affected_variants:
+          backendLane?.affected_variants ?? bucket?.affected_variants ?? 0,
+        blocked_products: backendLane?.blocked_products ?? blockedProducts,
+        excluded_products: backendLane?.excluded_products ?? excludedProducts,
+        next_product: backendLane?.next_product || null,
+        status_summary:
+          backendLane?.queue_state_counts?.map((item) => ({
+            key: item.key,
+            label: item.label,
+            count: item.count,
+            className: getLaneStatusBadgeClassName(reasonCode, item.key),
+          })) ||
+          triageLaneStatusSummaryByCode.get(reasonCode) ||
+          [],
+        decision_counts: backendLane?.decision_counts || [],
       };
     }
   );
@@ -2493,6 +2608,9 @@ export default function ProductOptimizationPage() {
                 {optimizationPlan?.plan_id && (
                   <span>Plan {optimizationPlan.plan_id.slice(-8)}</span>
                 )}
+                {contentOpportunityCount > 0 && (
+                  <span>{contentOpportunityCount} content opportunities hidden from the blocker queue</span>
+                )}
               </div>
               {scoreBundle && (
                 <div className="mt-3 flex flex-wrap gap-2 text-xs">
@@ -2531,7 +2649,7 @@ export default function ProductOptimizationPage() {
                 disabled={readinessLoading}
                 className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-900 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-50"
               >
-                {readinessLoading ? 'Refreshing…' : 'Refresh readiness'}
+                {readinessLoading ? 'Refreshing…' : 'Refresh all readiness'}
               </button>
               {storeSetupActions.length > 0 && (
                 <a
@@ -2677,6 +2795,7 @@ export default function ProductOptimizationPage() {
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             {SOURCE_DATA_REASON_ORDER.map((reasonCode) => {
               const bucket = triageSummaryByCode.get(reasonCode);
+              const laneSummary = sourceDataLaneSummaryByCode.get(reasonCode);
               const active = triageReason === reasonCode;
               const config = SOURCE_DATA_REASON_CONFIG[reasonCode];
               return (
@@ -2707,10 +2826,10 @@ export default function ProductOptimizationPage() {
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
                     <span className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700">
-                      {bucket?.affected_products ?? 0} products
+                      {laneSummary?.affected_products ?? bucket?.affected_products ?? 0} products
                     </span>
                     <span className="rounded-full bg-amber-100 px-2 py-1 font-medium text-amber-800">
-                      {bucket?.affected_variants ?? 0} variants
+                      {laneSummary?.affected_variants ?? bucket?.affected_variants ?? 0} variants
                     </span>
                   </div>
                 </button>
@@ -2739,6 +2858,11 @@ export default function ProductOptimizationPage() {
                 <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
                   {totalTriageVariants} affected variants
                 </span>
+                {contentOpportunityCount > 0 ? (
+                  <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                    {contentOpportunityCount} content-only opportunities hidden
+                  </span>
+                ) : null}
                 {busiestTriageLane && busiestTriageLane.affected_products > 0 ? (
                   <span className="rounded-full bg-blue-50 px-2 py-1 font-medium text-blue-700 ring-1 ring-blue-200">
                     Largest lane: {busiestTriageLane.label}
@@ -2746,6 +2870,18 @@ export default function ProductOptimizationPage() {
                 ) : null}
               </div>
             </div>
+
+            {lastLaneDelta && lastLaneDeltaReason ? (
+              <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                Refreshed{' '}
+                {SOURCE_DATA_REASON_CONFIG[lastLaneDeltaReason].label.toLowerCase()}:
+                resolved {lastLaneDelta.resolved_products} product batch
+                {lastLaneDelta.resolved_products === 1 ? '' : 'es'} and{' '}
+                {lastLaneDelta.resolved_variants} variant
+                {lastLaneDelta.resolved_variants === 1 ? '' : 's'} in the latest
+                plan.
+              </div>
+            ) : null}
 
             <div className="mt-3 grid gap-3 xl:grid-cols-3">
               {triageLaneWorklists.map((lane) => {
@@ -2770,11 +2906,22 @@ export default function ProductOptimizationPage() {
                           {lane.helper}
                         </div>
                       </div>
-                      {isActiveLane ? (
-                        <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white">
-                          Active lane
-                        </span>
-                      ) : null}
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        {isActiveLane ? (
+                          <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+                            Active lane
+                          </span>
+                        ) : null}
+                        {lane.reason_code === 'out_of_stock' &&
+                        lane.decision_counts.some((item) => item.count > 0) ? (
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 ring-1 ring-slate-200">
+                            {lane.decision_counts
+                              .filter((item) => item.count > 0)
+                              .map((item) => `${item.count} ${item.label}`)
+                              .join(' · ')}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
@@ -2816,10 +2963,7 @@ export default function ProductOptimizationPage() {
                           Next product batch
                         </div>
                         <div className="mt-1 text-sm font-medium text-slate-900">
-                          {nextProduct.enrichment?.title_override ||
-                            nextProduct.standard?.title ||
-                            nextProduct.readiness?.title ||
-                            'Untitled product'}
+                          {nextProduct.title || 'Untitled product'}
                         </div>
                         <div className="mt-1 text-[11px] text-slate-500">
                           {nextProduct.platform.toUpperCase()} ·{' '}
@@ -2827,14 +2971,10 @@ export default function ProductOptimizationPage() {
                         </div>
                         <div className="mt-2 flex flex-wrap gap-1">
                           <span className="rounded-full bg-white px-2 py-0.5 font-medium text-slate-700 ring-1 ring-slate-200">
-                            {nextProduct.readiness?.blocked_variant_count || 0}{' '}
-                            blocked
+                            {nextProduct.blocked_variant_count || 0} blocked
                           </span>
                           <span className="rounded-full bg-white px-2 py-0.5 font-medium text-slate-700 ring-1 ring-slate-200">
-                            {nextProduct.readiness?.excluded_variant_count ??
-                              nextProduct.agent_push?.excluded_variant_count ??
-                              0}{' '}
-                            excluded
+                            {nextProduct.excluded_variant_count || 0} excluded
                           </span>
                         </div>
                       </div>
@@ -2852,12 +2992,28 @@ export default function ProductOptimizationPage() {
                       >
                         Open lane
                       </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void loadOptimizationData({
+                            refresh: true,
+                            scope: 'merchant',
+                            reason: 'lane_refresh',
+                            reasonCode: lane.reason_code,
+                          })
+                        }
+                        disabled={readinessLoading}
+                        className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                      >
+                        Refresh this queue
+                      </button>
                       {nextProduct ? (
                         <a
                           href={buildCatalogReviewHref({
                             platform: nextProduct.platform,
                             platformProductId: nextProduct.platform_product_id,
                             reasonCode: lane.reason_code,
+                            variantId: nextProduct.sample_variant_id || null,
                           })}
                           className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100"
                         >
@@ -2871,6 +3027,7 @@ export default function ProductOptimizationPage() {
                               href={buildCatalogReviewHref({
                                 platform: nextProduct.platform,
                                 platformProductId: nextProduct.platform_product_id,
+                                variantId: nextProduct.sample_variant_id || null,
                                 reasonCode: lane.reason_code,
                                 queueState: shortcut.queueState,
                                 includePlanId: false,
@@ -2914,6 +3071,11 @@ export default function ProductOptimizationPage() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 text-[11px]">
+                {lastLaneDelta && lastLaneDeltaReason === triageReason ? (
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700">
+                    Resolved {lastLaneDelta.resolved_products} products / {lastLaneDelta.resolved_variants} variants after refresh
+                  </span>
+                ) : null}
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
                   Issue {triageConfig.issueFilter.replaceAll('_', ' ')}
                 </span>
@@ -3135,10 +3297,13 @@ export default function ProductOptimizationPage() {
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
             <h2 className="max-w-[10ch] text-[1.6rem] font-bold leading-tight text-gray-900">
-              Catalog products
+              Blocker queue
             </h2>
               <p className="mt-1 text-xs text-gray-500">
-                Review queue order, push status, and the products that still need edits.
+                Review blocked or auto-excluded products first.
+                {contentOpportunityCount > 0
+                  ? ` ${contentOpportunityCount} content-only opportunities are tracked separately.`
+                  : ''}
               </p>
             </div>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">
