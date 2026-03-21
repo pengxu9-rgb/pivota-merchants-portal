@@ -728,7 +728,11 @@ export default function ProductsPage() {
     };
   }, [selectedVariantId, showViewModal]);
 
-  const loadCatalogReviewPlan = async (options?: { forceRefresh?: boolean }) => {
+  const loadCatalogReviewPlan = async (options?: {
+    forceRefresh?: boolean;
+    scope?: 'merchant' | 'product' | 'variant';
+    reason?: string;
+  }) => {
     const forceRefresh = options?.forceRefresh === true;
 
     if (!forceRefresh && catalogReviewPlan?.plan_id) {
@@ -750,7 +754,12 @@ export default function ProductsPage() {
     }
 
     const request = (async () => {
-      const optimization = await apiClient.getMerchantReadinessOptimization();
+      const optimization = forceRefresh
+        ? await apiClient.refreshMerchantReadinessOptimization({
+            scope: options?.scope ?? 'merchant',
+            reason: options?.reason ?? 'catalog_review_retry',
+          })
+        : await apiClient.getMerchantReadinessOptimization();
       const plan = optimization?.plan;
       if (!plan?.plan_id) {
         throw new Error('Optimization plan unavailable.');
@@ -907,7 +916,13 @@ export default function ProductsPage() {
           remainingRetries > 0 &&
           (isPlanSupersededError(error) || isRetryableCatalogReviewError(error))
         ) {
-          const refreshedPlan = await loadCatalogReviewPlan({ forceRefresh: true });
+          const refreshedPlan = await loadCatalogReviewPlan({
+            forceRefresh: true,
+            scope: 'merchant',
+            reason: isPlanSupersededError(error)
+              ? 'plan_superseded'
+              : 'network_retry',
+          });
           const nextPlanId = refreshedPlan?.plan_id || planId;
           if (cancelled || !nextPlanId) return;
           return await loadLaneQueue(nextPlanId, remainingRetries - 1);
@@ -1001,7 +1016,13 @@ export default function ProductsPage() {
           remainingRetries > 0 &&
           (isPlanSupersededError(error) || isRetryableCatalogReviewError(error))
         ) {
-          const refreshedPlan = await loadCatalogReviewPlan({ forceRefresh: true });
+          const refreshedPlan = await loadCatalogReviewPlan({
+            forceRefresh: true,
+            scope: 'product',
+            reason: isPlanSupersededError(error)
+              ? 'plan_superseded'
+              : 'network_retry',
+          });
           const nextPlanId = refreshedPlan?.plan_id || planId;
           if (cancelled || !nextPlanId) return;
           return await loadReadinessContext(nextPlanId, remainingRetries - 1);
@@ -1838,7 +1859,7 @@ export default function ProductsPage() {
     try {
       const latestPlan =
         reviewSource === 'readiness'
-          ? await loadCatalogReviewPlan({ forceRefresh: true })
+          ? await loadCatalogReviewPlan()
           : null;
       const product = await resolveProductForReview(group.platform, group.platform_product_id);
       setSelectedProduct(product);
