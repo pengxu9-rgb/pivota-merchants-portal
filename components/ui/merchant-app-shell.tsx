@@ -3,6 +3,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
+  ChevronsLeft,
+  ChevronsRight,
   ChevronDown,
   LogOut,
   Menu,
@@ -30,18 +32,22 @@ type MerchantAppShellProps = {
   } | null;
 };
 
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "merchant_sidebar_collapsed";
+
 function NavigationGroup({
   label,
   items,
   pathname,
   onNavigate,
   collapsible = false,
+  collapsed = false,
 }: {
   label: string;
   items: typeof primaryNavigation;
   pathname: string;
   onNavigate: () => void;
   collapsible?: boolean;
+  collapsed?: boolean;
 }) {
   const hasActiveItem = items.some((item) => isNavigationItemActive(pathname, item));
   const [isOpen, setIsOpen] = useState(!collapsible || hasActiveItem);
@@ -57,7 +63,10 @@ function NavigationGroup({
       {collapsible ? (
         <button
           type="button"
-          className="flex w-full items-center justify-between px-[0.68rem] py-1 text-left"
+          className={cx(
+            "flex w-full items-center justify-between px-[0.68rem] py-1 text-left",
+            collapsed && "lg:hidden"
+          )}
           onClick={() => setIsOpen((value) => !value)}
           aria-expanded={isOpen}
         >
@@ -70,20 +79,33 @@ function NavigationGroup({
           />
         </button>
       ) : (
-        <p className="merchant-nav-label">{label}</p>
+        <p className={cx("merchant-nav-label", collapsed && "lg:hidden")}>{label}</p>
       )}
       <div className={cx("space-y-0.5", !isOpen && "hidden")}>
         {items.map((item) => {
           const isActive = isNavigationItemActive(pathname, item);
           return (
-            <Link
+          <Link
               key={item.label}
               href={item.href}
               onClick={onNavigate}
-              className={cx("merchant-nav-link", isActive && "merchant-nav-link-active")}
+              className={cx(
+                "merchant-nav-link",
+                isActive && "merchant-nav-link-active",
+                collapsed && "lg:justify-center lg:px-0 lg:py-2.5"
+              )}
+              title={item.label}
+              aria-label={item.label}
             >
               <item.icon className="h-3.5 w-3.5 flex-shrink-0" />
-              <div className="min-w-0 flex-1 font-medium leading-4.5">{item.label}</div>
+              <div
+                className={cx(
+                  "min-w-0 flex-1 font-medium leading-4.5",
+                  collapsed && "lg:hidden"
+                )}
+              >
+                {item.label}
+              </div>
             </Link>
           );
         })}
@@ -100,6 +122,28 @@ export function MerchantAppShell({
   onLogout,
   user,
 }: MerchantAppShellProps) {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      const savedState = localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY);
+      setSidebarCollapsed(savedState === "true");
+    } catch {
+      // no-op
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        SIDEBAR_COLLAPSED_STORAGE_KEY,
+        sidebarCollapsed ? "true" : "false"
+      );
+    } catch {
+      // no-op
+    }
+  }, [sidebarCollapsed]);
+
   return (
     <div className="min-h-screen bg-[color:var(--merchant-canvas)]">
       {sidebarOpen ? (
@@ -113,17 +157,30 @@ export function MerchantAppShell({
 
       <aside
         className={cx(
-          "fixed inset-y-0 left-0 z-50 flex w-[304px] flex-col border-r border-[color:var(--merchant-line)] bg-[color:var(--merchant-sidebar)] px-3 py-3 shadow-[var(--merchant-shadow-soft)] backdrop-blur transition-transform duration-300 lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex w-[304px] flex-col border-r border-[color:var(--merchant-line)] bg-[color:var(--merchant-sidebar)] px-3 py-3 shadow-[var(--merchant-shadow-soft)] backdrop-blur transition-[width,transform] duration-300 lg:translate-x-0",
+          sidebarCollapsed ? "lg:w-[92px]" : "lg:w-[304px]",
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
         <div className="px-2 py-1">
           <div className="flex items-start justify-between gap-3">
-            <Link href="/dashboard" className="flex min-w-0 items-start gap-3">
+            <Link
+              href="/dashboard"
+              className={cx(
+                "flex min-w-0 items-start gap-3",
+                sidebarCollapsed && "lg:justify-center lg:gap-0"
+              )}
+              title="Pivota merchant portal"
+            >
               <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]">
                 <Store className="h-4.5 w-4.5" />
               </div>
-              <div className="min-w-0 space-y-0.5">
+              <div
+                className={cx(
+                  "min-w-0 space-y-0.5",
+                  sidebarCollapsed && "lg:hidden"
+                )}
+              >
                 <p className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
                   Pivota
                 </p>
@@ -137,13 +194,28 @@ export function MerchantAppShell({
                 </div>
               </div>
             </Link>
-            <button
-              type="button"
-              className="merchant-icon-button lg:hidden"
-              onClick={() => setSidebarOpen(false)}
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="merchant-icon-button hidden lg:inline-flex"
+                onClick={() => setSidebarCollapsed((value) => !value)}
+                aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              >
+                {sidebarCollapsed ? (
+                  <ChevronsRight className="h-4 w-4" />
+                ) : (
+                  <ChevronsLeft className="h-4 w-4" />
+                )}
+              </button>
+              <button
+                type="button"
+                className="merchant-icon-button lg:hidden"
+                onClick={() => setSidebarOpen(false)}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -153,12 +225,14 @@ export function MerchantAppShell({
             items={primaryNavigation}
             pathname={pathname}
             onNavigate={() => setSidebarOpen(false)}
+            collapsed={sidebarCollapsed}
           />
           <NavigationGroup
             label="Workflows"
             items={workflowNavigation}
             pathname={pathname}
             onNavigate={() => setSidebarOpen(false)}
+            collapsed={sidebarCollapsed}
           />
         </nav>
 
@@ -168,25 +242,37 @@ export function MerchantAppShell({
             onClick={() => setSidebarOpen(false)}
             className={cx(
               "merchant-nav-link",
+              sidebarCollapsed && "lg:justify-center lg:px-0 lg:py-2.5",
               isNavigationItemActive(pathname, settingsNavigationItem) &&
                 "merchant-nav-link-active"
             )}
+            title={settingsNavigationItem.label}
+            aria-label={settingsNavigationItem.label}
           >
             <settingsNavigationItem.icon className="h-4 w-4 flex-shrink-0" />
-            <div className="font-medium">{settingsNavigationItem.label}</div>
+            <div className={cx("font-medium", sidebarCollapsed && "lg:hidden")}>
+              {settingsNavigationItem.label}
+            </div>
           </Link>
           <button
             type="button"
             onClick={onLogout}
-            className="merchant-nav-link w-full text-left text-[color:var(--merchant-critical)]"
+            className={cx(
+              "merchant-nav-link w-full text-left text-[color:var(--merchant-critical)]",
+              sidebarCollapsed && "lg:justify-center lg:px-0 lg:py-2.5"
+            )}
+            title="Log out"
+            aria-label="Log out"
           >
             <LogOut className="h-4 w-4" />
-            <div className="font-medium">Log out</div>
+            <div className={cx("font-medium", sidebarCollapsed && "lg:hidden")}>
+              Log out
+            </div>
           </button>
         </div>
       </aside>
 
-      <div className="lg:pl-[304px]">
+      <div className={cx(sidebarCollapsed ? "lg:pl-[92px]" : "lg:pl-[304px]")}>
         <main className="merchant-page pb-8 pt-4 sm:pt-5 lg:pt-6">
           <div className="mb-4 lg:hidden">
             <button
