@@ -332,6 +332,29 @@ type OutOfStockDecisionState =
   | 'archive_candidate'
   | 'manual_review';
 
+type CatalogReviewQueueState =
+  | OutOfStockDecisionState
+  | MissingPriceBatchState
+  | MissingImageBatchState;
+
+function normalizeCatalogReviewQueueState(
+  value: string | null
+): CatalogReviewQueueState | null {
+  if (
+    value === 'restock_candidate' ||
+    value === 'archive_candidate' ||
+    value === 'manual_review' ||
+    value === 'whole_product_missing_price' ||
+    value === 'partially_priced' ||
+    value === 'priced_waiting_refresh' ||
+    value === 'hero_image_missing' ||
+    value === 'image_visible_now'
+  ) {
+    return value;
+  }
+  return null;
+}
+
 function getOutOfStockBatchState(
   pendingCount: number,
   resolvedCount: number
@@ -606,6 +629,7 @@ export default function ProductsPage() {
   const [sourceDataLaneError, setSourceDataLaneError] = useState<string | null>(null);
   const [laneActionFeedback, setLaneActionFeedback] = useState<string | null>(null);
   const deepLinkResolvedRef = useRef<string | null>(null);
+  const deepLinkQueueResolvedRef = useRef<string | null>(null);
   const catalogReviewPlanRequestRef = useRef<Promise<CatalogReviewPlan | null> | null>(null);
 
   useEffect(() => {
@@ -655,6 +679,9 @@ export default function ProductsPage() {
   const deepLinkModal = searchParams.get('modal');
   const deepLinkSource = searchParams.get('source');
   const deepLinkPlanId = searchParams.get('planId');
+  const deepLinkQueueState = normalizeCatalogReviewQueueState(
+    searchParams.get('queueState')
+  );
   const deepLinkReasonCode = normalizeSourceDataReasonCode(
     searchParams.get('reasonCode')
   );
@@ -665,12 +692,14 @@ export default function ProductsPage() {
     variantId,
     reasonCode,
     planId,
+    queueState,
   }: {
     platform: string;
     platformProductId: string;
     variantId?: string | null;
     reasonCode?: SourceDataReasonCode | null;
     planId?: string | null;
+    queueState?: CatalogReviewQueueState | null;
   }) => {
     if (typeof window === 'undefined') return;
 
@@ -688,6 +717,9 @@ export default function ProductsPage() {
     }
     if (planId) {
       params.set('planId', planId);
+    }
+    if (queueState) {
+      params.set('queueState', queueState);
     }
     window.history.replaceState({}, '', `/dashboard/products?${params.toString()}`);
   };
@@ -708,6 +740,7 @@ export default function ProductsPage() {
       deepLinkVariantId || '',
       deepLinkSource || '',
       deepLinkPlanId || '',
+      deepLinkQueueState || '',
     ].join('|');
     if (deepLinkResolvedRef.current === deepLinkKey) {
       return;
@@ -752,6 +785,7 @@ export default function ProductsPage() {
     deepLinkReasonCode,
     deepLinkSource,
     deepLinkPlanId,
+    deepLinkQueueState,
     deepLinkVariantId,
     loading,
     products,
@@ -780,10 +814,12 @@ export default function ProductsPage() {
       variantId: selectedVariantId,
       reasonCode: reviewReasonCode,
       planId: catalogReviewPlan?.plan_id || deepLinkPlanId,
+      queueState: deepLinkQueueState,
     });
   }, [
     catalogReviewPlan?.plan_id,
     deepLinkPlanId,
+    deepLinkQueueState,
     reviewReasonCode,
     reviewSource,
     selectedProduct,
@@ -1610,6 +1646,66 @@ export default function ProductsPage() {
   const firstManualReviewLaneGroup =
     outOfStockManualReviewLaneGroups[0]?.group || null;
 
+  const matchesDeepLinkQueueState = (() => {
+    if (!deepLinkQueueState || !reviewReasonCode) return true;
+
+    if (reviewReasonCode === 'out_of_stock') {
+      return currentOutOfStockDecisionState === deepLinkQueueState;
+    }
+
+    if (reviewReasonCode === 'missing_price') {
+      return currentMissingPriceBatchState === deepLinkQueueState;
+    }
+
+    if (reviewReasonCode === 'missing_primary_image') {
+      return currentMissingImageBatchState === deepLinkQueueState;
+    }
+
+    return true;
+  })();
+
+  const deepLinkQueueTargetGroup = (() => {
+    if (!deepLinkQueueState || !reviewReasonCode) return null;
+
+    if (reviewReasonCode === 'out_of_stock') {
+      if (deepLinkQueueState === 'restock_candidate') {
+        return firstRestockCandidateLaneGroup;
+      }
+      if (deepLinkQueueState === 'archive_candidate') {
+        return firstArchiveCandidateLaneGroup;
+      }
+      if (deepLinkQueueState === 'manual_review') {
+        return firstManualReviewLaneGroup;
+      }
+      return null;
+    }
+
+    if (reviewReasonCode === 'missing_price') {
+      if (deepLinkQueueState === 'whole_product_missing_price') {
+        return firstWholeMissingPriceLaneGroup;
+      }
+      if (deepLinkQueueState === 'partially_priced') {
+        return firstPartiallyPricedLaneGroup;
+      }
+      if (deepLinkQueueState === 'priced_waiting_refresh') {
+        return firstPricedWaitingRefreshLaneGroup;
+      }
+      return null;
+    }
+
+    if (reviewReasonCode === 'missing_primary_image') {
+      if (deepLinkQueueState === 'hero_image_missing') {
+        return firstMissingImageUnresolvedLaneGroup;
+      }
+      if (deepLinkQueueState === 'image_visible_now') {
+        return firstMissingImageResolvedLaneGroup;
+      }
+      return null;
+    }
+
+    return null;
+  })();
+
   const heroTitle =
     blockedCount > 0
       ? `${blockedCount} catalog items still need work before they are channel-ready.`
@@ -2298,7 +2394,10 @@ export default function ProductsPage() {
     }
   };
 
-  const openLaneGroup = async (group: SourceDataLaneGroup) => {
+  const openLaneGroup = async (
+    group: SourceDataLaneGroup,
+    options?: { queueState?: CatalogReviewQueueState | null }
+  ) => {
     try {
       const latestPlan =
         reviewSource === 'readiness'
@@ -2323,11 +2422,60 @@ export default function ProductsPage() {
           latestPlan?.plan_id ||
           catalogReviewPlan?.plan_id ||
           deepLinkPlanId,
+        queueState: options?.queueState ?? deepLinkQueueState,
       });
     } catch (error) {
       console.error('Failed to open lane review group', error);
     }
   };
+
+  useEffect(() => {
+    if (
+      !showViewModal ||
+      reviewSource !== 'readiness' ||
+      !deepLinkQueueState ||
+      !reviewReasonCode ||
+      !sourceDataLaneGroups.length
+    ) {
+      deepLinkQueueResolvedRef.current = null;
+      return;
+    }
+
+    const queueKey = [
+      reviewReasonCode,
+      deepLinkQueueState,
+      selectedProduct?.platform || '',
+      selectedProduct?.platform_product_id ||
+        selectedProduct?.product_id ||
+        selectedProduct?.id ||
+        '',
+      sourceDataLaneGroups.length,
+    ].join('|');
+
+    if (matchesDeepLinkQueueState || !deepLinkQueueTargetGroup) {
+      deepLinkQueueResolvedRef.current = queueKey;
+      return;
+    }
+
+    if (deepLinkQueueResolvedRef.current === queueKey) {
+      return;
+    }
+
+    deepLinkQueueResolvedRef.current = queueKey;
+    void openLaneGroup(deepLinkQueueTargetGroup, {
+      queueState: deepLinkQueueState,
+    });
+  }, [
+    deepLinkQueueState,
+    deepLinkQueueTargetGroup,
+    matchesDeepLinkQueueState,
+    openLaneGroup,
+    reviewReasonCode,
+    reviewSource,
+    selectedProduct,
+    showViewModal,
+    sourceDataLaneGroups.length,
+  ]);
 
   const handleCopyLaneValues = async (
     kind: 'sku' | 'variant_id',

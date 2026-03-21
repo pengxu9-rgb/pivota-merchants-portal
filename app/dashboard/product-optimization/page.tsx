@@ -403,6 +403,16 @@ type SourceDataLaneWorklist = {
   next_product: WorkspaceProductItem | null;
 };
 
+type CatalogReviewQueueState =
+  | 'restock_candidate'
+  | 'archive_candidate'
+  | 'manual_review'
+  | 'whole_product_missing_price'
+  | 'partially_priced'
+  | 'priced_waiting_refresh'
+  | 'hero_image_missing'
+  | 'image_visible_now';
+
 type WorkspaceProductItem = MerchantProductListItem & {
   readiness: ProductQueueItem | null;
   readinessIndex: number;
@@ -626,6 +636,51 @@ const SOURCE_DATA_REASON_ORDER: SourceDataReasonCode[] = [
 const getSourceDataRowAffectedVariantCount = (row: SourceDataTriageRow) => {
   if (row.scope === 'variant') return 1;
   return Math.max(row.blocked_variant_count, row.excluded_variant_count, 1);
+};
+
+const getLaneQueueShortcuts = (
+  reasonCode: SourceDataReasonCode
+): Array<{
+  label: string;
+  queueState: CatalogReviewQueueState;
+  className: string;
+}> => {
+  if (reasonCode === 'missing_price') {
+    return [
+      {
+        label: 'Open pricing queue',
+        queueState: 'whole_product_missing_price',
+        className:
+          'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100',
+      },
+    ];
+  }
+
+  if (reasonCode === 'out_of_stock') {
+    return [
+      {
+        label: 'Restock queue',
+        queueState: 'restock_candidate',
+        className:
+          'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
+      },
+      {
+        label: 'Archive queue',
+        queueState: 'archive_candidate',
+        className:
+          'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100',
+      },
+    ];
+  }
+
+  return [
+    {
+      label: 'Open image repair queue',
+      queueState: 'hero_image_missing',
+      className:
+        'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100',
+    },
+  ];
 };
 
 const matchesSourceDataReason = (
@@ -1827,11 +1882,13 @@ export default function ProductOptimizationPage() {
     platformProductId,
     variantId,
     reasonCode,
+    queueState,
   }: {
     platform: string;
     platformProductId: string;
     variantId?: string | null;
     reasonCode?: SourceDataReasonCode | null;
+    queueState?: CatalogReviewQueueState | null;
   }) => {
     const params = new URLSearchParams({
       platform,
@@ -1844,6 +1901,9 @@ export default function ProductOptimizationPage() {
     }
     if (reasonCode) {
       params.set('reasonCode', reasonCode);
+    }
+    if (queueState) {
+      params.set('queueState', queueState);
     }
     if (optimizationPlan?.plan_id) {
       params.set('planId', optimizationPlan.plan_id);
@@ -2312,6 +2372,7 @@ export default function ProductOptimizationPage() {
               {triageLaneWorklists.map((lane) => {
                 const isActiveLane = triageReason === lane.reason_code;
                 const nextProduct = lane.next_product;
+                const queueShortcuts = getLaneQueueShortcuts(lane.reason_code);
                 return (
                   <div
                     key={lane.reason_code}
@@ -2406,6 +2467,22 @@ export default function ProductOptimizationPage() {
                           Review next batch
                         </a>
                       ) : null}
+                      {nextProduct
+                        ? queueShortcuts.map((shortcut) => (
+                            <a
+                              key={`${lane.reason_code}-${shortcut.queueState}`}
+                              href={buildCatalogReviewHref({
+                                platform: nextProduct.platform,
+                                platformProductId: nextProduct.platform_product_id,
+                                reasonCode: lane.reason_code,
+                                queueState: shortcut.queueState,
+                              })}
+                              className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-[11px] font-medium ${shortcut.className}`}
+                            >
+                              {shortcut.label}
+                            </a>
+                          ))
+                        : null}
                       <button
                         type="button"
                         onClick={() => void handleExportTriageLane(lane.reason_code)}
