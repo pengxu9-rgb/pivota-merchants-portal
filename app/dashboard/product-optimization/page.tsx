@@ -445,6 +445,13 @@ type SourceDataProductGroup = {
   excluded_variant_count: number;
   sample_variant_id?: string | null;
   sample_skus: string[];
+  decision_state?:
+    | 'restock_planned'
+    | 'archive_planned'
+    | 'manual_review'
+    | 'pricing_fix_saved'
+    | 'image_fix_saved'
+    | null;
 };
 
 type SourceDataLaneWorklist = {
@@ -463,6 +470,8 @@ type SourceDataLaneWorklist = {
     className: string;
   }>;
   decision_counts: SourceDataLaneDecisionCount[];
+  saved_target: SourceDataProductGroup | null;
+  unsaved_target: SourceDataProductGroup | null;
 };
 
 type OutOfStockBatchState =
@@ -975,6 +984,36 @@ const getLaneUnresolvedDecisionCount = (lane: SourceDataLaneWorklist) => {
   return lane.status_summary
     .filter((item) => item.key === 'hero_image_missing')
     .reduce((sum, item) => sum + item.count, 0);
+};
+
+const isSavedDecisionStateForLane = (
+  reasonCode: SourceDataReasonCode,
+  decisionState?: SourceDataProductGroup['decision_state']
+) => {
+  if (!decisionState) return false;
+  if (reasonCode === 'out_of_stock') {
+    return (
+      decisionState === 'restock_planned' ||
+      decisionState === 'archive_planned' ||
+      decisionState === 'manual_review'
+    );
+  }
+  if (reasonCode === 'missing_price') {
+    return decisionState === 'pricing_fix_saved';
+  }
+  return decisionState === 'image_fix_saved';
+};
+
+const getLaneSavedCtaLabel = (reasonCode: SourceDataReasonCode) => {
+  if (reasonCode === 'out_of_stock') return 'Continue saved queue';
+  if (reasonCode === 'missing_price') return 'Continue saved pricing batch';
+  return 'Continue saved image batch';
+};
+
+const getLaneUnsavedCtaLabel = (reasonCode: SourceDataReasonCode) => {
+  if (reasonCode === 'out_of_stock') return 'Open next undecided batch';
+  if (reasonCode === 'missing_price') return 'Open first unsaved batch';
+  return 'Open first unsaved image batch';
 };
 
 export default function ProductOptimizationPage() {
@@ -2095,6 +2134,7 @@ export default function ProductOptimizationPage() {
         excluded_variant_count: row.excluded_variant_count,
         sample_variant_id: row.variant_id || null,
         sample_skus: row.sku ? [row.sku] : [],
+        decision_state: row.decision_state || null,
       });
     }
 
@@ -2352,6 +2392,23 @@ export default function ProductOptimizationPage() {
           0;
         return excludedVariantCount > 0;
       }).length;
+      const laneGroups = allTriageGroups.filter((group) => group.reason_code === reasonCode);
+      const unresolvedLaneGroups = laneGroups.filter((group) => {
+        const progress = laneGroupProgressByKey.get(buildSourceDataLaneGroupKey(group));
+        if (!progress) return true;
+        if (reasonCode === 'missing_primary_image') {
+          return progress.looks_resolved_now === false;
+        }
+        return progress.pending_variant_count > 0;
+      });
+      const savedTarget =
+        unresolvedLaneGroups.find((group) =>
+          isSavedDecisionStateForLane(reasonCode, group.decision_state)
+        ) || null;
+      const unsavedTarget =
+        unresolvedLaneGroups.find(
+          (group) => !isSavedDecisionStateForLane(reasonCode, group.decision_state)
+        ) || null;
 
       return {
         reason_code: reasonCode,
@@ -2374,6 +2431,8 @@ export default function ProductOptimizationPage() {
           triageLaneStatusSummaryByCode.get(reasonCode) ||
           [],
         decision_counts: backendLane?.decision_counts || [],
+        saved_target: savedTarget,
+        unsaved_target: unsavedTarget,
       };
     }
   );
@@ -2923,6 +2982,8 @@ export default function ProductOptimizationPage() {
                   unresolvedDecisionCount - savedProgressCount,
                   0
                 );
+                const continueTarget = lane.saved_target;
+                const resumeTarget = lane.unsaved_target;
                 return (
                   <div
                     key={lane.reason_code}
@@ -3077,6 +3138,34 @@ export default function ProductOptimizationPage() {
                           className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100"
                         >
                           Review next batch
+                        </a>
+                      ) : null}
+                      {continueTarget ? (
+                        <a
+                          href={buildCatalogReviewHref({
+                            platform: continueTarget.platform,
+                            platformProductId: continueTarget.platform_product_id,
+                            reasonCode: lane.reason_code,
+                            variantId: continueTarget.sample_variant_id || null,
+                            includePlanId: false,
+                          })}
+                          className="inline-flex items-center rounded-md border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] font-medium text-violet-700 hover:bg-violet-100"
+                        >
+                          {getLaneSavedCtaLabel(lane.reason_code)}
+                        </a>
+                      ) : null}
+                      {!continueTarget && resumeTarget ? (
+                        <a
+                          href={buildCatalogReviewHref({
+                            platform: resumeTarget.platform,
+                            platformProductId: resumeTarget.platform_product_id,
+                            reasonCode: lane.reason_code,
+                            variantId: resumeTarget.sample_variant_id || null,
+                            includePlanId: false,
+                          })}
+                          className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-medium text-amber-800 hover:bg-amber-100"
+                        >
+                          {getLaneUnsavedCtaLabel(lane.reason_code)}
                         </a>
                       ) : null}
                       {nextProduct
