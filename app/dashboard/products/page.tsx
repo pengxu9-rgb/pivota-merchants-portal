@@ -22,7 +22,7 @@ import {
   StatusBadge,
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
-import { richTextToPlainText } from '@/lib/html-text';
+import { getDescriptionText } from '@/lib/html-text';
 
 function isProductSellable(product: any): boolean {
   const explicit =
@@ -44,7 +44,12 @@ function isProductSellable(product: any): boolean {
 
 function hasContentGap(product: any) {
   const hasDescription = Boolean(
-    richTextToPlainText(product?.description || product?.body_html || product?.summary || '')
+    getDescriptionText(
+      product?.description_text,
+      product?.description,
+      product?.body_html,
+      product?.summary
+    )
   );
   const hasImage = Boolean(
     product?.image_url || product?.image || product?.images?.[0] || product?.main_image_url
@@ -120,12 +125,12 @@ function normalizeProductForReview(product: any) {
     product_id: standard.product_id || standard.id || product?.product_id,
     title: standard.title || product?.title || product?.name,
     name: standard.title || product?.title || product?.name,
-    description: richTextToPlainText(
-      standard.description ||
-        standard.description_text ||
-        product?.description ||
-        product?.body_html ||
-        ''
+    description: getDescriptionText(
+      standard.description_text,
+      standard.description,
+      product?.description_text,
+      product?.description,
+      product?.body_html
     ),
     sku: standard.sku || product?.sku || null,
     price: priceValue,
@@ -500,7 +505,9 @@ function getOutOfStockQueueActionLabel(state: OutOfStockBatchState) {
 function getOutOfStockDecisionState(product: any): OutOfStockDecisionState {
   const rawStatus = String(product?.status || '').trim().toLowerCase();
   const hasVisibleImage = Boolean(product?.image_url || product?.images?.[0]);
-  const hasDescription = Boolean(richTextToPlainText(product?.description || ''));
+  const hasDescription = Boolean(
+    getDescriptionText(product?.description_text, product?.description, product?.body_html)
+  );
   const hasAnyPricedVariant = Array.isArray(product?.variants)
     ? product.variants.some((variant: any) => Number(variant?.price || 0) > 0)
     : Number(product?.price || 0) > 0;

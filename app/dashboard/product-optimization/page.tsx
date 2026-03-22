@@ -12,7 +12,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { richTextToPlainText } from '@/lib/html-text';
+import { getDescriptionText } from '@/lib/html-text';
 
 type AgentPushStatus = 'eligible_for_agent_push' | 'excluded_from_agent_push';
 
@@ -784,12 +784,12 @@ const normalizeWorkspaceProductForTriage = (product: WorkspaceProductItem) => {
     product_id:
       (standard as any).product_id || (standard as any).id || product?.platform_product_id,
     title: standard.title || (product as any)?.title || (product as any)?.name,
-    description: richTextToPlainText(
-      (standard as any).description ||
-        (standard as any).description_text ||
-        (product as any)?.description ||
-        (product as any)?.body_html ||
-        ''
+    description: getDescriptionText(
+      (standard as any).description_text,
+      (standard as any).description,
+      (product as any)?.description_text,
+      (product as any)?.description,
+      (product as any)?.body_html
     ),
     price: priceValue,
     currency: priceCurrency,
@@ -1547,8 +1547,9 @@ export default function ProductOptimizationPage() {
 
     return {
       title_local: form.title_override || currentStandard.title || '',
-      description_local: richTextToPlainText(
-        currentStandard.description || currentStandard.description_text || ''
+      description_local: getDescriptionText(
+        currentStandard.description_text,
+        currentStandard.description
       ),
       price_local_value: priceValue ?? null,
       main_image_url:
@@ -4122,8 +4123,9 @@ export default function ProductOptimizationPage() {
                 <div>
                   <div className="text-xs text-gray-500 mb-0.5">Description</div>
                   <div className="text-xs text-gray-700 line-clamp-3">
-                    {richTextToPlainText(
-                      detail.standard.description || detail.standard.description_text || ''
+                    {getDescriptionText(
+                      detail.standard.description_text,
+                      detail.standard.description
                     ) || '无描述'}
                   </div>
                 </div>

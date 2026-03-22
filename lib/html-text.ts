@@ -39,3 +39,11 @@ export function richTextToPlainText(raw: unknown) {
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
 }
+
+export function getDescriptionText(...values: unknown[]) {
+  for (const value of values) {
+    const text = richTextToPlainText(value);
+    if (text) return text;
+  }
+  return '';
+}
