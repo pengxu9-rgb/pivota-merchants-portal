@@ -232,7 +232,13 @@ type SourceDataTriageRow = {
   readiness_warning_codes: string[];
   agent_push_status: 'eligible_for_agent_push' | 'excluded_from_agent_push';
   agent_push_reason_codes: string[];
-  decision_state?: 'restock_planned' | 'archive_planned' | 'manual_review' | null;
+  decision_state?:
+    | 'restock_planned'
+    | 'archive_planned'
+    | 'manual_review'
+    | 'pricing_fix_saved'
+    | 'image_fix_saved'
+    | null;
 };
 
 type SourceDataLaneGroup = {
@@ -248,7 +254,13 @@ type SourceDataLaneGroup = {
   excluded_variant_count: number;
   sample_variant_id: string | null;
   sample_skus: string[];
-  decision_state?: 'restock_planned' | 'archive_planned' | 'manual_review' | null;
+  decision_state?:
+    | 'restock_planned'
+    | 'archive_planned'
+    | 'manual_review'
+    | 'pricing_fix_saved'
+    | 'image_fix_saved'
+    | null;
 };
 
 type SourceDataLaneProgress = {
@@ -338,6 +350,15 @@ type PersistedOutOfStockDecisionState =
   | 'restock_planned'
   | 'archive_planned'
   | 'manual_review';
+
+type PersistedMissingPriceDecisionState = 'pricing_fix_saved';
+
+type PersistedMissingImageDecisionState = 'image_fix_saved';
+
+type PersistedSourceDataDecisionState =
+  | PersistedOutOfStockDecisionState
+  | PersistedMissingPriceDecisionState
+  | PersistedMissingImageDecisionState;
 
 type CatalogReviewQueueState =
   | OutOfStockDecisionState
@@ -509,6 +530,31 @@ function normalizePersistedOutOfStockDecisionState(
   return null;
 }
 
+function normalizePersistedMissingPriceDecisionState(
+  value: string | null | undefined
+): PersistedMissingPriceDecisionState | null {
+  return value === 'pricing_fix_saved' ? value : null;
+}
+
+function normalizePersistedMissingImageDecisionState(
+  value: string | null | undefined
+): PersistedMissingImageDecisionState | null {
+  return value === 'image_fix_saved' ? value : null;
+}
+
+function normalizePersistedSourceDataDecisionState(
+  reasonCode: SourceDataReasonCode,
+  value: string | null | undefined
+): PersistedSourceDataDecisionState | null {
+  if (reasonCode === 'out_of_stock') {
+    return normalizePersistedOutOfStockDecisionState(value);
+  }
+  if (reasonCode === 'missing_price') {
+    return normalizePersistedMissingPriceDecisionState(value);
+  }
+  return normalizePersistedMissingImageDecisionState(value);
+}
+
 function getOutOfStockDecisionStateFromPersisted(
   value: PersistedOutOfStockDecisionState | null
 ): OutOfStockDecisionState | null {
@@ -535,6 +581,20 @@ function getPersistedOutOfStockDecisionLabel(
   if (value === 'archive_planned') return 'Archive / discontinue planned';
   if (value === 'manual_review') return 'Marked for manual review';
   return 'No saved merchant decision yet';
+}
+
+function getPersistedMissingPriceDecisionLabel(
+  value: PersistedMissingPriceDecisionState | null
+) {
+  if (value === 'pricing_fix_saved') return 'Saved for pricing fix';
+  return 'No saved repair progress yet';
+}
+
+function getPersistedMissingImageDecisionLabel(
+  value: PersistedMissingImageDecisionState | null
+) {
+  if (value === 'image_fix_saved') return 'Saved for image repair';
+  return 'No saved repair progress yet';
 }
 
 function getOutOfStockDecisionTitle(state: OutOfStockDecisionState) {
@@ -1026,7 +1086,8 @@ export default function ProductsPage() {
 
         for (const row of rows) {
           const key = `${row.reason_code}|${row.platform}|${row.platform_product_id}`;
-          const normalizedDecisionState = normalizePersistedOutOfStockDecisionState(
+          const normalizedDecisionState = normalizePersistedSourceDataDecisionState(
+            row.reason_code,
             row.decision_state
           );
           const existing = grouped.get(key);
@@ -1481,6 +1542,14 @@ export default function ProductsPage() {
     reviewReasonCode === 'out_of_stock' && currentLaneGroup
       ? normalizePersistedOutOfStockDecisionState(currentLaneGroup.decision_state)
       : null;
+  const currentPersistedMissingPriceDecisionState =
+    reviewReasonCode === 'missing_price' && currentLaneGroup
+      ? normalizePersistedMissingPriceDecisionState(currentLaneGroup.decision_state)
+      : null;
+  const currentPersistedMissingImageDecisionState =
+    reviewReasonCode === 'missing_primary_image' && currentLaneGroup
+      ? normalizePersistedMissingImageDecisionState(currentLaneGroup.decision_state)
+      : null;
   const unresolvedLaneGroups = laneGroupProgressList.filter(
     ({ progress }) => progress.pending_variant_count > 0
   );
@@ -1508,6 +1577,19 @@ export default function ProductsPage() {
     ({ group, progress }) =>
       group.reason_code === 'missing_price' &&
       progress.missing_price_state === 'priced_waiting_refresh'
+  );
+  const missingPriceSavedLaneGroups = laneGroupProgressList.filter(
+    ({ group, progress }) =>
+      group.reason_code === 'missing_price' &&
+      progress.pending_variant_count > 0 &&
+      normalizePersistedMissingPriceDecisionState(group.decision_state) ===
+        'pricing_fix_saved'
+  );
+  const missingPriceUnsavedLaneGroups = laneGroupProgressList.filter(
+    ({ group, progress }) =>
+      group.reason_code === 'missing_price' &&
+      progress.pending_variant_count > 0 &&
+      !normalizePersistedMissingPriceDecisionState(group.decision_state)
   );
   const currentMissingPriceBatchState =
     reviewReasonCode === 'missing_price' ? currentLaneProgress?.missing_price_state || null : null;
@@ -1556,6 +1638,19 @@ export default function ProductsPage() {
     ({ group, progress }) =>
       group.reason_code === 'missing_primary_image' &&
       progress.looks_resolved_now === true
+  );
+  const missingImageSavedLaneGroups = laneGroupProgressList.filter(
+    ({ group, progress }) =>
+      group.reason_code === 'missing_primary_image' &&
+      progress.looks_resolved_now === false &&
+      normalizePersistedMissingImageDecisionState(group.decision_state) ===
+        'image_fix_saved'
+  );
+  const missingImageUnsavedLaneGroups = laneGroupProgressList.filter(
+    ({ group, progress }) =>
+      group.reason_code === 'missing_primary_image' &&
+      progress.looks_resolved_now === false &&
+      !normalizePersistedMissingImageDecisionState(group.decision_state)
   );
   const currentMissingImageBatchState =
     reviewReasonCode === 'missing_primary_image'
@@ -2148,14 +2243,15 @@ export default function ProductsPage() {
     outOfStockPersistedArchiveLaneGroups.length +
     outOfStockPersistedManualReviewLaneGroups.length;
 
-  const applyOutOfStockDecisionStateToLocalQueue = (
+  const applySourceDataDecisionStateToLocalQueue = (
+    reasonCode: SourceDataReasonCode,
     platform: string,
     platformProductId: string,
-    decisionState: PersistedOutOfStockDecisionState | null
+    decisionState: PersistedSourceDataDecisionState | null
   ) => {
     setSourceDataLaneRows((prev) =>
       prev.map((row) =>
-        row.reason_code === 'out_of_stock' &&
+        row.reason_code === reasonCode &&
         row.platform === platform &&
         row.platform_product_id === platformProductId
           ? { ...row, decision_state: decisionState }
@@ -2164,7 +2260,7 @@ export default function ProductsPage() {
     );
     setSourceDataLaneGroups((prev) =>
       prev.map((group) =>
-        group.reason_code === 'out_of_stock' &&
+        group.reason_code === reasonCode &&
         group.platform === platform &&
         group.platform_product_id === platformProductId
           ? { ...group, decision_state: decisionState }
@@ -2239,7 +2335,8 @@ export default function ProductsPage() {
         });
       }
 
-      applyOutOfStockDecisionStateToLocalQueue(
+      applySourceDataDecisionStateToLocalQueue(
+        'out_of_stock',
         platform,
         platformProductId,
         decisionState
@@ -2288,6 +2385,216 @@ export default function ProductsPage() {
       `Saved merchant decision: ${getPersistedOutOfStockDecisionLabel(
         decisionState
       ).toLowerCase()}. No undecided whole-product batches are left in this lane.`
+    );
+  };
+
+  const getNextUnsavedSourceDataLaneGroup = (reasonCode: SourceDataReasonCode) => {
+    if (!currentLaneGroup) {
+      if (reasonCode === 'missing_price') {
+        return missingPriceUnsavedLaneGroups[0]?.group || null;
+      }
+      if (reasonCode === 'missing_primary_image') {
+        return missingImageUnsavedLaneGroups[0]?.group || null;
+      }
+      return null;
+    }
+
+    const sameGroup = (group: SourceDataLaneGroup) =>
+      group.reason_code === reasonCode &&
+      group.platform === currentLaneGroup.platform &&
+      group.platform_product_id === currentLaneGroup.platform_product_id;
+
+    const afterCurrent =
+      currentLaneGroupIndex >= 0
+        ? laneGroupProgressList
+            .slice(currentLaneGroupIndex + 1)
+            .find(({ group, progress }) => {
+              if (group.reason_code !== reasonCode) return false;
+              if (
+                reasonCode === 'missing_primary_image' &&
+                progress.looks_resolved_now
+              ) {
+                return false;
+              }
+              if (
+                reasonCode === 'missing_price' &&
+                progress.pending_variant_count <= 0
+              ) {
+                return false;
+              }
+              return !normalizePersistedSourceDataDecisionState(
+                reasonCode,
+                group.decision_state
+              );
+            })?.group || null
+        : null;
+
+    if (afterCurrent) {
+      return afterCurrent;
+    }
+
+    const fallbackGroups =
+      reasonCode === 'missing_price'
+        ? missingPriceUnsavedLaneGroups
+        : missingImageUnsavedLaneGroups;
+    return fallbackGroups.find(({ group }) => !sameGroup(group))?.group || null;
+  };
+
+  const handleSetMissingPriceDecision = async (
+    decisionState: PersistedMissingPriceDecisionState | null
+  ) => {
+    if (
+      reviewReasonCode !== 'missing_price' ||
+      !currentLaneGroup ||
+      !currentLaneProgress ||
+      currentLaneProgress.pending_variant_count <= 0
+    ) {
+      setLaneActionFeedback(
+        'Open a missing-price batch with unresolved variants before saving repair progress.'
+      );
+      return false;
+    }
+
+    const platform = currentLaneGroup.platform;
+    const platformProductId = currentLaneGroup.platform_product_id;
+
+    try {
+      setDecisionSaving(true);
+      if (decisionState) {
+        await apiClient.putMerchantSourceDataDecision({
+          reason_code: 'missing_price',
+          platform,
+          platform_product_id: platformProductId,
+          decision_state: decisionState,
+        });
+      } else {
+        await apiClient.deleteMerchantSourceDataDecision({
+          reason_code: 'missing_price',
+          platform,
+          platform_product_id: platformProductId,
+        });
+      }
+
+      applySourceDataDecisionStateToLocalQueue(
+        'missing_price',
+        platform,
+        platformProductId,
+        decisionState
+      );
+      setLaneActionFeedback(
+        decisionState
+          ? 'Saved this batch for pricing fix.'
+          : 'Cleared the saved pricing-fix progress for this batch.'
+      );
+      return true;
+    } catch (error) {
+      console.error('Failed to save missing-price repair progress', error);
+      setLaneActionFeedback(
+        decisionState
+          ? 'Could not save this pricing-fix progress right now.'
+          : 'Could not clear this pricing-fix progress right now.'
+      );
+      return false;
+    } finally {
+      setDecisionSaving(false);
+    }
+  };
+
+  const handleSetMissingPriceDecisionAndAdvance = async () => {
+    const nextUnsavedGroup = getNextUnsavedSourceDataLaneGroup('missing_price');
+    const saved = await handleSetMissingPriceDecision('pricing_fix_saved');
+    if (!saved) return;
+
+    if (nextUnsavedGroup) {
+      await openLaneGroup(nextUnsavedGroup);
+      setLaneActionFeedback(
+        'Saved this batch for pricing fix. Opened the next unsaved pricing batch.'
+      );
+      return;
+    }
+
+    setLaneActionFeedback(
+      'Saved this batch for pricing fix. No unsaved missing-price batches are left in this lane.'
+    );
+  };
+
+  const handleSetMissingImageDecision = async (
+    decisionState: PersistedMissingImageDecisionState | null
+  ) => {
+    if (
+      reviewReasonCode !== 'missing_primary_image' ||
+      !currentLaneGroup ||
+      !currentLaneProgress ||
+      currentLaneProgress.looks_resolved_now
+    ) {
+      setLaneActionFeedback(
+        'Open a missing-image batch that still needs repair before saving progress.'
+      );
+      return false;
+    }
+
+    const platform = currentLaneGroup.platform;
+    const platformProductId = currentLaneGroup.platform_product_id;
+
+    try {
+      setDecisionSaving(true);
+      if (decisionState) {
+        await apiClient.putMerchantSourceDataDecision({
+          reason_code: 'missing_primary_image',
+          platform,
+          platform_product_id: platformProductId,
+          decision_state: decisionState,
+        });
+      } else {
+        await apiClient.deleteMerchantSourceDataDecision({
+          reason_code: 'missing_primary_image',
+          platform,
+          platform_product_id: platformProductId,
+        });
+      }
+
+      applySourceDataDecisionStateToLocalQueue(
+        'missing_primary_image',
+        platform,
+        platformProductId,
+        decisionState
+      );
+      setLaneActionFeedback(
+        decisionState
+          ? 'Saved this batch for image repair.'
+          : 'Cleared the saved image-repair progress for this batch.'
+      );
+      return true;
+    } catch (error) {
+      console.error('Failed to save missing-image repair progress', error);
+      setLaneActionFeedback(
+        decisionState
+          ? 'Could not save this image-repair progress right now.'
+          : 'Could not clear this image-repair progress right now.'
+      );
+      return false;
+    } finally {
+      setDecisionSaving(false);
+    }
+  };
+
+  const handleSetMissingImageDecisionAndAdvance = async () => {
+    const nextUnsavedGroup = getNextUnsavedSourceDataLaneGroup(
+      'missing_primary_image'
+    );
+    const saved = await handleSetMissingImageDecision('image_fix_saved');
+    if (!saved) return;
+
+    if (nextUnsavedGroup) {
+      await openLaneGroup(nextUnsavedGroup);
+      setLaneActionFeedback(
+        'Saved this batch for image repair. Opened the next unsaved image batch.'
+      );
+      return;
+    }
+
+    setLaneActionFeedback(
+      'Saved this batch for image repair. No unsaved missing-image batches are left in this lane.'
     );
   };
 
@@ -3455,6 +3762,122 @@ export default function ProductsPage() {
                                           </div>
                                         </div>
                                       ) : null}
+                                      {reviewReasonCode === 'missing_price' &&
+                                      currentLaneProgress &&
+                                      currentLaneProgress.pending_variant_count > 0 ? (
+                                        <div className="mt-3 space-y-2">
+                                          <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-amber-900/65">
+                                            Repair progress now
+                                          </div>
+                                          <div className="flex flex-wrap gap-2">
+                                            <span className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-amber-200">
+                                              {getPersistedMissingPriceDecisionLabel(
+                                                currentPersistedMissingPriceDecisionState
+                                              )}
+                                            </span>
+                                            <span className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-amber-200">
+                                              {missingPriceSavedLaneGroups.length} saved
+                                            </span>
+                                            <span className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200">
+                                              {missingPriceUnsavedLaneGroups.length} unsaved
+                                            </span>
+                                          </div>
+                                          <div className="flex flex-wrap gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void handleSetMissingPriceDecision(
+                                                  'pricing_fix_saved'
+                                                )
+                                              }
+                                              disabled={decisionSaving}
+                                              className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                                            >
+                                              Save for pricing fix
+                                            </button>
+                                            {currentPersistedMissingPriceDecisionState ? (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  void handleSetMissingPriceDecision(null)
+                                                }
+                                                disabled={decisionSaving}
+                                                className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                              >
+                                                Clear saved progress
+                                              </button>
+                                            ) : null}
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void handleSetMissingPriceDecisionAndAdvance()
+                                              }
+                                              disabled={decisionSaving}
+                                              className="inline-flex items-center rounded-md border border-blue-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                                            >
+                                              Save + next unresolved
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : null}
+                                      {reviewReasonCode === 'missing_primary_image' &&
+                                      currentLaneProgress &&
+                                      !currentLaneProgress.looks_resolved_now ? (
+                                        <div className="mt-3 space-y-2">
+                                          <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-amber-900/65">
+                                            Repair progress now
+                                          </div>
+                                          <div className="flex flex-wrap gap-2">
+                                            <span className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-amber-200">
+                                              {getPersistedMissingImageDecisionLabel(
+                                                currentPersistedMissingImageDecisionState
+                                              )}
+                                            </span>
+                                            <span className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-amber-200">
+                                              {missingImageSavedLaneGroups.length} saved
+                                            </span>
+                                            <span className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200">
+                                              {missingImageUnsavedLaneGroups.length} unsaved
+                                            </span>
+                                          </div>
+                                          <div className="flex flex-wrap gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void handleSetMissingImageDecision(
+                                                  'image_fix_saved'
+                                                )
+                                              }
+                                              disabled={decisionSaving}
+                                              className="inline-flex items-center rounded-md border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] font-medium text-violet-700 hover:bg-violet-100 disabled:opacity-50"
+                                            >
+                                              Save for image repair
+                                            </button>
+                                            {currentPersistedMissingImageDecisionState ? (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  void handleSetMissingImageDecision(null)
+                                                }
+                                                disabled={decisionSaving}
+                                                className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                              >
+                                                Clear saved progress
+                                              </button>
+                                            ) : null}
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void handleSetMissingImageDecisionAndAdvance()
+                                              }
+                                              disabled={decisionSaving}
+                                              className="inline-flex items-center rounded-md border border-violet-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+                                            >
+                                              Save + next unresolved
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : null}
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                       {sourceDataLaneGroups.length > 1 ? (
@@ -3763,6 +4186,14 @@ export default function ProductsPage() {
                                     <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-medium text-slate-700">
                                       {missingImageUnresolvedLaneGroups.length} image-repair batches left
                                     </div>
+                                  </div>
+                                  <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                                    <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                                      {missingImageSavedLaneGroups.length} saved repair batches
+                                    </span>
+                                    <span className="rounded-full bg-white px-2 py-1 font-medium text-amber-800 ring-1 ring-amber-200">
+                                      {missingImageUnsavedLaneGroups.length} still unsaved
+                                    </span>
                                   </div>
                                   <div className="mt-3 grid gap-3 lg:grid-cols-2">
                                     {missingImageQueueSummary.map((item) => (
@@ -4145,6 +4576,14 @@ export default function ProductsPage() {
                                     <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-medium text-slate-700">
                                       {missingPriceWholeMissingLaneGroups.length} whole-product pricing batches left
                                     </div>
+                                  </div>
+                                  <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                                    <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                                      {missingPriceSavedLaneGroups.length} saved repair batches
+                                    </span>
+                                    <span className="rounded-full bg-white px-2 py-1 font-medium text-amber-800 ring-1 ring-amber-200">
+                                      {missingPriceUnsavedLaneGroups.length} still unsaved
+                                    </span>
                                   </div>
                                   <div className="mt-3 grid gap-3 lg:grid-cols-3">
                                     {missingPriceQueueSummary.map((item) => (

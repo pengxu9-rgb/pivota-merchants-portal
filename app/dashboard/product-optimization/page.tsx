@@ -361,7 +361,13 @@ type SourceDataTriageRow = {
   agent_push_status: AgentPushStatus;
   agent_push_reason_codes: string[];
   recommended_action_type?: string | null;
-  decision_state?: 'restock_planned' | 'archive_planned' | 'manual_review' | null;
+  decision_state?:
+    | 'restock_planned'
+    | 'archive_planned'
+    | 'manual_review'
+    | 'pricing_fix_saved'
+    | 'image_fix_saved'
+    | null;
   fix_surface?:
     | 'product_content'
     | 'catalog_data'
@@ -387,7 +393,7 @@ type SourceDataLaneStateCount = {
 };
 
 type SourceDataLaneDecisionCount = {
-  key: 'restock_planned' | 'archive_planned' | 'manual_review';
+  key: string;
   label: string;
   count: number;
 };
@@ -949,6 +955,26 @@ const getLaneStatusBadgeClassName = (
     return 'bg-violet-50 text-violet-700 ring-1 ring-violet-200';
   }
   return 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200';
+};
+
+const getLaneUnresolvedDecisionCount = (lane: SourceDataLaneWorklist) => {
+  if (lane.reason_code === 'out_of_stock') {
+    return lane.status_summary
+      .filter((item) => item.key === 'whole_product_unavailable')
+      .reduce((sum, item) => sum + item.count, 0);
+  }
+  if (lane.reason_code === 'missing_price') {
+    return lane.status_summary
+      .filter(
+        (item) =>
+          item.key === 'whole_product_missing_price' ||
+          item.key === 'partially_priced'
+      )
+      .reduce((sum, item) => sum + item.count, 0);
+  }
+  return lane.status_summary
+    .filter((item) => item.key === 'hero_image_missing')
+    .reduce((sum, item) => sum + item.count, 0);
 };
 
 export default function ProductOptimizationPage() {
@@ -2888,6 +2914,15 @@ export default function ProductOptimizationPage() {
                 const isActiveLane = triageReason === lane.reason_code;
                 const nextProduct = lane.next_product;
                 const queueShortcuts = getLaneQueueShortcuts(lane.reason_code);
+                const savedProgressCount = lane.decision_counts.reduce(
+                  (sum, item) => sum + item.count,
+                  0
+                );
+                const unresolvedDecisionCount = getLaneUnresolvedDecisionCount(lane);
+                const unsavedProgressCount = Math.max(
+                  unresolvedDecisionCount - savedProgressCount,
+                  0
+                );
                 return (
                   <div
                     key={lane.reason_code}
@@ -2912,13 +2947,10 @@ export default function ProductOptimizationPage() {
                             Active lane
                           </span>
                         ) : null}
-                        {lane.reason_code === 'out_of_stock' &&
-                        lane.decision_counts.some((item) => item.count > 0) ? (
+                        {(lane.reason_code === 'out_of_stock' || savedProgressCount > 0) &&
+                        unresolvedDecisionCount > 0 ? (
                           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 ring-1 ring-slate-200">
-                            {lane.decision_counts
-                              .filter((item) => item.count > 0)
-                              .map((item) => `${item.count} ${item.label}`)
-                              .join(' · ')}
+                            Saved progress {savedProgressCount} / {unresolvedDecisionCount}
                           </span>
                         ) : null}
                       </div>
@@ -2953,6 +2985,33 @@ export default function ProductOptimizationPage() {
                               {item.count} {item.label}
                             </span>
                           ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {(lane.reason_code === 'out_of_stock' || savedProgressCount > 0) &&
+                    unresolvedDecisionCount > 0 ? (
+                      <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          Saved merchant progress
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                          <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                            {savedProgressCount} saved progress
+                          </span>
+                          <span className="rounded-full bg-white px-2 py-1 font-medium text-amber-800 ring-1 ring-amber-200">
+                            {unsavedProgressCount} still unsaved
+                          </span>
+                          {lane.decision_counts
+                            .filter((item) => item.count > 0)
+                            .map((item) => (
+                              <span
+                                key={`${lane.reason_code}-decision-${item.key}`}
+                                className="rounded-full bg-white px-2 py-1 font-medium text-slate-700 ring-1 ring-slate-200"
+                              >
+                                {item.count} {item.label}
+                              </span>
+                            ))}
                         </div>
                       </div>
                     ) : null}
