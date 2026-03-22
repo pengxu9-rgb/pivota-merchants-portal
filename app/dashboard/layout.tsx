@@ -5,6 +5,21 @@ import { useRouter, usePathname } from "next/navigation";
 import { apiClient } from "@/lib/api-client";
 import { MerchantAppShell } from "@/components/ui/merchant-app-shell";
 
+const INTERNAL_ONLY_PREFIXES = [
+  "/dashboard/mcp",
+  "/dashboard/platform-onboarding",
+  "/dashboard/platform-orders",
+];
+
+const INTERNAL_ALLOWED_ROLES = new Set([
+  "admin",
+  "super_admin",
+  "employee",
+  "outsourced",
+  "operator",
+  "internal",
+]);
+
 export default function DashboardLayout({
   children,
 }: {
@@ -15,6 +30,7 @@ export default function DashboardLayout({
   const [user, setUser] = useState<any>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [routeAllowed, setRouteAllowed] = useState(true);
 
   useEffect(() => {
     // Check authentication
@@ -27,17 +43,34 @@ export default function DashboardLayout({
     }
 
     if (userData) {
-      setUser(JSON.parse(userData));
+      try {
+        const parsed = JSON.parse(userData);
+        const role = String(parsed?.role || "merchant").toLowerCase();
+        const isInternalOnlyRoute = INTERNAL_ONLY_PREFIXES.some((prefix) =>
+          pathname.startsWith(prefix)
+        );
+
+        setUser(parsed);
+
+        if (isInternalOnlyRoute && !INTERNAL_ALLOWED_ROLES.has(role)) {
+          setRouteAllowed(false);
+          router.replace("/dashboard");
+          return;
+        }
+      } catch {
+        setUser(null);
+      }
     }
 
+    setRouteAllowed(true);
     setLoading(false);
-  }, [router]);
+  }, [pathname, router]);
 
   const handleLogout = () => {
     apiClient.logout();
   };
 
-  if (loading) {
+  if (loading || !routeAllowed) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[color:var(--merchant-canvas)]">
         <div className="merchant-panel px-8 py-6">

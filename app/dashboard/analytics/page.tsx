@@ -21,15 +21,33 @@ import {
   Legend,
 } from 'recharts';
 
+type AnalyticsTrendsPoint = {
+  date: string;
+  value: number;
+};
+
+type AnalyticsTrendsResponse = {
+  metric?: string;
+  interval?: string;
+  range?: string;
+  mode?: string;
+  base_currency?: string;
+  series?: AnalyticsTrendsPoint[];
+  comparison_series?: AnalyticsTrendsPoint[];
+};
+
 export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState('30d');
   const [analytics, setAnalytics] = useState<any>(null);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [metric, setMetric] = useState<'gmv' | 'orders' | 'aov' | 'success_rate' | 'refunds'>('gmv');
-  const [trends, setTrends] = useState<any>(null);
+  const [trends, setTrends] = useState<AnalyticsTrendsResponse | null>(null);
+  const [trendsError, setTrendsError] = useState<string | null>(null);
   const [loadingTrends, setLoadingTrends] = useState(false);
   const [netMode, setNetMode] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const revenueComputeSeqRef = useRef(0);
   const [paidRevenueOverride, setPaidRevenueOverride] = useState<{
     revenue: number;
@@ -187,11 +205,17 @@ export default function AnalyticsPage() {
   const loadAnalytics = async () => {
     try {
       setLoading(true);
+      setAnalyticsError(null);
       const data = await apiClient.getAnalyticsDashboard(timeRange);
+      if (data?.error) {
+        throw new Error(data.error);
+      }
       setAnalytics(data);
       console.log('✅ Analytics loaded:', data);
     } catch (error) {
       console.error('❌ Failed to load analytics:', error);
+      setAnalytics(null);
+      setAnalyticsError('Merchant performance metrics are temporarily unavailable.');
     } finally {
       setLoading(false);
     }
@@ -200,6 +224,7 @@ export default function AnalyticsPage() {
   const loadTrends = async () => {
     try {
       setLoadingTrends(true);
+      setTrendsError(null);
       const data = await apiClient.getAnalyticsTrends({
         metric,
         range: timeRange as any,
@@ -211,6 +236,7 @@ export default function AnalyticsPage() {
     } catch (error) {
       console.error('❌ Failed to load trends:', error);
       setTrends(null);
+      setTrendsError('Trend data is temporarily unavailable.');
     } finally {
       setLoadingTrends(false);
     }
@@ -257,6 +283,12 @@ export default function AnalyticsPage() {
   const displayPaidRevenue = paidRevenueOverride?.revenue ?? paidRevenue;
   const displayPaidRevenueGrowth = paidRevenueOverride?.growth ?? paidRevenueGrowth;
   const prevPeriodLabel = `vs prev ${timeRange}`;
+  const chartData = (trends?.series || []).map((point, index) => ({
+    date: point.date,
+    current: point.value,
+    previous: trends?.comparison_series?.[index]?.value ?? null,
+  }));
+  const hasComparisonSeries = chartData.some((point) => typeof point.previous === 'number');
 
   return (
     <div className="space-y-6">
@@ -278,7 +310,21 @@ export default function AnalyticsPage() {
         }
       />
 
-      {/* Key Metrics */}
+      {analyticsError ? (
+        <SurfaceCard
+          title="Merchant performance metrics"
+          description="The analytics module is live, but this request failed. Retry before treating any blank or zero state as real."
+          action={
+            <MerchantButton type="button" onClick={loadAnalytics} variant="secondary">
+              Retry metrics
+            </MerchantButton>
+          }
+        >
+          <div className="p-5 text-sm text-[color:var(--merchant-muted-strong)]">
+            {analyticsError}
+          </div>
+        </SurfaceCard>
+      ) : (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {/* Order Generation Rate */}
         <div className="merchant-panel p-5">
@@ -387,6 +433,7 @@ export default function AnalyticsPage() {
           </p>
         </div>
       </div>
+      )}
 
       {/* Performance by PSP */}
       {analytics?.psp_performance && analytics.psp_performance.length > 0 && (
@@ -446,11 +493,15 @@ export default function AnalyticsPage() {
             {trends?.base_currency && (
               <span className="text-xs text-[color:var(--merchant-muted)]">Base: {trends.base_currency}</span>
             )}
+            {exportError ? (
+              <span className="text-xs text-[color:var(--merchant-critical)]">{exportError}</span>
+            ) : null}
             <MerchantButton
               type="button"
               onClick={async () => {
                 try {
                   setExportingCsv(true);
+                  setExportError(null);
                   const blob = await apiClient.exportAnalyticsTrendsCSV({
                     metric,
                     range: timeRange as any,
@@ -469,7 +520,7 @@ export default function AnalyticsPage() {
                   window.URL.revokeObjectURL(url);
                 } catch (e) {
                   console.error('CSV export failed', e);
-                  alert('Failed to export CSV');
+                  setExportError('CSV export failed. Try again after trend data reloads.');
                 } finally {
                   setExportingCsv(false);
                 }
@@ -487,12 +538,19 @@ export default function AnalyticsPage() {
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin rounded-full h-10 w-10 border-2 border-[color:var(--merchant-line-strong)] border-t-[color:var(--merchant-brand)]"></div>
             </div>
-          ) : trends?.series?.length > 0 ? (
+          ) : trendsError ? (
+            <div className="space-y-4 rounded-[1rem] border border-[color:var(--merchant-warning-soft)] bg-[color:var(--merchant-warning-soft)]/40 px-4 py-5 text-sm text-[color:var(--merchant-muted-strong)]">
+              <p>{trendsError}</p>
+              <MerchantButton type="button" onClick={loadTrends} variant="secondary">
+                Retry trend data
+              </MerchantButton>
+            </div>
+          ) : chartData.length > 0 ? (
             <div className="w-full h-80">
               <ResponsiveContainer width="100%" height="100%">
                 {(metric === 'gmv' || metric === 'orders') ? (
                   <BarChart 
-                    data={trends.series} 
+                    data={chartData} 
                     margin={{ top: 10, right: 30, left: 10, bottom: 60 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -539,15 +597,23 @@ export default function AnalyticsPage() {
                       wrapperStyle={{ paddingTop: '10px' }}
                     />
                     <Bar 
-                      dataKey="value" 
+                      dataKey="current" 
                       name="Current Period" 
                       fill="#3b82f6"
                       radius={[4, 4, 0, 0]}
                     />
+                    {hasComparisonSeries ? (
+                      <Bar
+                        dataKey="previous"
+                        name="Prior Period"
+                        fill="#cbd5e1"
+                        radius={[4, 4, 0, 0]}
+                      />
+                    ) : null}
                   </BarChart>
                 ) : (
                   <LineChart 
-                    data={trends.series} 
+                    data={chartData} 
                     margin={{ top: 10, right: 30, left: 10, bottom: 60 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -597,13 +663,24 @@ export default function AnalyticsPage() {
                     />
                     <Line 
                       type="monotone" 
-                      dataKey="value" 
+                      dataKey="current" 
                       name="Current Period" 
                       stroke="#3b82f6" 
                       strokeWidth={2}
                       dot={{ fill: '#3b82f6', r: 4 }}
                       activeDot={{ r: 6 }}
                     />
+                    {hasComparisonSeries ? (
+                      <Line
+                        type="monotone"
+                        dataKey="previous"
+                        name="Prior Period"
+                        stroke="#94a3b8"
+                        strokeWidth={2}
+                        strokeDasharray="4 4"
+                        dot={false}
+                      />
+                    ) : null}
                   </LineChart>
                 )}
               </ResponsiveContainer>

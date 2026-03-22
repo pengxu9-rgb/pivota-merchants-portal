@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "smoke:merchant": "node scripts/smoke-merchant-contracts.mjs"
   },
   "dependencies": {
     "@types/node": "22.5.5",

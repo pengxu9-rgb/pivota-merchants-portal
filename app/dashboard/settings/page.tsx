@@ -23,6 +23,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [preferencesError, setPreferencesError] = useState('');
   
   const [profile, setProfile] = useState({
     business_name: '',
@@ -76,8 +77,15 @@ export default function SettingsPage() {
     try {
       setLoading(true);
       setLoadError('');
-      const data = await apiClient.getProfile();
-      if (data) {
+      setPreferencesError('');
+
+      const [profileResult, preferencesResult] = await Promise.allSettled([
+        apiClient.getProfile(),
+        apiClient.getSettingsPreferences(),
+      ]);
+
+      if (profileResult.status === 'fulfilled' && profileResult.value) {
+        const data = profileResult.value;
         setProfile({
           business_name: data.business_name || '',
           contact_email: data.contact_email || '',
@@ -85,6 +93,25 @@ export default function SettingsPage() {
           website: data.website || '',
           address: data.address || '',
         });
+      } else {
+        setLoadError(
+          'Business profile details are temporarily unavailable. You can still update password and notification preferences while profile data is being restored.'
+        );
+        hydrateProfileFromStoredUser();
+      }
+
+      if (preferencesResult.status === 'fulfilled' && preferencesResult.value) {
+        const preferences = preferencesResult.value;
+        setNotifications({
+          email_orders: preferences.email_orders ?? true,
+          email_payments: preferences.email_payments ?? true,
+          email_inventory: preferences.email_inventory ?? false,
+          email_weekly: preferences.email_weekly ?? false,
+        });
+      } else {
+        setPreferencesError(
+          'Notification preferences could not be loaded. Default settings are shown until the connection is restored.'
+        );
       }
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -98,9 +125,30 @@ export default function SettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const result = await apiClient.updateProfile(profile);
-      setLoadError('');
-      alert(result.message || '✅ Settings saved successfully!');
+      const [profileResult, preferencesResult] = await Promise.allSettled([
+        apiClient.updateProfile(profile),
+        apiClient.updateSettingsPreferences(notifications),
+      ]);
+
+      if (profileResult.status === 'fulfilled') {
+        setLoadError('');
+      } else {
+        setLoadError('Business profile details could not be saved. Please try again.');
+      }
+
+      if (preferencesResult.status === 'fulfilled') {
+        setPreferencesError('');
+      } else {
+        setPreferencesError('Notification preferences could not be saved. Please try again.');
+      }
+
+      if (profileResult.status === 'fulfilled' && preferencesResult.status === 'fulfilled') {
+        alert(profileResult.value.message || '✅ Settings saved successfully!');
+      } else if (profileResult.status === 'fulfilled' || preferencesResult.status === 'fulfilled') {
+        alert('⚠️ Settings saved partially. Review the warnings on this page and retry the failed section.');
+      } else {
+        throw new Error('Failed to save settings.');
+      }
     } catch (error: any) {
       alert('❌ Failed to save: ' + (error.response?.data?.detail || error.message));
     } finally {
@@ -152,19 +200,6 @@ export default function SettingsPage() {
     }
   };
 
-  const handleEnable2FA = async () => {
-    try {
-      const result = await apiClient.enable2FA();
-      if (result.data?.qr_code_url) {
-        alert('✅ 2FA enabled! Please scan the QR code with your authenticator app.\n\nQR Code: ' + result.data.qr_code_url);
-      } else {
-        alert(result.message || '✅ 2FA enabled successfully!');
-      }
-    } catch (error: any) {
-      alert('❌ Failed to enable 2FA: ' + (error.response?.data?.detail || error.message));
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex min-h-[320px] items-center justify-center">
@@ -187,6 +222,13 @@ export default function SettingsPage() {
         <div className="flex items-start gap-3 rounded-[1.1rem] border border-[color:var(--merchant-warning-soft)] bg-[color:var(--merchant-warning-soft)]/65 px-4 py-3 text-sm text-[color:var(--merchant-warning)]">
           <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <p>{loadError}</p>
+        </div>
+      ) : null}
+
+      {preferencesError ? (
+        <div className="flex items-start gap-3 rounded-[1.1rem] border border-[color:var(--merchant-warning-soft)] bg-[color:var(--merchant-warning-soft)]/65 px-4 py-3 text-sm text-[color:var(--merchant-warning)]">
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <p>{preferencesError}</p>
         </div>
       ) : null}
 
@@ -319,7 +361,7 @@ export default function SettingsPage() {
       {/* Security */}
       <SurfaceCard
         title="Security"
-        description="Protect portal access for your merchant team and keep credentials current."
+        description="Keep merchant credentials current. Additional account-protection controls will return after a full verification flow is available."
         action={<StatusBadge tone="warning" icon={Shield}>Account access</StatusBadge>}
       >
         <div className="space-y-4 p-5">
@@ -334,16 +376,6 @@ export default function SettingsPage() {
               {passwordSuccess}
             </div>
           ) : null}
-
-          <div className="flex items-center justify-between p-4 rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65">
-            <div>
-              <div className="font-medium text-[color:var(--merchant-ink)]">Two-factor authentication</div>
-              <div className="text-sm text-[color:var(--merchant-muted)]">Add an extra layer of account protection</div>
-            </div>
-            <MerchantButton type="button" onClick={handleEnable2FA}>
-              Enable
-            </MerchantButton>
-          </div>
 
           <form onSubmit={handleChangePassword} className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/75 p-4 space-y-4">
             <div className="flex items-center space-x-3">

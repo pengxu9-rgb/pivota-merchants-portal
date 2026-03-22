@@ -42,14 +42,12 @@ type ReadinessSummary = {
 
 type ReadinessOptimizationPayload = {
   readiness_summary?: ReadinessSummary | null;
-  dashboard_snapshot?: {
-    total_orders?: number | null;
-    paid_orders?: number | null;
-    total_revenue?: number | null;
-    total_customers?: number | null;
+  quality_coverage?: {
     total_products?: number | null;
-    order_growth?: number | null;
-    revenue_growth?: number | null;
+    snapshot_scored_products?: number | null;
+    effective_scored_products?: number | null;
+    preview_only_products?: number | null;
+    unscored_products?: number | null;
   } | null;
   product_queue?: Array<{
     queue_item_id: string;
@@ -75,6 +73,7 @@ type DashboardStats = {
   totalProducts: number;
   orderGrowth: number;
   revenueGrowth: number;
+  recentOrders: any[];
 };
 
 type Tone = 'brand' | 'success' | 'warning' | 'critical' | 'neutral';
@@ -125,23 +124,16 @@ export default function DashboardPage() {
   const [readinessSummary, setReadinessSummary] = useState<ReadinessSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [analyticsLoading, setAnalyticsLoading] = useState(false);
-  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
   const [storesLoading, setStoresLoading] = useState(false);
   const [pspsLoading, setPspsLoading] = useState(false);
   const [qualityLoading, setQualityLoading] = useState(false);
   const [merchantId, setMerchantId] = useState('');
   const loadSeqRef = useRef(0);
 
-  const [stats, setStats] = useState<DashboardStats>({
-    totalOrders: 0,
-    paidOrders: 0,
-    totalRevenue: 0,
-    totalCustomers: 0,
-    totalProducts: 0,
-    orderGrowth: 0,
-    revenueGrowth: 0,
-  });
+  const [stats, setStats] = useState<DashboardStats | null>(null);
 
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [connectedStores, setConnectedStores] = useState<any[]>([]);
@@ -168,13 +160,9 @@ export default function DashboardPage() {
     const loadSeq = ++loadSeqRef.current;
 
     try {
-      setAnalyticsError(null);
+      setStatsError(null);
+      setReadinessError(null);
       setLoading(true);
-
-      const ordersPromise = apiClient.getOrders({ limit: 10 }).catch((err) => {
-        console.warn('Orders failed:', err);
-        return { orders: [], total: 0, limit: 10, offset: 0 };
-      });
 
       setStoresLoading(Boolean(currentMerchantId));
       const storesPromise = currentMerchantId
@@ -193,28 +181,19 @@ export default function DashboardPage() {
         : Promise.resolve([]);
 
       setQualityLoading(true);
-      setAnalyticsLoading(true);
-      const optimizationPromise = apiClient
-        .getMerchantReadinessOptimization()
-        .catch((err) => {
-          console.warn('Readiness optimization failed:', err);
-          return null;
-        });
+      setStatsLoading(true);
+      const statsPromise = apiClient.getAnalyticsDashboard().then((payload) => {
+        if (payload?.error) {
+          throw new Error(payload.error);
+        }
+        return payload;
+      });
+      const optimizationPromise = apiClient.getMerchantReadinessOptimization();
 
       void storesPromise
         .then((storesData) => {
           if (loadSeq !== loadSeqRef.current) return;
           setConnectedStores(Array.isArray(storesData) ? storesData : []);
-          const storeProductCount = Array.isArray(storesData)
-            ? storesData.reduce(
-                (sum: number, store: any) => sum + (store.product_count || 0),
-                0
-              )
-            : 0;
-          setStats((prev) => ({
-            ...prev,
-            totalProducts: prev.totalProducts || storeProductCount,
-          }));
         })
         .finally(() => {
           if (loadSeq !== loadSeqRef.current) return;
@@ -231,31 +210,27 @@ export default function DashboardPage() {
           setPspsLoading(false);
         });
 
-      const [ordersResponse, optimizationPayload] = await Promise.all([
-        ordersPromise,
+      const [statsResult, optimizationResult] = await Promise.allSettled([
+        statsPromise,
         optimizationPromise,
       ]);
       if (loadSeq !== loadSeqRef.current) return;
 
-      const ordersData = ordersResponse?.orders || [];
-      const ordersArray = Array.isArray(ordersData) ? ordersData : [];
-
-      if (!optimizationPayload) {
+      if (optimizationResult.status !== 'fulfilled' || !optimizationResult.value) {
         setCatalogQuality(null);
         setOptimizationQueue([]);
-        setAnalyticsError('Overview metrics are temporarily unavailable.');
+        setReadinessSummary(null);
+        setReadinessError('Catalog readiness is temporarily unavailable.');
       } else {
+        const optimizationPayload = optimizationResult.value;
         const readiness = optimizationPayload.readiness_summary || null;
         const queue = Array.isArray(optimizationPayload.product_queue)
           ? optimizationPayload.product_queue
           : [];
-        const dashboardSnapshot = optimizationPayload.dashboard_snapshot || null;
+        const qualityCoverage = optimizationPayload.quality_coverage || null;
 
         setOptimizationQueue(queue);
-
-        if (readiness) {
-          setReadinessSummary(readiness);
-        }
+        setReadinessSummary(readiness);
 
         const scoredProducts = queue.filter(
           (item) =>
@@ -270,8 +245,14 @@ export default function DashboardPage() {
           .filter((value): value is number => typeof value === 'number');
 
         setCatalogQuality({
-          total_products: queue.length,
-          scored_products: scoredProducts.length,
+          total_products:
+            Number(qualityCoverage?.total_products) > 0
+              ? Number(qualityCoverage?.total_products)
+              : queue.length,
+          scored_products:
+            Number(qualityCoverage?.effective_scored_products) > 0
+              ? Number(qualityCoverage?.effective_scored_products)
+              : scoredProducts.length,
           avg_content_quality:
             cqValues.length > 0
               ? cqValues.reduce((sum, value) => sum + value, 0) / cqValues.length
@@ -283,87 +264,50 @@ export default function DashboardPage() {
           low_cq_threshold: 60,
           low_cq_count: cqValues.filter((value) => value < 60).length,
         });
-
-        if (dashboardSnapshot) {
-          setStats((prev) => ({
-            ...prev,
-            totalOrders: dashboardSnapshot.total_orders ?? prev.totalOrders,
-            paidOrders: dashboardSnapshot.paid_orders ?? prev.paidOrders,
-            totalRevenue: dashboardSnapshot.total_revenue ?? prev.totalRevenue,
-            totalCustomers: dashboardSnapshot.total_customers ?? prev.totalCustomers,
-            totalProducts: dashboardSnapshot.total_products ?? prev.totalProducts,
-            orderGrowth: dashboardSnapshot.order_growth ?? prev.orderGrowth,
-            revenueGrowth: dashboardSnapshot.revenue_growth ?? prev.revenueGrowth,
-          }));
-        } else {
-          setAnalyticsError('Overview metrics are temporarily unavailable.');
-        }
       }
 
-      const isRevenueEligibleOrder = (order: any) => {
-        const paymentStatus = String(order?.payment_status ?? '').toLowerCase();
-        const status = String(order?.status ?? '').toLowerCase();
+      if (statsResult.status !== 'fulfilled' || !statsResult.value) {
+        setRecentOrders([]);
+        setStatsError('Revenue, order, and customer metrics are temporarily unavailable.');
+      } else {
+        const payload = statsResult.value;
+        const recentOrdersData = Array.isArray(payload?.recent_orders)
+          ? payload.recent_orders
+          : Array.isArray(payload?.recentOrders)
+            ? payload.recentOrders
+            : [];
 
-        if (paymentStatus) {
-          if (
-            paymentStatus === 'paid' ||
-            paymentStatus === 'succeeded' ||
-            paymentStatus === 'success' ||
-            paymentStatus === 'settled' ||
-            paymentStatus === 'partially_refunded'
-          ) {
-            return true;
-          }
-
-          if (
-            paymentStatus === 'pending' ||
-            paymentStatus === 'unpaid' ||
-            paymentStatus === 'failed' ||
-            paymentStatus === 'canceled' ||
-            paymentStatus === 'cancelled' ||
-            paymentStatus === 'void' ||
-            paymentStatus === 'refunded' ||
-            paymentStatus === 'refund_pending'
-          ) {
-            return false;
-          }
-        }
-
-        return status === 'completed' || status === 'fulfilled';
-      };
-
-      const totalCustomers = new Set(
-        ordersArray.map((order: any) => order.customer_email).filter(Boolean)
-      ).size;
-      const totalRevenue = ordersArray.reduce(
-        (sum: number, order: any) =>
-          sum +
-          (isRevenueEligibleOrder(order)
-            ? Number(order.total_amount ?? order.total ?? order.amount ?? 0)
-            : 0),
-        0
-      );
-
-      if (!optimizationPayload?.dashboard_snapshot) {
-        setStats((prev) => ({
-          ...prev,
-          totalOrders: ordersResponse?.total ?? ordersArray.length ?? 0,
-          paidOrders: ordersArray.filter(isRevenueEligibleOrder).length,
-          totalRevenue,
-          totalCustomers,
-          orderGrowth: 0,
-          revenueGrowth: 0,
-        }));
+        setStats({
+          totalOrders: Number(payload?.total_orders || 0),
+          paidOrders:
+            Number(payload?.order_breakdown?.paid) ||
+            Number(payload?.paid_orders) ||
+            Number(payload?.total_payments_succeeded) ||
+            0,
+          totalRevenue:
+            Number(payload?.revenue_breakdown?.confirmed) ||
+            Number(payload?.confirmed_revenue) ||
+            Number(payload?.total_revenue) ||
+            0,
+          totalCustomers: Number(payload?.total_customers || 0),
+          totalProducts: Number(payload?.total_products || 0),
+          orderGrowth: Number(payload?.order_growth || 0),
+          revenueGrowth:
+            Number(payload?.confirmed_revenue_growth) ||
+            Number(payload?.paid_revenue_growth) ||
+            Number(payload?.revenue_growth) ||
+            0,
+          recentOrders: recentOrdersData,
+        });
+        setRecentOrders(recentOrdersData);
       }
-
-      setRecentOrders(ordersArray);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
       if (loadSeq === loadSeqRef.current) {
         setLoading(false);
         setRefreshing(false);
-        setAnalyticsLoading(false);
+        setStatsLoading(false);
         setQualityLoading(false);
       }
     }
@@ -419,6 +363,13 @@ export default function DashboardPage() {
       : '/dashboard/product-optimization?source=readiness';
 
   const activePSPs = connectedPSPs.filter((psp) => psp?.is_active);
+  const hasStatsData = Boolean(stats);
+  const totalOrdersValue = stats?.totalOrders ?? 0;
+  const paidOrdersValue = stats?.paidOrders ?? 0;
+  const totalRevenueValue = stats?.totalRevenue ?? 0;
+  const totalCustomersValue = stats?.totalCustomers ?? 0;
+  const totalProductsValue = stats?.totalProducts ?? 0;
+  const revenueGrowthValue = stats?.revenueGrowth ?? 0;
   const missingImageCount = optimizationQueue.filter(
     (product) =>
       product.top_issues?.some((issue) => issue.code === 'missing_primary_image') ||
@@ -563,7 +514,7 @@ export default function DashboardPage() {
     {
       title: 'Channel readiness',
       tone: connectedStores.length > 0 && activePSPs.length > 0 ? 'success' : 'warning',
-      value: `${readyVariants || stats.totalProducts}`,
+      value: `${readyVariants || totalProductsValue}`,
       supporting: `${connectedStores.length} channels · ${activePSPs.length} payment setups`,
       detail:
         connectedStores.length === 0
@@ -604,9 +555,9 @@ export default function DashboardPage() {
           cta: 'Open setup',
         }
       : null,
-    stats.revenueGrowth > 0
+    revenueGrowthValue > 0
       ? {
-          title: `Revenue is up ${Math.abs(stats.revenueGrowth)}% vs the prior 30 days`,
+          title: `Revenue is up ${Math.abs(revenueGrowthValue)}% vs the prior 30 days`,
           detail: 'Use the current momentum to prioritize content fixes on the products most likely to convert next.',
           href: '/dashboard/analytics',
           cta: 'View analytics',
@@ -620,10 +571,15 @@ export default function DashboardPage() {
   }>;
 
   const recentActivity = recentOrders.slice(0, 4).map((order) => ({
-    title: order?.order_number ? `Order ${order.order_number}` : order?.customer_email || 'Recent order',
+    title:
+      order?.order_number
+        ? `Order ${order.order_number}`
+        : order?.order_id
+          ? `Order ${order.order_id}`
+          : order?.customer_name || order?.customer_email || 'Recent order',
     detail: `${formatCurrency(
       Number(order?.total_amount ?? order?.total ?? order?.amount ?? 0)
-    )} · ${order?.customer_email || order?.status || 'Order activity'}`,
+    )} · ${order?.customer_name || order?.customer_email || order?.status || 'Order activity'}`,
     timestamp: formatRelativeTime(
       order?.created_at || order?.createdAt || order?.order_date || null
     ),
@@ -633,8 +589,10 @@ export default function DashboardPage() {
     {
       title: 'Orders snapshot',
       icon: ShoppingBag,
-      detail: `${stats.totalOrders} orders in the last 30 days`,
-      meta: `${stats.paidOrders} paid · ${formatCurrency(stats.totalRevenue)} confirmed revenue`,
+      detail: hasStatsData ? `${totalOrdersValue} orders in the last 30 days` : 'Order metrics unavailable',
+      meta: hasStatsData
+        ? `${paidOrdersValue} paid · ${formatCurrency(totalRevenueValue)} confirmed revenue`
+        : 'Reconnect to dashboard stats to restore order and revenue visibility.',
       href: '/dashboard/orders',
       cta: 'Open orders',
     },
@@ -681,20 +639,20 @@ export default function DashboardPage() {
   const businessSnapshot = [
     {
       label: 'Orders (30d)',
-      value: `${stats.totalOrders}`,
-      meta: `${stats.paidOrders} paid`,
+      value: hasStatsData ? `${totalOrdersValue}` : '—',
+      meta: hasStatsData ? `${paidOrdersValue} paid` : 'Temporarily unavailable',
       icon: ShoppingBag,
     },
     {
       label: 'Paid revenue',
-      value: formatCurrency(stats.totalRevenue),
-      meta: `${Math.abs(stats.revenueGrowth)}% vs prior 30d`,
+      value: hasStatsData ? formatCurrency(totalRevenueValue) : '—',
+      meta: hasStatsData ? `${Math.abs(revenueGrowthValue)}% vs prior 30d` : 'Temporarily unavailable',
       icon: Sparkles,
     },
     {
       label: 'Customers',
-      value: `${stats.totalCustomers}`,
-      meta: `${stats.totalProducts} products in catalog`,
+      value: hasStatsData ? `${totalCustomersValue}` : '—',
+      meta: hasStatsData ? `${totalProductsValue} products in catalog` : 'Temporarily unavailable',
       icon: Users,
     },
     {
@@ -729,20 +687,24 @@ export default function DashboardPage() {
         }
       />
 
-      {(analyticsLoading || analyticsError) && (
+      {(statsLoading || statsError || readinessError) && (
         <div className="merchant-panel px-5 py-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3 text-sm text-[color:var(--merchant-muted-strong)]">
-              <Activity className={`h-4 w-4 ${analyticsLoading ? 'animate-pulse' : ''}`} />
+              <Activity className={`h-4 w-4 ${statsLoading ? 'animate-pulse' : ''}`} />
               <span>
-                {analyticsLoading
-                  ? 'Updating analytics in the background.'
-                  : 'Analytics are temporarily unavailable. Overview is showing the latest partial data.'}
+                {statsLoading
+                  ? 'Refreshing overview metrics in the background.'
+                  : statsError && readinessError
+                    ? 'Overview is in a degraded state. Merchant metrics and readiness signals are partially unavailable.'
+                    : statsError
+                      ? 'Revenue, orders, and customers are temporarily unavailable. Readiness panels are still live.'
+                      : 'Catalog readiness is temporarily unavailable. Revenue and order metrics are still live.'}
               </span>
             </div>
-            {analyticsError ? (
+            {statsError || readinessError ? (
               <span className="text-sm text-[color:var(--merchant-muted)]">
-                {analyticsError}
+                {[statsError, readinessError].filter(Boolean).join(' ')}
               </span>
             ) : null}
           </div>
@@ -769,7 +731,7 @@ export default function DashboardPage() {
                       : 'Ready to scale'}
                 </StatusBadge>
                 <StatusBadge tone="neutral">
-                  {stats.totalOrders} orders in the last 30d
+                  {hasStatsData ? `${totalOrdersValue} orders in the last 30d` : 'Stats unavailable'}
                 </StatusBadge>
               </div>
               <p className="max-w-3xl text-sm leading-6 text-[color:var(--merchant-muted-strong)] sm:text-[15px]">

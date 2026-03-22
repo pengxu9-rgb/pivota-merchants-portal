@@ -178,6 +178,21 @@ class ApiClient {
     return response.data;
   }
 
+  async getSettingsPreferences() {
+    const response = await this.client.get('/merchant/settings/preferences');
+    return response.data?.data || response.data;
+  }
+
+  async updateSettingsPreferences(data: {
+    email_orders: boolean;
+    email_payments: boolean;
+    email_inventory: boolean;
+    email_weekly: boolean;
+  }) {
+    const response = await this.client.put('/merchant/settings/preferences', data);
+    return response.data?.data || response.data;
+  }
+
   // Products methods
   async getProducts() {
     const merchantId = localStorage.getItem('merchant_id') || '';
