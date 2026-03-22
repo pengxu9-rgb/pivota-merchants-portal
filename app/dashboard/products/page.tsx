@@ -740,6 +740,7 @@ export default function ProductsPage() {
   const deepLinkResolvedRef = useRef<string | null>(null);
   const deepLinkQueueResolvedRef = useRef<string | null>(null);
   const catalogReviewPlanRequestRef = useRef<Promise<CatalogReviewPlan | null> | null>(null);
+  const catalogReviewPlanRefreshRef = useRef<Promise<CatalogReviewPlan | null> | null>(null);
 
   useEffect(() => {
     void loadProducts();
@@ -970,6 +971,10 @@ export default function ProductsPage() {
       return normalizedPlan;
     }
 
+    if (catalogReviewPlanRefreshRef.current) {
+      return await catalogReviewPlanRefreshRef.current;
+    }
+
     if (!forceRefresh && catalogReviewPlanRequestRef.current) {
       return await catalogReviewPlanRequestRef.current;
     }
@@ -1000,10 +1005,20 @@ export default function ProductsPage() {
         throw error;
       })
       .finally(() => {
-        catalogReviewPlanRequestRef.current = null;
+        if (forceRefresh) {
+          if (catalogReviewPlanRefreshRef.current === request) {
+            catalogReviewPlanRefreshRef.current = null;
+          }
+        } else if (catalogReviewPlanRequestRef.current === request) {
+          catalogReviewPlanRequestRef.current = null;
+        }
       });
 
-    catalogReviewPlanRequestRef.current = request;
+    if (forceRefresh) {
+      catalogReviewPlanRefreshRef.current = request;
+    } else {
+      catalogReviewPlanRequestRef.current = request;
+    }
     return await request;
   };
 
