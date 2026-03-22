@@ -2877,51 +2877,6 @@ export default function ProductOptimizationPage() {
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            {SOURCE_DATA_REASON_ORDER.map((reasonCode) => {
-              const bucket = triageSummaryByCode.get(reasonCode);
-              const laneSummary = sourceDataLaneSummaryByCode.get(reasonCode);
-              const active = triageReason === reasonCode;
-              const config = SOURCE_DATA_REASON_CONFIG[reasonCode];
-              return (
-                <button
-                  key={reasonCode}
-                  type="button"
-                  onClick={() => void handleOpenTriageLane(reasonCode)}
-                  className={`rounded-xl border px-4 py-4 text-left transition ${
-                    active
-                      ? 'border-blue-300 bg-blue-50 shadow-sm'
-                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-slate-900">
-                        {config.label}
-                      </div>
-                      <div className="mt-1 text-xs text-slate-600">
-                        {config.helper}
-                      </div>
-                    </div>
-                    {active && (
-                      <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white">
-                        Active
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
-                    <span className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700">
-                      {laneSummary?.affected_products ?? bucket?.affected_products ?? 0} products
-                    </span>
-                    <span className="rounded-full bg-amber-100 px-2 py-1 font-medium text-amber-800">
-                      {laneSummary?.affected_variants ?? bucket?.affected_variants ?? 0} variants
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
           <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
