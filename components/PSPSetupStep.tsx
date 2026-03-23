@@ -1,347 +1,311 @@
-import { useState } from 'react';
-import { Loader, CheckCircle, AlertCircle, CreditCard, Plus } from 'lucide-react';
-import { onboardingApi } from '../lib/api';
+import type { FormEvent } from 'react';
+import {
+  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  CreditCard,
+  Globe2,
+  Loader2,
+  Plus,
+  Wallet,
+} from 'lucide-react';
+import { cx } from '@/lib/cx';
+import type { PSPFormData, PSPType } from '@/lib/onboarding';
 
 interface PSPSetupStepProps {
   merchantId: string;
-  onComplete: (data: any) => void;
+  formData: PSPFormData;
+  loading: boolean;
+  error: string;
+  onBack: () => void;
+  onSkip: () => void;
+  onChange: (field: keyof PSPFormData, value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
-type PSPType = 'stripe' | 'adyen' | 'paypal' | 'checkout' | 'other' | '';
+const inputClassName =
+  'w-full rounded-2xl border border-[color:var(--merchant-line-strong)] bg-white px-4 py-3 text-sm text-[color:var(--merchant-ink)] outline-none transition focus:border-[color:var(--merchant-brand)] focus:ring-4 focus:ring-[rgba(51,75,133,0.12)]';
 
-export default function PSPSetupStep({ merchantId, onComplete }: PSPSetupStepProps) {
-  const [pspType, setPspType] = useState<PSPType>('');
-  const [customPspName, setCustomPspName] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [secretKey, setSecretKey] = useState(''); // For PayPal
-  const [accountId, setAccountId] = useState(''); // For Checkout.com
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+const labelClassName = 'mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]';
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!pspType) {
-      setError('Please select a payment provider');
-      return;
-    }
+const providerCards: Array<{
+  id: Exclude<PSPType, ''>;
+  name: string;
+  description: string;
+  icon: typeof CreditCard;
+}> = [
+  {
+    id: 'stripe',
+    name: 'Stripe',
+    description: 'Merchant-native payment setup with Stripe credentials.',
+    icon: CreditCard,
+  },
+  {
+    id: 'adyen',
+    name: 'Adyen',
+    description: 'Enterprise-grade payment routing for merchant-controlled checkout.',
+    icon: Globe2,
+  },
+  {
+    id: 'paypal',
+    name: 'PayPal',
+    description: 'PayPal merchant credentials for wallet and checkout coverage.',
+    icon: Wallet,
+  },
+  {
+    id: 'checkout',
+    name: 'Checkout.com',
+    description: 'Checkout.com credentials for existing merchant payment relationships.',
+    icon: CreditCard,
+  },
+  {
+    id: 'other',
+    name: 'Other provider',
+    description: 'Use another PSP you already work with.',
+    icon: Plus,
+  },
+];
 
-    if (pspType === 'other' && !customPspName.trim()) {
-      setError('Please enter the PSP name');
-      return;
-    }
+function fieldCopy(pspType: PSPType) {
+  switch (pspType) {
+    case 'stripe':
+      return {
+        apiKeyLabel: 'Secret key',
+        apiKeyPlaceholder: 'sk_live_... or sk_test_...',
+        apiKeyHelp: 'Find this in Stripe Dashboard -> Developers -> API keys.',
+      };
+    case 'adyen':
+      return {
+        apiKeyLabel: 'API key',
+        apiKeyPlaceholder: 'Paste your Adyen API key',
+        apiKeyHelp: 'Find this in Adyen Customer Area -> API credentials.',
+      };
+    case 'paypal':
+      return {
+        apiKeyLabel: 'Client ID',
+        apiKeyPlaceholder: 'Paste your PayPal client ID',
+        apiKeyHelp: 'Find this in the PayPal developer dashboard.',
+      };
+    case 'checkout':
+      return {
+        apiKeyLabel: 'Secret key',
+        apiKeyPlaceholder: 'sk_...',
+        apiKeyHelp: 'Find this in Checkout.com Hub -> Settings -> Channels.',
+      };
+    case 'other':
+      return {
+        apiKeyLabel: 'API key',
+        apiKeyPlaceholder: 'Paste the provider key if available',
+        apiKeyHelp: 'If you do not want to connect right now, use "Set up later".',
+      };
+    default:
+      return {
+        apiKeyLabel: 'API key',
+        apiKeyPlaceholder: '',
+        apiKeyHelp: '',
+      };
+  }
+}
 
-    if (pspType === 'paypal' && !secretKey.trim()) {
-      setError('PayPal requires both Client ID and Client Secret');
-      return;
-    }
-
-    if (pspType === 'adyen' && !accountId.trim()) {
-      setError('Adyen requires Merchant Account');
-      return;
-    }
-
-    if (pspType === 'checkout' && !accountId.trim()) {
-      setError('Checkout.com requires Processing Channel ID');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-
-    try {
-      const provider =
-        pspType === 'other'
-          ? customPspName.toLowerCase().trim().replace(/\s+/g, '_')
-          : pspType;
-
-      const additionalData: any = {};
-
-      if (pspType === 'paypal' && secretKey) {
-        additionalData.secret_key = secretKey;
-      }
-
-      if ((pspType === 'adyen' || pspType === 'checkout') && accountId) {
-        additionalData.account_id = accountId;
-      }
-
-      if (pspType === 'other') {
-        additionalData.custom_psp = true;
-        additionalData.setup_later = true;
-      }
-
-      // Signup onboarding is unauthenticated; use the onboarding PSP setup endpoint.
-      // Authenticated merchants connect PSPs later via /merchant/integrations/psp/connect.
-      await onboardingApi.setupPSP(merchantId, provider, apiKey, additionalData);
-      
-      onComplete({
-        psp_type: provider,
-        api_key: apiKey,
-        custom_psp: pspType === 'other'
-      });
-    } catch (err: any) {
-      console.error('PSP setup error:', err);
-      
-      const errorMsg = err.response?.data?.detail || err.message || 'PSP setup failed. Please check your credentials.';
-      
-      if (err.response?.status === 422 && err.response?.data?.detail) {
-        const validationErrors = err.response.data.detail;
-        if (Array.isArray(validationErrors)) {
-          setError(validationErrors.map((e: any) => e.msg).join(', '));
-        } else {
-          setError(String(validationErrors));
-        }
-      } else {
-        setError(String(errorMsg));
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const pspOptions = [
-    { id: 'stripe', name: 'Stripe', icon: '💳', color: 'indigo', description: 'Popular choice' },
-    { id: 'adyen', name: 'Adyen', icon: '🌐', color: 'green', description: 'Enterprise grade' },
-    { id: 'paypal', name: 'PayPal', icon: '💰', color: 'blue', description: 'Trusted worldwide' },
-    { id: 'checkout', name: 'Checkout.com', icon: '✓', color: 'purple', description: 'Global payments' },
-  ];
-
-  const getFieldLabels = () => {
-    switch (pspType) {
-      case 'stripe':
-        return { apiKeyLabel: 'Secret Key', apiKeyPlaceholder: 'sk_test_... or sk_live_...' };
-      case 'adyen':
-        return { apiKeyLabel: 'API Key', apiKeyPlaceholder: 'Your Adyen API key' };
-      case 'paypal':
-        return { apiKeyLabel: 'Client ID', apiKeyPlaceholder: 'Your PayPal Client ID' };
-      case 'checkout':
-        return { apiKeyLabel: 'Secret Key', apiKeyPlaceholder: 'sk_...' };
-      case 'other':
-        return { apiKeyLabel: 'API Key', apiKeyPlaceholder: 'Enter API key (can setup later)' };
-      default:
-        return { apiKeyLabel: 'API Key', apiKeyPlaceholder: '' };
-    }
-  };
-
-  const labels = getFieldLabels();
+export default function PSPSetupStep({
+  merchantId,
+  formData,
+  loading,
+  error,
+  onBack,
+  onSkip,
+  onChange,
+  onSubmit,
+}: PSPSetupStepProps) {
+  const copy = fieldCopy(formData.pspType);
 
   return (
-    <div>
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-slate-900">Payment Setup</h2>
-        <p className="text-sm text-slate-600 mt-1">
-          Connect your payment provider to start accepting payments
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <div className="merchant-overline">Step 2 · Payment setup</div>
+        <h2 className="text-[1.9rem] font-semibold tracking-[-0.045em] text-[color:var(--merchant-ink)]">
+          Connect your payment provider
+        </h2>
+        <p className="max-w-2xl text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+          Connect the PSP used for merchant-native checkout, or finish onboarding now and configure it later in the dashboard.
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* PSP Selection */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-3">
-            Select Payment Provider <span className="text-red-500">*</span>
-          </label>
-          <div className="grid grid-cols-2 gap-3">
-            {pspOptions.map((psp) => (
-              <button
-                key={psp.id}
-                type="button"
-                onClick={() => {
-                  setPspType(psp.id as PSPType);
-                  setCustomPspName('');
-                }}
-                className={`p-4 border-2 rounded-lg text-left transition-all ${
-                  pspType === psp.id
-                    ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
-                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-12 h-12 bg-${psp.color}-100 rounded-lg flex items-center justify-center text-2xl`}>
-                    {psp.icon}
-                  </div>
-                  <div>
-                    <div className="font-semibold text-slate-900">{psp.name}</div>
-                    <div className="text-xs text-slate-500">{psp.description}</div>
-                  </div>
-                </div>
-              </button>
-            ))}
+      <div className="rounded-[24px] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-4 py-3 text-sm text-[color:var(--merchant-muted-strong)]">
+        Merchant ID: <span className="font-mono text-[color:var(--merchant-ink)]">{merchantId}</span>
+      </div>
 
-            {/* Other PSP Option */}
-            <button
-              type="button"
-              onClick={() => setPspType('other')}
-              className={`p-4 border-2 rounded-lg text-left transition-all col-span-2 ${
-                pspType === 'other'
-                  ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
-                  : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 border-dashed'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
-                  <Plus className="w-6 h-6 text-gray-600" />
-                </div>
-                <div>
-                  <div className="font-semibold text-slate-900">Other Payment Provider</div>
-                  <div className="text-xs text-slate-500">Use a different PSP or setup later</div>
-                </div>
-              </div>
-            </button>
+      <form onSubmit={onSubmit} className="space-y-5">
+        <div>
+          <span className={labelClassName}>Payment provider</span>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {providerCards.map((provider) => {
+              const Icon = provider.icon;
+              const isSelected = formData.pspType === provider.id;
+
+              return (
+                <button
+                  key={provider.id}
+                  type="button"
+                  onClick={() => {
+                    onChange('pspType', provider.id);
+                    if (provider.id !== 'other') {
+                      onChange('customPspName', '');
+                    }
+                  }}
+                  className={cx(
+                    'rounded-[24px] border px-4 py-4 text-left transition',
+                    isSelected
+                      ? 'border-[color:var(--merchant-brand)] bg-white shadow-[var(--merchant-shadow-panel)]'
+                      : 'border-[color:var(--merchant-line)] bg-white/72 hover:border-[color:var(--merchant-line-strong)]',
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={cx(
+                        'flex h-11 w-11 items-center justify-center rounded-2xl border',
+                        isSelected
+                          ? 'border-[color:var(--merchant-brand)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]'
+                          : 'border-[color:var(--merchant-line-strong)] bg-[color:var(--merchant-surface-muted)] text-[color:var(--merchant-muted-strong)]',
+                      )}
+                    >
+                      <Icon className="h-4.5 w-4.5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
+                        {provider.name}
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+                        {provider.description}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Custom PSP Name Input */}
-        {pspType === 'other' && (
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              PSP Name <span className="text-red-500">*</span>
-            </label>
+        {formData.pspType === 'other' ? (
+          <label className="block">
+            <span className={labelClassName}>Provider name</span>
             <input
               type="text"
-              required
-              value={customPspName}
-              onChange={(e) => setCustomPspName(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="e.g., Mollie, Square, Braintree"
+              value={formData.customPspName}
+              onChange={(event) => onChange('customPspName', event.target.value)}
+              className={inputClassName}
+              placeholder="Mollie, Square, Braintree, or another PSP"
             />
-            <p className="text-xs text-slate-500 mt-1">
-              Enter the name of your payment provider
-            </p>
-          </div>
-        )}
+          </label>
+        ) : null}
 
-        {/* API Key Input */}
-        {pspType && (
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              {labels.apiKeyLabel}{' '}
-              {pspType === 'other' ? (
-                <span className="text-slate-500 font-normal">(Optional - can setup later)</span>
-              ) : (
-                <span className="text-red-500">*</span>
-              )}
+        {formData.pspType ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block sm:col-span-2">
+              <span className={labelClassName}>{copy.apiKeyLabel}</span>
+              <input
+                type="password"
+                value={formData.apiKey}
+                onChange={(event) => onChange('apiKey', event.target.value)}
+                className={inputClassName}
+                placeholder={copy.apiKeyPlaceholder}
+                autoComplete="off"
+              />
+              {copy.apiKeyHelp ? (
+                <span className="mt-1.5 block text-xs text-[color:var(--merchant-muted)]">
+                  {copy.apiKeyHelp}
+                </span>
+              ) : null}
             </label>
-            <input
-              type="password"
-              required={pspType !== 'other'}
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-              placeholder={labels.apiKeyPlaceholder}
-            />
-            {pspType !== 'other' && (
-              <p className="text-xs text-slate-500 mt-1">
-                {pspType === 'stripe' && 'Find this in Stripe Dashboard > Developers > API keys'}
-                {pspType === 'adyen' && 'Find this in Adyen Customer Area > API Credentials'}
-                {pspType === 'paypal' && 'Find this in PayPal Developer Dashboard'}
-                {pspType === 'checkout' && 'Find this in Checkout.com Hub > Settings > Channels'}
-              </p>
-            )}
-          </div>
-        )}
 
-        {/* Adyen Merchant Account */}
-        {pspType === 'adyen' && (
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Merchant Account <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-              placeholder="YourCompanyECOM"
-            />
-            <p className="text-xs text-slate-500 mt-1">
-              Find this in Adyen Customer Area under Account settings
-            </p>
-          </div>
-        )}
+            {formData.pspType === 'paypal' ? (
+              <label className="block sm:col-span-2">
+                <span className={labelClassName}>Client secret</span>
+                <input
+                  type="password"
+                  value={formData.secretKey}
+                  onChange={(event) => onChange('secretKey', event.target.value)}
+                  className={inputClassName}
+                  placeholder="Paste your PayPal client secret"
+                  autoComplete="off"
+                />
+              </label>
+            ) : null}
 
-        {/* PayPal Client Secret */}
-        {pspType === 'paypal' && (
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Client Secret <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="password"
-              required
-              value={secretKey}
-              onChange={(e) => setSecretKey(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-              placeholder="Your PayPal Client Secret"
-            />
-          </div>
-        )}
+            {formData.pspType === 'adyen' ? (
+              <label className="block sm:col-span-2">
+                <span className={labelClassName}>Merchant account</span>
+                <input
+                  type="text"
+                  value={formData.accountId}
+                  onChange={(event) => onChange('accountId', event.target.value)}
+                  className={inputClassName}
+                  placeholder="YourCompanyECOM"
+                />
+              </label>
+            ) : null}
 
-        {/* Checkout.com Processing Channel ID */}
-        {pspType === 'checkout' && (
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Processing Channel ID <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-              placeholder="pc_..."
-            />
-            <p className="text-xs text-slate-500 mt-1">
-              Required for Checkout.com - find this in your Hub dashboard
-            </p>
+            {formData.pspType === 'checkout' ? (
+              <label className="block sm:col-span-2">
+                <span className={labelClassName}>Processing channel ID</span>
+                <input
+                  type="text"
+                  value={formData.accountId}
+                  onChange={(event) => onChange('accountId', event.target.value)}
+                  className={inputClassName}
+                  placeholder="pc_..."
+                />
+              </label>
+            ) : null}
           </div>
-        )}
+        ) : null}
 
-        {/* Info Box for Other PSP */}
-        {pspType === 'other' && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
-              <div className="text-sm text-blue-800">
-                <p className="font-medium mb-1">Custom PSP Setup</p>
-                <p>You can add the PSP name now and configure the API keys later in your dashboard under PSP Settings.</p>
-              </div>
+        {error ? (
+          <div className="rounded-[20px] border border-[color:var(--merchant-critical)] bg-[color:var(--merchant-critical-soft)] px-4 py-3 text-sm text-[color:var(--merchant-critical)]">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="mt-0.5 h-4.5 w-4.5 flex-shrink-0" />
+              <span>{error}</span>
             </div>
           </div>
-        )}
+        ) : null}
 
-        {/* Error Message */}
-        {error && (
-          <div className="flex items-center gap-2 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-            <p className="text-sm text-red-700">{error}</p>
+        <div className="flex flex-col gap-3 border-t border-[color:var(--merchant-line)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[color:var(--merchant-line-strong)] px-4 py-3 text-sm font-medium text-[color:var(--merchant-muted-strong)] transition hover:bg-white"
+          >
+            <ArrowLeft className="h-4.5 w-4.5" />
+            <span>Back</span>
+          </button>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <button
+              type="button"
+              onClick={onSkip}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[color:var(--merchant-line-strong)] px-4 py-3 text-sm font-medium text-[color:var(--merchant-ink)] transition hover:bg-white"
+            >
+              <span>Set up later</span>
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="inline-flex min-w-[220px] items-center justify-center gap-2 rounded-2xl bg-[color:var(--merchant-brand)] px-4 py-3 text-sm font-medium text-white shadow-[0_14px_30px_rgba(51,75,133,0.18)] transition hover:bg-[color:var(--merchant-brand-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                  <span>Saving setup...</span>
+                </>
+              ) : (
+                <>
+                  <span>Continue to documents</span>
+                  <ArrowRight className="h-4.5 w-4.5" />
+                </>
+              )}
+            </button>
           </div>
-        )}
-
-        {/* Submit Button */}
-        <button
-          type="submit"
-          disabled={loading || !pspType}
-          className="w-full py-3 px-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium rounded-lg hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        >
-          {loading ? (
-            <>
-              <Loader className="w-5 h-5 animate-spin" />
-              Connecting...
-            </>
-          ) : (
-            <>
-              <CheckCircle className="w-5 h-5" />
-              {pspType === 'other' ? 'Save & Continue' : 'Connect Payment Provider'}
-            </>
-          )}
-        </button>
-
-        <p className="text-xs text-center text-slate-500">
-          {pspType === 'other' 
-            ? 'You can configure API keys later in your dashboard'
-            : 'Your API keys are encrypted and stored securely'}
-        </p>
+        </div>
       </form>
     </div>
   );

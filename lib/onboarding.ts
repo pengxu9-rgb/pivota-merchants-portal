@@ -1,0 +1,70 @@
+export type SignupStepId = 'register' | 'psp' | 'documents' | 'complete';
+
+export type PSPType = 'stripe' | 'adyen' | 'paypal' | 'checkout' | 'other' | '';
+
+export interface RegistrationFormData {
+  business_name: string;
+  store_url: string;
+  website: string;
+  region: string;
+  contact_email: string;
+  contact_phone: string;
+  password: string;
+  confirm_password: string;
+}
+
+export type PublicRegistrationDraft = Omit<
+  RegistrationFormData,
+  'password' | 'confirm_password'
+>;
+
+export interface PSPFormData {
+  pspType: PSPType;
+  customPspName: string;
+  apiKey: string;
+  secretKey: string;
+  accountId: string;
+}
+
+export interface OnboardingData {
+  merchant_id?: string;
+  business_name?: string;
+  store_url?: string;
+  website?: string;
+  region?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  auto_approved?: boolean;
+  confidence_score?: number;
+  message?: string;
+  psp_type?: string;
+}
+
+export interface SignupSessionState {
+  currentStep: SignupStepId;
+  onboardingData: OnboardingData;
+  registrationDraft: PublicRegistrationDraft;
+  pspDraft: Pick<PSPFormData, 'pspType' | 'customPspName'>;
+}
+
+export const SIGNUP_SESSION_STORAGE_KEY = 'merchant_signup_flow_v1';
+
+export const emptyRegistrationDraft: RegistrationFormData = {
+  business_name: '',
+  store_url: 'https://',
+  website: '',
+  region: '',
+  contact_email: '',
+  contact_phone: '',
+  password: '',
+  confirm_password: '',
+};
+
+export const emptyPspDraft: PSPFormData = {
+  pspType: '',
+  customPspName: '',
+  apiKey: '',
+  secretKey: '',
+  accountId: '',
+};
+

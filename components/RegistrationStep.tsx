@@ -1,229 +1,250 @@
-import { useState } from 'react';
-import { Loader, CheckCircle, AlertCircle } from 'lucide-react';
-import { onboardingApi } from '../lib/api';
+import type { FormEvent } from 'react';
+import { AlertCircle, ArrowRight, Building2, KeyRound, Loader2, Mail } from 'lucide-react';
+import type { RegistrationFormData } from '@/lib/onboarding';
 
 interface RegistrationStepProps {
-  onComplete: (data: any) => void;
+  formData: RegistrationFormData;
+  loading: boolean;
+  error: string;
+  onChange: (field: keyof RegistrationFormData, value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
-export default function RegistrationStep({ onComplete }: RegistrationStepProps) {
-  const [formData, setFormData] = useState({
-    business_name: '',
-    store_url: 'https://',
-    region: '',
-    contact_email: '',
-    contact_phone: '',
-    password: '',
-    confirm_password: '',
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+const inputClassName =
+  'w-full rounded-2xl border border-[color:var(--merchant-line-strong)] bg-white px-4 py-3 text-sm text-[color:var(--merchant-ink)] outline-none transition focus:border-[color:var(--merchant-brand)] focus:ring-4 focus:ring-[rgba(51,75,133,0.12)]';
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
+const labelClassName = 'mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]';
 
-    // Validate passwords match
-    if (formData.password !== formData.confirm_password) {
-      setError('Passwords do not match');
-      setLoading(false);
-      return;
-    }
-
-    // Prepare data without confirm_password field
-    const { confirm_password, ...registrationData } = formData;
-
-    try {
-      const response = await onboardingApi.register(registrationData);
-      
-      // Pass data to parent
-      onComplete({
-        merchant_id: response.merchant_id,
-        business_name: formData.business_name,
-        auto_approved: response.auto_approved,
-        confidence_score: response.confidence_score,
-        message: response.message,
-      });
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Registration failed. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
+export default function RegistrationStep({
+  formData,
+  loading,
+  error,
+  onChange,
+  onSubmit,
+}: RegistrationStepProps) {
+  const passwordsMismatch =
+    Boolean(formData.password) &&
+    Boolean(formData.confirm_password) &&
+    formData.password !== formData.confirm_password;
 
   return (
-    <div>
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-slate-900">Business Information</h2>
-        <p className="text-sm text-slate-600 mt-1">
-          Tell us about your business (takes ~30 seconds)
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <div className="merchant-overline">Step 1 · Merchant account</div>
+        <h2 className="text-[1.9rem] font-semibold tracking-[-0.045em] text-[color:var(--merchant-ink)]">
+          Create your merchant portal access
+        </h2>
+        <p className="max-w-2xl text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+          This creates the merchant record and the account you will use to sign in to the portal.
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Business Name */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Business Name <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            required
-            value={formData.business_name}
-            onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="e.g., My Coffee Shop"
-          />
-        </div>
-
-        {/* Store URL */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Store URL <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="url"
-            required
-            value={formData.store_url}
-            onChange={(e) => {
-              let value = e.target.value;
-              // Ensure https:// prefix is maintained
-              if (!value.startsWith('https://') && !value.startsWith('http://')) {
-                value = 'https://' + value.replace(/^[htps:/]*/, '');
-              }
-              setFormData({ ...formData, store_url: value });
-            }}
-            onFocus={(e) => {
-              // If empty or just https://, position cursor after https://
-              if (e.target.value === 'https://') {
-                setTimeout(() => e.target.setSelectionRange(8, 8), 0);
-              }
-            }}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="https://mystore.myshopify.com"
-          />
-          <p className="text-xs text-slate-500 mt-1">
-            Your Shopify, Wix, WooCommerce, or custom store URL
-          </p>
-        </div>
-
-        {/* Region */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Region <span className="text-red-500">*</span>
-          </label>
-          <select
-            required
-            value={formData.region}
-            onChange={(e) => setFormData({ ...formData, region: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="">Select region...</option>
-            <option value="US">United States</option>
-            <option value="CA">Canada</option>
-            <option value="UK">United Kingdom</option>
-            <option value="EU">European Union</option>
-            <option value="APAC">Asia Pacific</option>
-            <option value="Other">Other</option>
-          </select>
-        </div>
-
-        {/* Contact Email */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Contact Email <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="email"
-            required
-            value={formData.contact_email}
-            onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="your@email.com"
-          />
-        </div>
-
-        {/* Contact Phone */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Contact Phone
-          </label>
-          <input
-            type="tel"
-            value={formData.contact_phone}
-            onChange={(e) => setFormData({ ...formData, contact_phone: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="+1 (555) 123-4567"
-          />
-        </div>
-
-        {/* Password */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Password <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="password"
-            required
-            value={formData.password}
-            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="Enter a secure password"
-            minLength={8}
-          />
-          <p className="text-xs text-slate-500 mt-1">
-            At least 8 characters long
-          </p>
-        </div>
-
-        {/* Confirm Password */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Confirm Password <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="password"
-            required
-            value={formData.confirm_password}
-            onChange={(e) => setFormData({ ...formData, confirm_password: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="Re-enter your password"
-          />
-          {formData.password && formData.confirm_password && formData.password !== formData.confirm_password && (
-            <p className="text-xs text-red-600 mt-1">Passwords do not match</p>
-          )}
-        </div>
-
-        {/* Error Message */}
-        {error && (
-          <div className="flex items-center gap-2 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-            <p className="text-sm text-red-700">{error}</p>
+      <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <div className="rounded-[24px] border border-[color:var(--merchant-line)] bg-white/70 p-4">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--merchant-line-strong)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]">
+              <Building2 className="h-4.5 w-4.5" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
+                Business details
+              </p>
+              <p className="text-xs text-[color:var(--merchant-muted)]">
+                The merchant record carried through onboarding and login.
+              </p>
+            </div>
           </div>
-        )}
 
-        {/* Submit Button */}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full py-3 px-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium rounded-lg hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        >
-          {loading ? (
-            <>
-              <Loader className="w-5 h-5 animate-spin" />
-              Registering...
-            </>
-          ) : (
-            <>
-              <CheckCircle className="w-5 h-5" />
-              Register Business
-            </>
-          )}
-        </button>
-      </form>
+          <form onSubmit={onSubmit} className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className={labelClassName}>Business name</span>
+                <input
+                  type="text"
+                  required
+                  value={formData.business_name}
+                  onChange={(event) => onChange('business_name', event.target.value)}
+                  className={inputClassName}
+                  placeholder="Acme Corporation"
+                />
+              </label>
+
+              <label className="block">
+                <span className={labelClassName}>Region</span>
+                <select
+                  required
+                  value={formData.region}
+                  onChange={(event) => onChange('region', event.target.value)}
+                  className={inputClassName}
+                >
+                  <option value="">Select region</option>
+                  <option value="US">United States</option>
+                  <option value="CA">Canada</option>
+                  <option value="UK">United Kingdom</option>
+                  <option value="EU">European Union</option>
+                  <option value="APAC">Asia Pacific</option>
+                  <option value="Other">Other</option>
+                </select>
+              </label>
+            </div>
+
+            <label className="block">
+              <span className={labelClassName}>Store URL</span>
+              <input
+                type="url"
+                required
+                value={formData.store_url}
+                onChange={(event) => onChange('store_url', event.target.value)}
+                className={inputClassName}
+                placeholder="https://mystore.myshopify.com"
+              />
+              <span className="mt-1.5 block text-xs text-[color:var(--merchant-muted)]">
+                Shopify, Wix, WooCommerce, or another merchant storefront URL.
+              </span>
+            </label>
+
+            <label className="block">
+              <span className={labelClassName}>Website</span>
+              <input
+                type="url"
+                value={formData.website}
+                onChange={(event) => onChange('website', event.target.value)}
+                className={inputClassName}
+                placeholder="https://brand.com"
+              />
+              <span className="mt-1.5 block text-xs text-[color:var(--merchant-muted)]">
+                Optional, if your storefront and brand site are different.
+              </span>
+            </label>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className={labelClassName}>Contact email</span>
+                <input
+                  type="email"
+                  required
+                  value={formData.contact_email}
+                  onChange={(event) => onChange('contact_email', event.target.value)}
+                  className={inputClassName}
+                  placeholder="merchant@brand.com"
+                />
+              </label>
+
+              <label className="block">
+                <span className={labelClassName}>Contact phone</span>
+                <input
+                  type="tel"
+                  value={formData.contact_phone}
+                  onChange={(event) => onChange('contact_phone', event.target.value)}
+                  className={inputClassName}
+                  placeholder="+1 (555) 123-4567"
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className={labelClassName}>Password</span>
+                <input
+                  type="password"
+                  required
+                  value={formData.password}
+                  onChange={(event) => onChange('password', event.target.value)}
+                  className={inputClassName}
+                  placeholder="Create a secure password"
+                  minLength={8}
+                  autoComplete="new-password"
+                />
+                <span className="mt-1.5 block text-xs text-[color:var(--merchant-muted)]">
+                  At least 8 characters.
+                </span>
+              </label>
+
+              <label className="block">
+                <span className={labelClassName}>Confirm password</span>
+                <input
+                  type="password"
+                  required
+                  value={formData.confirm_password}
+                  onChange={(event) => onChange('confirm_password', event.target.value)}
+                  className={inputClassName}
+                  placeholder="Re-enter your password"
+                  autoComplete="new-password"
+                />
+                {passwordsMismatch ? (
+                  <span className="mt-1.5 block text-xs text-[color:var(--merchant-critical)]">
+                    Passwords do not match.
+                  </span>
+                ) : null}
+              </label>
+            </div>
+
+            {error ? (
+              <div className="rounded-[20px] border border-[color:var(--merchant-critical)] bg-[color:var(--merchant-critical-soft)] px-4 py-3 text-sm text-[color:var(--merchant-critical)]">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="mt-0.5 h-4.5 w-4.5 flex-shrink-0" />
+                  <span>{error}</span>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-end">
+              <button
+                type="submit"
+                disabled={loading}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[color:var(--merchant-brand)] px-4 py-3 text-sm font-medium text-white shadow-[0_14px_30px_rgba(51,75,133,0.18)] transition hover:bg-[color:var(--merchant-brand-strong)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:min-w-[220px]"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                    <span>Creating account...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Continue to payment setup</span>
+                    <ArrowRight className="h-4.5 w-4.5" />
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div className="space-y-4">
+          <div className="rounded-[24px] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] p-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--merchant-line-strong)] bg-white/80 text-[color:var(--merchant-brand)]">
+                <Mail className="h-4.5 w-4.5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
+                  One email, one merchant account
+                </p>
+                <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+                  The same email signs you into the merchant portal after onboarding completes.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] p-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--merchant-line-strong)] bg-white/80 text-[color:var(--merchant-brand)]">
+                <KeyRound className="h-4.5 w-4.5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
+                  Your password stays in the portal flow
+                </p>
+                <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+                  Pivota keeps the merchant record and the portal login tied to the same merchant ID.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
-
 

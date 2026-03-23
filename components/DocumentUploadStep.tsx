@@ -1,194 +1,217 @@
-import { useState } from 'react';
-import { Loader, CheckCircle, AlertCircle, Upload, File, X, Store } from 'lucide-react';
-import { onboardingApi, integrationsApi } from '../lib/api';
+import type { FormEvent } from 'react';
+import {
+  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  FileText,
+  Loader2,
+  ShieldCheck,
+  Upload,
+  X,
+} from 'lucide-react';
 
 interface DocumentUploadStepProps {
   merchantId: string;
-  onComplete: () => void;
   autoApproved?: boolean;
+  files: File[];
+  loading: boolean;
+  error: string;
+  onBack: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onSkip: () => void;
+  onFilesSelected: (files: FileList | null) => void;
+  onRemoveFile: (index: number) => void;
 }
 
-export default function DocumentUploadStep({ merchantId, onComplete, autoApproved }: DocumentUploadStepProps) {
-  const [files, setFiles] = useState<File[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [shopDomain, setShopDomain] = useState('');
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      setFiles([...files, ...Array.from(e.target.files)]);
-    }
-  };
-
-  const removeFile = (index: number) => {
-    setFiles(files.filter((_, i) => i !== index));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (files.length === 0) {
-      // If auto-approved, allow skipping
-      if (autoApproved) {
-        onComplete();
-        return;
-      } else {
-        setError('Please upload at least one document or skip if pre-approved');
-        return;
-      }
-    }
-
-    setLoading(true);
-    setError('');
-
-    try {
-      await onboardingApi.uploadDocuments(merchantId, files);
-      onComplete();
-    } catch (err: any) {
-      console.error('Upload error:', err);
-      setError(err.response?.data?.detail || 'Upload failed. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSkip = () => {
-    if (autoApproved) {
-      onComplete();
-    }
-  };
-
+export default function DocumentUploadStep({
+  merchantId,
+  autoApproved,
+  files,
+  loading,
+  error,
+  onBack,
+  onSubmit,
+  onSkip,
+  onFilesSelected,
+  onRemoveFile,
+}: DocumentUploadStepProps) {
   return (
-    <div>
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-slate-900">Upload Documents</h2>
-        <p className="text-sm text-slate-600 mt-1">
-          {autoApproved ? (
-            <span className="text-green-600 font-medium">
-              ✓ Pre-approved! You have 7 days to complete full KYB documentation
-            </span>
-          ) : (
-            'Upload your business verification documents'
-          )}
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <div className="merchant-overline">Step 3 · KYB documents</div>
+        <h2 className="text-[1.9rem] font-semibold tracking-[-0.045em] text-[color:var(--merchant-ink)]">
+          Upload business verification documents
+        </h2>
+        <p className="max-w-2xl text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+          Keep the merchant record complete for onboarding review. If you were pre-approved, you can skip for now and finish documentation later.
         </p>
       </div>
 
-      {/* Info: Store connection done in Dashboard */}
-      <div className="mb-6 p-4 border border-blue-200 bg-blue-50 rounded-lg">
-        <div className="flex items-start gap-3">
-          <Store className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
-          <div className="text-sm">
-            <p className="font-medium text-blue-900 mb-1">Connect Your Store After Registration</p>
-            <p className="text-blue-700">
-              You'll be able to connect Shopify, Wix, WooCommerce, or other platforms in 
-              <strong> Dashboard → Integrations</strong> after completing signup.
+      <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="rounded-[24px] border border-dashed border-[color:var(--merchant-line-strong)] bg-white/72 p-5 text-center">
+            <input
+              type="file"
+              id="merchant-document-upload"
+              multiple
+              accept=".pdf,.jpg,.jpeg,.png"
+              onChange={(event) => onFilesSelected(event.target.files)}
+              className="hidden"
+            />
+            <label htmlFor="merchant-document-upload" className="block cursor-pointer">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-[20px] border border-[color:var(--merchant-line-strong)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]">
+                <Upload className="h-5 w-5" />
+              </div>
+              <p className="mt-4 text-sm font-semibold text-[color:var(--merchant-ink)]">
+                Click to upload documents
+              </p>
+              <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+                PDF, JPG, or PNG. Up to 10MB per file.
+              </p>
+            </label>
+          </div>
+
+          {files.length ? (
+            <div className="rounded-[24px] border border-[color:var(--merchant-line)] bg-white/72 p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
+                  Selected files
+                </p>
+                <p className="text-xs text-[color:var(--merchant-muted)]">{files.length} file(s)</p>
+              </div>
+              <div className="space-y-2.5">
+                {files.map((file, index) => (
+                  <div
+                    key={`${file.name}-${index}`}
+                    className="flex items-center justify-between gap-3 rounded-[18px] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-3 py-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-[color:var(--merchant-line-strong)] bg-white text-[color:var(--merchant-muted-strong)]">
+                        <FileText className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                          {file.name}
+                        </p>
+                        <p className="text-xs text-[color:var(--merchant-muted)]">
+                          {(file.size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => onRemoveFile(index)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--merchant-line-strong)] text-[color:var(--merchant-muted-strong)] transition hover:bg-white"
+                      aria-label={`Remove ${file.name}`}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {error ? (
+            <div className="rounded-[20px] border border-[color:var(--merchant-critical)] bg-[color:var(--merchant-critical-soft)] px-4 py-3 text-sm text-[color:var(--merchant-critical)]">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="mt-0.5 h-4.5 w-4.5 flex-shrink-0" />
+                <span>{error}</span>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="flex flex-col gap-3 border-t border-[color:var(--merchant-line)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <button
+              type="button"
+              onClick={onBack}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[color:var(--merchant-line-strong)] px-4 py-3 text-sm font-medium text-[color:var(--merchant-muted-strong)] transition hover:bg-white"
+            >
+              <ArrowLeft className="h-4.5 w-4.5" />
+              <span>Back</span>
+            </button>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              {autoApproved ? (
+                <button
+                  type="button"
+                  onClick={onSkip}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[color:var(--merchant-line-strong)] px-4 py-3 text-sm font-medium text-[color:var(--merchant-ink)] transition hover:bg-white"
+                >
+                  <span>Skip for now</span>
+                </button>
+              ) : null}
+              <button
+                type="submit"
+                disabled={loading}
+                className="inline-flex min-w-[220px] items-center justify-center gap-2 rounded-2xl bg-[color:var(--merchant-brand)] px-4 py-3 text-sm font-medium text-white shadow-[0_14px_30px_rgba(51,75,133,0.18)] transition hover:bg-[color:var(--merchant-brand-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                    <span>Uploading...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>{files.length ? 'Upload and continue' : 'Continue'}</span>
+                    <ArrowRight className="h-4.5 w-4.5" />
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <div className="space-y-4">
+          <div className="rounded-[24px] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] p-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--merchant-line-strong)] bg-white/80 text-[color:var(--merchant-brand)]">
+                <ShieldCheck className="h-4.5 w-4.5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
+                  Verification for merchant onboarding
+                </p>
+                <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+                  Merchant ID <span className="font-mono text-[color:var(--merchant-ink)]">{merchantId}</span> stays tied to your KYB record and later portal login.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {autoApproved ? (
+            <div className="rounded-[24px] border border-[color:rgba(157,106,42,0.18)] bg-[color:var(--merchant-warning-soft)] p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:rgba(157,106,42,0.2)] bg-white/80 text-[color:var(--merchant-warning)]">
+                  <CheckCircle2 className="h-4.5 w-4.5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
+                    Pre-approved merchant
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+                    You can continue now and complete the remaining KYB documents after reaching the dashboard.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="rounded-[24px] border border-[color:var(--merchant-line)] bg-white/72 p-4">
+            <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
+              Recommended documents
             </p>
+            <ul className="mt-3 space-y-2 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+              <li>Business registration certificate</li>
+              <li>Tax identification document</li>
+              <li>Bank account statement</li>
+              <li>Owner ID or passport</li>
+            </ul>
           </div>
         </div>
       </div>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Upload Area */}
-        <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors">
-          <input
-            type="file"
-            id="file-upload"
-            multiple
-            accept=".pdf,.jpg,.jpeg,.png"
-            onChange={handleFileChange}
-            className="hidden"
-          />
-          <label htmlFor="file-upload" className="cursor-pointer">
-            <Upload className="w-12 h-12 mx-auto text-slate-400 mb-4" />
-            <p className="text-sm font-medium text-slate-700 mb-1">
-              Click to upload or drag and drop
-            </p>
-            <p className="text-xs text-slate-500">
-              PDF, JPG, PNG (max 10MB each)
-            </p>
-          </label>
-        </div>
-
-        {/* File List */}
-        {files.length > 0 && (
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-slate-700">Selected Files ({files.length})</p>
-            {files.map((file, index) => (
-              <div
-                key={index}
-                className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-lg"
-              >
-                <div className="flex items-center gap-3">
-                  <File className="w-5 h-5 text-slate-400" />
-                  <div>
-                    <p className="text-sm font-medium text-slate-700">{file.name}</p>
-                    <p className="text-xs text-slate-500">
-                      {(file.size / 1024 / 1024).toFixed(2)} MB
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => removeFile(index)}
-                  className="p-1 hover:bg-slate-200 rounded"
-                >
-                  <X className="w-4 h-4 text-slate-500" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Required Documents Info */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <p className="text-sm font-medium text-blue-900 mb-2">Recommended Documents:</p>
-          <ul className="text-sm text-blue-700 space-y-1">
-            <li>• Business registration certificate</li>
-            <li>• Tax identification document</li>
-            <li>• Bank account statement</li>
-            <li>• Owner ID (passport or driver's license)</li>
-          </ul>
-        </div>
-
-        {/* Error Message */}
-        {error && (
-          <div className="flex items-center gap-2 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-            <p className="text-sm text-red-700">{error}</p>
-          </div>
-        )}
-
-        {/* Submit Buttons */}
-        <div className="flex gap-3">
-          {autoApproved && (
-            <button
-              type="button"
-              onClick={handleSkip}
-              className="flex-1 py-3 px-4 border border-slate-300 text-slate-700 font-medium rounded-lg hover:bg-slate-50"
-            >
-              Skip for Now
-            </button>
-          )}
-          <button
-            type="submit"
-            disabled={loading}
-            className="flex-1 py-3 px-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium rounded-lg hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <Loader className="w-5 h-5 animate-spin" />
-                Uploading...
-              </>
-            ) : (
-              <>
-                <CheckCircle className="w-5 h-5" />
-                {files.length > 0 ? 'Upload Documents' : 'Continue'}
-              </>
-            )}
-          </button>
-        </div>
-      </form>
     </div>
   );
 }
-

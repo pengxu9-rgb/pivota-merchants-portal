@@ -1,0 +1,155 @@
+import type { ReactNode } from 'react';
+import Link from 'next/link';
+import type { LucideIcon } from 'lucide-react';
+import { Mail, Store } from 'lucide-react';
+import { APP_CONFIG } from '@/lib/config';
+import { cx } from '@/lib/cx';
+
+type Highlight = {
+  title: string;
+  description: string;
+  icon: LucideIcon;
+};
+
+interface AuthShellProps {
+  eyebrow: string;
+  title: string;
+  description: string;
+  highlights: readonly Highlight[];
+  children: ReactNode;
+  panelAction?: ReactNode;
+  progress?: ReactNode;
+  className?: string;
+  panelClassName?: string;
+}
+
+export function AuthShell({
+  eyebrow,
+  title,
+  description,
+  highlights,
+  children,
+  panelAction,
+  progress,
+  className,
+  panelClassName,
+}: AuthShellProps) {
+  return (
+    <div className="min-h-screen bg-[color:var(--merchant-canvas)] text-[color:var(--merchant-ink)]">
+      <div
+        className={cx(
+          'mx-auto flex min-h-screen max-w-7xl flex-col px-5 py-5 sm:px-6 lg:grid lg:grid-cols-[1.02fr_0.98fr] lg:items-center lg:gap-9 lg:px-10 lg:py-8',
+          className,
+        )}
+      >
+        <section className="hidden lg:block">
+          <div className="max-w-xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[color:var(--merchant-line-strong)] bg-white/72 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)] shadow-[var(--merchant-shadow-panel)]">
+              <Store className="h-3.5 w-3.5 text-[color:var(--merchant-brand)]" />
+              {eyebrow}
+            </div>
+
+            <h1 className="mt-5 text-[clamp(2.65rem,4.6vw,4.4rem)] font-semibold tracking-[-0.055em] text-[color:var(--merchant-ink)]">
+              {title}
+            </h1>
+            <p className="mt-4 max-w-lg text-[15px] leading-7 text-[color:var(--merchant-muted-strong)]">
+              {description}
+            </p>
+
+            <div className="mt-8 grid gap-3.5">
+              {highlights.map((item) => {
+                const Icon = item.icon;
+
+                return (
+                  <div
+                    key={item.title}
+                    className="rounded-[28px] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface)] px-5 py-4 shadow-[var(--merchant-shadow-panel)]"
+                  >
+                    <div className="flex items-start gap-3.5">
+                      <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[color:var(--merchant-line-strong)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]">
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
+                          {item.title}
+                        </p>
+                        <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+                          {item.description}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-6 rounded-[28px] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-5 py-4 shadow-[var(--merchant-shadow-panel)]">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[color:var(--merchant-line-strong)] bg-white/80 text-[color:var(--merchant-brand)]">
+                  <Mail className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
+                    Need help?
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+                    If you need onboarding support, email{' '}
+                    <a
+                      href={`mailto:${APP_CONFIG.SUPPORT_EMAIL}`}
+                      className="font-medium text-[color:var(--merchant-brand)] hover:text-[color:var(--merchant-brand-strong)]"
+                    >
+                      {APP_CONFIG.SUPPORT_EMAIL}
+                    </a>
+                    .
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="mx-auto flex w-full max-w-2xl flex-col justify-center">
+          <div className="mb-5 lg:hidden">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[color:var(--merchant-line-strong)] bg-white/72 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)] shadow-[var(--merchant-shadow-panel)]">
+              <Store className="h-3.5 w-3.5 text-[color:var(--merchant-brand)]" />
+              {eyebrow}
+            </div>
+            <h1 className="mt-4 text-[2.45rem] font-semibold tracking-[-0.055em] text-[color:var(--merchant-ink)]">
+              {title}
+            </h1>
+            <p className="mt-3 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+              {description}
+            </p>
+          </div>
+
+          <div
+            className={cx(
+              'rounded-[30px] border border-[color:var(--merchant-line-strong)] bg-[color:var(--merchant-surface-strong)] p-6 shadow-[var(--merchant-shadow-soft)] sm:p-7',
+              panelClassName,
+            )}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <Link href="/login" className="flex items-center gap-3" aria-label="Pivota Merchant Portal">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--merchant-line-strong)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]">
+                  <Store className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold tracking-[0.01em] text-[color:var(--merchant-ink)]">
+                    Pivota
+                  </p>
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
+                    Merchant Portal
+                  </p>
+                </div>
+              </Link>
+              {panelAction ? <div className="flex items-center gap-2">{panelAction}</div> : null}
+            </div>
+
+            {progress ? <div className="mt-6">{progress}</div> : null}
+            <div className={progress ? 'mt-6' : 'mt-8'}>{children}</div>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
