@@ -84,6 +84,8 @@ export default function IntegrationsPage() {
 
   const primaryStoreId = connectedStores.find((store) => store?.is_active)?.id || null;
   const activePSPCount = connectedPSPs.filter((psp) => psp.is_active).length;
+  const liveReadyPSPCount = connectedPSPs.filter((psp) => psp.is_active && psp.live_charge_ready).length;
+  const blockedActivePSPCount = connectedPSPs.filter((psp) => psp.is_active && !psp.live_charge_ready).length;
   const showRoutingTab = activePSPCount > 1;
   const inactiveWebhookCount = webhookConfig?.enabled ? 0 : 1;
   const tabButtonClass = (tab: ActiveTab) =>
@@ -101,11 +103,14 @@ export default function IntegrationsPage() {
     'order.created';
 
   const routingSummary = useMemo(() => {
-    const activePsps = connectedPSPs.filter((psp) => psp.is_active);
-    return activePsps.length > 1
-      ? `${activePsps.length} active processors available for priority routing`
-      : 'Connect another active processor to configure failover';
-  }, [connectedPSPs]);
+    if (liveReadyPSPCount > 1) {
+      return `${liveReadyPSPCount} live-ready processors available for priority routing`;
+    }
+    if (activePSPCount > 1) {
+      return `${blockedActivePSPCount} active processor${blockedActivePSPCount === 1 ? '' : 's'} still blocked from live charge`;
+    }
+    return 'Connect another live-ready processor to configure failover';
+  }, [activePSPCount, blockedActivePSPCount, liveReadyPSPCount]);
 
   useEffect(() => {
     const id = localStorage.getItem('merchant_id') || '';
@@ -510,10 +515,12 @@ export default function IntegrationsPage() {
           <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-3.5">
             <div className="text-sm text-[color:var(--merchant-muted)]">Payment setup</div>
             <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
-              {activePSPCount}
+              {liveReadyPSPCount}
             </div>
             <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
-              Active processors available for checkout
+              {blockedActivePSPCount > 0
+                ? `${blockedActivePSPCount} active processor${blockedActivePSPCount === 1 ? '' : 's'} still blocked`
+                : 'Live-ready processors available for checkout'}
             </div>
           </div>
           <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-3.5">
@@ -558,7 +565,7 @@ export default function IntegrationsPage() {
             <div className="min-w-0">
               <div className="text-sm font-medium">Payment setup</div>
               <div className="text-xs text-[color:var(--merchant-muted)]">
-                {activePSPCount} active processors ready for checkout
+                {liveReadyPSPCount} live-ready • {blockedActivePSPCount} blocked
               </div>
             </div>
           </button>
@@ -697,11 +704,19 @@ export default function IntegrationsPage() {
         <div className="space-y-4">
           <SurfaceCard
             title="Payment setup"
-            description="Review processor health, test connections, and keep routing coverage ready for checkout traffic."
+            description="Review processor health, validate real live-charge readiness, and keep routing coverage honest before checkout traffic goes live."
             action={
               <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge tone={activePSPCount > 0 ? 'success' : 'warning'}>
-                  {activePSPCount > 0 ? `${activePSPCount} active` : 'No active processors'}
+                <StatusBadge tone={liveReadyPSPCount > 0 ? 'success' : 'warning'}>
+                  {liveReadyPSPCount > 0 ? `${liveReadyPSPCount} live-ready` : 'No live-ready processors'}
+                </StatusBadge>
+                {blockedActivePSPCount > 0 ? (
+                  <StatusBadge tone="warning">
+                    {blockedActivePSPCount} blocked
+                  </StatusBadge>
+                ) : null}
+                <StatusBadge tone={activePSPCount > 0 ? 'neutral' : 'warning'}>
+                  {activePSPCount > 0 ? `${activePSPCount} active total` : 'No active processors'}
                 </StatusBadge>
                 <MerchantButton type="button" onClick={() => setShowConnectPSP(true)} icon={Plus}>
                   Connect processor
@@ -729,11 +744,26 @@ export default function IntegrationsPage() {
                                 {psp.name}
                               </h3>
                               <StatusBadge tone="success">Active</StatusBadge>
+                              <StatusBadge tone={psp.live_charge_ready ? 'success' : 'warning'}>
+                                {psp.live_charge_ready ? 'Live ready' : 'Blocked for live charge'}
+                              </StatusBadge>
                               <StatusBadge tone={psp.environment === 'live' ? 'brand' : 'warning'}>
                                 {String(psp.environment || 'unknown').toUpperCase()}
                               </StatusBadge>
-                              <StatusBadge tone={psp.validation_status === 'valid' ? 'success' : 'warning'}>
-                                {psp.validation_status === 'valid' ? 'Validated' : 'Validation pending'}
+                              <StatusBadge
+                                tone={
+                                  psp.validation_status === 'valid'
+                                    ? 'success'
+                                    : psp.validation_status === 'invalid'
+                                      ? 'critical'
+                                      : 'warning'
+                                }
+                              >
+                                {psp.validation_status === 'valid'
+                                  ? 'Validated'
+                                  : psp.validation_status === 'invalid'
+                                    ? 'Validation failed'
+                                    : 'Validation pending'}
                               </StatusBadge>
                             </div>
                             <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted-strong)]">
@@ -768,8 +798,17 @@ export default function IntegrationsPage() {
                                 </>
                               ) : null}
                             </div>
-                            {psp.validation_error ? (
-                              <p className="text-sm text-rose-700">{psp.validation_error}</p>
+                            {psp.live_charge_ready ? (
+                              <p className="text-sm text-emerald-700">
+                                Ready for live initiation through the canonical PSP runtime.
+                              </p>
+                            ) : psp.readiness_blockers?.length ? (
+                              <div className="rounded-[0.9rem] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                                <div className="font-medium">Readiness blockers</div>
+                                <div className="mt-1">
+                                  {psp.readiness_blockers.join(' • ')}
+                                </div>
+                              </div>
                             ) : null}
                           </div>
                         </div>
@@ -829,7 +868,7 @@ export default function IntegrationsPage() {
               </div>
               <div>
                 <div className="font-medium text-[color:var(--merchant-ink)]">Truthful setup</div>
-                <div>Only live processors and live routing paths are surfaced here.</div>
+                <div>Active processors stay visible even when blocked; live readiness is shown separately.</div>
               </div>
             </div>
           </div>
