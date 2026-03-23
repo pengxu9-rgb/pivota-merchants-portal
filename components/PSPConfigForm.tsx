@@ -9,273 +9,235 @@ interface PSPConfigFormProps {
   apiClient: any;
 }
 
-export function PSPConfigForm({ provider, merchantId, onClose, onSuccess, apiClient }: PSPConfigFormProps) {
-  const [apiKey, setApiKey] = useState('');
-  const [secretKey, setSecretKey] = useState('');
-  const [accountId, setAccountId] = useState('');
-  const [saving, setSaving] = useState(false);
-  
-  // Normalize provider name: "Checkout.com" → "checkout", "PayPal" → "paypal"
+type Environment = 'test' | 'live';
+type StripeMode = 'payment_intent' | 'checkout_session';
+
+export function PSPConfigForm({
+  provider,
+  merchantId,
+  onClose,
+  onSuccess,
+  apiClient,
+}: PSPConfigFormProps) {
   const providerLower = provider.toLowerCase().replace('.com', '').replace('.', '');
-  
-  // Validation based on provider requirements (matching Employee Portal logic)
-  const canSave = provider && merchantId && apiKey && 
-    (providerLower !== 'paypal' || secretKey) &&
-    (providerLower !== 'braintree' || secretKey) &&
-    (providerLower !== 'checkout' || accountId) &&
-    (providerLower !== 'square' || accountId) &&
-    (providerLower !== 'braintree' || accountId) &&
-    (providerLower !== 'adyen' || accountId) &&
+  const [apiKey, setApiKey] = useState('');
+  const [accountId, setAccountId] = useState('');
+  const [clientKey, setClientKey] = useState('');
+  const [publicKey, setPublicKey] = useState('');
+  const [environment, setEnvironment] = useState<Environment>('test');
+  const [stripeMode, setStripeMode] = useState<StripeMode>('payment_intent');
+  const [saving, setSaving] = useState(false);
+
+  const isStripe = providerLower === 'stripe';
+  const isAdyen = providerLower === 'adyen';
+  const isCheckout = providerLower === 'checkout';
+
+  const canSave =
+    Boolean(providerLower && merchantId && apiKey) &&
+    (!isAdyen || (Boolean(accountId) && Boolean(clientKey))) &&
+    (!isCheckout || (Boolean(accountId) && Boolean(publicKey))) &&
     !saving;
-
-  const getFieldLabels = () => {
-    switch (providerLower) {
-      case 'paypal':
-        return {
-          apiKeyLabel: 'Client ID',
-          apiKeyPlaceholder: 'Enter your PayPal Client ID',
-          showSecretKey: true,
-          secretKeyLabel: 'Client Secret',
-          secretKeyPlaceholder: 'Enter your PayPal Client Secret',
-          accountIdLabel: 'Account ID (optional)',
-          accountIdPlaceholder: 'Optional account identifier',
-          accountIdRequired: false
-        };
-      case 'stripe':
-        return {
-          apiKeyLabel: 'Secret Key',
-          apiKeyPlaceholder: 'sk_live_... or sk_test_...',
-          showSecretKey: false,
-          secretKeyLabel: '',
-          secretKeyPlaceholder: '',
-          accountIdLabel: 'Account ID (optional)',
-          accountIdPlaceholder: 'acct_... (for connected accounts)',
-          accountIdRequired: false
-        };
-      case 'adyen':
-        return {
-          apiKeyLabel: 'API Key',
-          apiKeyPlaceholder: 'AQE... (Enter your Adyen API key)',
-          showSecretKey: false,
-          secretKeyLabel: '',
-          secretKeyPlaceholder: '',
-          accountIdLabel: 'Merchant Account',
-          accountIdPlaceholder: 'Your Adyen merchantAccount (e.g., WoopayECOM)',
-          accountIdRequired: true
-        };
-      case 'checkout':
-        return {
-          apiKeyLabel: 'Secret Key',
-          apiKeyPlaceholder: 'sk_... (your secret key)',
-          showSecretKey: false,
-          secretKeyLabel: '',
-          secretKeyPlaceholder: '',
-          accountIdLabel: 'Processing Channel ID',
-          accountIdPlaceholder: 'pc_... (required for Checkout.com)',
-          accountIdRequired: true
-        };
-      case 'square':
-        return {
-          apiKeyLabel: 'Access Token',
-          apiKeyPlaceholder: 'EAAAE... (your Square access token)',
-          showSecretKey: false,
-          secretKeyLabel: '',
-          secretKeyPlaceholder: '',
-          accountIdLabel: 'Location ID',
-          accountIdPlaceholder: 'L... (find in Square Dashboard → Locations)',
-          accountIdRequired: true
-        };
-      case 'mollie':
-        return {
-          apiKeyLabel: 'API Key',
-          apiKeyPlaceholder: 'test_... or live_...',
-          showSecretKey: false,
-          secretKeyLabel: '',
-          secretKeyPlaceholder: '',
-          accountIdLabel: 'Profile ID (optional)',
-          accountIdPlaceholder: 'pfl_... (optional)',
-          accountIdRequired: false
-        };
-      case 'braintree':
-        return {
-          apiKeyLabel: 'Public Key',
-          apiKeyPlaceholder: 'Enter your Braintree public key',
-          showSecretKey: true,
-          secretKeyLabel: 'Private Key',
-          secretKeyPlaceholder: 'Enter your Braintree private key',
-          accountIdLabel: 'Merchant ID',
-          accountIdPlaceholder: 'Your Braintree merchant ID',
-          accountIdRequired: true
-        };
-      default:
-        return {
-          apiKeyLabel: 'API Key',
-          apiKeyPlaceholder: 'Enter your API key',
-          showSecretKey: false,
-          secretKeyLabel: '',
-          secretKeyPlaceholder: '',
-          accountIdLabel: 'Account ID (optional)',
-          accountIdPlaceholder: 'Optional account identifier',
-          accountIdRequired: false
-        };
-    }
-  };
-
-  const labels = getFieldLabels();
 
   const handleSave = async () => {
     if (!canSave) {
       alert('Please fill in all required fields');
       return;
     }
-    
+
     try {
       setSaving(true);
-      
-      // Build payload matching Employee Portal format
-      const payload: any = {
+
+      const payload: Record<string, any> = {
         provider: providerLower,
         merchant_id: merchantId,
-        api_key: apiKey,
-        account_id: accountId || undefined
+        api_key: apiKey.trim(),
+        environment,
       };
-      
-      // Add secret_key for PayPal and Braintree
-      if ((providerLower === 'paypal' || providerLower === 'braintree') && secretKey) {
-        payload.secret_key = secretKey;
+
+      if (isStripe) {
+        payload.mode = stripeMode;
+        if (accountId.trim()) payload.account_id = accountId.trim();
       }
-      
-      console.log('💾 Saving PSP configuration:', { provider: providerLower, merchant_id: merchantId, has_account_id: !!accountId, has_secret: !!secretKey });
-      
-      const response = await apiClient.connectPSPProvider(payload);
-      console.log('✅ PSP connected:', response);
-      
-      alert(`✅ ${provider} connected successfully!`);
+
+      if (isAdyen) {
+        payload.account_id = accountId.trim();
+        payload.merchant_account = accountId.trim();
+        payload.client_key = clientKey.trim();
+      }
+
+      if (isCheckout) {
+        payload.account_id = accountId.trim();
+        payload.processing_channel_id = accountId.trim();
+        payload.public_key = publicKey.trim();
+      }
+
+      await apiClient.connectPSPProvider(payload);
+      alert(`✅ ${provider} connected successfully.`);
       onSuccess();
       onClose();
     } catch (error: any) {
-      console.error('❌ PSP connection error:', error);
       alert(`❌ Failed to connect ${provider}: ${error.response?.data?.detail || error.message}`);
     } finally {
       setSaving(false);
     }
   };
 
+  const title = isStripe
+    ? 'Connect Stripe'
+    : isAdyen
+      ? 'Connect Adyen'
+      : 'Connect Checkout.com';
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold">Configure {provider}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X className="w-5 h-5" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-[1.4rem] border border-[color:var(--merchant-line)] bg-white p-6 shadow-[var(--merchant-shadow-panel)]">
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-[color:var(--merchant-ink)]">{title}</h3>
+            <p className="mt-1 text-sm text-[color:var(--merchant-muted)]">
+              Save the real provider credentials and runtime settings used for payment initiation.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-full border border-[color:var(--merchant-line)] p-2 text-[color:var(--merchant-muted)] transition hover:bg-[color:var(--merchant-surface-muted)]"
+          >
+            <X className="h-4 w-4" />
           </button>
         </div>
-        
+
         <div className="space-y-4">
-          {/* Merchant ID */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Merchant ID <span className="text-red-500">*</span>
-            </label>
+            <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">Merchant ID</label>
             <input
               type="text"
               value={merchantId}
               disabled
-              className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-600"
+              className="w-full rounded-[1rem] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-3 py-2 text-sm text-[color:var(--merchant-muted-strong)]"
             />
-            <p className="text-xs text-gray-500 mt-1">Your merchant ID (auto-filled)</p>
           </div>
 
-          {/* API Key / Access Token / Client ID / Public Key */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
+                Environment <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={environment}
+                onChange={(event) => setEnvironment(event.target.value as Environment)}
+                className="w-full rounded-[1rem] border border-[color:var(--merchant-line)] px-3 py-2 text-sm text-[color:var(--merchant-ink)]"
+              >
+                <option value="test">Test</option>
+                <option value="live">Live</option>
+              </select>
+            </div>
+
+            {isStripe ? (
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
+                  Stripe mode <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={stripeMode}
+                  onChange={(event) => setStripeMode(event.target.value as StripeMode)}
+                  className="w-full rounded-[1rem] border border-[color:var(--merchant-line)] px-3 py-2 text-sm text-[color:var(--merchant-ink)]"
+                >
+                  <option value="payment_intent">PaymentIntent</option>
+                  <option value="checkout_session">Checkout Session</option>
+                </select>
+              </div>
+            ) : null}
+          </div>
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {labels.apiKeyLabel} <span className="text-red-500">*</span>
+            <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
+              {isStripe ? 'Secret key' : isCheckout ? 'Secret key' : 'API key'} <span className="text-rose-500">*</span>
             </label>
             <input
               type="password"
               value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={labels.apiKeyPlaceholder}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              onChange={(event) => setApiKey(event.target.value)}
+              placeholder={
+                isStripe
+                  ? 'sk_live_... or sk_test_...'
+                  : isCheckout
+                    ? 'sk_live_... or sk_test_...'
+                    : 'AQE...'
+              }
+              className="w-full rounded-[1rem] border border-[color:var(--merchant-line)] px-3 py-2 text-sm text-[color:var(--merchant-ink)]"
             />
-            {providerLower === 'stripe' && (
-              <p className="text-xs text-gray-500 mt-1">
-                Use sk_test_... for testing, sk_live_... for production
-              </p>
-            )}
           </div>
-          
-          {/* Secret Key / Client Secret / Private Key (PayPal and Braintree) */}
-          {labels.showSecretKey && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                {labels.secretKeyLabel} <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="password"
-                value={secretKey}
-                onChange={(e) => setSecretKey(e.target.value)}
-                placeholder={labels.secretKeyPlaceholder}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-          )}
-          
-          {/* Account ID / Location ID / Merchant ID / Processing Channel ID */}
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {labels.accountIdLabel}
-              {labels.accountIdRequired && <span className="text-red-500"> *</span>}
+            <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
+              {isStripe ? 'Connected account ID (optional)' : isAdyen ? 'Merchant account' : 'Processing channel ID'}
+              {!isStripe ? <span className="text-rose-500"> *</span> : null}
             </label>
             <input
               type="text"
               value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              placeholder={labels.accountIdPlaceholder}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              onChange={(event) => setAccountId(event.target.value)}
+              placeholder={
+                isStripe
+                  ? 'acct_...'
+                  : isAdyen
+                    ? 'Your Adyen merchantAccount'
+                    : 'pc_...'
+              }
+              className="w-full rounded-[1rem] border border-[color:var(--merchant-line)] px-3 py-2 text-sm text-[color:var(--merchant-ink)]"
             />
-            {providerLower === 'checkout' && (
-              <p className="text-xs text-gray-500 mt-1">
-                Required - Find this in your Checkout.com dashboard
-              </p>
-            )}
-            {providerLower === 'square' && (
-              <p className="text-xs text-gray-500 mt-1">
-                Required - Find in Square Dashboard → Locations
-              </p>
-            )}
-            {providerLower === 'braintree' && (
-              <p className="text-xs text-gray-500 mt-1">
-                Required - Your Braintree merchant account ID
-              </p>
-            )}
           </div>
-          
-          {/* Info box */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <p className="text-sm text-blue-800">
-              {providerLower === 'stripe' && '💡 Find your API keys in Stripe Dashboard → Developers → API keys'}
-              {providerLower === 'paypal' && '💡 Get Client ID and Secret from PayPal Developer Dashboard'}
-              {providerLower === 'adyen' && '💡 Generate API keys in Adyen Customer Area → API Credentials'}
-              {providerLower === 'checkout' && '💡 Find keys and Processing Channel ID in Checkout.com Hub'}
-              {providerLower === 'square' && '💡 Get Access Token from Square Dashboard → Developer → Access Tokens. Location ID under Locations.'}
-              {providerLower === 'mollie' && '💡 Generate keys in Mollie Dashboard → Developers → API keys (test_... for testing, live_... for production)'}
-              {providerLower === 'braintree' && '💡 Find keys in Braintree Control Panel → Settings → API Keys (Public Key, Private Key, Merchant ID)'}
-            </p>
+
+          {isAdyen ? (
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
+                Client key <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="password"
+                value={clientKey}
+                onChange={(event) => setClientKey(event.target.value)}
+                placeholder="Your Adyen clientKey"
+                className="w-full rounded-[1rem] border border-[color:var(--merchant-line)] px-3 py-2 text-sm text-[color:var(--merchant-ink)]"
+              />
+            </div>
+          ) : null}
+
+          {isCheckout ? (
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
+                Public key <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="password"
+                value={publicKey}
+                onChange={(event) => setPublicKey(event.target.value)}
+                placeholder="pk_..."
+                className="w-full rounded-[1rem] border border-[color:var(--merchant-line)] px-3 py-2 text-sm text-[color:var(--merchant-ink)]"
+              />
+            </div>
+          ) : null}
+
+          <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-4 py-3 text-sm text-[color:var(--merchant-muted-strong)]">
+            {isStripe
+              ? 'Stripe uses the saved mode to decide whether initiation returns a PaymentIntent client_secret or a Checkout Session redirect.'
+              : isAdyen
+                ? 'Adyen requires both merchant account and client key so the returned session can be used by the frontend.'
+                : 'Checkout.com requires both processing channel ID and public key so the returned payment session is usable by the frontend.'}
           </div>
         </div>
-        
-        <div className="flex space-x-3 mt-6">
+
+        <div className="mt-6 flex gap-3">
           <button
             onClick={handleSave}
             disabled={!canSave}
-            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+            className="flex-1 rounded-full bg-[color:var(--merchant-brand)] px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {saving ? 'Connecting...' : `Connect ${provider}`}
+            {saving ? 'Saving…' : `Connect ${provider}`}
           </button>
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium"
+            className="rounded-full border border-[color:var(--merchant-line)] px-4 py-2.5 text-sm font-semibold text-[color:var(--merchant-muted-strong)] transition hover:bg-[color:var(--merchant-surface-muted)]"
           >
             Cancel
           </button>

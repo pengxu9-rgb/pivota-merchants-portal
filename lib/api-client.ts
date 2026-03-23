@@ -643,6 +643,12 @@ class ApiClient {
       success_rate: p.success_rate ?? 98.5,
       volume_today: p.volume_today ?? 0,
       transaction_count: p.transaction_count ?? 0,
+      environment: p.environment || 'unknown',
+      validation_status: p.validation_status || 'unknown',
+      validation_error: p.validation_error || null,
+      provider_summary: p.provider_summary || {},
+      account_id: p.account_id || null,
+      api_key_last4: p.api_key_last4 || '****',
     }));
   }
 

@@ -34,6 +34,8 @@ const MERCHANT_WEBHOOK_EVENTS = [
   'refund.processed',
 ];
 
+const SUPPORTED_CONNECT_PROVIDERS = ['Stripe', 'Adyen', 'Checkout.com'];
+
 type ActiveTab = 'stores' | 'psps' | 'routing' | 'webhooks';
 type NoticeTone = 'success' | 'warning' | 'critical';
 
@@ -727,12 +729,48 @@ export default function IntegrationsPage() {
                                 {psp.name}
                               </h3>
                               <StatusBadge tone="success">Active</StatusBadge>
+                              <StatusBadge tone={psp.environment === 'live' ? 'brand' : 'warning'}>
+                                {String(psp.environment || 'unknown').toUpperCase()}
+                              </StatusBadge>
+                              <StatusBadge tone={psp.validation_status === 'valid' ? 'success' : 'warning'}>
+                                {psp.validation_status === 'valid' ? 'Validated' : 'Validation pending'}
+                              </StatusBadge>
                             </div>
                             <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted-strong)]">
                               <span>{psp.success_rate || 0}% success rate</span>
                               <span>•</span>
                               <span>${psp.volume_today || 0} volume today</span>
                             </div>
+                            <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted)]">
+                              {psp.type === 'stripe' ? (
+                                <>
+                                  <span>Mode: {psp.provider_summary?.mode || 'payment_intent'}</span>
+                                  {psp.provider_summary?.account_id ? (
+                                    <>
+                                      <span>•</span>
+                                      <span>Account: {psp.provider_summary.account_id}</span>
+                                    </>
+                                  ) : null}
+                                </>
+                              ) : null}
+                              {psp.type === 'adyen' ? (
+                                <>
+                                  <span>Merchant account: {psp.provider_summary?.merchant_account || psp.account_id || 'Missing'}</span>
+                                  <span>•</span>
+                                  <span>{psp.provider_summary?.client_key_present ? 'Client key present' : 'Client key missing'}</span>
+                                </>
+                              ) : null}
+                              {psp.type === 'checkout' ? (
+                                <>
+                                  <span>Channel: {psp.provider_summary?.processing_channel_id || psp.account_id || 'Missing'}</span>
+                                  <span>•</span>
+                                  <span>{psp.provider_summary?.public_key_present ? 'Public key present' : 'Public key missing'}</span>
+                                </>
+                              ) : null}
+                            </div>
+                            {psp.validation_error ? (
+                              <p className="text-sm text-rose-700">{psp.validation_error}</p>
+                            ) : null}
                           </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
@@ -801,14 +839,14 @@ export default function IntegrationsPage() {
               <div className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6">
                 <h3 className="mb-4 text-lg font-semibold">Select payment processor</h3>
                 <div className="space-y-3">
-                  {['Stripe', 'PayPal', 'Adyen', 'Checkout.com', 'Square', 'Mollie', 'Braintree'].map((psp) => (
+                  {SUPPORTED_CONNECT_PROVIDERS.map((psp) => (
                     <button
                       key={psp}
                       onClick={() => setSelectedPSPProvider(psp)}
                       className="w-full rounded-lg border p-4 text-left transition-colors hover:bg-gray-50"
                     >
                       <h4 className="font-medium">{psp}</h4>
-                      <p className="text-sm text-gray-600">Configure {psp} payment processing</p>
+                      <p className="text-sm text-gray-600">Configure the real runtime credentials used for payment initiation</p>
                     </button>
                   ))}
                 </div>
