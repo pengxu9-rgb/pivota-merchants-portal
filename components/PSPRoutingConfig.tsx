@@ -1,14 +1,22 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { 
-  ArrowRight, 
-  Settings as SettingsIcon,
-  Globe,
-  TrendingUp,
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ArrowDown,
+  ArrowUp,
+  CreditCard,
+  Loader2,
   Save,
+  ShieldCheck,
 } from 'lucide-react';
+
 import { apiClient } from '@/lib/api-client';
+import {
+  EmptyState,
+  MerchantButton,
+  StatusBadge,
+  SurfaceCard,
+} from '@/components/ui/merchant-primitives';
 
 interface PSP {
   id: string;
@@ -21,321 +29,422 @@ interface Props {
   connectedPSPs: PSP[];
 }
 
+type FlashState =
+  | { tone: 'success' | 'warning' | 'critical'; text: string }
+  | null;
+
 export default function PSPRoutingConfig({ connectedPSPs }: Props) {
-  const [strategy, setStrategy] = useState('smart');
+  const activePSPs = useMemo(
+    () => connectedPSPs.filter((psp) => psp.is_active),
+    [connectedPSPs]
+  );
   const [primaryPSP, setPrimaryPSP] = useState('');
   const [fallbackChain, setFallbackChain] = useState<string[]>([]);
-  const [geoRules, setGeoRules] = useState([
-    { region: 'EU', psp: 'mollie' },
-    { region: 'US', psp: 'stripe' },
-  ]);
-
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [flash, setFlash] = useState<FlashState>(null);
 
-  const activePSPs = connectedPSPs.filter(p => p.is_active);
-
-  // Map backend routing_strategy to UI strategy
-  const mapBackendStrategyToUi = (backend?: string | null): string => {
-    const v = (backend || '').toLowerCase();
-    if (v === 'cost') return 'cost';
-    if (v === 'performance') return 'success';
-    return 'smart'; // default/priority
-  };
-
-  const mapUiStrategyToBackend = (ui: string): string => {
-    if (ui === 'cost') return 'cost';
-    if (ui === 'success') return 'performance';
-    return 'priority';
-  };
-
-  // Load existing routing configuration from backend
   useEffect(() => {
     const loadRouting = async () => {
-      if (!activePSPs.length) return;
+      if (activePSPs.length < 2) {
+        setPrimaryPSP('');
+        setFallbackChain([]);
+        return;
+      }
+
       try {
         setLoading(true);
         const data = await apiClient.getRoutingConfig();
-        if (!data || !Array.isArray(data.psp_priority)) return;
-
-        setStrategy(mapBackendStrategyToUi(data.routing_strategy));
-
-        const priorityList = [...data.psp_priority].sort(
-          (a: any, b: any) => (a.priority || 999) - (b.priority || 999)
-        );
-
         const providerToId = (provider: string): string | undefined => {
           const normalized = (provider || '').toLowerCase();
-          const match = activePSPs.find(
-            p =>
-              (p.type || '').toLowerCase() === normalized ||
-              (p.name || '').toLowerCase() === normalized
-          );
-          return match?.id;
+          return activePSPs.find((psp) => {
+            const type = (psp.type || '').toLowerCase();
+            const name = (psp.name || '').toLowerCase();
+            return type === normalized || name === normalized;
+          })?.id;
         };
 
-        if (priorityList.length > 0) {
-          const primaryProvider = priorityList[0].psp;
-          const primaryId = providerToId(primaryProvider);
-          if (primaryId) {
-            setPrimaryPSP(primaryId);
-          }
+        const priorityList = Array.isArray(data?.psp_priority)
+          ? [...data.psp_priority].sort(
+              (a: any, b: any) => (a?.priority || 999) - (b?.priority || 999)
+            )
+          : [];
 
-          const fallbackIds: string[] = [];
-          priorityList.slice(1).forEach((entry: any) => {
-            const id = providerToId(entry.psp);
-            if (id && !fallbackIds.includes(id)) {
-              fallbackIds.push(id);
-            }
-          });
-          setFallbackChain(fallbackIds);
+        const selectedPrimaryId = providerToId(priorityList[0]?.psp || '');
+        if (selectedPrimaryId) {
+          setPrimaryPSP(selectedPrimaryId);
+        } else if (activePSPs[0]?.id) {
+          setPrimaryPSP(activePSPs[0].id);
         }
-      } catch (err) {
-        console.error('Failed to load PSP routing configuration', err);
+
+        const fallbackIds: string[] = [];
+        priorityList.slice(1).forEach((entry: any) => {
+          const id = providerToId(entry?.psp || '');
+          if (id && !fallbackIds.includes(id)) {
+            fallbackIds.push(id);
+          }
+        });
+        setFallbackChain(fallbackIds);
+      } catch (error) {
+        console.error('Failed to load routing config', error);
+        setFlash({
+          tone: 'warning',
+          text: 'Routing settings could not be loaded. The current active processor order is being used instead.',
+        });
+        if (activePSPs[0]?.id) {
+          setPrimaryPSP(activePSPs[0].id);
+        }
+        setFallbackChain(activePSPs.slice(1).map((psp) => psp.id));
       } finally {
         setLoading(false);
       }
     };
 
     loadRouting();
-  }, [activePSPs.length]);
+  }, [activePSPs]);
+
+  const selectedFlow = useMemo(() => {
+    if (!primaryPSP) return [];
+    return [primaryPSP, ...fallbackChain.filter((id) => id !== primaryPSP)];
+  }, [primaryPSP, fallbackChain]);
+
+  const availableFallbacks = activePSPs.filter(
+    (psp) => psp.id !== primaryPSP && !fallbackChain.includes(psp.id)
+  );
 
   const handlePrimaryChange = (pspId: string) => {
     setPrimaryPSP(pspId);
-    // Ensure the primary PSP is never also in the fallback chain
-    setFallbackChain((prev) => prev.filter((id) => id !== pspId));
+    setFallbackChain((current) => current.filter((id) => id !== pspId));
+    setFlash(null);
   };
 
-  const handleSaveRouting = async () => {
+  const addFallback = (pspId: string) => {
+    setFallbackChain((current) => [...current, pspId]);
+    setFlash(null);
+  };
+
+  const removeFallback = (pspId: string) => {
+    setFallbackChain((current) => current.filter((id) => id !== pspId));
+    setFlash(null);
+  };
+
+  const moveFallback = (pspId: string, direction: 'up' | 'down') => {
+    setFallbackChain((current) => {
+      const index = current.indexOf(pspId);
+      if (index === -1) return current;
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= current.length) return current;
+      const next = [...current];
+      [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+      return next;
+    });
+    setFlash(null);
+  };
+
+  const handleSave = async () => {
+    if (!primaryPSP) {
+      setFlash({
+        tone: 'warning',
+        text: 'Select a primary processor before saving routing.',
+      });
+      return;
+    }
+
     try {
-      if (!primaryPSP) {
-        alert('Please select a primary PSP before saving.');
-        return;
-      }
       setSaving(true);
-
-      // Build ordered list: primary first, then fallbacks in order (without duplicates)
-      const orderedIds: string[] = [
-        primaryPSP,
-        ...fallbackChain.filter(id => id && id !== primaryPSP),
-      ];
-
+      setFlash(null);
+      const orderedIds = [primaryPSP, ...fallbackChain.filter((id) => id !== primaryPSP)];
       const psp_priority = orderedIds
         .map((id, index) => {
-          const psp = activePSPs.find(p => p.id === id);
+          const psp = activePSPs.find((item) => item.id === id);
           if (!psp) return null;
-          const provider =
-            (psp.type || '').toLowerCase() ||
-            (psp.name || '').toLowerCase();
+          const provider = ((psp.type || psp.name || '').trim() || '').toLowerCase();
           if (!provider) return null;
           return { psp: provider, priority: index + 1 };
         })
-        .filter((entry): entry is { psp: string; priority: number } => !!entry);
-
-      if (!psp_priority.length) {
-        alert('No valid PSPs selected for routing.');
-        return;
-      }
-
-      const routing_strategy = mapUiStrategyToBackend(strategy);
-      const max_retries = Math.max(0, psp_priority.length - 1);
+        .filter(Boolean) as { psp: string; priority: number }[];
 
       await apiClient.updateRoutingConfig({
         psp_priority,
-        routing_strategy,
-        max_retries,
+        routing_strategy: 'priority',
+        max_retries: Math.max(0, psp_priority.length - 1),
         timeout_ms: 30000,
       });
 
-      alert('✅ Routing configuration saved!');
+      setFlash({
+        tone: 'success',
+        text: 'Routing saved. Merchant payment execution now uses this primary and fallback order.',
+      });
     } catch (error: any) {
       console.error('Failed to save routing configuration', error);
-      alert(
-        '❌ Failed to save routing: ' +
-          (error?.response?.data?.detail || error.message || 'Unknown error')
-      );
+      setFlash({
+        tone: 'critical',
+        text:
+          error?.response?.data?.detail ||
+          error?.message ||
+          'Failed to save routing configuration.',
+      });
     } finally {
       setSaving(false);
     }
   };
 
+  if (activePSPs.length < 2) {
+    return (
+      <EmptyState
+        icon={ShieldCheck}
+        title="Routing becomes available after a second processor is active"
+        description="Merchant routing is limited to one primary processor plus an ordered fallback chain. Add another active processor to configure failover."
+      />
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Routing Strategy */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex items-center space-x-3 mb-4">
-          <SettingsIcon className="w-5 h-5 text-purple-600" />
-          <h2 className="text-lg font-semibold text-gray-900">Routing Strategy</h2>
-        </div>
-        <div className="space-y-3">
-          <label className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
-            <div>
-              <p className="font-medium text-gray-900">Smart AI Routing</p>
-              <p className="text-sm text-gray-600">AI automatically routes to best PSP based on card type, location, amount</p>
-            </div>
-            <input
-              type="radio"
-              name="strategy"
-              value="smart"
-              checked={strategy === 'smart'}
-              onChange={(e) => setStrategy(e.target.value)}
-              className="w-4 h-4"
-            />
-          </label>
-          <label className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
-            <div>
-              <p className="font-medium text-gray-900">Cost Optimized</p>
-              <p className="text-sm text-gray-600">Route to PSP with lowest transaction fees</p>
-            </div>
-            <input
-              type="radio"
-              name="strategy"
-              value="cost"
-              checked={strategy === 'cost'}
-              onChange={(e) => setStrategy(e.target.value)}
-              className="w-4 h-4"
-            />
-          </label>
-          <label className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
-            <div>
-              <p className="font-medium text-gray-900">Success Rate Priority</p>
-              <p className="text-sm text-gray-600">Always route to PSP with highest success rate</p>
-            </div>
-            <input
-              type="radio"
-              name="strategy"
-              value="success"
-              checked={strategy === 'success'}
-              onChange={(e) => setStrategy(e.target.value)}
-              className="w-4 h-4"
-            />
-          </label>
-        </div>
-      </div>
+    <div className="space-y-4">
+      <SurfaceCard
+        title="Routing"
+        description="Choose one primary processor and the ordered fallback chain that should take over if the first path is unavailable."
+        action={<StatusBadge tone="brand">Priority + fallback only</StatusBadge>}
+      >
+        <div className="space-y-5 p-5">
+          <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-3 text-sm text-[color:var(--merchant-muted-strong)]">
+            Merchant routing currently supports real processor priority only. Smart, cost-based, success-rate, and geographic rules are intentionally hidden until runtime support is production-ready.
+          </div>
 
-      {/* Primary & Fallback Configuration */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Primary & Fallback Chain</h2>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Primary PSP</label>
-            <select
-              value={primaryPSP}
-              onChange={(e) => handlePrimaryChange(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg"
+          {flash ? (
+            <div
+              className={`rounded-[1rem] border px-4 py-3 text-sm ${
+                flash.tone === 'success'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                  : flash.tone === 'critical'
+                    ? 'border-rose-200 bg-rose-50 text-rose-900'
+                    : 'border-amber-200 bg-amber-50 text-amber-900'
+              }`}
             >
-              <option value="">Select Primary PSP</option>
-              {activePSPs.map((psp) => (
-                <option key={psp.id} value={psp.id}>{psp.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Visual Flow */}
-          {primaryPSP && (
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <p className="text-sm font-medium text-gray-700 mb-3">Payment Flow:</p>
-              <div className="flex items-center space-x-2 flex-wrap">
-                <div className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">
-                  {activePSPs.find(p => p.id === primaryPSP)?.name || 'Primary'}
-                </div>
-                {fallbackChain.map((pspId, index) => (
-                  <div key={index} className="flex items-center space-x-2">
-                    <ArrowRight className="w-4 h-4 text-gray-400" />
-                    <div className="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg font-medium">
-                      {activePSPs.find(p => p.id === pspId)?.name || `Fallback ${index + 1}`}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {flash.text}
             </div>
-          )}
+          ) : null}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Fallback PSPs (in order)</label>
-            <p className="text-xs text-gray-500 mb-2">If primary fails, automatically retry with these PSPs in order</p>
-            {activePSPs.filter(p => p.id !== primaryPSP).map((psp, index) => (
-              <label key={psp.id} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
-                <input
-                  type="checkbox"
-                  checked={fallbackChain.includes(psp.id)}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setFallbackChain([...fallbackChain, psp.id]);
-                    } else {
-                      setFallbackChain(fallbackChain.filter(id => id !== psp.id));
-                    }
-                  }}
-                  className="rounded"
-                />
-                <span className="text-sm">{psp.name}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Geographic Routing Rules (UI-only for now) */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-3">
-            <Globe className="w-5 h-5 text-blue-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Geographic Routing Rules</h2>
-          </div>
-          <p className="text-xs text-gray-500">
-            Coming soon – currently not persisted.
-          </p>
-        </div>
-        <div className="space-y-3">
-          {geoRules.map((rule, index) => (
-            <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
-              <div className="flex items-center space-x-3">
-                <Globe className="w-4 h-4 text-gray-400" />
-                <span className="text-sm text-gray-900">{rule.region} Cards</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <ArrowRight className="w-4 h-4 text-gray-400" />
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+            <div className="space-y-4">
+              <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-4">
+                <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
+                  Primary processor
+                </label>
                 <select
-                  value={rule.psp}
-                  className="px-3 py-1 border rounded text-sm"
-                  onChange={(e) => {
-                    const newRules = [...geoRules];
-                    newRules[index].psp = e.target.value;
-                    setGeoRules(newRules);
-                  }}
+                  value={primaryPSP}
+                  onChange={(event) => handlePrimaryChange(event.target.value)}
+                  className="merchant-input w-full"
+                  disabled={loading || saving}
                 >
+                  <option value="">Select primary processor</option>
                   {activePSPs.map((psp) => (
-                    <option key={psp.id} value={psp.id.toLowerCase()}>{psp.name}</option>
+                    <option key={psp.id} value={psp.id}>
+                      {psp.name}
+                    </option>
                   ))}
                 </select>
+                <p className="mt-2 text-sm text-[color:var(--merchant-muted)]">
+                  This processor receives traffic first. If it is unavailable or unsupported, checkout falls through to the next configured processor.
+                </p>
+              </div>
+
+              <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                      Available fallbacks
+                    </div>
+                    <div className="text-sm text-[color:var(--merchant-muted)]">
+                      Add active processors to the fallback order.
+                    </div>
+                  </div>
+                  <StatusBadge tone="neutral">
+                    {availableFallbacks.length} available
+                  </StatusBadge>
+                </div>
+                <div className="space-y-2">
+                  {availableFallbacks.length > 0 ? (
+                    availableFallbacks.map((psp) => (
+                      <div
+                        key={psp.id}
+                        className="flex items-center justify-between gap-3 rounded-[0.95rem] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-3 py-3"
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="rounded-xl bg-[color:var(--merchant-brand-soft)] p-2">
+                            <CreditCard className="h-4 w-4 text-[color:var(--merchant-brand)]" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium text-[color:var(--merchant-ink)]">
+                              {psp.name}
+                            </div>
+                            <div className="text-xs text-[color:var(--merchant-muted)]">
+                              Active processor
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => addFallback(psp.id)}
+                          className="merchant-button-secondary px-3 py-2 text-sm"
+                          disabled={saving}
+                        >
+                          Add fallback
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-[0.95rem] border border-dashed border-[color:var(--merchant-line)] px-3 py-4 text-sm text-[color:var(--merchant-muted)]">
+                      All active processors are already in the current routing order.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          ))}
-        </div>
-      </div>
 
-      {/* Benefits Info */}
-      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-        <div className="flex items-center space-x-3">
-          <TrendingUp className="w-5 h-5 text-green-600" />
-          <div className="text-sm text-green-900">
-            <p className="font-medium mb-1">Expected Improvement</p>
-            <p>Multi-PSP routing can improve your payment success rate by 2-3% on average.</p>
+            <div className="space-y-4">
+              <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                      Fallback order
+                    </div>
+                    <div className="text-sm text-[color:var(--merchant-muted)]">
+                      Reorder the processors that should take over after the primary path.
+                    </div>
+                  </div>
+                  <StatusBadge tone="success">
+                    {selectedFlow.length} total path{selectedFlow.length === 1 ? '' : 's'}
+                  </StatusBadge>
+                </div>
+
+                <div className="space-y-2">
+                  {primaryPSP ? (
+                    <div className="flex items-center justify-between gap-3 rounded-[0.95rem] border border-[color:var(--merchant-brand-soft)] bg-[color:var(--merchant-brand-soft)]/55 px-3 py-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="rounded-xl bg-white p-2">
+                          <ShieldCheck className="h-4 w-4 text-[color:var(--merchant-brand)]" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-[color:var(--merchant-ink)]">
+                            {activePSPs.find((psp) => psp.id === primaryPSP)?.name}
+                          </div>
+                          <div className="text-xs text-[color:var(--merchant-muted)]">
+                            Primary processor
+                          </div>
+                        </div>
+                      </div>
+                      <StatusBadge tone="brand">Primary</StatusBadge>
+                    </div>
+                  ) : null}
+
+                  {fallbackChain.length > 0 ? (
+                    fallbackChain.map((pspId, index) => {
+                      const psp = activePSPs.find((item) => item.id === pspId);
+                      if (!psp) return null;
+                      return (
+                        <div
+                          key={pspId}
+                          className="flex items-center justify-between gap-3 rounded-[0.95rem] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-3 py-3"
+                        >
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="rounded-xl bg-white p-2">
+                              <CreditCard className="h-4 w-4 text-[color:var(--merchant-brand)]" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-medium text-[color:var(--merchant-ink)]">
+                                {psp.name}
+                              </div>
+                              <div className="text-xs text-[color:var(--merchant-muted)]">
+                                Fallback {index + 1}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => moveFallback(pspId, 'up')}
+                              className="merchant-button-secondary px-2.5 py-2"
+                              disabled={saving || index === 0}
+                              aria-label={`Move ${psp.name} up`}
+                            >
+                              <ArrowUp className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveFallback(pspId, 'down')}
+                              className="merchant-button-secondary px-2.5 py-2"
+                              disabled={saving || index === fallbackChain.length - 1}
+                              aria-label={`Move ${psp.name} down`}
+                            >
+                              <ArrowDown className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeFallback(pspId)}
+                              className="merchant-button-secondary px-3 py-2 text-sm"
+                              disabled={saving}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="rounded-[0.95rem] border border-dashed border-[color:var(--merchant-line)] px-3 py-4 text-sm text-[color:var(--merchant-muted)]">
+                      No fallback processors selected yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-4">
+                <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                  Runtime flow
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted-strong)]">
+                  {selectedFlow.length > 0 ? (
+                    selectedFlow.map((pspId, index) => {
+                      const psp = activePSPs.find((item) => item.id === pspId);
+                      if (!psp) return null;
+                      return (
+                        <div key={pspId} className="flex items-center gap-2">
+                          <span className="rounded-full border border-[color:var(--merchant-line)] bg-white px-3 py-1.5 font-medium text-[color:var(--merchant-ink)]">
+                            {index === 0 ? `Primary: ${psp.name}` : `Fallback ${index}: ${psp.name}`}
+                          </span>
+                          {index < selectedFlow.length - 1 ? (
+                            <span className="text-[color:var(--merchant-muted)]">→</span>
+                          ) : null}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <span>Select a primary processor to define the routing path.</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {loading ? (
+              <div className="flex items-center gap-2 text-sm text-[color:var(--merchant-muted)]">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Loading current routing…</span>
+              </div>
+            ) : null}
+            <MerchantButton
+              type="button"
+              onClick={handleSave}
+              icon={Save}
+              disabled={saving || loading || !primaryPSP}
+            >
+              {saving ? 'Saving routing…' : 'Save routing'}
+            </MerchantButton>
           </div>
         </div>
-      </div>
-
-      {/* Save Button */}
-      <div className="flex justify-end">
-        <button
-          onClick={handleSaveRouting}
-          disabled={saving || !primaryPSP}
-          className="flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-        >
-          <Save className="w-5 h-5" />
-          <span>{saving ? 'Saving...' : 'Save Routing Configuration'}</span>
-        </button>
-      </div>
+      </SurfaceCard>
     </div>
   );
 }

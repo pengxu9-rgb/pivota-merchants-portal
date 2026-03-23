@@ -1,19 +1,23 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  Store,
-  CreditCard,
-  Plus,
-  Settings,
-  Loader2,
   Copy,
+  CreditCard,
+  KeyRound,
+  Loader2,
+  Plus,
+  RefreshCcw,
+  Send,
+  Settings,
+  Store,
   Webhook,
 } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
-import PSPRoutingConfig from '@/components/PSPRoutingConfig';
+
 import ConnectStoreModal from '@/components/ConnectStoreModal';
+import PSPRoutingConfig from '@/components/PSPRoutingConfig';
 import { PSPConfigForm } from '@/components/PSPConfigForm';
+import { apiClient } from '@/lib/api-client';
 import {
   EmptyState,
   MerchantButton,
@@ -22,62 +26,145 @@ import {
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
 
+
+const MERCHANT_WEBHOOK_EVENTS = [
+  'order.created',
+  'payment.completed',
+  'payment.failed',
+  'refund.processed',
+];
+
+type ActiveTab = 'stores' | 'psps' | 'routing' | 'webhooks';
+type NoticeTone = 'success' | 'warning' | 'critical';
+
+type NoticeState =
+  | {
+      tone: NoticeTone;
+      text: string;
+    }
+  | null;
+
+interface WebhookFormState {
+  url: string;
+  enabled: boolean;
+  events: string[];
+}
+
 export default function IntegrationsPage() {
   const [loading, setLoading] = useState(true);
-  const [merchantId, setMerchantId] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'stores' | 'psps' | 'routing' | 'webhooks'>('stores');
-  
-  // Data states
+  const [merchantId, setMerchantId] = useState('');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('stores');
+
   const [connectedStores, setConnectedStores] = useState<any[]>([]);
   const [connectedPSPs, setConnectedPSPs] = useState<any[]>([]);
+  const [apiCredentials, setApiCredentials] = useState<any>(null);
   const [webhookConfig, setWebhookConfig] = useState<any>(null);
-  const [apiKey, setApiKey] = useState<string>('');
-  
-  // UI states
+  const [webhookDeliveries, setWebhookDeliveries] = useState<any[]>([]);
+  const [deliverySummary, setDeliverySummary] = useState<any>(null);
+  const [webhookSecret, setWebhookSecret] = useState<string>('');
+
   const [showConnectStore, setShowConnectStore] = useState(false);
   const [showConnectPSP, setShowConnectPSP] = useState(false);
-  const [selectedPSPProvider, setSelectedPSPProvider] = useState<string>('');
+  const [selectedPSPProvider, setSelectedPSPProvider] = useState('');
   const [syncingStoreId, setSyncingStoreId] = useState<string | null>(null);
-  const [testing, setTesting] = useState<string | null>(null);
+  const [testingPspId, setTestingPspId] = useState<string | null>(null);
+  const [savingWebhook, setSavingWebhook] = useState(false);
+  const [sendingWebhookTest, setSendingWebhookTest] = useState(false);
+  const [rotatingApiKey, setRotatingApiKey] = useState(false);
+  const [rotatingSecret, setRotatingSecret] = useState(false);
+  const [loadingSecret, setLoadingSecret] = useState(false);
+  const [notice, setNotice] = useState<NoticeState>(null);
+  const [webhookForm, setWebhookForm] = useState<WebhookFormState>({
+    url: '',
+    enabled: false,
+    events: ['order.created', 'payment.completed', 'payment.failed'],
+  });
 
-  const primaryStoreId = connectedStores.find((s) => s?.is_active)?.id || null;
-  const activePSPCount = connectedPSPs.filter((p) => p.is_active).length;
+  const primaryStoreId = connectedStores.find((store) => store?.is_active)?.id || null;
+  const activePSPCount = connectedPSPs.filter((psp) => psp.is_active).length;
   const showRoutingTab = activePSPCount > 1;
   const inactiveWebhookCount = webhookConfig?.enabled ? 0 : 1;
-  const tabButtonClass = (tab: 'stores' | 'psps' | 'routing' | 'webhooks') =>
+  const tabButtonClass = (tab: ActiveTab) =>
     `flex min-h-[4.5rem] items-center gap-3 rounded-[1rem] px-4 py-3 text-left transition ${
       activeTab === tab
         ? 'bg-white text-[color:var(--merchant-ink)] shadow-[var(--merchant-shadow-panel)]'
         : 'text-[color:var(--merchant-muted-strong)] hover:bg-white/75'
     }`;
 
+  const webhookStatusTone: 'success' | 'warning' = webhookConfig?.enabled ? 'success' : 'warning';
+  const apiKeyAvailable = Boolean(apiCredentials?.issued && apiCredentials?.api_key);
+  const quickStartApiKey = apiCredentials?.api_key || '<your-merchant-api-key>';
+  const selectedTestEvent =
+    webhookForm.events.find((event) => MERCHANT_WEBHOOK_EVENTS.includes(event)) ||
+    'order.created';
+
+  const routingSummary = useMemo(() => {
+    const activePsps = connectedPSPs.filter((psp) => psp.is_active);
+    return activePsps.length > 1
+      ? `${activePsps.length} active processors available for priority routing`
+      : 'Connect another active processor to configure failover';
+  }, [connectedPSPs]);
+
   useEffect(() => {
     const id = localStorage.getItem('merchant_id') || '';
-    const key = localStorage.getItem('merchant_api_key') || 'pk_live_' + Math.random().toString(36).substring(2, 15);
     setMerchantId(id);
-    setApiKey(key);
-    loadIntegrationData(id);
+    void loadIntegrationData(id);
   }, []);
 
-  const loadIntegrationData = async (merchantId: string) => {
+  useEffect(() => {
+    if (!webhookConfig) return;
+    setWebhookForm({
+      url: webhookConfig.url || '',
+      enabled: Boolean(webhookConfig.enabled),
+      events:
+        webhookConfig.events?.length > 0
+          ? webhookConfig.events
+          : ['order.created', 'payment.completed', 'payment.failed'],
+    });
+  }, [webhookConfig]);
+
+  const loadIntegrationData = async (merchantIdValue: string) => {
     try {
       setLoading(true);
-      
-      const [stores, psps, webhook] = await Promise.all([
-        merchantId ? apiClient.getConnectedStores(merchantId).catch(() => []) : [],
-        merchantId ? apiClient.getPSPs(merchantId).catch(() => []) : [],
+      setNotice(null);
+
+      const [stores, psps, apiKey, webhook, deliveries] = await Promise.all([
+        merchantIdValue ? apiClient.getConnectedStores(merchantIdValue).catch(() => []) : [],
+        merchantIdValue ? apiClient.getPSPs(merchantIdValue).catch(() => []) : [],
+        apiClient.getApiCredentials().catch(() => null),
         apiClient.getWebhookConfig().catch(() => null),
+        apiClient.getWebhookLogs(20).catch(() => ({ deliveries: [], summary_24h: null })),
       ]);
-      
+
       setConnectedStores(stores);
       setConnectedPSPs(psps);
+      setApiCredentials(apiKey);
       setWebhookConfig(webhook);
-      
-      console.log('📦 Integration data loaded:', { stores, psps, webhook });
+      setWebhookDeliveries(deliveries?.deliveries || []);
+      setDeliverySummary(deliveries?.summary_24h || null);
+      setWebhookSecret('');
     } catch (error) {
-      console.error('❌ Failed to load integration data:', error);
+      console.error('Failed to load integration data:', error);
+      setNotice({
+        tone: 'warning',
+        text: 'Some integrations data could not be loaded. Sales channels and processor setup may still be available while API or webhook data is degraded.',
+      });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const refreshWebhookState = async () => {
+    try {
+      const [config, deliveries] = await Promise.all([
+        apiClient.getWebhookConfig(),
+        apiClient.getWebhookLogs(20),
+      ]);
+      setWebhookConfig(config);
+      setWebhookDeliveries(deliveries?.deliveries || []);
+      setDeliverySummary(deliveries?.summary_24h || null);
+    } catch (error) {
+      console.error('Failed to refresh webhook state:', error);
     }
   };
 
@@ -100,10 +187,19 @@ export default function IntegrationsPage() {
       } else {
         result = await apiClient.syncPlatformProducts(store.platform);
       }
-      alert(result.message || `✅ ${store.platform} products synced successfully!`);
-      await loadIntegrationData(merchantId); // Reload to update product counts
+      setNotice({
+        tone: 'success',
+        text: result.message || `${store.platform} products synced successfully.`,
+      });
+      await loadIntegrationData(merchantId);
     } catch (error: any) {
-      alert('❌ Failed to sync products: ' + (error.response?.data?.detail || error.message));
+      setNotice({
+        tone: 'critical',
+        text:
+          error.response?.data?.detail ||
+          error.message ||
+          'Failed to sync products for this sales channel.',
+      });
     } finally {
       setSyncingStoreId(null);
     }
@@ -113,98 +209,255 @@ export default function IntegrationsPage() {
     if (!store?.id) return;
     try {
       const response = await apiClient.setPrimaryStore(store.id);
-      alert(response.message || '✅ Primary store updated');
+      setNotice({
+        tone: 'success',
+        text: response.message || 'Primary sales channel updated.',
+      });
       await loadIntegrationData(merchantId);
     } catch (error: any) {
-      alert('❌ Failed to set primary store: ' + (error.response?.data?.detail || error.message));
+      setNotice({
+        tone: 'critical',
+        text:
+          error.response?.data?.detail ||
+          error.message ||
+          'Failed to set the primary sales channel.',
+      });
     }
   };
 
   const handleDeleteStore = async (store: any) => {
-    if (!confirm(`Are you sure you want to delete the store "${store.store_name || store.name}"?\n\nThis will disconnect the store.`)) {
+    if (!confirm(`Disconnect sales channel "${store.store_name || store.name}"?`)) {
       return;
     }
-    
+
     try {
       setLoading(true);
       const response = await apiClient.deleteStore(store.id);
-      alert(response.message || '✅ Store deleted');
+      setNotice({
+        tone: 'success',
+        text: response.message || 'Sales channel removed.',
+      });
       await loadIntegrationData(merchantId);
     } catch (error: any) {
-      alert('❌ Delete failed: ' + (error.response?.data?.detail || error.message));
+      setNotice({
+        tone: 'critical',
+        text:
+          error.response?.data?.detail ||
+          error.message ||
+          'Failed to remove the sales channel.',
+      });
     } finally {
       setLoading(false);
     }
   };
 
   const handleDeletePSP = async (psp: any) => {
-    if (!confirm(`Are you sure you want to delete PSP "${psp.name}"?\n\nThis will disconnect the payment processor.`)) {
+    if (!confirm(`Disconnect payment processor "${psp.name}"?`)) {
       return;
     }
-    
+
     try {
       setLoading(true);
       const response = await apiClient.deletePSP(psp.id);
-      alert(response.message || '✅ PSP deleted');
+      setNotice({
+        tone: 'success',
+        text: response.message || 'Payment processor removed.',
+      });
       await loadIntegrationData(merchantId);
     } catch (error: any) {
-      alert('❌ Delete failed: ' + (error.response?.data?.detail || error.message));
+      setNotice({
+        tone: 'critical',
+        text:
+          error.response?.data?.detail ||
+          error.message ||
+          'Failed to remove the payment processor.',
+      });
     } finally {
       setLoading(false);
     }
   };
 
   const handleTestPSP = async (pspId: string) => {
-    setTesting(pspId);
+    setTestingPspId(pspId);
     try {
       const result = await apiClient.testPSP(pspId);
       const status = (result?.status || '').toLowerCase();
-      const message = result?.message || 'PSP test completed';
-
-      if (status === 'success') {
-        alert('✅ ' + message);
-        return;
-      }
-
-      if (status === 'warning') {
-        alert('⚠️ ' + message);
-        return;
-      }
-
-      alert('❌ ' + message);
+      const message = result?.message || 'Processor test completed.';
+      setNotice({
+        tone:
+          status === 'success'
+            ? 'success'
+            : status === 'warning'
+              ? 'warning'
+              : 'critical',
+        text: message,
+      });
     } catch (error: any) {
-      alert('❌ PSP test failed: ' + (error.response?.data?.detail || error.message));
+      setNotice({
+        tone: 'critical',
+        text:
+          error.response?.data?.detail ||
+          error.message ||
+          'Processor test failed.',
+      });
     } finally {
-      setTesting(null);
+      setTestingPspId(null);
     }
   };
 
   const handleSaveWebhook = async () => {
-    const url = prompt('Enter your webhook URL:', webhookConfig?.url || '');
-    if (!url) return;
-    
     try {
-      await apiClient.updateWebhookConfig({
-        url,
-        events: ['order.created', 'payment.completed', 'payment.failed'],
-        enabled: true,
+      setSavingWebhook(true);
+      setNotice(null);
+      const saved = await apiClient.updateWebhookConfig({
+        url: webhookForm.url.trim(),
+        enabled: webhookForm.enabled,
+        events: webhookForm.events,
       });
-      alert('✅ Webhook configuration saved!');
-      await loadIntegrationData(merchantId);
+      setWebhookConfig({
+        url: saved.url || webhookForm.url.trim(),
+        enabled: Boolean(saved.enabled),
+        events: saved.events || webhookForm.events,
+        signing_secret_last4: saved.signing_secret_last4 || webhookConfig?.signing_secret_last4 || null,
+        last_test_at: saved.last_test_at || webhookConfig?.last_test_at || null,
+        last_test_status: saved.last_test_status || webhookConfig?.last_test_status || null,
+        delivery_summary_24h: saved.delivery_summary_24h || webhookConfig?.delivery_summary_24h || null,
+      });
+      await refreshWebhookState();
+      setNotice({
+        tone: 'success',
+        text: 'Webhook configuration saved.',
+      });
     } catch (error: any) {
-      alert('❌ Failed to save webhook: ' + (error.response?.data?.detail || error.message));
+      setNotice({
+        tone: 'critical',
+        text:
+          error.response?.data?.detail ||
+          error.message ||
+          'Failed to save webhook configuration.',
+      });
+    } finally {
+      setSavingWebhook(false);
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    alert('Copied to clipboard!');
+  const handleToggleWebhookEvent = (eventType: string) => {
+    setWebhookForm((current) => {
+      const hasEvent = current.events.includes(eventType);
+      return {
+        ...current,
+        events: hasEvent
+          ? current.events.filter((item) => item !== eventType)
+          : [...current.events, eventType],
+      };
+    });
+  };
+
+  const handleRotateApiKey = async () => {
+    try {
+      setRotatingApiKey(true);
+      const credentials = await apiClient.rotateApiCredentials();
+      setApiCredentials(credentials);
+      setNotice({
+        tone: 'success',
+        text: 'Merchant API key rotated. The previous key is now invalid.',
+      });
+    } catch (error: any) {
+      setNotice({
+        tone: 'critical',
+        text:
+          error.response?.data?.detail ||
+          error.message ||
+          'Failed to rotate the merchant API key.',
+      });
+    } finally {
+      setRotatingApiKey(false);
+    }
+  };
+
+  const handleRevealSecret = async () => {
+    try {
+      setLoadingSecret(true);
+      const secret = await apiClient.getWebhookSecret();
+      setWebhookSecret(secret?.signing_secret || '');
+    } catch (error: any) {
+      setNotice({
+        tone: 'critical',
+        text:
+          error.response?.data?.detail ||
+          error.message ||
+          'Failed to load the webhook signing secret.',
+      });
+    } finally {
+      setLoadingSecret(false);
+    }
+  };
+
+  const handleRotateSecret = async () => {
+    try {
+      setRotatingSecret(true);
+      const result = await apiClient.rotateWebhookSecret();
+      setWebhookSecret(result?.new_signing_secret || '');
+      await refreshWebhookState();
+      setNotice({
+        tone: 'success',
+        text: 'Webhook signing secret rotated. Use the new secret in your receiver immediately.',
+      });
+    } catch (error: any) {
+      setNotice({
+        tone: 'critical',
+        text:
+          error.response?.data?.detail ||
+          error.message ||
+          'Failed to rotate the webhook signing secret.',
+      });
+    } finally {
+      setRotatingSecret(false);
+    }
+  };
+
+  const handleSendTestWebhook = async () => {
+    try {
+      setSendingWebhookTest(true);
+      setNotice(null);
+      await apiClient.testWebhook(selectedTestEvent);
+      await refreshWebhookState();
+      setNotice({
+        tone: 'success',
+        text: `Test webhook sent using ${selectedTestEvent}. Check recent deliveries for the recorded result.`,
+      });
+    } catch (error: any) {
+      setNotice({
+        tone: 'critical',
+        text:
+          error.response?.data?.detail ||
+          error.message ||
+          'Failed to send the test webhook.',
+      });
+    } finally {
+      setSendingWebhookTest(false);
+    }
+  };
+
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setNotice({
+        tone: 'success',
+        text: `${label} copied to clipboard.`,
+      });
+    } catch (error) {
+      setNotice({
+        tone: 'warning',
+        text: `Copying ${label.toLowerCase()} failed in this browser session.`,
+      });
+    }
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex h-64 items-center justify-center">
+        <div className="animate-spin rounded-full border-b-2 border-[color:var(--merchant-brand)] h-12 w-12" />
       </div>
     );
   }
@@ -213,8 +466,8 @@ export default function IntegrationsPage() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Integrations"
-        title="Set up sales channels, payments, and merchant-facing commerce plumbing."
-        description="Keep storefront connections, payment setup, routing rules, and API credentials in one place, but frame them as launch readiness rather than platform internals."
+        title="Set up sales channels, payments, routing, and merchant-facing API delivery."
+        description="Keep storefront connections, payment setup, failover routing, API credentials, and outbound webhook delivery in one place without promising capabilities that are not live."
         actions={
           <>
             <MerchantButton type="button" variant="secondary" onClick={() => setShowConnectPSP(true)} icon={CreditCard}>
@@ -226,6 +479,20 @@ export default function IntegrationsPage() {
           </>
         }
       />
+
+      {notice ? (
+        <div
+          className={`rounded-[1rem] border px-4 py-3 text-sm ${
+            notice.tone === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+              : notice.tone === 'critical'
+                ? 'border-rose-200 bg-rose-50 text-rose-900'
+                : 'border-amber-200 bg-amber-50 text-amber-900'
+          }`}
+        >
+          {notice.text}
+        </div>
+      ) : null}
 
       <SurfaceCard strong>
         <div className="grid gap-3 px-5 py-5 lg:grid-cols-4">
@@ -244,20 +511,16 @@ export default function IntegrationsPage() {
               {activePSPCount}
             </div>
             <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
-              Active processors ready to route
+              Active processors available for checkout
             </div>
           </div>
           <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-3.5">
-            <div className="text-sm text-[color:var(--merchant-muted)]">Primary channel</div>
+            <div className="text-sm text-[color:var(--merchant-muted)]">Routing</div>
             <div className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
-              {connectedStores.find((store) => store?.is_active)?.store_name ||
-                connectedStores.find((store) => store?.is_active)?.domain ||
-                'Not set'}
+              {showRoutingTab ? 'Priority + fallback' : 'Single processor'}
             </div>
-            <div className="mt-2">
-              <StatusBadge tone={primaryStoreId ? 'success' : 'warning'}>
-                {primaryStoreId ? 'Primary channel selected' : 'Choose a primary channel'}
-              </StatusBadge>
+            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
+              {routingSummary}
             </div>
           </div>
           <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-3.5">
@@ -265,22 +528,21 @@ export default function IntegrationsPage() {
             <div className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
               {webhookConfig?.enabled ? 'Configured' : 'Needs attention'}
             </div>
-            <div className="mt-2">
-              <StatusBadge tone={webhookConfig?.enabled ? 'success' : 'warning'}>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <StatusBadge tone={webhookStatusTone}>
                 {webhookConfig?.enabled ? 'Webhook active' : 'Webhook not configured'}
+              </StatusBadge>
+              <StatusBadge tone={apiKeyAvailable ? 'success' : 'warning'}>
+                {apiKeyAvailable ? 'API key issued' : 'API key missing'}
               </StatusBadge>
             </div>
           </div>
         </div>
       </SurfaceCard>
 
-
       <div className="merchant-panel merchant-panel-muted p-2">
         <nav className={`grid gap-2 ${showRoutingTab ? 'grid-cols-2 xl:grid-cols-4' : 'grid-cols-1 md:grid-cols-3'}`}>
-          <button
-            onClick={() => setActiveTab('stores')}
-            className={tabButtonClass('stores')}
-          >
+          <button onClick={() => setActiveTab('stores')} className={tabButtonClass('stores')}>
             <Store className="h-4 w-4" />
             <div className="min-w-0">
               <div className="text-sm font-medium">Sales channels</div>
@@ -289,49 +551,39 @@ export default function IntegrationsPage() {
               </div>
             </div>
           </button>
-          <button
-            onClick={() => setActiveTab('psps')}
-            className={tabButtonClass('psps')}
-          >
+          <button onClick={() => setActiveTab('psps')} className={tabButtonClass('psps')}>
             <CreditCard className="h-4 w-4" />
             <div className="min-w-0">
               <div className="text-sm font-medium">Payment setup</div>
               <div className="text-xs text-[color:var(--merchant-muted)]">
-                {activePSPCount} active processors ready to route
+                {activePSPCount} active processors ready for checkout
               </div>
             </div>
           </button>
-          {showRoutingTab && (
-            <button
-              onClick={() => setActiveTab('routing')}
-              className={tabButtonClass('routing')}
-            >
+          {showRoutingTab ? (
+            <button onClick={() => setActiveTab('routing')} className={tabButtonClass('routing')}>
               <Settings className="h-4 w-4" />
               <div className="min-w-0">
                 <div className="text-sm font-medium">Routing</div>
                 <div className="text-xs text-[color:var(--merchant-muted)]">
-                  Distribute traffic across active processors
+                  Primary processor with ordered fallback
                 </div>
               </div>
             </button>
-          )}
-          <button
-            onClick={() => setActiveTab('webhooks')}
-            className={tabButtonClass('webhooks')}
-          >
+          ) : null}
+          <button onClick={() => setActiveTab('webhooks')} className={tabButtonClass('webhooks')}>
             <Webhook className="h-4 w-4" />
             <div className="min-w-0">
               <div className="text-sm font-medium">API & webhooks</div>
               <div className="text-xs text-[color:var(--merchant-muted)]">
-                {inactiveWebhookCount === 0 ? 'Delivery is configured' : 'Webhook setup needs attention'}
+                {inactiveWebhookCount === 0 ? 'Credentialed and live' : 'Finish configuration'}
               </div>
             </div>
           </button>
         </nav>
       </div>
 
-      {/* Stores Tab */}
-      {activeTab === 'stores' && (
+      {activeTab === 'stores' ? (
         <div className="space-y-4">
           <SurfaceCard
             title="Sales channels"
@@ -362,7 +614,7 @@ export default function IntegrationsPage() {
                         <div className="min-w-0 space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="truncate text-base font-semibold text-[color:var(--merchant-ink)]">
-                              {store.store_name || store.domain || 'Store ' + (index + 1)}
+                              {store.store_name || store.domain || `Store ${index + 1}`}
                             </h3>
                             {primaryStoreId && store.id === primaryStoreId ? (
                               <StatusBadge tone="brand">Primary</StatusBadge>
@@ -380,15 +632,15 @@ export default function IntegrationsPage() {
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        {store?.is_active && primaryStoreId && store.id !== primaryStoreId && (
+                        {store?.is_active && primaryStoreId && store.id !== primaryStoreId ? (
                           <button
                             onClick={() => handleSetPrimaryStore(store)}
                             className="merchant-button-secondary px-3 py-2 text-sm"
                           >
                             Make primary
                           </button>
-                        )}
-                        {(store.platform === 'shopify' || store.platform === 'wix') && (
+                        ) : null}
+                        {store.platform === 'shopify' || store.platform === 'wix' ? (
                           <button
                             onClick={() => handleSyncProducts(store)}
                             disabled={syncingStoreId === store.id}
@@ -398,13 +650,13 @@ export default function IntegrationsPage() {
                             {syncingStoreId === store.id ? (
                               <>
                                 <Loader2 className="h-4 w-4 animate-spin" />
-                                <span>Syncing...</span>
+                                <span>Syncing…</span>
                               </>
                             ) : (
                               <span>Sync products</span>
                             )}
                           </button>
-                        )}
+                        ) : null}
                         <button
                           onClick={() => handleDeleteStore(store)}
                           className="rounded-full border border-[color:var(--merchant-line)] px-3 py-2 text-sm font-medium text-[color:var(--merchant-muted-strong)] transition hover:bg-[color:var(--merchant-surface-muted)]"
@@ -430,7 +682,6 @@ export default function IntegrationsPage() {
             </div>
           </SurfaceCard>
 
-          {/* Connect Store Modal - supports all platforms */}
           <ConnectStoreModal
             isOpen={showConnectStore}
             onClose={() => setShowConnectStore(false)}
@@ -438,10 +689,9 @@ export default function IntegrationsPage() {
             merchantId={merchantId}
           />
         </div>
-      )}
+      ) : null}
 
-      {/* PSPs Tab */}
-      {activeTab === 'psps' && (
+      {activeTab === 'psps' ? (
         <div className="space-y-4">
           <SurfaceCard
             title="Payment setup"
@@ -459,55 +709,57 @@ export default function IntegrationsPage() {
           >
             <div className="space-y-3 p-5">
               {activePSPCount > 0 ? (
-                connectedPSPs.filter((p) => p.is_active).map((psp) => (
-                  <div
-                    key={psp.id}
-                    className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-4"
-                  >
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <div className="rounded-xl bg-[color:var(--merchant-brand-soft)] p-2">
-                          <CreditCard className="h-5 w-5 text-[color:var(--merchant-brand)]" />
-                        </div>
-                        <div className="min-w-0 space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="truncate text-base font-semibold text-[color:var(--merchant-ink)]">
-                              {psp.name}
-                            </h3>
-                            <StatusBadge tone="success">Active</StatusBadge>
+                connectedPSPs
+                  .filter((psp) => psp.is_active)
+                  .map((psp) => (
+                    <div
+                      key={psp.id}
+                      className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-4"
+                    >
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <div className="rounded-xl bg-[color:var(--merchant-brand-soft)] p-2">
+                            <CreditCard className="h-5 w-5 text-[color:var(--merchant-brand)]" />
                           </div>
-                          <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted-strong)]">
-                            <span>{psp.success_rate || 0}% success rate</span>
-                            <span>•</span>
-                            <span>${psp.volume_today || 0} volume today</span>
+                          <div className="min-w-0 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="truncate text-base font-semibold text-[color:var(--merchant-ink)]">
+                                {psp.name}
+                              </h3>
+                              <StatusBadge tone="success">Active</StatusBadge>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted-strong)]">
+                              <span>{psp.success_rate || 0}% success rate</span>
+                              <span>•</span>
+                              <span>${psp.volume_today || 0} volume today</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          onClick={() => handleTestPSP(psp.id)}
-                          disabled={testing === psp.id}
-                          className="merchant-button-secondary px-3 py-2 text-sm disabled:opacity-50"
-                        >
-                          {testing === psp.id ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              <span>Testing...</span>
-                            </>
-                          ) : (
-                            <span>Run test</span>
-                          )}
-                        </button>
-                        <button
-                          onClick={() => handleDeletePSP(psp)}
-                          className="rounded-full border border-[color:var(--merchant-line)] px-3 py-2 text-sm font-medium text-[color:var(--merchant-muted-strong)] transition hover:bg-[color:var(--merchant-surface-muted)]"
-                        >
-                          Remove
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            onClick={() => handleTestPSP(psp.id)}
+                            disabled={testingPspId === psp.id}
+                            className="merchant-button-secondary px-3 py-2 text-sm disabled:opacity-50"
+                          >
+                            {testingPspId === psp.id ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <span>Testing…</span>
+                              </>
+                            ) : (
+                              <span>Run test</span>
+                            )}
+                          </button>
+                          <button
+                            onClick={() => handleDeletePSP(psp)}
+                            className="rounded-full border border-[color:var(--merchant-line)] px-3 py-2 text-sm font-medium text-[color:var(--merchant-muted-strong)] transition hover:bg-[color:var(--merchant-surface-muted)]"
+                          >
+                            Remove
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  ))
               ) : (
                 <EmptyState
                   icon={CreditCard}
@@ -527,34 +779,33 @@ export default function IntegrationsPage() {
             <div className="grid gap-3 text-sm text-[color:var(--merchant-muted-strong)] md:grid-cols-2 xl:grid-cols-4">
               <div>
                 <div className="font-medium text-[color:var(--merchant-ink)]">Fallback coverage</div>
-                <div>Route traffic to another processor when one path degrades.</div>
+                <div>Route checkout to another processor when one path degrades.</div>
               </div>
               <div>
-                <div className="font-medium text-[color:var(--merchant-ink)]">Acceptance lift</div>
-                <div>Improve approval rates by matching processors to geography or card mix.</div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">Checkout continuity</div>
+                <div>Keep payment execution attached to the processors that are actually connected.</div>
               </div>
               <div>
                 <div className="font-medium text-[color:var(--merchant-ink)]">Operational resilience</div>
-                <div>Keep checkout moving while you test, update, or replace a provider.</div>
+                <div>Test a processor before launch and keep the backup order visible.</div>
               </div>
               <div>
-                <div className="font-medium text-[color:var(--merchant-ink)]">Commercial flexibility</div>
-                <div>Compare fees, payout timing, and settlement behavior across providers.</div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">Truthful setup</div>
+                <div>Only live processors and live routing paths are surfaced here.</div>
               </div>
             </div>
           </div>
 
-          {/* Connect PSP - Provider Selection or Config Form */}
-          {showConnectPSP && !selectedPSPProvider && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
-                <h3 className="text-lg font-semibold mb-4">Select Payment Processor</h3>
+          {showConnectPSP && !selectedPSPProvider ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+              <div className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6">
+                <h3 className="mb-4 text-lg font-semibold">Select payment processor</h3>
                 <div className="space-y-3">
                   {['Stripe', 'PayPal', 'Adyen', 'Checkout.com', 'Square', 'Mollie', 'Braintree'].map((psp) => (
                     <button
                       key={psp}
                       onClick={() => setSelectedPSPProvider(psp)}
-                      className="w-full p-4 border rounded-lg hover:bg-gray-50 text-left transition-colors"
+                      className="w-full rounded-lg border p-4 text-left transition-colors hover:bg-gray-50"
                     >
                       <h4 className="font-medium">{psp}</h4>
                       <p className="text-sm text-gray-600">Configure {psp} payment processing</p>
@@ -563,16 +814,15 @@ export default function IntegrationsPage() {
                 </div>
                 <button
                   onClick={() => setShowConnectPSP(false)}
-                  className="mt-4 w-full py-2 border rounded-lg hover:bg-gray-50"
+                  className="mt-4 w-full rounded-lg border py-2 hover:bg-gray-50"
                 >
                   Cancel
                 </button>
               </div>
             </div>
-          )}
-          
-          {/* PSP Config Form */}
-          {selectedPSPProvider && (
+          ) : null}
+
+          {selectedPSPProvider ? (
             <PSPConfigForm
               provider={selectedPSPProvider}
               merchantId={merchantId}
@@ -583,119 +833,379 @@ export default function IntegrationsPage() {
               onSuccess={() => {
                 setSelectedPSPProvider('');
                 setShowConnectPSP(false);
-                handlePSPConnected();
+                void handlePSPConnected();
               }}
               apiClient={apiClient}
             />
-          )}
+          ) : null}
         </div>
-      )}
+      ) : null}
 
-      {/* Routing Tab */}
-      {activeTab === 'routing' && (
+      {activeTab === 'routing' ? (
         <div className="space-y-4">
           <PSPRoutingConfig connectedPSPs={connectedPSPs} />
         </div>
-      )}
+      ) : null}
 
-      {/* Webhooks Tab */}
-      {activeTab === 'webhooks' && (
+      {activeTab === 'webhooks' ? (
         <div className="space-y-4">
           <SurfaceCard
             title="API credentials"
-            description="Keep the current merchant API key available for secure integrations and internal implementation handoff."
-            action={
-              <StatusBadge tone="neutral">
-                {apiKey ? 'Key available' : 'No key found'}
-              </StatusBadge>
-            }
-          >
-            <div className="p-5">
-              <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">Merchant API key</label>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <input
-                  type="text"
-                  value={apiKey}
-                  readOnly
-                  className="merchant-input w-full font-mono text-sm sm:flex-1"
-                />
-                <button
-                  onClick={() => copyToClipboard(apiKey)}
-                  className="merchant-button-secondary px-3 py-2"
-                >
-                  <Copy className="h-4 w-4" />
-                  <span>Copy key</span>
-                </button>
-              </div>
-            </div>
-          </SurfaceCard>
-
-          <SurfaceCard
-            title="Webhook configuration"
-            description="Point delivery events to your commerce stack so payment and order updates stay in sync."
+            description="Use the current merchant API key for external payment execution. The key shown here comes directly from backend truth."
             action={
               <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge tone={webhookConfig?.enabled ? 'success' : 'warning'}>
-                  {webhookConfig?.enabled ? 'Webhook active' : 'Webhook not configured'}
+                <StatusBadge tone={apiKeyAvailable ? 'success' : 'warning'}>
+                  {apiKeyAvailable ? 'Key issued' : 'Key not issued'}
                 </StatusBadge>
-                <MerchantButton type="button" onClick={handleSaveWebhook}>
-                  Configure
+                <MerchantButton
+                  type="button"
+                  variant="secondary"
+                  onClick={handleRotateApiKey}
+                  icon={RefreshCcw}
+                  disabled={rotatingApiKey}
+                >
+                  {rotatingApiKey ? 'Rotating…' : apiKeyAvailable ? 'Rotate key' : 'Issue key'}
                 </MerchantButton>
               </div>
             }
           >
             <div className="space-y-4 p-5">
               <div>
-                <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">Webhook URL</label>
-                <input
-                  type="text"
-                  value={webhookConfig?.url || ''}
-                  placeholder="https://your-domain.com/webhooks/pivota"
-                  className="merchant-input w-full"
-                  readOnly
-                />
+                <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
+                  Merchant API key
+                </label>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    type="text"
+                    value={apiCredentials?.api_key || ''}
+                    readOnly
+                    placeholder="Issue a merchant API key to enable external payment execution."
+                    className="merchant-input w-full font-mono text-sm sm:flex-1"
+                  />
+                  <button
+                    onClick={() => copyToClipboard(apiCredentials?.api_key || '', 'API key')}
+                    className="merchant-button-secondary px-3 py-2 disabled:opacity-50"
+                    disabled={!apiCredentials?.api_key}
+                  >
+                    <Copy className="h-4 w-4" />
+                    <span>Copy key</span>
+                  </button>
+                </div>
               </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">Enabled events</label>
-                <div className="flex flex-wrap gap-2">
-                  {['order.created', 'payment.completed', 'payment.failed', 'product.out_of_stock'].map((event) => (
-                    <StatusBadge
-                      key={event}
-                      tone={webhookConfig?.events?.includes(event) ? 'brand' : 'neutral'}
-                    >
-                      {event}
-                    </StatusBadge>
-                  ))}
+              <div className="grid gap-3 text-sm text-[color:var(--merchant-muted-strong)] md:grid-cols-3">
+                <div className="rounded-[0.95rem] border border-[color:var(--merchant-line)] bg-white/78 px-3 py-3">
+                  <div className="text-xs uppercase tracking-[0.22em] text-[color:var(--merchant-muted)]">
+                    Header
+                  </div>
+                  <div className="mt-2 font-medium text-[color:var(--merchant-ink)]">
+                    {apiCredentials?.header_name || 'X-Merchant-API-Key'}
+                  </div>
+                </div>
+                <div className="rounded-[0.95rem] border border-[color:var(--merchant-line)] bg-white/78 px-3 py-3">
+                  <div className="text-xs uppercase tracking-[0.22em] text-[color:var(--merchant-muted)]">
+                    Endpoint
+                  </div>
+                  <div className="mt-2 font-medium text-[color:var(--merchant-ink)]">
+                    {apiCredentials?.sample_endpoint || '/payment/execute'}
+                  </div>
+                </div>
+                <div className="rounded-[0.95rem] border border-[color:var(--merchant-line)] bg-white/78 px-3 py-3">
+                  <div className="text-xs uppercase tracking-[0.22em] text-[color:var(--merchant-muted)]">
+                    Last 4
+                  </div>
+                  <div className="mt-2 font-medium text-[color:var(--merchant-ink)]">
+                    {apiCredentials?.api_key_last4 || 'Not issued'}
+                  </div>
                 </div>
               </div>
             </div>
           </SurfaceCard>
 
           <SurfaceCard
+            title="Webhook configuration"
+            description="Send merchant order, payment, and refund events to your own stack. Configuration and delivery logs below come from real backend state."
+            action={
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge tone={webhookStatusTone}>
+                  {webhookConfig?.enabled ? 'Webhook active' : 'Webhook not configured'}
+                </StatusBadge>
+                <MerchantButton
+                  type="button"
+                  variant="secondary"
+                  onClick={handleSaveWebhook}
+                  disabled={savingWebhook}
+                >
+                  {savingWebhook ? 'Saving…' : 'Save configuration'}
+                </MerchantButton>
+              </div>
+            }
+          >
+            <div className="space-y-5 p-5">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
+                  Destination URL
+                </label>
+                <input
+                  type="text"
+                  value={webhookForm.url}
+                  onChange={(event) =>
+                    setWebhookForm((current) => ({ ...current, url: event.target.value }))
+                  }
+                  placeholder="https://your-domain.com/webhooks/pivota"
+                  className="merchant-input w-full"
+                />
+              </div>
+
+              <label className="flex items-center gap-3 rounded-[0.95rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={webhookForm.enabled}
+                  onChange={(event) =>
+                    setWebhookForm((current) => ({ ...current, enabled: event.target.checked }))
+                  }
+                  className="h-4 w-4"
+                />
+                <div>
+                  <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                    Enable outbound delivery
+                  </div>
+                  <div className="text-sm text-[color:var(--merchant-muted)]">
+                    Deliver subscribed merchant events to the configured destination.
+                  </div>
+                </div>
+              </label>
+
+              <div>
+                <div className="mb-2 text-sm font-medium text-[color:var(--merchant-ink)]">
+                  Enabled events
+                </div>
+                <div className="grid gap-2 md:grid-cols-2">
+                  {MERCHANT_WEBHOOK_EVENTS.map((eventType) => {
+                    const checked = webhookForm.events.includes(eventType);
+                    return (
+                      <label
+                        key={eventType}
+                        className="flex items-center gap-3 rounded-[0.95rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-3"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => handleToggleWebhookEvent(eventType)}
+                          className="h-4 w-4"
+                        />
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-[color:var(--merchant-ink)]">
+                            {eventType}
+                          </div>
+                          <div className="text-xs text-[color:var(--merchant-muted)]">
+                            Merchant-facing outbound event
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
+                <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                        Signing secret
+                      </div>
+                      <div className="text-sm text-[color:var(--merchant-muted)]">
+                        Use the signing secret to verify Pivota webhook signatures at your destination.
+                      </div>
+                    </div>
+                    <StatusBadge tone="neutral">
+                      Last 4: {webhookConfig?.signing_secret_last4 || 'Not generated'}
+                    </StatusBadge>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={handleRevealSecret}
+                      className="merchant-button-secondary px-3 py-2"
+                      disabled={loadingSecret}
+                    >
+                      {loadingSecret ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Loading…</span>
+                        </>
+                      ) : (
+                        <>
+                          <KeyRound className="h-4 w-4" />
+                          <span>Reveal secret</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRotateSecret}
+                      className="merchant-button-secondary px-3 py-2"
+                      disabled={rotatingSecret}
+                    >
+                      {rotatingSecret ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Rotating…</span>
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCcw className="h-4 w-4" />
+                          <span>Rotate secret</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(webhookSecret, 'Webhook secret')}
+                      className="merchant-button-secondary px-3 py-2 disabled:opacity-50"
+                      disabled={!webhookSecret}
+                    >
+                      <Copy className="h-4 w-4" />
+                      <span>Copy secret</span>
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={webhookSecret}
+                    readOnly
+                    placeholder="Reveal the current secret when you need to configure your receiver."
+                    className="merchant-input mt-3 w-full font-mono text-sm"
+                  />
+                </div>
+
+                <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-4">
+                  <div className="mb-3 text-sm font-medium text-[color:var(--merchant-ink)]">
+                    Delivery controls
+                  </div>
+                  <div className="space-y-3 text-sm text-[color:var(--merchant-muted-strong)]">
+                    <div className="rounded-[0.95rem] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-3 py-3">
+                      <div className="font-medium text-[color:var(--merchant-ink)]">Last test status</div>
+                      <div className="mt-1">
+                        {webhookConfig?.last_test_status || 'No test delivery yet'}
+                      </div>
+                    </div>
+                    <div className="rounded-[0.95rem] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-3 py-3">
+                      <div className="font-medium text-[color:var(--merchant-ink)]">Last test time</div>
+                      <div className="mt-1">
+                        {webhookConfig?.last_test_at
+                          ? new Date(webhookConfig.last_test_at).toLocaleString()
+                          : 'No test delivery yet'}
+                      </div>
+                    </div>
+                    <MerchantButton
+                      type="button"
+                      onClick={handleSendTestWebhook}
+                      icon={Send}
+                      disabled={sendingWebhookTest}
+                    >
+                      {sendingWebhookTest ? 'Sending test…' : `Send ${selectedTestEvent} test`}
+                    </MerchantButton>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </SurfaceCard>
+
+          <SurfaceCard
+            title="Recent deliveries"
+            description="Inspect the most recent webhook attempts with real HTTP status, latency, and retry state."
+            action={
+              deliverySummary ? (
+                <StatusBadge tone={deliverySummary.failed > 0 ? 'warning' : 'success'}>
+                  {deliverySummary.succeeded || 0} delivered / {deliverySummary.failed || 0} failed
+                </StatusBadge>
+              ) : null
+            }
+          >
+            <div className="space-y-3 p-5">
+              {webhookDeliveries.length > 0 ? (
+                webhookDeliveries.map((delivery) => (
+                  <div
+                    key={delivery.delivery_id}
+                    className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-4"
+                  >
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="text-sm font-semibold text-[color:var(--merchant-ink)]">
+                            {delivery.event_type}
+                          </div>
+                          <StatusBadge
+                            tone={
+                              delivery.status === 'delivered'
+                                ? 'success'
+                                : delivery.status === 'retrying'
+                                  ? 'warning'
+                                  : 'critical'
+                            }
+                          >
+                            {delivery.status}
+                          </StatusBadge>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted-strong)]">
+                          <span>HTTP {delivery.http_status || 'n/a'}</span>
+                          <span>•</span>
+                          <span>{delivery.attempt_count || 0} attempt(s)</span>
+                          <span>•</span>
+                          <span>{delivery.latency_ms || 0} ms</span>
+                        </div>
+                        <div className="text-sm text-[color:var(--merchant-muted)]">
+                          {delivery.created_at
+                            ? new Date(delivery.created_at).toLocaleString()
+                            : 'Timestamp unavailable'}
+                        </div>
+                        {delivery.last_error ? (
+                          <div className="text-sm text-rose-700">{delivery.last_error}</div>
+                        ) : null}
+                      </div>
+                      <div className="text-right text-xs text-[color:var(--merchant-muted)]">
+                        <div>{delivery.delivery_id}</div>
+                        {delivery.next_retry_at ? (
+                          <div>Retry at {new Date(delivery.next_retry_at).toLocaleString()}</div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <EmptyState
+                  icon={Webhook}
+                  title="No webhook deliveries yet"
+                  description="Save a destination URL and send a test delivery to start recording webhook attempts here."
+                />
+              )}
+            </div>
+          </SurfaceCard>
+
+          <SurfaceCard
             title="Quick start"
-            description="Use the current merchant token pattern as a starting point for internal engineering or partner setup."
+            description="This example reflects the live merchant API contract used for payment execution."
           >
             <div className="overflow-x-auto bg-[#15171d] p-4 text-gray-100">
               <pre className="text-sm">
-{`// Example: Create an order
-curl -X POST https://api.pivota.cc/orders \\
-  -H "Authorization: Bearer ${apiKey}" \\
+{`curl -X POST https://api.pivota.cc/payment/execute \\
+  -H "X-Merchant-API-Key: ${quickStartApiKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
+    "amount": 1000,
+    "currency": "USD",
+    "order_id": "ord_1001",
     "customer_email": "customer@example.com",
-    "items": [
-      {
-        "product_id": "prod_123",
-        "quantity": 2
-      }
-    ]
+    "description": "Payment for ord_1001",
+    "metadata": {
+      "channel": "merchant_integration"
+    }
   }'`}
               </pre>
             </div>
           </SurfaceCard>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

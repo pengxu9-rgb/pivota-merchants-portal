@@ -23,6 +23,12 @@ function unwrap(payload) {
   return payload;
 }
 
+function assertNotContains(value, substring, label) {
+  if (typeof value === 'string' && value.includes(substring)) {
+    throw new Error(`Unexpected placeholder content for ${label}: ${substring}`);
+  }
+}
+
 async function requestJson(url, options = {}) {
   const response = await fetch(url, options);
   const text = await response.text();
@@ -104,6 +110,18 @@ async function main() {
       required: ['psps'],
     },
     {
+      label: 'api credentials',
+      url: `${apiBaseUrl}/merchant/api-credentials`,
+      headers: authHeaders,
+      required: ['header_name', 'sample_endpoint', 'issued'],
+    },
+    {
+      label: 'webhook config',
+      url: `${apiBaseUrl}/merchant/webhooks/config`,
+      headers: authHeaders,
+      required: ['enabled', 'events'],
+    },
+    {
       label: 'promotions proxy',
       url: `${portalBaseUrl}/api/portal/promotions`,
       headers: {
@@ -118,6 +136,19 @@ async function main() {
     const payload = unwrap(await requestJson(check.url, { headers: check.headers }));
     for (const field of check.required) {
       assertField(payload, field, check.label);
+    }
+    if (check.label === 'api credentials') {
+      assertField(payload, 'header_name', check.label);
+      if (payload.header_name !== 'X-Merchant-API-Key') {
+        throw new Error(`Unexpected header_name for ${check.label}: ${payload.header_name}`);
+      }
+      if (payload.issued && typeof payload.api_key === 'string' && !payload.api_key.startsWith('pk_live_')) {
+        throw new Error(`Unexpected API key format for ${check.label}`);
+      }
+    }
+    if (check.label === 'webhook config') {
+      assertNotContains(payload.url, 'your-server.com', check.label);
+      assertNotContains(payload.webhook_url, 'your-server.com', check.label);
     }
     console.log(`PASS ${check.label}`);
   }

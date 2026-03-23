@@ -885,37 +885,66 @@ class ApiClient {
     return response.data;
   }
 
+  async getApiCredentials() {
+    const response = await this.client.get('/merchant/api-credentials');
+    return response.data?.data || response.data;
+  }
+
+  async rotateApiCredentials() {
+    const response = await this.client.post('/merchant/api-credentials/rotate');
+    return response.data?.data || response.data;
+  }
+
   // Webhook methods
   async getWebhookConfig() {
     const response = await this.client.get(API_CONFIG.ENDPOINTS.WEBHOOK_CONFIG);
-    return response.data;
+    const payload = response.data?.data || response.data?.config || response.data || {};
+    return {
+      url: payload.url || payload.destination_url || payload.webhook_url || '',
+      events: payload.events || payload.subscribed_events || [],
+      enabled: Boolean(payload.enabled),
+      signing_secret_last4: payload.signing_secret_last4 || payload.secret_last4 || null,
+      last_test_at: payload.last_test_at || null,
+      last_test_status: payload.last_test_status || null,
+      delivery_summary_24h: payload.delivery_summary_24h || null,
+    };
   }
 
-  async updateWebhookConfig(config: any) {
+  async updateWebhookConfig(config: {
+    url?: string;
+    events?: string[];
+    enabled?: boolean;
+  }) {
     const response = await this.client.put(API_CONFIG.ENDPOINTS.WEBHOOK_CONFIG, config);
-    return response.data;
+    return response.data?.data || response.data;
   }
 
   async getWebhookSecret() {
     const response = await this.client.get(API_CONFIG.ENDPOINTS.WEBHOOK_SECRET);
-    return response.data;
+    return response.data?.data || response.data;
   }
 
   async rotateWebhookSecret() {
     const response = await this.client.post(`${API_CONFIG.ENDPOINTS.WEBHOOK_SECRET}/rotate`);
-    return response.data;
+    return response.data?.data || response.data;
   }
 
-  async testWebhook(url: string, event: string) {
-    const response = await this.client.post(API_CONFIG.ENDPOINTS.WEBHOOK_TEST, { url, event });
-    return response.data;
-  }
-
-  async getWebhookLogs(limit: number = 20) {
-    const response = await this.client.get(API_CONFIG.ENDPOINTS.WEBHOOK_LOGS, {
-      params: { limit },
+  async testWebhook(eventType: string) {
+    const response = await this.client.post(API_CONFIG.ENDPOINTS.WEBHOOK_TEST, {
+      event_type: eventType,
     });
-    return response.data.deliveries || [];
+    return response.data?.data || response.data;
+  }
+
+  async getWebhookLogs(limit: number = 20, status?: string) {
+    const response = await this.client.get(API_CONFIG.ENDPOINTS.WEBHOOK_LOGS, {
+      params: { limit, status },
+    });
+    const payload = response.data?.data || response.data || {};
+    return {
+      deliveries: payload.deliveries || [],
+      summary_24h: payload.summary_24h || null,
+    };
   }
 
   // [Phase 6] Commission methods
