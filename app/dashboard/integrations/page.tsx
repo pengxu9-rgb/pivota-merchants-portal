@@ -774,7 +774,7 @@ export default function IntegrationsPage() {
                             <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted)]">
                               {psp.type === 'stripe' ? (
                                 <>
-                                  <span>Mode: {psp.provider_summary?.mode || 'payment_intent'}</span>
+                                  <span>Payment flow: PaymentIntent</span>
                                   {psp.provider_summary?.account_id ? (
                                     <>
                                       <span>•</span>

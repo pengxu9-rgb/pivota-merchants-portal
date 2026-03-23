@@ -10,7 +10,6 @@ interface PSPConfigFormProps {
 }
 
 type Environment = 'test' | 'live';
-type StripeMode = 'payment_intent' | 'checkout_session';
 
 export function PSPConfigForm({
   provider,
@@ -25,7 +24,6 @@ export function PSPConfigForm({
   const [clientKey, setClientKey] = useState('');
   const [publicKey, setPublicKey] = useState('');
   const [environment, setEnvironment] = useState<Environment>('test');
-  const [stripeMode, setStripeMode] = useState<StripeMode>('payment_intent');
   const [saving, setSaving] = useState(false);
 
   const isStripe = providerLower === 'stripe';
@@ -55,7 +53,6 @@ export function PSPConfigForm({
       };
 
       if (isStripe) {
-        payload.mode = stripeMode;
         if (accountId.trim()) payload.account_id = accountId.trim();
       }
 
@@ -117,36 +114,18 @@ export function PSPConfigForm({
             />
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
-                Environment <span className="text-rose-500">*</span>
-              </label>
-              <select
-                value={environment}
-                onChange={(event) => setEnvironment(event.target.value as Environment)}
-                className="w-full rounded-[1rem] border border-[color:var(--merchant-line)] px-3 py-2 text-sm text-[color:var(--merchant-ink)]"
-              >
-                <option value="test">Test</option>
-                <option value="live">Live</option>
-              </select>
-            </div>
-
-            {isStripe ? (
-              <div>
-                <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
-                  Stripe mode <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={stripeMode}
-                  onChange={(event) => setStripeMode(event.target.value as StripeMode)}
-                  className="w-full rounded-[1rem] border border-[color:var(--merchant-line)] px-3 py-2 text-sm text-[color:var(--merchant-ink)]"
-                >
-                  <option value="payment_intent">PaymentIntent</option>
-                  <option value="checkout_session">Checkout Session</option>
-                </select>
-              </div>
-            ) : null}
+          <div>
+            <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
+              Environment <span className="text-rose-500">*</span>
+            </label>
+            <select
+              value={environment}
+              onChange={(event) => setEnvironment(event.target.value as Environment)}
+              className="w-full rounded-[1rem] border border-[color:var(--merchant-line)] px-3 py-2 text-sm text-[color:var(--merchant-ink)]"
+            >
+              <option value="test">Test</option>
+              <option value="live">Live</option>
+            </select>
           </div>
 
           <div>
@@ -170,7 +149,7 @@ export function PSPConfigForm({
 
           <div>
             <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
-              {isStripe ? 'Connected account ID (optional)' : isAdyen ? 'Merchant account' : 'Processing channel ID'}
+              {isStripe ? 'Connected account ID (optional, Stripe Connect only)' : isAdyen ? 'Merchant account' : 'Processing channel ID'}
               {!isStripe ? <span className="text-rose-500"> *</span> : null}
             </label>
             <input
@@ -179,7 +158,7 @@ export function PSPConfigForm({
               onChange={(event) => setAccountId(event.target.value)}
               placeholder={
                 isStripe
-                  ? 'acct_...'
+                  ? 'Leave blank unless you are using Stripe Connect'
                   : isAdyen
                     ? 'Your Adyen merchantAccount'
                     : 'pc_...'
@@ -220,7 +199,7 @@ export function PSPConfigForm({
 
           <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-4 py-3 text-sm text-[color:var(--merchant-muted-strong)]">
             {isStripe
-              ? 'Stripe uses the saved mode to decide whether initiation returns a PaymentIntent client_secret or a Checkout Session redirect.'
+              ? 'Merchant Stripe setup always uses PaymentIntent. Stripe Checkout is handled internally when a flow explicitly requires a hosted redirect.'
               : isAdyen
                 ? 'Adyen requires both merchant account and client key so the returned session can be used by the frontend.'
                 : 'Checkout.com requires both processing channel ID and public key so the returned payment session is usable by the frontend.'}
