@@ -19,6 +19,7 @@ interface AuthShellProps {
   children: ReactNode;
   panelAction?: ReactNode;
   progress?: ReactNode;
+  showSidebar?: boolean;
   className?: string;
   panelClassName?: string;
 }
@@ -31,6 +32,7 @@ export function AuthShell({
   children,
   panelAction,
   progress,
+  showSidebar = true,
   className,
   panelClassName,
 }: AuthShellProps) {
@@ -38,10 +40,13 @@ export function AuthShell({
     <div className="min-h-screen bg-[color:var(--merchant-canvas)] text-[color:var(--merchant-ink)]">
       <div
         className={cx(
-          'mx-auto flex min-h-screen max-w-7xl flex-col px-5 py-5 sm:px-6 lg:grid lg:grid-cols-[1.02fr_0.98fr] lg:items-center lg:gap-9 lg:px-10 lg:py-8',
+          showSidebar
+            ? 'mx-auto flex min-h-screen max-w-7xl flex-col px-5 py-5 sm:px-6 lg:grid lg:grid-cols-[1.02fr_0.98fr] lg:items-center lg:gap-9 lg:px-10 lg:py-8'
+            : 'mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-4 py-5 sm:px-6 lg:px-8 lg:py-8',
           className,
         )}
       >
+        {showSidebar ? (
         <section className="hidden lg:block">
           <div className="max-w-xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-[color:var(--merchant-line-strong)] bg-white/72 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)] shadow-[var(--merchant-shadow-panel)]">
@@ -107,17 +112,33 @@ export function AuthShell({
             </div>
           </div>
         </section>
+        ) : null}
 
-        <section className="mx-auto flex w-full max-w-2xl flex-col justify-center">
-          <div className="mb-5 lg:hidden">
+        <section
+          className={cx(
+            'mx-auto flex w-full flex-col justify-center',
+            showSidebar ? 'max-w-2xl' : 'max-w-4xl',
+          )}
+        >
+          <div className={cx('mb-5', showSidebar ? 'lg:hidden' : '')}>
             <div className="inline-flex items-center gap-2 rounded-full border border-[color:var(--merchant-line-strong)] bg-white/72 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)] shadow-[var(--merchant-shadow-panel)]">
               <Store className="h-3.5 w-3.5 text-[color:var(--merchant-brand)]" />
               {eyebrow}
             </div>
-            <h1 className="mt-4 text-[2.45rem] font-semibold tracking-[-0.055em] text-[color:var(--merchant-ink)]">
+            <h1
+              className={cx(
+                'mt-4 font-semibold tracking-[-0.055em] text-[color:var(--merchant-ink)]',
+                showSidebar ? 'text-[2.45rem]' : 'text-[2.1rem] sm:text-[2.6rem]',
+              )}
+            >
               {title}
             </h1>
-            <p className="mt-3 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+            <p
+              className={cx(
+                'mt-3 leading-6 text-[color:var(--merchant-muted-strong)]',
+                showSidebar ? 'text-sm' : 'max-w-2xl text-[15px]',
+              )}
+            >
               {description}
             </p>
           </div>

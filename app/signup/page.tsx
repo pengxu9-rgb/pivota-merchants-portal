@@ -398,6 +398,7 @@ export default function MerchantSignup() {
       title="Start merchant onboarding in the portal"
       description="Create the merchant record once, complete payment and KYB setup, and continue into the portal with the same merchant account."
       highlights={signupHighlights}
+      showSidebar={false}
       panelAction={panelAction}
       progress={<OnboardingProgress steps={[...steps]} currentStep={currentStep} />}
     >
