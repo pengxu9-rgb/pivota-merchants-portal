@@ -172,7 +172,7 @@ export default function AdyenPaymentCanaryPage() {
   const startCanary = async () => {
     setResultState({ kind: "creating" });
     try {
-      const response = (await apiClient.post("/merchant/payment-canary/order-backed", {
+      const response = await apiClient.post("/merchant/payment-canary/order-backed", {
         amount: 100,
         currency: "USD",
         customer_email: customerEmail,
@@ -186,9 +186,10 @@ export default function AdyenPaymentCanaryPage() {
         enforce_live_readiness: false,
         label: orderLabel,
         preferred_provider: "adyen",
-      })) as CanaryResponse;
+      });
+      const payload = ((response as { data?: CanaryResponse } | undefined)?.data || response) as CanaryResponse;
 
-      await mountAdyenDropin(response);
+      await mountAdyenDropin(payload);
     } catch (error) {
       const message =
         error instanceof Error
