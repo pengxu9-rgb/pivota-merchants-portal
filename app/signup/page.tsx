@@ -69,6 +69,15 @@ function getApiErrorMessage(error: unknown, fallback: string) {
 
     const detail = candidate.response?.data?.detail;
     if (typeof detail === 'string' && detail.trim()) return detail;
+    if (
+      typeof detail === 'object' &&
+      detail !== null &&
+      'message' in detail &&
+      typeof (detail as { message?: unknown }).message === 'string' &&
+      (detail as { message: string }).message.trim()
+    ) {
+      return (detail as { message: string }).message;
+    }
     if (Array.isArray(detail) && detail.length) {
       const message = detail
         .map((item) =>
@@ -126,6 +135,10 @@ function normalizeStoredSession(
   } catch {
     return null;
   }
+}
+
+function normalizeEmail(value: string) {
+  return (value || '').trim().toLowerCase();
 }
 
 export default function MerchantSignup() {
@@ -234,7 +247,11 @@ export default function MerchantSignup() {
     setLoading(true);
 
     try {
-      const { confirm_password: _confirmPassword, ...payload } = registrationForm;
+      const normalizedEmail = normalizeEmail(registrationForm.contact_email);
+      const { confirm_password: _confirmPassword, ...payload } = {
+        ...registrationForm,
+        contact_email: normalizedEmail,
+      };
       const response = await onboardingApi.register(payload);
 
       setOnboardingData({
@@ -243,12 +260,16 @@ export default function MerchantSignup() {
         store_url: registrationForm.store_url,
         website: registrationForm.website,
         region: registrationForm.region,
-        contact_email: registrationForm.contact_email,
+        contact_email: normalizedEmail,
         contact_phone: registrationForm.contact_phone,
         auto_approved: response.auto_approved,
         confidence_score: response.confidence_score,
         message: response.message,
       });
+      setRegistrationForm((prev) => ({
+        ...prev,
+        contact_email: normalizedEmail,
+      }));
       setCurrentStep('psp');
       setError('');
     } catch (err) {

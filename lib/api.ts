@@ -11,6 +11,10 @@ const apiClient = axios.create({
   },
 });
 
+function normalizeEmail(value?: string) {
+  return (value || '').trim().toLowerCase();
+}
+
 // Add auth token to requests if available
 apiClient.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
@@ -25,7 +29,10 @@ apiClient.interceptors.request.use((config) => {
 
 export const onboardingApi = {
   register: async (data: any) => {
-    const response = await apiClient.post('/merchant/onboarding/register', data);
+    const response = await apiClient.post('/merchant/onboarding/register', {
+      ...data,
+      contact_email: normalizeEmail(data?.contact_email),
+    });
     return response.data;
   },
 

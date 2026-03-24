@@ -148,7 +148,7 @@ export default function RegistrationStep({
                 autoComplete="new-password"
               />
               <span className="mt-1.5 block text-xs text-[color:var(--merchant-muted)]">
-                At least 8 characters.
+                At least 8 characters. If this email already has a Pivota account, enter its current password to convert it into merchant access.
               </span>
             </label>
 

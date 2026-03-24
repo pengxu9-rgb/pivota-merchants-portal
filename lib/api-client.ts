@@ -84,6 +84,10 @@ class ApiClient {
     }
   }
 
+  private normalizeEmail(value?: string): string {
+    return (value || '').trim().toLowerCase();
+  }
+
   private normalizeMerchantOrdersParams(params?: Record<string, unknown>) {
     const normalized: Record<string, unknown> = { ...(params || {}) };
 
@@ -111,7 +115,7 @@ class ApiClient {
   // Auth methods
   async login(email: string, password: string) {
     const response = await this.client.post(API_CONFIG.ENDPOINTS.LOGIN, {
-      email,
+      email: this.normalizeEmail(email),
       password,
     });
     

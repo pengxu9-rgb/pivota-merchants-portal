@@ -28,6 +28,10 @@ const merchantHighlights = [
   },
 ] as const;
 
+function normalizeEmail(value: string) {
+  return (value || '').trim().toLowerCase();
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -44,7 +48,7 @@ export default function LoginPage() {
     const signupFlag = params.get('from') === 'signup';
 
     if (queryEmail) {
-      setEmail(queryEmail);
+      setEmail(normalizeEmail(queryEmail));
     }
 
     setFromSignup(signupFlag);
@@ -74,7 +78,9 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const response = await apiClient.login(email, password);
+      const normalizedEmail = normalizeEmail(email);
+      setEmail(normalizedEmail);
+      const response = await apiClient.login(normalizedEmail, password);
 
       if (response.success === true || response.status === 'success') {
         router.push('/dashboard');
@@ -87,7 +93,7 @@ export default function LoginPage() {
         const candidate = err as {
           response?: {
             data?: {
-              detail?: string;
+              detail?: string | { message?: string };
               error?: {
                 message?: string;
               };
@@ -97,7 +103,9 @@ export default function LoginPage() {
         };
 
         setError(
-          candidate.response?.data?.detail ||
+          (typeof candidate.response?.data?.detail === 'string'
+            ? candidate.response?.data?.detail
+            : candidate.response?.data?.detail?.message) ||
             candidate.response?.data?.error?.message ||
             candidate.message ||
             'Failed to login. Please try again.',
