@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AdyenCheckout, Dropin } from "@adyen/adyen-web";
+import { AdyenCheckout, Card, Dropin } from "@adyen/adyen-web";
 import { apiClient } from "@/lib/api-client";
 
 const ADYEN_SDK_VERSION = "6.32.0";
@@ -137,7 +137,7 @@ export default function AdyenPaymentCanaryPage() {
       environment,
       clientKey,
       countryCode: "US",
-      shopperLocale: "en-US",
+      locale: "en-US",
       session: {
         id: sessionId,
         sessionData,
@@ -156,6 +156,7 @@ export default function AdyenPaymentCanaryPage() {
     } as any);
 
     const dropin = new Dropin(checkout as any, {
+      paymentMethodComponents: [Card],
       paymentMethodsConfiguration: {
         card: {
           hasHolderName: true,
