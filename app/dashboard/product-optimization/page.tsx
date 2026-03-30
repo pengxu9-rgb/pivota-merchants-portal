@@ -167,6 +167,7 @@ type ProductQueueItem = {
   product_id: string;
   platform: string;
   platform_product_id?: string | null;
+  platform_admin_url?: string | null;
   title: string;
   image_url?: string | null;
   brand?: string | null;
@@ -347,6 +348,7 @@ type SourceDataTriageRow = {
   reason_label: string;
   platform: string;
   platform_product_id: string;
+  platform_admin_url?: string | null;
   product_id: string;
   product_title: string;
   variant_id?: string | null;
@@ -402,6 +404,7 @@ type SourceDataLaneDecisionCount = {
 type SourceDataLaneNextProduct = {
   platform: string;
   platform_product_id: string;
+  platform_admin_url?: string | null;
   product_id: string;
   title: string;
   blocked_variant_count: number;
@@ -438,6 +441,7 @@ type SourceDataProductGroup = {
   reason_label: string;
   platform: string;
   platform_product_id: string;
+  platform_admin_url?: string | null;
   product_id: string;
   product_title: string;
   affected_rows: number;
@@ -606,6 +610,13 @@ const getManualReviewLabel = (
   if (fixSurface === 'catalog_data') return 'Review in catalog';
   if (fixSurface === 'pivota_managed') return 'Wait for Pivota processing';
   return 'Review issue details';
+};
+
+const getStoreAdminLabel = (platform?: string | null) => {
+  if (String(platform || '').toLowerCase() === 'shopify') {
+    return 'Open in Shopify admin';
+  }
+  return 'Open in store admin';
 };
 
 const getAgentPushLabel = (status?: AgentPushStatus | null) =>
@@ -2153,6 +2164,9 @@ export default function ProductOptimizationPage() {
         if (row.sku && !existing.sample_skus.includes(row.sku)) {
           existing.sample_skus.push(row.sku);
         }
+        if (row.platform_admin_url && !existing.platform_admin_url) {
+          existing.platform_admin_url = row.platform_admin_url;
+        }
         continue;
       }
 
@@ -2161,6 +2175,7 @@ export default function ProductOptimizationPage() {
         reason_label: row.reason_label,
         platform: row.platform,
         platform_product_id: row.platform_product_id,
+        platform_admin_url: row.platform_admin_url || null,
         product_id: row.product_id,
         product_title: row.product_title,
         affected_rows: 1,
@@ -3137,6 +3152,16 @@ export default function ProductOptimizationPage() {
                           Review next batch
                         </a>
                       ) : null}
+                      {nextProduct?.platform_admin_url ? (
+                        <a
+                          href={nextProduct.platform_admin_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100"
+                        >
+                          {getStoreAdminLabel(nextProduct.platform)}
+                        </a>
+                      ) : null}
                       {continueTarget ? (
                         <a
                           href={buildCatalogReviewHref({
@@ -3291,6 +3316,16 @@ export default function ProductOptimizationPage() {
                         >
                           Review batch in catalog
                         </a>
+                        {group.platform_admin_url ? (
+                          <a
+                            href={group.platform_admin_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100"
+                          >
+                            {getStoreAdminLabel(group.platform)}
+                          </a>
+                        ) : null}
                       </div>
                     </div>
                   ))}
@@ -3419,6 +3454,16 @@ export default function ProductOptimizationPage() {
                             >
                               Review in catalog
                             </a>
+                            {row.platform_admin_url ? (
+                              <a
+                                href={row.platform_admin_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 font-medium text-emerald-700 hover:bg-emerald-100"
+                              >
+                                {getStoreAdminLabel(row.platform)}
+                              </a>
+                            ) : null}
                           </div>
                         </td>
                       </tr>
@@ -3746,6 +3791,16 @@ export default function ProductOptimizationPage() {
                   <RefreshCw className={`h-4 w-4 ${readinessLoading ? 'animate-spin' : ''}`} />
                   Refresh status
                 </button>
+                {selectedQueueItem.platform_admin_url ? (
+                  <a
+                    href={selectedQueueItem.platform_admin_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center justify-center rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100"
+                  >
+                    {getStoreAdminLabel(selectedQueueItem.platform)}
+                  </a>
+                ) : null}
                 {canExecuteSelectedAction && (
                   <>
                     <button
