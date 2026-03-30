@@ -373,6 +373,9 @@ export default function DashboardPage() {
       : '/dashboard/product-optimization?source=readiness';
 
   const activePSPs = connectedPSPs.filter((psp) => psp?.is_active);
+  const needsChannelSetup = connectedStores.length === 0;
+  const needsPaymentSetup = activePSPs.length === 0;
+  const showSetupReminder = !loading && (needsChannelSetup || needsPaymentSetup);
   const hasStatsData = Boolean(stats);
   const totalOrdersValue = stats?.totalOrders ?? 0;
   const paidOrdersValue = stats?.paidOrders ?? 0;
@@ -486,6 +489,20 @@ export default function DashboardPage() {
     tone: Tone;
     icon: typeof AlertCircle;
   }>;
+
+  const setupReminderDescription =
+    needsChannelSetup && needsPaymentSetup
+      ? t('dashboard.overview.setupReminder.description.both')
+      : needsChannelSetup
+        ? t('dashboard.overview.setupReminder.description.channels')
+        : t('dashboard.overview.setupReminder.description.payments');
+
+  const setupReminderDetail =
+    needsChannelSetup && needsPaymentSetup
+      ? t('dashboard.overview.setupReminder.detail.both')
+      : needsChannelSetup
+        ? t('dashboard.overview.setupReminder.detail.channels')
+        : t('dashboard.overview.setupReminder.detail.payments');
 
   const priorityPanels: Array<{
     title: string;
@@ -821,6 +838,48 @@ export default function DashboardPage() {
           </>
         }
       />
+
+      {showSetupReminder ? (
+        <SurfaceCard
+          strong
+          className="overflow-hidden border-[color:var(--merchant-brand-soft)] bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(242,248,255,0.96))]"
+        >
+          <div className="flex flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between lg:px-6">
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <div className="merchant-overline">
+                  {t('dashboard.overview.setupReminder.eyebrow')}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)] sm:text-[1.15rem]">
+                    {t('dashboard.overview.setupReminder.title')}
+                  </h2>
+                  {needsChannelSetup ? (
+                    <StatusBadge tone="warning" icon={Store}>
+                      {t('dashboard.overview.setupReminder.chip.channels')}
+                    </StatusBadge>
+                  ) : null}
+                  {needsPaymentSetup ? (
+                    <StatusBadge tone="warning" icon={CreditCard}>
+                      {t('dashboard.overview.setupReminder.chip.payments')}
+                    </StatusBadge>
+                  ) : null}
+                </div>
+                <p className="max-w-3xl text-sm leading-6 text-[color:var(--merchant-muted-strong)] sm:text-[15px]">
+                  {setupReminderDescription}
+                </p>
+              </div>
+              <p className="text-sm text-[color:var(--merchant-muted)]">{setupReminderDetail}</p>
+            </div>
+
+            <div className="flex shrink-0 flex-wrap gap-3">
+              <MerchantLinkButton href="/dashboard/integrations" icon={ArrowRight}>
+                {t('dashboard.overview.setupReminder.cta')}
+              </MerchantLinkButton>
+            </div>
+          </div>
+        </SurfaceCard>
+      ) : null}
 
       {(statsLoading || statsError || readinessError) && (
         <div className="merchant-panel px-5 py-4">
