@@ -790,12 +790,18 @@ Object.assign(enMessages, {
   "dashboard.analytics.commerceFunnel.description":
     "A minimal Shopify-first funnel built from listing registry, durable clicks, and attributed order/refund edges.",
   "dashboard.analytics.commerceFunnel.indexed": "Indexed exposure",
+  "dashboard.analytics.commerceFunnel.indexedMeta": "Unique indexed variants",
   "dashboard.analytics.commerceFunnel.clicked": "Clicked exposure",
   "dashboard.analytics.commerceFunnel.clickedMeta": "{count} total click events",
   "dashboard.analytics.commerceFunnel.ordered": "Ordered conversion",
   "dashboard.analytics.commerceFunnel.refunded": "Refunded orders",
   "dashboard.analytics.commerceFunnel.refundedMeta": "{amount} refunded",
   "dashboard.analytics.commerceFunnel.listingStatus": "Listing status breakdown",
+  "dashboard.analytics.commerceFunnel.listingRows": "Listing rows across surfaces",
+  "dashboard.analytics.commerceFunnel.listingRowsMeta": "{count} registry rows",
+  "dashboard.analytics.commerceFunnel.listingRowsHelp":
+    "Indexed exposure is deduplicated by canonical variant. The listing rows below count per-surface registry rows and can be higher than the indexed total.",
+  "dashboard.analytics.commerceFunnel.bySurface": "By surface",
   "dashboard.analytics.commerceFunnel.empty": "No listing registry rows yet.",
   "dashboard.analytics.commerceFunnel.surfacedPending":
     "Surfaced exposure stays internal until prompt evaluation is durable.",
@@ -2371,12 +2377,18 @@ Object.assign(localeOverridesRaw["zh-CN"], {
   "dashboard.analytics.commerceFunnel.description":
     "基于 listing registry、可持久化点击和已归因订单/退款边，提供一个最小但真实的 Shopify-first 漏斗。",
   "dashboard.analytics.commerceFunnel.indexed": "已收录曝光",
+  "dashboard.analytics.commerceFunnel.indexedMeta": "按 canonical variant 去重",
   "dashboard.analytics.commerceFunnel.clicked": "点击曝光",
   "dashboard.analytics.commerceFunnel.clickedMeta": "{count} 次点击事件",
   "dashboard.analytics.commerceFunnel.ordered": "下单转化",
   "dashboard.analytics.commerceFunnel.refunded": "已退款订单",
   "dashboard.analytics.commerceFunnel.refundedMeta": "已退款 {amount}",
   "dashboard.analytics.commerceFunnel.listingStatus": "上架状态分布",
+  "dashboard.analytics.commerceFunnel.listingRows": "跨 surface 的上架行",
+  "dashboard.analytics.commerceFunnel.listingRowsMeta": "{count} 条 registry 记录",
+  "dashboard.analytics.commerceFunnel.listingRowsHelp":
+    "已收录曝光按 canonical variant 去重。下面的上架行统计按 surface 的 registry 行计数，所以可能高于已收录总数。",
+  "dashboard.analytics.commerceFunnel.bySurface": "按 surface 查看",
   "dashboard.analytics.commerceFunnel.empty": "当前还没有 listing registry 记录。",
   "dashboard.analytics.commerceFunnel.surfacedPending":
     "Surfaced exposure 在 prompt 评估体系稳定前仍只保留内部使用。",

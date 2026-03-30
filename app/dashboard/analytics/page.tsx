@@ -307,7 +307,11 @@ export default function AnalyticsPage() {
   }));
   const hasComparisonSeries = chartData.some((point) => typeof point.previous === 'number');
   const funnelSummary = commerceFunnel?.summary || {};
-  const listingStatusBreakdown = funnelSummary?.listing_status_breakdown || {};
+  const listingRowsTotal = Number(funnelSummary?.listing_rows_total || 0);
+  const listingStatusBreakdown =
+    funnelSummary?.listing_status_breakdown_rows || funnelSummary?.listing_status_breakdown || {};
+  const listingStatusBreakdownBySurface =
+    funnelSummary?.listing_status_breakdown_by_surface || {};
 
   return (
     <div className="space-y-6">
@@ -495,6 +499,7 @@ export default function AnalyticsPage() {
                   {
                     label: t('dashboard.analytics.commerceFunnel.indexed'),
                     value: Number(funnelSummary?.indexed_exposure || 0),
+                    meta: t('dashboard.analytics.commerceFunnel.indexedMeta'),
                   },
                   {
                     label: t('dashboard.analytics.commerceFunnel.clicked'),
@@ -530,8 +535,20 @@ export default function AnalyticsPage() {
               </div>
 
               <div className="space-y-3">
-                <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
-                  {t('dashboard.analytics.commerceFunnel.listingStatus')}
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                      {t('dashboard.analytics.commerceFunnel.listingRows')}
+                    </div>
+                    <span className="text-xs text-[color:var(--merchant-muted)]">
+                      {t('dashboard.analytics.commerceFunnel.listingRowsMeta', {
+                        count: listingRowsTotal,
+                      })}
+                    </span>
+                  </div>
+                  <div className="text-xs text-[color:var(--merchant-muted)]">
+                    {t('dashboard.analytics.commerceFunnel.listingRowsHelp')}
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {Object.keys(listingStatusBreakdown).length ? (
@@ -549,6 +566,35 @@ export default function AnalyticsPage() {
                     </span>
                   )}
                 </div>
+                {Object.keys(listingStatusBreakdownBySurface).length ? (
+                  <div className="space-y-2">
+                    <div className="text-xs uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
+                      {t('dashboard.analytics.commerceFunnel.bySurface')}
+                    </div>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {Object.entries(listingStatusBreakdownBySurface).map(([surfaceKey, statuses]) => (
+                        <div
+                          key={surfaceKey}
+                          className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/70 px-3 py-3"
+                        >
+                          <div className="text-xs font-medium uppercase tracking-[0.16em] text-[color:var(--merchant-muted-strong)]">
+                            {surfaceKey}
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {Object.entries((statuses || {}) as Record<string, number>).map(([status, count]) => (
+                              <span
+                                key={`${surfaceKey}:${status}`}
+                                className="inline-flex items-center rounded-full border border-[color:var(--merchant-line)] px-3 py-1 text-xs text-[color:var(--merchant-muted-strong)]"
+                              >
+                                {status}: {String(count)}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 {!funnelSummary?.surfaced_exposure_supported ? (
                   <div className="text-xs text-[color:var(--merchant-muted)]">
                     {t('dashboard.analytics.commerceFunnel.surfacedPending')}
