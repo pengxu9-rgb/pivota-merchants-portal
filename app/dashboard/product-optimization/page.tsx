@@ -1289,6 +1289,13 @@ export default function ProductOptimizationPage() {
           return await loadSourceDataTriage(planId, false);
         }
       }
+      if (isUnsupportedSourceDataTriageError(err)) {
+        setSourceDataTriage(null);
+        setSourceDataTriageError(
+          'Detailed source-data triage is unavailable until the latest backend readiness routes are deployed.'
+        );
+        return null;
+      }
       console.error('Failed to load source-data triage', err);
       setSourceDataTriage(null);
       setSourceDataTriageError(
@@ -1341,6 +1348,11 @@ export default function ProductOptimizationPage() {
       message.includes('network error') ||
       message.includes('connection closed')
     );
+  };
+
+  const isUnsupportedSourceDataTriageError = (err: any) => {
+    const status = err?.response?.status;
+    return status === 404 || status === 405 || status === 501;
   };
 
   const getActionErrorMessage = (err: any, fallback: string) => {
@@ -2017,12 +2029,6 @@ export default function ProductOptimizationPage() {
   }, [fromReadiness]);
 
   useEffect(() => {
-    if (selected || filteredProducts.length === 0) return;
-    const first = filteredProducts[0];
-    void handleSelect(first.platform, first.platform_product_id);
-  }, [filteredProducts, selected]);
-
-  useEffect(() => {
     if (!selected) return;
 
     const selectedStillVisible = filteredProducts.some(
@@ -2629,6 +2635,12 @@ export default function ProductOptimizationPage() {
         }
       }
       console.error('Failed to export source-data triage CSV', err);
+      if (isUnsupportedSourceDataTriageError(err)) {
+        alert(
+          'CSV export for source-data triage is unavailable until the latest backend readiness routes are deployed.'
+        );
+        return;
+      }
       alert(
         getActionErrorMessage(
           err,

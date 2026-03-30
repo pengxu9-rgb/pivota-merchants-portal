@@ -193,6 +193,38 @@ function formatReadinessCode(value: string) {
     .join(' ');
 }
 
+function mergeCatalogProducts(existing: any[], incoming: any[]) {
+  const merged = new Map<string, any>();
+
+  for (const product of existing) {
+    const key = [
+      String(product?.platform || '').toLowerCase(),
+      String(
+        product?.platform_product_id ||
+          product?.product_id ||
+          product?.id ||
+          ''
+      ),
+    ].join('|');
+    merged.set(key, product);
+  }
+
+  for (const product of incoming) {
+    const key = [
+      String(product?.platform || '').toLowerCase(),
+      String(
+        product?.platform_product_id ||
+          product?.product_id ||
+          product?.id ||
+          ''
+      ),
+    ].join('|');
+    merged.set(key, product);
+  }
+
+  return Array.from(merged.values());
+}
+
 type ProductBlockerVariant = {
   variant_id: string;
   title: string;
@@ -758,18 +790,82 @@ export default function ProductsPage() {
   const catalogReviewPlanRefreshRef = useRef<Promise<CatalogReviewPlan | null> | null>(null);
 
   useEffect(() => {
-    void loadProducts();
+    let cancelled = false;
+
+    void loadProducts(() => cancelled);
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const loadProducts = async () => {
+  const loadProducts = async (isCancelled?: () => boolean) => {
+    const shouldCancel = () => isCancelled?.() === true;
+
     try {
       setLoading(true);
+      setProducts([]);
+
+      try {
+        const pageSize = 100;
+        const firstPage = await apiClient.getProductsV2({
+          limit: pageSize,
+          offset: 0,
+        });
+
+        if (shouldCancel()) return;
+
+        let mergedProducts = Array.isArray(firstPage?.products)
+          ? firstPage.products
+          : [];
+        const total =
+          typeof firstPage?.total === 'number'
+            ? firstPage.total
+            : mergedProducts.length;
+
+        setProducts(mergedProducts);
+        setLoading(false);
+
+        let offset = mergedProducts.length;
+
+        while (!shouldCancel() && offset < total) {
+          const nextPage = await apiClient.getProductsV2({
+            limit: pageSize,
+            offset,
+          });
+
+          if (shouldCancel()) return;
+
+          const nextProducts = Array.isArray(nextPage?.products)
+            ? nextPage.products
+            : [];
+
+          if (!nextProducts.length) {
+            break;
+          }
+
+          mergedProducts = mergeCatalogProducts(mergedProducts, nextProducts);
+          offset += nextProducts.length;
+          setProducts(mergedProducts);
+        }
+
+        return;
+      } catch (progressiveError) {
+        console.warn(
+          'Failed to progressively load catalog via /products/v2, falling back to full catalog fetch.',
+          progressiveError
+        );
+      }
+
       const data = await apiClient.getProducts();
+      if (shouldCancel()) return;
       setProducts(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to load products:', error);
     } finally {
-      setLoading(false);
+      if (!shouldCancel()) {
+        setLoading(false);
+      }
     }
   };
 
@@ -1097,6 +1193,10 @@ export default function ProductsPage() {
         message.includes('connection closed')
       );
     };
+    const isUnsupportedCatalogReviewQueueError = (err: any) => {
+      const status = err?.response?.status;
+      return status === 404 || status === 405 || status === 501;
+    };
 
     const loadLaneQueue = async (planId: string, remainingRetries = 2) => {
       try {
@@ -1185,6 +1285,15 @@ export default function ProductsPage() {
           const nextPlanId = refreshedPlan?.plan_id || planId;
           if (cancelled || !nextPlanId) return;
           return await loadLaneQueue(nextPlanId, remainingRetries - 1);
+        }
+        if (isUnsupportedCatalogReviewQueueError(error)) {
+          if (cancelled) return;
+          setSourceDataLaneRows([]);
+          setSourceDataLaneGroups([]);
+          setSourceDataLaneError(
+            'Detailed source-data lane queue is unavailable until the latest backend readiness routes are deployed.'
+          );
+          return;
         }
         console.error('Failed to load source-data lane queue', error);
         if (cancelled) return;
