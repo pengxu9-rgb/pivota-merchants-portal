@@ -760,6 +760,28 @@ class ApiClient {
     return response.data;
   }
 
+  async getCommerceFunnelIssues(params?: {
+    surface?: string;
+    limit?: number;
+  }) {
+    const response = await this.client.get('/merchant/analytics/commerce-funnel/issues', {
+      params,
+    });
+    return response.data;
+  }
+
+  async getCommerceInteractionTrace(interactionId: string) {
+    const response = await this.client.get(
+      `/merchant/analytics/commerce-interactions/${encodeURIComponent(interactionId)}`
+    );
+    return response.data;
+  }
+
+  async getCommerceReadinessState() {
+    const response = await this.client.get('/merchant/analytics/readiness-state');
+    return response.data;
+  }
+
   async exportAnalyticsTrendsCSV(params?: {
     metric?: 'gmv' | 'orders' | 'aov' | 'success_rate' | 'refunds';
     range?: '1d' | '7d' | '30d' | '90d';

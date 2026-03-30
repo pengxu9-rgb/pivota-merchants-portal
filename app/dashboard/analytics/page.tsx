@@ -49,6 +49,14 @@ export default function AnalyticsPage() {
   const [loadingTrends, setLoadingTrends] = useState(false);
   const [commerceFunnel, setCommerceFunnel] = useState<any>(null);
   const [commerceFunnelError, setCommerceFunnelError] = useState<string | null>(null);
+  const [commerceIssues, setCommerceIssues] = useState<any>(null);
+  const [commerceIssuesError, setCommerceIssuesError] = useState<string | null>(null);
+  const [readinessState, setReadinessState] = useState<any>(null);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
+  const [selectedInteractionId, setSelectedInteractionId] = useState<string | null>(null);
+  const [interactionTrace, setInteractionTrace] = useState<any>(null);
+  const [interactionTraceError, setInteractionTraceError] = useState<string | null>(null);
+  const [loadingTrace, setLoadingTrace] = useState(false);
   const [netMode, setNetMode] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -59,11 +67,38 @@ export default function AnalyticsPage() {
   } | null>(null);
   const [paidRevenueOverrideLoading, setPaidRevenueOverrideLoading] = useState(false);
 
+  // Retry buttons reuse these loaders; keep the analytics refetch keyed to user-facing controls only.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    loadAnalytics();
-    loadTrends();
-    loadCommerceFunnel();
-  }, [timeRange, metric, netMode]);
+    void (async () => {
+      await loadAnalytics();
+      await loadTrends();
+    })();
+  }, [timeRange, metric, netMode, t]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Commerce readiness and diagnostics are merchant-scoped boot data, not time-range dependent analytics.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    void (async () => {
+      await loadCommerceFunnel();
+      await loadCommerceIssues();
+      await loadReadinessState();
+    })();
+  }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Trace loading should only follow the selected interaction id.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!selectedInteractionId) {
+      setInteractionTrace(null);
+      setInteractionTraceError(null);
+      setLoadingTrace(false);
+      return;
+    }
+    void (async () => {
+      await loadInteractionTrace(selectedInteractionId);
+    })();
+  }, [selectedInteractionId, t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const seq = ++revenueComputeSeqRef.current;
@@ -259,6 +294,45 @@ export default function AnalyticsPage() {
     }
   };
 
+  const loadCommerceIssues = async () => {
+    try {
+      setCommerceIssuesError(null);
+      const data = await apiClient.getCommerceFunnelIssues({ limit: 20 });
+      setCommerceIssues(data);
+    } catch (error) {
+      console.error('❌ Failed to load commerce funnel issues:', error);
+      setCommerceIssues(null);
+      setCommerceIssuesError(t('dashboard.analytics.issues.runtime'));
+    }
+  };
+
+  const loadReadinessState = async () => {
+    try {
+      setReadinessError(null);
+      const data = await apiClient.getCommerceReadinessState();
+      setReadinessState(data);
+    } catch (error) {
+      console.error('❌ Failed to load readiness state:', error);
+      setReadinessState(null);
+      setReadinessError(t('dashboard.analytics.readiness.runtime'));
+    }
+  };
+
+  const loadInteractionTrace = async (interactionId: string) => {
+    try {
+      setLoadingTrace(true);
+      setInteractionTraceError(null);
+      const data = await apiClient.getCommerceInteractionTrace(interactionId);
+      setInteractionTrace(data);
+    } catch (error) {
+      console.error('❌ Failed to load commerce interaction trace:', error);
+      setInteractionTrace(null);
+      setInteractionTraceError(t('dashboard.analytics.trace.runtime'));
+    } finally {
+      setLoadingTrace(false);
+    }
+  };
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -268,6 +342,17 @@ export default function AnalyticsPage() {
 
   const formatPercent = (value: number) => {
     return value.toFixed(1) + '%';
+  };
+
+  const formatRatioPercent = (value: number) => {
+    return formatPercent((Number(value) || 0) * 100);
+  };
+
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return t('dashboard.analytics.shared.notAvailable');
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleString();
   };
 
   if (loading) {
@@ -307,11 +392,42 @@ export default function AnalyticsPage() {
   }));
   const hasComparisonSeries = chartData.some((point) => typeof point.previous === 'number');
   const funnelSummary = commerceFunnel?.summary || {};
+  const funnelSlices = Array.isArray(commerceFunnel?.slices) ? commerceFunnel.slices : [];
   const listingRowsTotal = Number(funnelSummary?.listing_rows_total || 0);
   const listingStatusBreakdown =
     funnelSummary?.listing_status_breakdown_rows || funnelSummary?.listing_status_breakdown || {};
   const listingStatusBreakdownBySurface =
     funnelSummary?.listing_status_breakdown_by_surface || {};
+  const readinessDomains = [
+    {
+      key: 'foundation',
+      label: t('dashboard.analytics.readiness.foundation'),
+      status: readinessState?.foundation_status,
+      blockers: readinessState?.foundation_blockers || [],
+    },
+    {
+      key: 'discover',
+      label: t('dashboard.analytics.readiness.discover'),
+      status: readinessState?.discover_status,
+      blockers: readinessState?.discover_blockers || [],
+    },
+    {
+      key: 'signals',
+      label: t('dashboard.analytics.readiness.signals'),
+      status: readinessState?.signals_status,
+      blockers: readinessState?.signals_blockers || [],
+    },
+    {
+      key: 'execute',
+      label: t('dashboard.analytics.readiness.execute'),
+      status: readinessState?.execute_status,
+      blockers: readinessState?.execute_blockers || [],
+    },
+  ];
+  const readinessMetadata = readinessState?.metadata || {};
+  const commerceIssuesList = Array.isArray(commerceIssues?.issues) ? commerceIssues.issues : [];
+  const traceInteraction = interactionTrace?.interaction || null;
+  const traceEvents = Array.isArray(interactionTrace?.events) ? interactionTrace.events : [];
 
   return (
     <div className="space-y-6">
@@ -349,62 +465,64 @@ export default function AnalyticsPage() {
         </SurfaceCard>
       ) : (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {/* Order Generation Rate */}
+        {/* Click-through Rate */}
         <div className="merchant-panel p-5">
           <div className="mb-3 flex items-center justify-between">
             <div className="rounded-lg bg-blue-100 p-2">
               <Activity className="w-6 h-6 text-blue-600" />
             </div>
             <div className={`flex items-center text-sm ${
-              (analytics?.order_generation_rate_change || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+              Number(funnelSummary?.clicked_rate || 0) >= 0 ? 'text-green-600' : 'text-red-600'
             }`}>
-              {(analytics?.order_generation_rate_change || 0) >= 0 ? (
+              {(Number(funnelSummary?.clicked_rate || 0) >= 0) ? (
                 <TrendingUp className="w-4 h-4" />
               ) : (
                 <TrendingDown className="w-4 h-4" />
               )}
-              <span>{Math.abs(analytics?.order_generation_rate_change || 0)}%</span>
+              <span>{formatRatioPercent(Number(funnelSummary?.clicked_rate || 0))}</span>
             </div>
           </div>
           <h3 className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
-            {formatPercent(analytics?.order_generation_rate || 0)}
+            {formatRatioPercent(Number(funnelSummary?.clicked_rate || 0))}
           </h3>
           <p className="text-sm text-[color:var(--merchant-muted-strong)]">
-            {t('dashboard.analytics.stats.orderCaptureRate')}
+            {t('dashboard.analytics.stats.clickThroughRate')}
           </p>
           <p className="mt-1 text-xs text-[color:var(--merchant-muted)]">
-            {t('dashboard.analytics.stats.attempts', {
-              count: analytics?.total_order_attempts || 0,
+            {t('dashboard.analytics.stats.clickedExposureMeta', {
+              clicked: Number(funnelSummary?.clicked_exposure || 0),
+              surfaced: Number(funnelSummary?.surfaced_exposure || funnelSummary?.indexed_exposure || 0),
             })}
           </p>
         </div>
 
-        {/* Order Placement Rate */}
+        {/* Order Rate From Clicks */}
         <div className="merchant-panel p-5">
           <div className="mb-3 flex items-center justify-between">
             <div className="rounded-lg bg-green-100 p-2">
               <BarChart3 className="w-6 h-6 text-green-600" />
             </div>
             <div className={`flex items-center text-sm ${
-              (analytics?.order_placement_rate_change || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+              Number(funnelSummary?.ordered_rate || 0) >= 0 ? 'text-green-600' : 'text-red-600'
             }`}>
-              {(analytics?.order_placement_rate_change || 0) >= 0 ? (
+              {(Number(funnelSummary?.ordered_rate || 0) >= 0) ? (
                 <TrendingUp className="w-4 h-4" />
               ) : (
                 <TrendingDown className="w-4 h-4" />
               )}
-              <span>{Math.abs(analytics?.order_placement_rate_change || 0)}%</span>
+              <span>{formatRatioPercent(Number(funnelSummary?.ordered_rate || 0))}</span>
             </div>
           </div>
           <h3 className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
-            {formatPercent(analytics?.order_placement_rate || 0)}
+            {formatRatioPercent(Number(funnelSummary?.ordered_rate || 0))}
           </h3>
           <p className="text-sm text-[color:var(--merchant-muted-strong)]">
-            {t('dashboard.analytics.stats.checkoutCompletion')}
+            {t('dashboard.analytics.stats.orderRateFromClicks')}
           </p>
           <p className="mt-1 text-xs text-[color:var(--merchant-muted)]">
-            {t('dashboard.analytics.stats.placed', {
-              count: analytics?.total_orders_placed || 0,
+            {t('dashboard.analytics.stats.orderedExposureMeta', {
+              ordered: Number(funnelSummary?.ordered_conversion || 0),
+              clicked: Number(funnelSummary?.clicked_exposure || 0),
             })}
           </p>
         </div>
@@ -494,12 +612,21 @@ export default function AnalyticsPage() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {[
                   {
                     label: t('dashboard.analytics.commerceFunnel.indexed'),
                     value: Number(funnelSummary?.indexed_exposure || 0),
                     meta: t('dashboard.analytics.commerceFunnel.indexedMeta'),
+                  },
+                  {
+                    label: t('dashboard.analytics.commerceFunnel.surfaced'),
+                    value: Number(funnelSummary?.surfaced_exposure || 0),
+                    meta: t('dashboard.analytics.commerceFunnel.surfacedMeta', {
+                      supported: funnelSummary?.surfaced_exposure_supported
+                        ? t('dashboard.analytics.shared.supported')
+                        : t('dashboard.analytics.shared.notSupported'),
+                    }),
                   },
                   {
                     label: t('dashboard.analytics.commerceFunnel.clicked'),
@@ -519,6 +646,16 @@ export default function AnalyticsPage() {
                       amount: String(funnelSummary?.refunded_amount || '0'),
                     }),
                   },
+                  {
+                    label: t('dashboard.analytics.commerceFunnel.clickedRate'),
+                    value: formatRatioPercent(Number(funnelSummary?.clicked_rate || 0)),
+                    meta: t('dashboard.analytics.commerceFunnel.clickedRateMeta'),
+                  },
+                  {
+                    label: t('dashboard.analytics.commerceFunnel.orderedRate'),
+                    value: formatRatioPercent(Number(funnelSummary?.ordered_rate || 0)),
+                    meta: t('dashboard.analytics.commerceFunnel.orderedRateMeta'),
+                  },
                 ].map((item) => (
                   <div key={item.label} className="merchant-panel p-4">
                     <div className="text-xs uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
@@ -532,6 +669,65 @@ export default function AnalyticsPage() {
                     ) : null}
                   </div>
                 ))}
+              </div>
+
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                    {t('dashboard.analytics.commerceFunnel.groupedTitle')}
+                  </div>
+                  <div className="text-xs text-[color:var(--merchant-muted)]">
+                    {t('dashboard.analytics.commerceFunnel.groupedDescription')}
+                  </div>
+                </div>
+                <div className="overflow-x-auto rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/80">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-[color:var(--merchant-surface-muted)]/70 text-left text-xs uppercase tracking-[0.14em] text-[color:var(--merchant-muted)]">
+                      <tr>
+                        <th className="px-4 py-3">{t('dashboard.analytics.commerceFunnel.groupedHeaders.key')}</th>
+                        <th className="px-4 py-3">{t('dashboard.analytics.commerceFunnel.groupedHeaders.indexed')}</th>
+                        <th className="px-4 py-3">{t('dashboard.analytics.commerceFunnel.groupedHeaders.surfaced')}</th>
+                        <th className="px-4 py-3">{t('dashboard.analytics.commerceFunnel.groupedHeaders.clicked')}</th>
+                        <th className="px-4 py-3">{t('dashboard.analytics.commerceFunnel.groupedHeaders.clickedRate')}</th>
+                        <th className="px-4 py-3">{t('dashboard.analytics.commerceFunnel.groupedHeaders.ordered')}</th>
+                        <th className="px-4 py-3">{t('dashboard.analytics.commerceFunnel.groupedHeaders.orderedRate')}</th>
+                        <th className="px-4 py-3">{t('dashboard.analytics.commerceFunnel.groupedHeaders.refunded')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {funnelSlices.length ? (
+                        funnelSlices.slice(0, 12).map((slice: any) => (
+                          <tr
+                            key={String(slice?.key || 'unknown')}
+                            className="border-t border-[color:var(--merchant-line)] text-[color:var(--merchant-muted-strong)]"
+                          >
+                            <td className="px-4 py-3 font-medium text-[color:var(--merchant-ink)]">
+                              {String(slice?.key || t('dashboard.analytics.shared.unknown'))}
+                            </td>
+                            <td className="px-4 py-3">{Number(slice?.indexed_exposure || 0)}</td>
+                            <td className="px-4 py-3">{Number(slice?.surfaced_exposure || 0)}</td>
+                            <td className="px-4 py-3">{Number(slice?.clicked_exposure || 0)}</td>
+                            <td className="px-4 py-3">{formatRatioPercent(Number(slice?.clicked_rate || 0))}</td>
+                            <td className="px-4 py-3">{Number(slice?.ordered_conversion || 0)}</td>
+                            <td className="px-4 py-3">{formatRatioPercent(Number(slice?.ordered_rate || 0))}</td>
+                            <td className="px-4 py-3">
+                              {Number(slice?.refunded_orders || 0)} / {String(slice?.refunded_amount || '0')}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td
+                            colSpan={8}
+                            className="px-4 py-5 text-center text-[color:var(--merchant-muted)]"
+                          >
+                            {t('dashboard.analytics.commerceFunnel.empty')}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               <div className="space-y-3">
@@ -600,6 +796,352 @@ export default function AnalyticsPage() {
                     {t('dashboard.analytics.commerceFunnel.surfacedPending')}
                   </div>
                 ) : null}
+              </div>
+            </>
+          )}
+        </div>
+      </SurfaceCard>
+
+      <SurfaceCard
+        title={t('dashboard.analytics.readiness.title')}
+        description={t('dashboard.analytics.readiness.description')}
+        action={
+          readinessError ? (
+            <MerchantButton type="button" onClick={loadReadinessState} variant="secondary">
+              {t('dashboard.analytics.readiness.retry')}
+            </MerchantButton>
+          ) : null
+        }
+      >
+        <div className="space-y-5 p-5">
+          {readinessError ? (
+            <div className="rounded-[1rem] border border-[color:var(--merchant-warning-soft)] bg-[color:var(--merchant-warning-soft)]/40 px-4 py-4 text-sm text-[color:var(--merchant-muted-strong)]">
+              {readinessError}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {readinessDomains.map((domain) => {
+                  const ready = String(domain.status || '').toLowerCase() === 'ready';
+                  return (
+                    <div key={domain.key} className="merchant-panel p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-xs uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
+                          {domain.label}
+                        </div>
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                            ready
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-amber-100 text-amber-700'
+                          }`}
+                        >
+                          {ready
+                            ? t('dashboard.analytics.readiness.ready')
+                            : t('dashboard.analytics.readiness.blocked')}
+                        </span>
+                      </div>
+                      <div className="mt-3 text-sm text-[color:var(--merchant-muted-strong)]">
+                        {domain.blockers.length
+                          ? domain.blockers.join(', ')
+                          : t('dashboard.analytics.readiness.noBlockers')}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {[
+                  {
+                    label: t('dashboard.analytics.readiness.primaryPlatform'),
+                    value: readinessState?.primary_platform || t('dashboard.analytics.shared.notAvailable'),
+                  },
+                  {
+                    label: t('dashboard.analytics.readiness.activePsp'),
+                    value: readinessState?.active_psp || t('dashboard.analytics.shared.notAvailable'),
+                  },
+                  {
+                    label: t('dashboard.analytics.readiness.surfacedSupport'),
+                    value: readinessState?.surfaced_exposure_supported
+                      ? t('dashboard.analytics.shared.supported')
+                      : t('dashboard.analytics.shared.notSupported'),
+                  },
+                  {
+                    label: t('dashboard.analytics.readiness.firstStoreConnected'),
+                    value: formatDateTime(readinessState?.first_store_connected_at),
+                  },
+                  {
+                    label: t('dashboard.analytics.readiness.firstCatalogSynced'),
+                    value: formatDateTime(readinessState?.first_catalog_synced_at),
+                  },
+                  {
+                    label: t('dashboard.analytics.readiness.daysToDiscoverReady'),
+                    value:
+                      readinessState?.days_to_discover_ready == null
+                        ? t('dashboard.analytics.shared.notAvailable')
+                        : String(readinessState.days_to_discover_ready),
+                  },
+                ].map((item) => (
+                  <div key={item.label} className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/70 px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
+                      {item.label}
+                    </div>
+                    <div className="mt-2 text-sm font-medium text-[color:var(--merchant-ink)]">
+                      {item.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/70 px-4 py-4">
+                <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                  {t('dashboard.analytics.readiness.ledgerSummary')}
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="text-sm text-[color:var(--merchant-muted-strong)]">
+                    {t('dashboard.analytics.readiness.summary.indexed', {
+                      count: Number(readinessMetadata?.indexed_exposure || 0),
+                    })}
+                  </div>
+                  <div className="text-sm text-[color:var(--merchant-muted-strong)]">
+                    {t('dashboard.analytics.readiness.summary.surfaced', {
+                      count: Number(readinessMetadata?.surfaced_exposure || 0),
+                    })}
+                  </div>
+                  <div className="text-sm text-[color:var(--merchant-muted-strong)]">
+                    {t('dashboard.analytics.readiness.summary.clicked', {
+                      count: Number(readinessMetadata?.clicked_exposure || 0),
+                    })}
+                  </div>
+                  <div className="text-sm text-[color:var(--merchant-muted-strong)]">
+                    {t('dashboard.analytics.readiness.summary.ordered', {
+                      count: Number(readinessMetadata?.ordered_conversion || 0),
+                    })}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </SurfaceCard>
+
+      <SurfaceCard
+        title={t('dashboard.analytics.issues.title')}
+        description={t('dashboard.analytics.issues.description')}
+        action={
+          commerceIssuesError ? (
+            <MerchantButton type="button" onClick={loadCommerceIssues} variant="secondary">
+              {t('dashboard.analytics.issues.retry')}
+            </MerchantButton>
+          ) : null
+        }
+      >
+        <div className="space-y-4 p-5">
+          {commerceIssuesError ? (
+            <div className="rounded-[1rem] border border-[color:var(--merchant-warning-soft)] bg-[color:var(--merchant-warning-soft)]/40 px-4 py-4 text-sm text-[color:var(--merchant-muted-strong)]">
+              {commerceIssuesError}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="merchant-panel p-4">
+                  <div className="text-xs uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
+                    {t('dashboard.analytics.issues.summary.interactions')}
+                  </div>
+                  <div className="mt-2 text-[1.7rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+                    {Number(commerceIssues?.summary?.interaction_count || 0)}
+                  </div>
+                </div>
+                <div className="merchant-panel p-4">
+                  <div className="text-xs uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
+                    {t('dashboard.analytics.issues.summary.listings')}
+                  </div>
+                  <div className="mt-2 text-[1.7rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+                    {Number(commerceIssues?.summary?.listing_rows_total || 0)}
+                  </div>
+                </div>
+                <div className="merchant-panel p-4">
+                  <div className="text-xs uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
+                    {t('dashboard.analytics.issues.summary.clicks')}
+                  </div>
+                  <div className="mt-2 text-[1.7rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+                    {Number(commerceIssues?.summary?.click_rows_total || 0)}
+                  </div>
+                </div>
+                <div className="merchant-panel p-4">
+                  <div className="text-xs uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
+                    {t('dashboard.analytics.issues.summary.edges')}
+                  </div>
+                  <div className="mt-2 text-[1.7rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+                    {Number(commerceIssues?.summary?.edge_rows_total || 0)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {commerceIssuesList.length ? (
+                  commerceIssuesList.map((issue: any) => (
+                    <div
+                      key={String(issue?.code || 'unknown')}
+                      className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/80 px-4 py-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-semibold text-[color:var(--merchant-ink)]">
+                              {String(issue?.code || t('dashboard.analytics.shared.unknown'))}
+                            </span>
+                            <span
+                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                                String(issue?.severity || '').toLowerCase() === 'critical'
+                                  ? 'bg-red-100 text-red-700'
+                                  : String(issue?.severity || '').toLowerCase() === 'info'
+                                    ? 'bg-slate-100 text-slate-700'
+                                    : 'bg-amber-100 text-amber-700'
+                              }`}
+                            >
+                              {String(issue?.severity || 'warning')}
+                            </span>
+                            <span className="inline-flex items-center rounded-full border border-[color:var(--merchant-line)] px-2.5 py-1 text-[11px] text-[color:var(--merchant-muted-strong)]">
+                              {t('dashboard.analytics.issues.count', {
+                                count: Number(issue?.count || 0),
+                              })}
+                            </span>
+                          </div>
+                          <div className="text-sm text-[color:var(--merchant-muted-strong)]">
+                            {String(issue?.message || '')}
+                          </div>
+                        </div>
+                      </div>
+
+                      {Array.isArray(issue?.sample_interaction_ids) && issue.sample_interaction_ids.length ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {issue.sample_interaction_ids.map((interactionId: string) => (
+                            <MerchantButton
+                              key={interactionId}
+                              type="button"
+                              variant={selectedInteractionId === interactionId ? 'primary' : 'secondary'}
+                              onClick={() => setSelectedInteractionId(interactionId)}
+                            >
+                              {t('dashboard.analytics.issues.traceCta', {
+                                interactionId: interactionId.slice(0, 10),
+                              })}
+                            </MerchantButton>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {Array.isArray(issue?.samples) && issue.samples.length ? (
+                        <div className="mt-3 overflow-x-auto rounded-[0.9rem] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)]/40 px-3 py-3 text-xs text-[color:var(--merchant-muted-strong)]">
+                          <pre className="whitespace-pre-wrap break-words">
+                            {JSON.stringify(issue.samples, null, 2)}
+                          </pre>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/70 px-4 py-5 text-sm text-[color:var(--merchant-muted)]">
+                    {t('dashboard.analytics.issues.empty')}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </SurfaceCard>
+
+      <SurfaceCard
+        title={t('dashboard.analytics.trace.title')}
+        description={t('dashboard.analytics.trace.description')}
+        action={
+          selectedInteractionId ? (
+            <MerchantButton
+              type="button"
+              variant="secondary"
+              onClick={() => setSelectedInteractionId(null)}
+            >
+              {t('dashboard.analytics.trace.clear')}
+            </MerchantButton>
+          ) : null
+        }
+      >
+        <div className="space-y-4 p-5">
+          {!selectedInteractionId ? (
+            <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/70 px-4 py-5 text-sm text-[color:var(--merchant-muted)]">
+              {t('dashboard.analytics.trace.empty')}
+            </div>
+          ) : loadingTrace ? (
+            <div className="flex min-h-[180px] items-center justify-center">
+              <div className="animate-spin rounded-full h-10 w-10 border-2 border-[color:var(--merchant-line-strong)] border-t-[color:var(--merchant-brand)]"></div>
+            </div>
+          ) : interactionTraceError ? (
+            <div className="rounded-[1rem] border border-[color:var(--merchant-warning-soft)] bg-[color:var(--merchant-warning-soft)]/40 px-4 py-4 text-sm text-[color:var(--merchant-muted-strong)]">
+              {interactionTraceError}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {[
+                  {
+                    label: t('dashboard.analytics.trace.interactionId'),
+                    value: traceInteraction?.interaction_id || selectedInteractionId,
+                  },
+                  {
+                    label: t('dashboard.analytics.trace.platform'),
+                    value: traceInteraction?.platform || t('dashboard.analytics.shared.notAvailable'),
+                  },
+                  {
+                    label: t('dashboard.analytics.trace.surface'),
+                    value: traceInteraction?.surface || t('dashboard.analytics.shared.notAvailable'),
+                  },
+                  {
+                    label: t('dashboard.analytics.trace.status'),
+                    value: traceInteraction?.status || t('dashboard.analytics.shared.notAvailable'),
+                  },
+                ].map((item) => (
+                  <div key={item.label} className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/70 px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
+                      {item.label}
+                    </div>
+                    <div className="mt-2 break-all text-sm font-medium text-[color:var(--merchant-ink)]">
+                      {String(item.value)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/80">
+                <div className="border-b border-[color:var(--merchant-line)] px-4 py-3 text-sm font-medium text-[color:var(--merchant-ink)]">
+                  {t('dashboard.analytics.trace.events')}
+                </div>
+                <div className="divide-y divide-[color:var(--merchant-line)]">
+                  {traceEvents.length ? (
+                    traceEvents.map((event: any, index: number) => (
+                      <div key={String(event?.event_id || `event-${index}`)} className="space-y-2 px-4 py-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                            {String(event?.event_type || t('dashboard.analytics.shared.unknown'))}
+                          </div>
+                          <div className="text-xs text-[color:var(--merchant-muted)]">
+                            {formatDateTime(event?.occurred_at)}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 text-xs text-[color:var(--merchant-muted-strong)] md:grid-cols-2 xl:grid-cols-4">
+                          <div>{t('dashboard.analytics.trace.eventId')}: {String(event?.event_id || '')}</div>
+                          <div>{t('dashboard.analytics.trace.source')}: {String(event?.source || t('dashboard.analytics.shared.notAvailable'))}</div>
+                          <div>{t('dashboard.analytics.trace.variant')}: {String(event?.canonical_variant_id || t('dashboard.analytics.shared.notAvailable'))}</div>
+                          <div>{t('dashboard.analytics.trace.order')}: {String(event?.payload?.order_id || traceInteraction?.order_id || t('dashboard.analytics.shared.notAvailable'))}</div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-4 py-5 text-sm text-[color:var(--merchant-muted)]">
+                      {t('dashboard.analytics.trace.noEvents')}
+                    </div>
+                  )}
+                </div>
               </div>
             </>
           )}
@@ -888,8 +1430,8 @@ export default function AnalyticsPage() {
           {t('dashboard.analytics.help.title')}
         </h3>
         <ul className="text-sm text-[color:var(--merchant-muted-strong)] space-y-1">
-          <li>{t('dashboard.analytics.help.orderCapture')}</li>
-          <li>{t('dashboard.analytics.help.checkoutCompletion')}</li>
+          <li>{t('dashboard.analytics.help.clickThrough')}</li>
+          <li>{t('dashboard.analytics.help.orderRateFromClicks')}</li>
           <li>{t('dashboard.analytics.help.paymentSuccess')}</li>
         </ul>
       </div>
