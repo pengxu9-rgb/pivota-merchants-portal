@@ -86,7 +86,7 @@ const enMessages: MessageCatalog = {
 
   "auth.signup.pageTitle": "Start merchant onboarding in the portal",
   "auth.signup.pageDescription":
-    "Create the merchant record once, complete payment and KYB setup, and continue into the portal with the same merchant account.",
+    "Create your merchant account once, spot what may be blocking discovery and conversion - so you can improve your store's visibility and conversion across ChatGPT, Claude, Gemini, and AI agents.",
   "auth.signup.highlightAccountTitle": "One merchant account from start to dashboard",
   "auth.signup.highlightAccountDescription":
     "Create the merchant record once and keep the same identity through signup, approval, and portal access.",
