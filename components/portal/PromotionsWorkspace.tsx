@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Promotion, PromotionStatus, computePromotionStatus } from '@/types/promotion';
 import { PromotionForm } from '@/components/portal/PromotionForm';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import {
   MerchantButton,
   PageHeader,
@@ -14,6 +15,7 @@ type FilterStatus = 'ALL' | PromotionStatus;
 type FilterType = 'ALL' | 'FLASH_SALE' | 'MULTI_BUY_DISCOUNT';
 
 export function PromotionsWorkspace() {
+  const { t, language } = useMerchantLanguage();
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +105,7 @@ export function PromotionsWorkspace() {
   };
 
   const handleEnd = async (promotion: Promotion) => {
-    if (!confirm(`End "${promotion.name}" now?`)) return;
+    if (!confirm(t('dashboard.promotions.confirmEnd', { name: promotion.name }))) return;
     const token =
       typeof window !== 'undefined'
         ? localStorage.getItem('merchant_token') || localStorage.getItem('token')
@@ -121,14 +123,14 @@ export function PromotionsWorkspace() {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      alert(data.error || 'Failed to end promotion.');
+      alert(data.error || t('dashboard.promotions.errorEnd'));
       return;
     }
     await loadPromotions();
   };
 
   const handleDelete = async (promotion: Promotion) => {
-    if (!confirm(`Delete "${promotion.name}"? This will remove the promotion.`)) return;
+    if (!confirm(t('dashboard.promotions.confirmDelete', { name: promotion.name }))) return;
     const token =
       typeof window !== 'undefined'
         ? localStorage.getItem('merchant_token') || localStorage.getItem('token')
@@ -144,7 +146,7 @@ export function PromotionsWorkspace() {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      alert(data.error || 'Failed to delete promotion.');
+      alert(data.error || t('dashboard.promotions.errorDelete'));
       return;
     }
     await loadPromotions();
@@ -153,12 +155,18 @@ export function PromotionsWorkspace() {
   const renderStatus = (promotion: Promotion) => {
     const status = computePromotionStatus(promotion);
     const tone = status === 'ACTIVE' ? 'success' : status === 'UPCOMING' ? 'brand' : 'neutral';
-    return <StatusBadge tone={tone}>{status}</StatusBadge>;
+    const label =
+      status === 'ACTIVE'
+        ? t('dashboard.promotions.filters.active')
+        : status === 'UPCOMING'
+          ? t('dashboard.promotions.filters.upcoming')
+          : t('dashboard.promotions.filters.ended');
+    return <StatusBadge tone={tone}>{label}</StatusBadge>;
   };
 
   const formatRange = (promotion: Promotion) => {
     const format = (timestamp: string) =>
-      new Intl.DateTimeFormat('en', {
+      new Intl.DateTimeFormat(language, {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
@@ -170,12 +178,12 @@ export function PromotionsWorkspace() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Promotions"
-        title="Plan merchant campaigns with clearer timing, targeting, and channel intent."
-        description="Promotions should read like a campaign workspace, not a raw discount table. Use this page to manage live offers, upcoming launches, and creator visibility."
+        eyebrow={t('dashboard.promotions.eyebrow')}
+        title={t('dashboard.promotions.title')}
+        description={t('dashboard.promotions.description')}
         actions={
           <MerchantButton type="button" onClick={openCreate}>
-            New promotion
+            {t('dashboard.promotions.newPromotion')}
           </MerchantButton>
         }
       />
@@ -183,39 +191,53 @@ export function PromotionsWorkspace() {
       <SurfaceCard strong>
         <div className="grid gap-4 px-6 py-6 lg:grid-cols-4 lg:px-8">
           <div className="rounded-[1.2rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
-            <div className="text-sm text-[color:var(--merchant-muted)]">Campaigns</div>
+            <div className="text-sm text-[color:var(--merchant-muted)]">
+              {t('dashboard.promotions.summary.campaigns')}
+            </div>
             <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
               {statusCounts.total}
             </div>
             <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
-              Total configured promotions
+              {t('dashboard.promotions.summary.totalConfigured')}
             </div>
           </div>
           <div className="rounded-[1.2rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
-            <div className="text-sm text-[color:var(--merchant-muted)]">Live now</div>
+            <div className="text-sm text-[color:var(--merchant-muted)]">
+              {t('dashboard.promotions.summary.liveNow')}
+            </div>
             <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
               {statusCounts.active}
             </div>
             <div className="mt-1">
-              <StatusBadge tone="success">Active campaigns</StatusBadge>
+              <StatusBadge tone="success">
+                {t('dashboard.promotions.summary.activeCampaigns')}
+              </StatusBadge>
             </div>
           </div>
           <div className="rounded-[1.2rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
-            <div className="text-sm text-[color:var(--merchant-muted)]">Scheduled</div>
+            <div className="text-sm text-[color:var(--merchant-muted)]">
+              {t('dashboard.promotions.summary.scheduled')}
+            </div>
             <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
               {statusCounts.upcoming}
             </div>
             <div className="mt-1">
-              <StatusBadge tone="brand">Upcoming campaigns</StatusBadge>
+              <StatusBadge tone="brand">
+                {t('dashboard.promotions.summary.upcomingCampaigns')}
+              </StatusBadge>
             </div>
           </div>
           <div className="rounded-[1.2rem] border border-[color:var(--merchant-line)] bg-white/75 px-5 py-4">
-            <div className="text-sm text-[color:var(--merchant-muted)]">Creator visibility</div>
+            <div className="text-sm text-[color:var(--merchant-muted)]">
+              {t('dashboard.promotions.summary.creatorVisibility')}
+            </div>
             <div className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
-              {promotions.filter((promotion) => promotion.exposeToCreators).length} promotions exposed
+              {t('dashboard.promotions.summary.exposedCount', {
+                count: promotions.filter((promotion) => promotion.exposeToCreators).length,
+              })}
             </div>
             <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
-              Eligible for creator-led commerce surfaces
+              {t('dashboard.promotions.summary.creatorVisibilityMeta')}
             </div>
           </div>
         </div>
@@ -235,7 +257,13 @@ export function PromotionsWorkspace() {
                   }`}
                   onClick={() => setFilterStatus(status)}
                 >
-                  {status === 'ALL' ? 'All statuses' : status}
+                  {status === 'ALL'
+                    ? t('dashboard.promotions.filters.allStatuses')
+                    : status === 'ACTIVE'
+                      ? t('dashboard.promotions.filters.active')
+                      : status === 'UPCOMING'
+                        ? t('dashboard.promotions.filters.upcoming')
+                        : t('dashboard.promotions.filters.ended')}
                 </button>
               ))}
             </div>
@@ -245,16 +273,16 @@ export function PromotionsWorkspace() {
               value={filterType}
               onChange={(event) => setFilterType(event.target.value as FilterType)}
             >
-              <option value="ALL">All campaign types</option>
-              <option value="FLASH_SALE">Flash sale</option>
-              <option value="MULTI_BUY_DISCOUNT">Multi-buy discount</option>
+              <option value="ALL">{t('dashboard.promotions.filters.allTypes')}</option>
+              <option value="FLASH_SALE">{t('dashboard.promotions.filters.flashSale')}</option>
+              <option value="MULTI_BUY_DISCOUNT">{t('dashboard.promotions.filters.multiBuyDiscount')}</option>
             </select>
 
             <input
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search campaigns"
+              placeholder={t('dashboard.promotions.filters.searchPlaceholder')}
               className="merchant-input min-w-[220px] flex-1"
             />
           </div>
@@ -266,19 +294,19 @@ export function PromotionsWorkspace() {
           <table className="min-w-full border-separate border-spacing-0">
             <thead>
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-[color:var(--merchant-muted)]">
-                <th className="px-6 py-4">Campaign</th>
-                <th className="px-4 py-4">Status</th>
-                <th className="px-4 py-4">Window</th>
-                <th className="px-4 py-4">Channels</th>
-                <th className="px-4 py-4">Visibility</th>
-                <th className="px-6 py-4 text-right">Actions</th>
+                <th className="px-6 py-4">{t('dashboard.promotions.table.headers.campaign')}</th>
+                <th className="px-4 py-4">{t('dashboard.promotions.table.headers.status')}</th>
+                <th className="px-4 py-4">{t('dashboard.promotions.table.headers.window')}</th>
+                <th className="px-4 py-4">{t('dashboard.promotions.table.headers.channels')}</th>
+                <th className="px-4 py-4">{t('dashboard.promotions.table.headers.visibility')}</th>
+                <th className="px-6 py-4 text-right">{t('dashboard.promotions.table.headers.actions')}</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-10 text-center text-sm text-[color:var(--merchant-muted)]">
-                    Loading promotions…
+                    {t('dashboard.promotions.table.loading')}
                   </td>
                 </tr>
               ) : error ? (
@@ -290,7 +318,7 @@ export function PromotionsWorkspace() {
               ) : filteredPromos.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-10 text-center text-sm text-[color:var(--merchant-muted)]">
-                    No promotions match the current filters.
+                    {t('dashboard.promotions.table.empty')}
                   </td>
                 </tr>
               ) : (
@@ -302,10 +330,12 @@ export function PromotionsWorkspace() {
                           {promotion.name}
                         </div>
                         <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
-                          {promotion.description || 'No campaign notes added yet.'}
+                          {promotion.description || t('dashboard.promotions.table.noNotes')}
                         </div>
                         <div className="mt-3 text-xs text-[color:var(--merchant-muted)]">
-                          {promotion.type === 'FLASH_SALE' ? 'Flash sale' : 'Multi-buy discount'}
+                          {promotion.type === 'FLASH_SALE'
+                            ? t('dashboard.promotions.filters.flashSale')
+                            : t('dashboard.promotions.filters.multiBuyDiscount')}
                         </div>
                       </div>
                     </td>
@@ -314,23 +344,25 @@ export function PromotionsWorkspace() {
                       {formatRange(promotion)}
                     </td>
                     <td className="px-4 py-5 text-sm text-[color:var(--merchant-muted-strong)]">
-                      {(promotion.channels || []).join(', ') || 'No channels'}
+                      {(promotion.channels || []).join(', ') || t('dashboard.promotions.table.noChannels')}
                     </td>
                     <td className="px-4 py-5 text-sm text-[color:var(--merchant-muted-strong)]">
-                      {promotion.exposeToCreators ? 'Creator-visible' : 'Merchant-only'}
+                      {promotion.exposeToCreators
+                        ? t('dashboard.promotions.table.creatorVisible')
+                        : t('dashboard.promotions.table.merchantOnly')}
                     </td>
                     <td className="px-6 py-5">
                       <div className="flex justify-end gap-2">
                         <MerchantButton kind="secondary" size="sm" type="button" onClick={() => openEdit(promotion)}>
-                          Edit
+                          {t('dashboard.promotions.table.edit')}
                         </MerchantButton>
                         {computePromotionStatus(promotion) !== 'ENDED' ? (
                           <MerchantButton kind="secondary" size="sm" type="button" onClick={() => void handleEnd(promotion)}>
-                            End now
+                            {t('dashboard.promotions.table.endNow')}
                           </MerchantButton>
                         ) : null}
                         <MerchantButton kind="ghost" size="sm" type="button" onClick={() => void handleDelete(promotion)}>
-                          Delete
+                          {t('dashboard.promotions.table.delete')}
                         </MerchantButton>
                       </div>
                     </td>

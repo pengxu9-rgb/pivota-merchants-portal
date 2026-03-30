@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { DollarSign, Plus, Trash2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import {
   MerchantButton,
   PageHeader,
@@ -17,6 +18,7 @@ import {
 import { PaymentsNav } from '@/components/ui/payments-nav';
 
 export default function CommissionPage() {
+  const { t } = useMerchantLanguage();
   const router = useRouter();
   const [offers, setOffers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,7 +46,7 @@ export default function CommissionPage() {
     try {
       const merchantId = localStorage.getItem('merchant_id');
       if (!merchantId) {
-        setError('No merchant ID found');
+        setError(t('dashboard.commission.errors.noMerchantId'));
         return;
       }
       
@@ -54,7 +56,7 @@ export default function CommissionPage() {
       setOffers(activeOffers);
     } catch (err: any) {
       console.error('Failed to load commission offers:', err);
-      setError(err.response?.data?.detail || 'Failed to load offers');
+      setError(err.response?.data?.detail || t('dashboard.commission.errors.loadOffers'));
     } finally {
       setLoading(false);
     }
@@ -141,12 +143,12 @@ export default function CommissionPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Payments"
-        title="Set commission offers without making incentives feel like back-office config."
-        description="Use commission offers to attract agents and shape promotion economics, while keeping the merchant-facing payment experience calm and readable."
+        eyebrow={t('dashboard.commission.eyebrow')}
+        title={t('dashboard.commission.title')}
+        description={t('dashboard.commission.description')}
         actions={
           <MerchantButton type="button" onClick={() => setShowForm(true)} icon={Plus}>
-            New offer
+            {t('dashboard.commission.newOffer')}
           </MerchantButton>
         }
       />
@@ -166,13 +168,14 @@ export default function CommissionPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           <div className="flex-1">
-            <h4 className="text-base font-semibold text-[color:var(--merchant-ink)] mb-1">Platform fallback commission</h4>
+            <h4 className="text-base font-semibold text-[color:var(--merchant-ink)] mb-1">
+              {t('dashboard.commission.fallback.title')}
+            </h4>
             <p className="text-sm text-[color:var(--merchant-muted-strong)]">
-              When no commission offer is set for an order, the platform will automatically apply a <strong>1% fallback rate</strong> 
-              to ensure agents are still compensated for their efforts. This applies to all order amounts.
+              {t('dashboard.commission.fallback.body', { rate: '1%' })}
             </p>
             <p className="text-sm text-[color:var(--merchant-muted)] mt-2">
-              Set a stronger merchant-funded offer when you want more visibility from agents.
+              {t('dashboard.commission.fallback.cta')}
             </p>
           </div>
         </div>
@@ -183,9 +186,9 @@ export default function CommissionPage() {
         <table className="merchant-table">
           <thead>
             <tr>
-              <th>Agent type</th>
-              <th>Commission rate</th>
-              <th>Minimum order</th>
+              <th>{t('dashboard.commission.table.agentType')}</th>
+              <th>{t('dashboard.commission.table.commissionRate')}</th>
+              <th>{t('dashboard.commission.table.minimumOrder')}</th>
               <th></th>
             </tr>
           </thead>
@@ -193,7 +196,7 @@ export default function CommissionPage() {
             {offers.length === 0 ? (
               <tr>
                 <td colSpan={4} className="px-6 py-12 text-center text-[color:var(--merchant-muted)]">
-                  No commission offers yet. Create one to give agents a clearer reason to prioritize your catalog.
+                  {t('dashboard.commission.table.empty')}
                 </td>
               </tr>
             ) : (
@@ -201,10 +204,10 @@ export default function CommissionPage() {
                 <tr key={offer.id}>
                   <td>
                     {offer.agent_type === 'premium' ? (
-                      <StatusBadge tone="brand">Premium</StatusBadge>
+                      <StatusBadge tone="brand">{t('dashboard.commission.table.premium')}</StatusBadge>
                     ) : (
                       <span className="font-medium text-[color:var(--merchant-ink)]">
-                        All Agents
+                        {t('dashboard.commission.table.allAgents')}
                       </span>
                     )}
                   </td>
@@ -215,14 +218,14 @@ export default function CommissionPage() {
                   </td>
                   <td>
                     <span className="text-[color:var(--merchant-muted-strong)]">
-                      {offer.min_amount > 0 ? `$${offer.min_amount.toFixed(2)}+` : 'No minimum'}
+                      {offer.min_amount > 0 ? `$${offer.min_amount.toFixed(2)}+` : t('dashboard.commission.table.noMinimum')}
                     </span>
                   </td>
                   <td className="text-right">
                     <button 
                       onClick={() => handleDelete(offer.id)}
                       className="merchant-icon-button text-[color:var(--merchant-critical)]"
-                      title="Delete offer"
+                      title={t('dashboard.commission.table.deleteTitle')}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -238,11 +241,11 @@ export default function CommissionPage() {
       {showForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">New Commission Offer</h2>
+            <h2 className="text-xl font-bold mb-4">{t('dashboard.commission.form.title')}</h2>
             <div className="space-y-4">
               {/* Offer Type Toggle */}
               <div>
-                <label className="block text-sm font-medium mb-2">Offer Type</label>
+                <label className="block text-sm font-medium mb-2">{t('dashboard.commission.form.offerType')}</label>
                 <div className="flex gap-3">
                   <button
                     type="button"
@@ -256,8 +259,8 @@ export default function CommissionPage() {
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
-                    <div className="font-medium">All Agents</div>
-                    <div className="text-xs mt-1 opacity-75">Default rate for all tiers</div>
+                    <div className="font-medium">{t('dashboard.commission.form.allAgents')}</div>
+                    <div className="text-xs mt-1 opacity-75">{t('dashboard.commission.form.allAgentsMeta')}</div>
                   </button>
                   <button
                     type="button"
@@ -271,19 +274,19 @@ export default function CommissionPage() {
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
-                    <div className="font-medium">⭐ Premium Only</div>
-                    <div className="text-xs mt-1 opacity-75">Higher rate for premium agents</div>
+                    <div className="font-medium">⭐ {t('dashboard.commission.form.premiumOnly')}</div>
+                    <div className="text-xs mt-1 opacity-75">{t('dashboard.commission.form.premiumOnlyMeta')}</div>
                   </button>
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
                   {offerMode === 'all' 
-                    ? 'This rate applies to all agent tiers (basic and premium)' 
-                    : 'This rate only applies to premium agents (higher tier)'}
+                    ? t('dashboard.commission.form.allAgentsHelp')
+                    : t('dashboard.commission.form.premiumOnlyHelp')}
                 </p>
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-2">Commission Rate (%)</label>
+                <label className="block text-sm font-medium mb-2">{t('dashboard.commission.form.rateLabel')}</label>
                 <input
                   type="number"
                   min="0"
@@ -296,12 +299,12 @@ export default function CommissionPage() {
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-2">Minimum Order Amount ($)</label>
+                <label className="block text-sm font-medium mb-2">{t('dashboard.commission.form.minOrderLabel')}</label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
-                  placeholder="0.00"
+                  placeholder={t('dashboard.commission.form.minOrderPlaceholder')}
                   value={newOffer.min_order_amount}
                   onChange={e => setNewOffer({
                     ...newOffer, 
@@ -309,7 +312,7 @@ export default function CommissionPage() {
                   })}
                   className="w-full px-3 py-2 border rounded-lg"
                 />
-                <p className="text-xs text-gray-500 mt-1">Leave empty or 0 for no minimum</p>
+                <p className="text-xs text-gray-500 mt-1">{t('dashboard.commission.form.minOrderHelp')}</p>
               </div>
               
               <div className="flex gap-4">
@@ -317,13 +320,13 @@ export default function CommissionPage() {
                   onClick={() => setShowForm(false)}
                   className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50"
                 >
-                  Cancel
+                  {t('dashboard.commission.form.cancel')}
                 </button>
                 <button
                   onClick={handleCreate}
                   className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                 >
-                  Create
+                  {t('dashboard.commission.form.create')}
                 </button>
               </div>
             </div>

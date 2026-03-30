@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { FEATURE_FLAGS } from '@/lib/config';
 import { platformOnboardingApi } from '@/lib/api';
 import { RefreshCw, Upload, CheckCircle2, XCircle, Activity, Package, Play } from 'lucide-react';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 
 type Platform = 'amazon' | 'temu';
 
@@ -32,6 +33,7 @@ interface ValidateResponse {
 }
 
 export default function PlatformOrdersPage() {
+  const { t } = useMerchantLanguage();
   const flagEnabled = FEATURE_FLAGS.PLATFORM_ORDERS_V1;
 
   const [onboardingId, setOnboardingId] = useState('');
@@ -113,9 +115,9 @@ export default function PlatformOrdersPage() {
   const getPaymentStatusBadge = (status?: string) => {
     if (!status || status === 'null') return <span className="text-gray-400 text-xs">—</span>;
     const badges: Record<string, JSX.Element> = {
-      paid: <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">Paid</span>,
-      pending: <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs font-medium">Pending</span>,
-      failed: <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium">Failed</span>,
+      paid: <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">{t('dashboard.platformOrders.badges.paid')}</span>,
+      pending: <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs font-medium">{t('dashboard.platformOrders.badges.pending')}</span>,
+      failed: <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium">{t('dashboard.platformOrders.badges.failed')}</span>,
     };
     return badges[status] || <span className="text-gray-600 text-xs">{status}</span>;
   };
@@ -123,9 +125,9 @@ export default function PlatformOrdersPage() {
   const getFulfillmentStatusBadge = (status?: string) => {
     if (!status || status === 'null') return <span className="text-gray-400 text-xs">—</span>;
     const badges: Record<string, JSX.Element> = {
-      shipped: <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">Shipped</span>,
-      delivered: <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">Delivered</span>,
-      pending: <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-medium">Pending</span>,
+      shipped: <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">{t('dashboard.platformOrders.badges.shipped')}</span>,
+      delivered: <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">{t('dashboard.platformOrders.badges.delivered')}</span>,
+      pending: <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-medium">{t('dashboard.platformOrders.badges.pending')}</span>,
     };
     return badges[status] || <span className="text-gray-600 text-xs">{status}</span>;
   };
@@ -223,11 +225,9 @@ export default function PlatformOrdersPage() {
   if (!flagEnabled) {
     return (
       <div className="max-w-4xl mx-auto space-y-3">
-        <h1 className="text-2xl font-bold text-gray-900">Platform Orders (Preview)</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t('dashboard.platformOrders.disabledTitle')}</h1>
         <p className="text-sm text-gray-600">
-          This feature is disabled in this environment. Set{' '}
-          <code className="bg-gray-100 px-1 rounded">NEXT_PUBLIC_FEATURE_PLATFORM_ORDERS_V1=true</code>{' '}
-          to enable.
+          {t('dashboard.platformOrders.disabledDescription')}
         </p>
       </div>
     );
@@ -237,9 +237,9 @@ export default function PlatformOrdersPage() {
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Platform Orders</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{t('dashboard.platformOrders.title')}</h1>
           <p className="text-sm text-gray-600">
-            Upload and manage Amazon/Temu orders CSV imports.
+            {t('dashboard.platformOrders.description')}
           </p>
         </div>
       </div>
@@ -249,10 +249,8 @@ export default function PlatformOrdersPage() {
         <div className="bg-white shadow-sm border border-slate-200 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-slate-600 uppercase">Total Orders</p>
-              <p className="text-2xl font-bold text-slate-900 mt-1">
-                {ordersLoading ? '...' : ordersTotal || 0}
-              </p>
+              <p className="text-xs font-medium text-slate-600 uppercase">{t('dashboard.platformOrders.stats.totalOrders')}</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{ordersLoading ? '...' : ordersTotal || 0}</p>
             </div>
             <Package className="w-8 h-8 text-blue-500 opacity-50" />
           </div>
@@ -261,11 +259,11 @@ export default function PlatformOrdersPage() {
         <div className="bg-white shadow-sm border border-slate-200 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-slate-600 uppercase">Last Import</p>
+              <p className="text-xs font-medium text-slate-600 uppercase">{t('dashboard.platformOrders.stats.lastImport')}</p>
               <p className="text-sm font-semibold text-slate-900 mt-1">
                 {ordersLoading ? '...' : orders.length > 0 && orders[0]?.created_at
                   ? new Date(orders[0].created_at + 'Z').toLocaleString()
-                  : 'No imports yet'}
+                  : t('dashboard.platformOrders.stats.noImports')}
               </p>
             </div>
             <Activity className="w-8 h-8 text-green-500 opacity-50" />
@@ -275,12 +273,12 @@ export default function PlatformOrdersPage() {
         <div className="bg-white shadow-sm border border-slate-200 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-slate-600 uppercase">Current Platform</p>
+              <p className="text-xs font-medium text-slate-600 uppercase">{t('dashboard.platformOrders.stats.currentPlatform')}</p>
               <p className="text-lg font-bold text-slate-900 mt-1 capitalize">
                 {platform}
               </p>
               <p className="text-xs text-slate-500 mt-1">
-                {ordersLoading ? '...' : `${ordersTotal || 0} orders`}
+                {ordersLoading ? '...' : t('dashboard.platformOrders.stats.ordersCount', { count: ordersTotal || 0 })}
               </p>
             </div>
             <CheckCircle2 className="w-8 h-8 text-purple-500 opacity-50" />
@@ -291,17 +289,17 @@ export default function PlatformOrdersPage() {
       <div className="bg-white shadow-sm border border-slate-200 rounded-lg p-4 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Onboarding ID</label>
+            <label className="block text-xs font-medium text-slate-700 mb-1">{t('dashboard.platformOrders.form.onboardingId')}</label>
             <input
               type="text"
               value={onboardingId}
               onChange={(e) => setOnboardingId(e.target.value)}
               className="w-full px-3 py-2 border rounded-lg text-sm"
-              placeholder="merch_xxx..."
+              placeholder={t('dashboard.platformOrders.form.onboardingPlaceholder')}
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Platform</label>
+            <label className="block text-xs font-medium text-slate-700 mb-1">{t('dashboard.platformOrders.form.platform')}</label>
             <select
               value={platform}
               onChange={(e) => {
@@ -311,8 +309,8 @@ export default function PlatformOrdersPage() {
               }}
               className="w-full px-3 py-2 border rounded-lg text-sm"
             >
-              <option value="amazon">Amazon</option>
-              <option value="temu">Temu</option>
+              <option value="amazon">{t('dashboard.platformOrders.form.amazon')}</option>
+              <option value="temu">{t('dashboard.platformOrders.form.temu')}</option>
             </select>
           </div>
           <div className="flex items-end">
@@ -324,13 +322,13 @@ export default function PlatformOrdersPage() {
               }}
               className="px-3 py-2 border rounded-lg text-sm w-full"
             >
-              Reset
+              {t('dashboard.platformOrders.form.reset')}
             </button>
           </div>
         </div>
 
         <div className="space-y-2">
-          <label className="block text-xs font-medium text-slate-700">Orders CSV</label>
+          <label className="block text-xs font-medium text-slate-700">{t('dashboard.platformOrders.form.ordersCsv')}</label>
           <div className="flex items-center gap-3">
             <input
               type="file"
@@ -349,7 +347,7 @@ export default function PlatformOrdersPage() {
               className="inline-flex items-center px-3 py-2 rounded-md text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
             >
               {validating ? <Activity className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
-              Validate
+              {t('dashboard.platformOrders.form.validate')}
             </button>
             <button
               onClick={handleUpload}
@@ -357,39 +355,56 @@ export default function PlatformOrdersPage() {
               className="inline-flex items-center px-3 py-2 rounded-md text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
             >
               {uploading ? <Upload className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
-              Upload (stub)
+              {uploading ? t('dashboard.platformOrders.form.uploading') : t('dashboard.platformOrders.form.upload')}
             </button>
           </div>
           <p className="text-[11px] text-slate-500">
-            See `PLATFORM_ORDERS_CSV_SPEC.md` for required columns. Current flow is validation-only; ingestion is deferred.
+            {t('dashboard.platformOrders.form.spec')}
           </p>
         </div>
 
         {validateResult && (
           <div className="border border-slate-200 rounded-lg p-3 text-xs space-y-2">
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-slate-800">Validation result</span>
+              <span className="font-semibold text-slate-800">{t('dashboard.platformOrders.validation.title')}</span>
               <span
                 className={`px-2 py-0.5 rounded-full ${
                   validateResult.ready_to_import ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
                 }`}
               >
-                {validateResult.ready_to_import ? 'Ready to import' : 'Needs fixes'}
+                {validateResult.ready_to_import
+                  ? t('dashboard.platformOrders.validation.ready')
+                  : t('dashboard.platformOrders.validation.needsFixes')}
               </span>
             </div>
             {validateResult.missing_columns.length > 0 && (
-              <p className="text-amber-700">Missing columns: {validateResult.missing_columns.join(', ')}</p>
+              <p className="text-amber-700">
+                {t('dashboard.platformOrders.validation.missingColumns', {
+                  columns: validateResult.missing_columns.join(', '),
+                })}
+              </p>
             )}
             <p className="text-slate-600">
-              Previewed {validateResult.issues.preview_rows} rows (scanned {validateResult.issues.rows_scanned}).
+              {t('dashboard.platformOrders.validation.previewed', {
+                preview: validateResult.issues.preview_rows,
+                scanned: validateResult.issues.rows_scanned,
+              })}
             </p>
             {validateResult.preview.length > 0 && (
               <div className="border border-slate-100 rounded p-2 bg-slate-50">
                 {validateResult.preview.map((row) => (
                   <div key={row.row_number} className="flex items-start justify-between text-[11px] border-b border-slate-100 last:border-0 py-1">
                     <div>
-                      <span className="font-semibold text-slate-800">Row {row.row_number}</span>{' '}
-                      {!row.valid && <span className="text-amber-700">(missing: {row.missing_required_fields.join(', ')})</span>}
+                      <span className="font-semibold text-slate-800">
+                        {t('dashboard.platformOrders.validation.row', { row: row.row_number })}
+                      </span>{' '}
+                      {!row.valid && (
+                        <span className="text-amber-700">
+                          {t('dashboard.platformOrders.validation.missing', {
+                            fields: row.missing_required_fields.join(', '),
+                          })}
+                        </span>
+                      )}
                     </div>
                     <div className="text-slate-500 truncate max-w-[320px]">
                       {Object.entries(row.row_data || {})
@@ -406,7 +421,9 @@ export default function PlatformOrdersPage() {
 
         {uploadResult && (
           <div className="border border-emerald-200 bg-emerald-50 rounded-lg p-3 text-xs text-emerald-800">
-            Accepted. Import task (stub): {uploadResult.import_task_id || 'n/a'}
+            {t('dashboard.platformOrders.upload.accepted', {
+              task: uploadResult.import_task_id || 'n/a',
+            })}
           </div>
         )}
       </div>
@@ -509,9 +526,9 @@ export default function PlatformOrdersPage() {
       <div className="bg-white shadow-sm border border-slate-200 rounded-lg p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Imported orders</h2>
+              <h2 className="text-lg font-semibold text-gray-900">{t('dashboard.platformOrders.imported.title')}</h2>
               <p className="text-sm text-gray-600">
-                Orders ingested from orders_report tasks (Amazon/Temu).
+                {t('dashboard.platformOrders.imported.description')}
               </p>
             </div>
             <button
@@ -519,28 +536,28 @@ export default function PlatformOrdersPage() {
               className="flex items-center space-x-2 px-3 py-2 border rounded-lg text-sm hover:bg-gray-50"
             >
               <RefreshCw className="w-4 h-4" />
-              <span>Refresh</span>
+              <span>{t('dashboard.platformOrders.imported.refresh')}</span>
             </button>
           </div>
         {ordersLoading ? (
-          <div className="py-10 text-center text-gray-500">Loading orders…</div>
+          <div className="py-10 text-center text-gray-500">{t('dashboard.platformOrders.imported.loading')}</div>
         ) : orders.length === 0 ? (
           <div className="py-10 text-center text-gray-500">
-            No imported orders yet for {platform}. Upload an orders CSV and run the worker.
+            {t('dashboard.platformOrders.imported.empty', { platform })}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
-                  <th className="px-3 py-2">Platform</th>
-                  <th className="px-3 py-2">Order ID</th>
-                  <th className="px-3 py-2">Item ID</th>
-                  <th className="px-3 py-2">Items</th>
-                  <th className="px-3 py-2">Payment</th>
-                  <th className="px-3 py-2">Fulfillment</th>
-                  <th className="px-3 py-2">Created</th>
-                  {FEATURE_FLAGS.PLATFORM_ORDERS_ACP && <th className="px-3 py-2">Actions</th>}
+                  <th className="px-3 py-2">{t('dashboard.platformOrders.table.platform')}</th>
+                  <th className="px-3 py-2">{t('dashboard.platformOrders.table.orderId')}</th>
+                  <th className="px-3 py-2">{t('dashboard.platformOrders.table.itemId')}</th>
+                  <th className="px-3 py-2">{t('dashboard.platformOrders.table.items')}</th>
+                  <th className="px-3 py-2">{t('dashboard.platformOrders.table.payment')}</th>
+                  <th className="px-3 py-2">{t('dashboard.platformOrders.table.fulfillment')}</th>
+                  <th className="px-3 py-2">{t('dashboard.platformOrders.table.created')}</th>
+                  {FEATURE_FLAGS.PLATFORM_ORDERS_ACP && <th className="px-3 py-2">{t('dashboard.platformOrders.table.actions')}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -574,7 +591,7 @@ export default function PlatformOrdersPage() {
                         {getFulfillmentStatusBadge(fulfillmentStatus)}
                         {o.data?.tracking_number && (
                           <div className="text-[10px] text-gray-500 mt-1">
-                            Track: {o.data.tracking_number}
+                            {t('dashboard.platformOrders.table.track')}: {o.data.tracking_number}
                           </div>
                         )}
                       </td>
@@ -584,16 +601,18 @@ export default function PlatformOrdersPage() {
                       {FEATURE_FLAGS.PLATFORM_ORDERS_ACP && (
                         <td className="px-3 py-2">
                           {paymentStatus === 'paid' ? (
-                            <span className="text-green-600 text-xs">✓ Paid</span>
+                            <span className="text-green-600 text-xs">✓ {t('dashboard.platformOrders.badges.paid')}</span>
                           ) : hasACPSession ? (
-                            <span className="text-yellow-600 text-xs">⏳ Pending</span>
+                            <span className="text-yellow-600 text-xs">⏳ {t('dashboard.platformOrders.badges.pending')}</span>
                           ) : (
                             <button
                               onClick={() => handleSendToACP(o)}
                               disabled={acpLoading === o.id}
                               className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 disabled:opacity-50"
                             >
-                              {acpLoading === o.id ? 'Loading...' : 'Send to ACP'}
+                              {acpLoading === o.id
+                                ? t('dashboard.platformOrders.actions.loading')
+                                : t('dashboard.platformOrders.actions.sendToAcp')}
                             </button>
                           )}
                         </td>
@@ -607,9 +626,11 @@ export default function PlatformOrdersPage() {
         )}
         <div className="flex items-center justify-between text-sm text-gray-600">
           <div>
-            Showing {(ordersPage - 1) * ordersPageSize + 1}-
-            {Math.min(ordersPage * ordersPageSize, ordersTotal || ordersPage * ordersPageSize)} of{' '}
-            {ordersTotal || orders.length}
+            {t('dashboard.platformOrders.pagination.showing', {
+              start: (ordersPage - 1) * ordersPageSize + 1,
+              end: Math.min(ordersPage * ordersPageSize, ordersTotal || ordersPage * ordersPageSize),
+              total: ordersTotal || orders.length,
+            })}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -617,17 +638,20 @@ export default function PlatformOrdersPage() {
               onClick={() => setOrdersPage((p) => Math.max(1, p - 1))}
               className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50"
             >
-              Prev
+              {t('dashboard.platformOrders.pagination.prev')}
             </button>
             <span className="text-xs">
-              Page {ordersPage} / {Math.max(1, Math.ceil((ordersTotal || orders.length) / ordersPageSize))}
+              {t('dashboard.platformOrders.pagination.page', {
+                page: ordersPage,
+                totalPages: Math.max(1, Math.ceil((ordersTotal || orders.length) / ordersPageSize)),
+              })}
             </span>
             <button
               disabled={ordersPage * ordersPageSize >= (ordersTotal || orders.length)}
               onClick={() => setOrdersPage((p) => p + 1)}
               className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50"
             >
-              Next
+              {t('dashboard.platformOrders.pagination.next')}
             </button>
           </div>
         </div>
@@ -636,12 +660,10 @@ export default function PlatformOrdersPage() {
       {/* Note about stub orders */}
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm">
         <p className="text-amber-800 font-medium">
-          注意：Stub Order 功能暂时不可用 / Note: Stub Order feature is temporarily unavailable
+          {t('dashboard.platformOrders.note.title')}
         </p>
         <p className="text-amber-700 text-xs mt-1">
-          POC 订单创建端点目前仅对管理员开放。商家可以使用 CSV 上传功能来测试订单导入流程（stub 模式）。
-          <br />
-          The POC order creation endpoint is currently admin-only. Merchants can use the CSV upload feature to test order import flow (stub mode).
+          {t('dashboard.platformOrders.note.body')}
         </p>
       </div>
     </div>
