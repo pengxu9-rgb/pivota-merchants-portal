@@ -786,6 +786,22 @@ Object.assign(enMessages, {
     "Checkout completion: share of created orders that are successfully placed",
   "dashboard.analytics.help.paymentSuccess":
     "Payment success: share of placed orders with successful payment completion",
+  "dashboard.analytics.commerceFunnel.title": "Commerce funnel",
+  "dashboard.analytics.commerceFunnel.description":
+    "A minimal Shopify-first funnel built from listing registry, durable clicks, and attributed order/refund edges.",
+  "dashboard.analytics.commerceFunnel.indexed": "Indexed exposure",
+  "dashboard.analytics.commerceFunnel.clicked": "Clicked exposure",
+  "dashboard.analytics.commerceFunnel.clickedMeta": "{count} total click events",
+  "dashboard.analytics.commerceFunnel.ordered": "Ordered conversion",
+  "dashboard.analytics.commerceFunnel.refunded": "Refunded orders",
+  "dashboard.analytics.commerceFunnel.refundedMeta": "{amount} refunded",
+  "dashboard.analytics.commerceFunnel.listingStatus": "Listing status breakdown",
+  "dashboard.analytics.commerceFunnel.empty": "No listing registry rows yet.",
+  "dashboard.analytics.commerceFunnel.surfacedPending":
+    "Surfaced exposure stays internal until prompt evaluation is durable.",
+  "dashboard.analytics.commerceFunnel.runtime":
+    "Commerce funnel metrics are temporarily unavailable.",
+  "dashboard.analytics.commerceFunnel.retry": "Retry funnel",
   "dashboard.payouts.eyebrow": "Payments",
   "dashboard.payouts.title":
     "Manage merchant payouts with clearer operational context.",
@@ -2351,6 +2367,22 @@ Object.assign(localeOverridesRaw["zh-CN"], {
     "结账完成率：已创建订单中最终成功提交的占比",
   "dashboard.analytics.help.paymentSuccess":
     "支付成功率：已提交订单中最终支付成功的占比",
+  "dashboard.analytics.commerceFunnel.title": "商业漏斗",
+  "dashboard.analytics.commerceFunnel.description":
+    "基于 listing registry、可持久化点击和已归因订单/退款边，提供一个最小但真实的 Shopify-first 漏斗。",
+  "dashboard.analytics.commerceFunnel.indexed": "已收录曝光",
+  "dashboard.analytics.commerceFunnel.clicked": "点击曝光",
+  "dashboard.analytics.commerceFunnel.clickedMeta": "{count} 次点击事件",
+  "dashboard.analytics.commerceFunnel.ordered": "下单转化",
+  "dashboard.analytics.commerceFunnel.refunded": "已退款订单",
+  "dashboard.analytics.commerceFunnel.refundedMeta": "已退款 {amount}",
+  "dashboard.analytics.commerceFunnel.listingStatus": "上架状态分布",
+  "dashboard.analytics.commerceFunnel.empty": "当前还没有 listing registry 记录。",
+  "dashboard.analytics.commerceFunnel.surfacedPending":
+    "Surfaced exposure 在 prompt 评估体系稳定前仍只保留内部使用。",
+  "dashboard.analytics.commerceFunnel.runtime":
+    "商业漏斗指标暂时不可用。",
+  "dashboard.analytics.commerceFunnel.retry": "重试漏斗数据",
   "dashboard.payouts.eyebrow": "支付",
   "dashboard.payouts.title": "用更清晰的运营上下文管理商家打款。",
   "dashboard.payouts.description":

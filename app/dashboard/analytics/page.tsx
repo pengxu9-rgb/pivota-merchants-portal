@@ -47,6 +47,8 @@ export default function AnalyticsPage() {
   const [trends, setTrends] = useState<AnalyticsTrendsResponse | null>(null);
   const [trendsError, setTrendsError] = useState<string | null>(null);
   const [loadingTrends, setLoadingTrends] = useState(false);
+  const [commerceFunnel, setCommerceFunnel] = useState<any>(null);
+  const [commerceFunnelError, setCommerceFunnelError] = useState<string | null>(null);
   const [netMode, setNetMode] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -60,6 +62,7 @@ export default function AnalyticsPage() {
   useEffect(() => {
     loadAnalytics();
     loadTrends();
+    loadCommerceFunnel();
   }, [timeRange, metric, netMode]);
 
   useEffect(() => {
@@ -244,6 +247,18 @@ export default function AnalyticsPage() {
     }
   };
 
+  const loadCommerceFunnel = async () => {
+    try {
+      setCommerceFunnelError(null);
+      const data = await apiClient.getCommerceFunnel({ group_by: 'product' });
+      setCommerceFunnel(data);
+    } catch (error) {
+      console.error('❌ Failed to load commerce funnel:', error);
+      setCommerceFunnel(null);
+      setCommerceFunnelError(t('dashboard.analytics.commerceFunnel.runtime'));
+    }
+  };
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -291,6 +306,8 @@ export default function AnalyticsPage() {
     previous: trends?.comparison_series?.[index]?.value ?? null,
   }));
   const hasComparisonSeries = chartData.some((point) => typeof point.previous === 'number');
+  const funnelSummary = commerceFunnel?.summary || {};
+  const listingStatusBreakdown = funnelSummary?.listing_status_breakdown || {};
 
   return (
     <div className="space-y-6">
@@ -454,6 +471,94 @@ export default function AnalyticsPage() {
         </div>
       </div>
       )}
+
+      <SurfaceCard
+        title={t('dashboard.analytics.commerceFunnel.title')}
+        description={t('dashboard.analytics.commerceFunnel.description')}
+        action={
+          commerceFunnelError ? (
+            <MerchantButton type="button" onClick={loadCommerceFunnel} variant="secondary">
+              {t('dashboard.analytics.commerceFunnel.retry')}
+            </MerchantButton>
+          ) : null
+        }
+      >
+        <div className="p-5 space-y-5">
+          {commerceFunnelError ? (
+            <div className="rounded-[1rem] border border-[color:var(--merchant-warning-soft)] bg-[color:var(--merchant-warning-soft)]/40 px-4 py-4 text-sm text-[color:var(--merchant-muted-strong)]">
+              {commerceFunnelError}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {[
+                  {
+                    label: t('dashboard.analytics.commerceFunnel.indexed'),
+                    value: Number(funnelSummary?.indexed_exposure || 0),
+                  },
+                  {
+                    label: t('dashboard.analytics.commerceFunnel.clicked'),
+                    value: Number(funnelSummary?.clicked_exposure || 0),
+                    meta: t('dashboard.analytics.commerceFunnel.clickedMeta', {
+                      count: Number(funnelSummary?.clicked_events_total || 0),
+                    }),
+                  },
+                  {
+                    label: t('dashboard.analytics.commerceFunnel.ordered'),
+                    value: Number(funnelSummary?.ordered_conversion || 0),
+                  },
+                  {
+                    label: t('dashboard.analytics.commerceFunnel.refunded'),
+                    value: Number(funnelSummary?.refunded_orders || 0),
+                    meta: t('dashboard.analytics.commerceFunnel.refundedMeta', {
+                      amount: String(funnelSummary?.refunded_amount || '0'),
+                    }),
+                  },
+                ].map((item) => (
+                  <div key={item.label} className="merchant-panel p-4">
+                    <div className="text-xs uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
+                      {item.label}
+                    </div>
+                    <div className="mt-2 text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
+                      {item.value}
+                    </div>
+                    {item.meta ? (
+                      <div className="mt-1 text-xs text-[color:var(--merchant-muted)]">{item.meta}</div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-3">
+                <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                  {t('dashboard.analytics.commerceFunnel.listingStatus')}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {Object.keys(listingStatusBreakdown).length ? (
+                    Object.entries(listingStatusBreakdown).map(([status, count]) => (
+                      <span
+                        key={status}
+                        className="inline-flex items-center rounded-full border border-[color:var(--merchant-line)] px-3 py-1 text-xs text-[color:var(--merchant-muted-strong)]"
+                      >
+                        {status}: {String(count)}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-sm text-[color:var(--merchant-muted)]">
+                      {t('dashboard.analytics.commerceFunnel.empty')}
+                    </span>
+                  )}
+                </div>
+                {!funnelSummary?.surfaced_exposure_supported ? (
+                  <div className="text-xs text-[color:var(--merchant-muted)]">
+                    {t('dashboard.analytics.commerceFunnel.surfacedPending')}
+                  </div>
+                ) : null}
+              </div>
+            </>
+          )}
+        </div>
+      </SurfaceCard>
 
       {/* Performance by PSP */}
       {analytics?.psp_performance && analytics.psp_performance.length > 0 && (

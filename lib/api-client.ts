@@ -750,6 +750,16 @@ class ApiClient {
     return response.data?.data || response.data;
   }
 
+  async getCommerceFunnel(params?: {
+    surface?: string;
+    group_by?: 'product' | 'variant' | 'surface';
+  }) {
+    const response = await this.client.get('/merchant/analytics/commerce-funnel', {
+      params,
+    });
+    return response.data;
+  }
+
   async exportAnalyticsTrendsCSV(params?: {
     metric?: 'gmv' | 'orders' | 'aov' | 'success_rate' | 'refunds';
     range?: '1d' | '7d' | '30d' | '90d';
