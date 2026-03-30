@@ -1065,6 +1065,8 @@ export default function ProductOptimizationPage() {
   );
   const [sourceDataTriage, setSourceDataTriage] =
     useState<SourceDataTriagePayload | null>(null);
+  const [sourceDataTriageReason, setSourceDataTriageReason] =
+    useState<SourceDataReasonCode | null>(null);
   const [sourceDataTriageLoading, setSourceDataTriageLoading] = useState(false);
   const [sourceDataTriageError, setSourceDataTriageError] = useState<string | null>(
     null
@@ -1082,6 +1084,7 @@ export default function ProductOptimizationPage() {
   const [bulkOptimizing, setBulkOptimizing] = useState(false);
   const detailPaneRef = useRef<HTMLDivElement | null>(null);
   const entryFocusResolutionRef = useRef<string | null>(null);
+  const triageRequestIdRef = useRef(0);
 
   useEffect(() => {
     void loadOptimizationData();
@@ -1263,18 +1266,30 @@ export default function ProductOptimizationPage() {
 
   const loadSourceDataTriage = async (
     planId: string,
+    reasonCode: SourceDataReasonCode,
     allowRetry = true
   ) => {
+    const requestId = triageRequestIdRef.current + 1;
+    triageRequestIdRef.current = requestId;
     try {
       setSourceDataTriageLoading(true);
       setSourceDataTriageError(null);
+      setSourceDataTriageReason(null);
       const data = await apiClient.getMerchantSourceDataTriage({
         plan_id: planId,
-        limit: 1000,
+        reason_code: reasonCode,
+        limit: 500,
       });
+      if (requestId !== triageRequestIdRef.current) {
+        return null;
+      }
       setSourceDataTriage(data || null);
+      setSourceDataTriageReason(reasonCode);
       return data || null;
     } catch (err) {
+      if (requestId !== triageRequestIdRef.current) {
+        return null;
+      }
       if (allowRetry && (isPlanSupersededError(err) || isRetryableOptimizationError(err))) {
         const refreshed = await loadOptimizationData({
           refresh: true,
@@ -1283,14 +1298,15 @@ export default function ProductOptimizationPage() {
         });
         const nextPlanId = refreshed?.plan?.plan_id || planId;
         if (nextPlanId && nextPlanId !== planId) {
-          return await loadSourceDataTriage(nextPlanId, false);
+          return await loadSourceDataTriage(nextPlanId, reasonCode, false);
         }
         if (isRetryableOptimizationError(err)) {
-          return await loadSourceDataTriage(planId, false);
+          return await loadSourceDataTriage(planId, reasonCode, false);
         }
       }
       if (isUnsupportedSourceDataTriageError(err)) {
         setSourceDataTriage(null);
+        setSourceDataTriageReason(null);
         setSourceDataTriageError(
           'Detailed source-data triage is unavailable until the latest backend readiness routes are deployed.'
         );
@@ -1298,6 +1314,7 @@ export default function ProductOptimizationPage() {
       }
       console.error('Failed to load source-data triage', err);
       setSourceDataTriage(null);
+      setSourceDataTriageReason(null);
       setSourceDataTriageError(
         getActionErrorMessage(
           err,
@@ -1306,7 +1323,9 @@ export default function ProductOptimizationPage() {
       );
       return null;
     } finally {
-      setSourceDataTriageLoading(false);
+      if (requestId === triageRequestIdRef.current) {
+        setSourceDataTriageLoading(false);
+      }
     }
   };
 
@@ -1430,12 +1449,17 @@ export default function ProductOptimizationPage() {
 
   useEffect(() => {
     if (!optimizationPlan?.plan_id) {
+      triageRequestIdRef.current += 1;
       setSourceDataTriage(null);
+      setSourceDataTriageReason(null);
       setSourceDataTriageError(null);
+      setSourceDataTriageLoading(false);
       return;
     }
-    void loadSourceDataTriage(optimizationPlan.plan_id);
-  }, [optimizationPlan?.plan_id]);
+    setSourceDataTriage(null);
+    setSourceDataTriageReason(null);
+    void loadSourceDataTriage(optimizationPlan.plan_id, triageReason);
+  }, [optimizationPlan?.plan_id, triageReason]);
 
   const productQueueMap = useMemo(() => {
     return new Map(
@@ -2097,13 +2121,15 @@ export default function ProductOptimizationPage() {
   );
 
   const triageConfig = SOURCE_DATA_REASON_CONFIG[triageReason];
+  const activeSourceDataTriage =
+    sourceDataTriageReason === triageReason ? sourceDataTriage : null;
   const triageSummaryByCode = new Map(
-    (sourceDataTriage?.summary || []).map((bucket) => [bucket.code, bucket])
+    (activeSourceDataTriage?.summary || []).map((bucket) => [bucket.code, bucket])
   );
   const sourceDataLaneSummaryByCode = new Map(
     sourceDataLaneSummaries.map((lane) => [lane.reason_code, lane])
   );
-  const allTriageRows = sourceDataTriage?.rows || [];
+  const allTriageRows = activeSourceDataTriage?.rows || [];
   const allTriageGroups = (() => {
     const grouped = new Map<string, SourceDataProductGroup>();
 
@@ -2561,28 +2587,29 @@ export default function ProductOptimizationPage() {
   const handleSelectTriageReason = (reasonCode: SourceDataReasonCode) => {
     setTriageReason(reasonCode);
     applyTriageReasonFilters(reasonCode);
+    setSourceDataTriageError(null);
+    if (sourceDataTriageReason !== reasonCode) {
+      setSourceDataTriageReason(null);
+    }
   };
 
-  const handleOpenTriageLane = async (reasonCode: SourceDataReasonCode) => {
-    if (reasonCode !== triageReason && optimizationPlan?.plan_id) {
-      await loadOptimizationData({
-        refresh: true,
-        scope: 'merchant',
-        reason: 'lane_switch',
-      });
-    }
+  const handleOpenTriageLane = (reasonCode: SourceDataReasonCode) => {
+    const isSameLane = reasonCode === triageReason;
     handleSelectTriageReason(reasonCode);
+    if (isSameLane && optimizationPlan?.plan_id) {
+      void loadSourceDataTriage(optimizationPlan.plan_id, reasonCode);
+    }
   };
 
   const handleInspectTriageRow = async (row: SourceDataTriageRow) => {
-    await handleOpenTriageLane(row.reason_code);
+    handleOpenTriageLane(row.reason_code);
     await handleSelect(row.platform, row.platform_product_id, {
       focusDetail: true,
     });
   };
 
   const handleInspectTriageGroup = async (group: SourceDataProductGroup) => {
-    await handleOpenTriageLane(group.reason_code);
+    handleOpenTriageLane(group.reason_code);
     await handleSelect(group.platform, group.platform_product_id, {
       focusDetail: true,
     });
