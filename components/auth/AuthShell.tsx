@@ -4,7 +4,6 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import type { LucideIcon } from 'lucide-react';
 import { Mail, Store } from 'lucide-react';
-import { PortalLanguageSwitcher } from '@/components/portal/portal-language-switcher';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { APP_CONFIG } from '@/lib/config';
 import { cx } from '@/lib/cx';
@@ -169,10 +168,7 @@ export function AuthShell({
                   </p>
                 </div>
               </Link>
-              <div className="flex items-center gap-2">
-                <PortalLanguageSwitcher />
-                {panelAction}
-              </div>
+              {panelAction ? <div className="flex items-center gap-2">{panelAction}</div> : null}
             </div>
 
             {progress ? <div className="mt-6">{progress}</div> : null}

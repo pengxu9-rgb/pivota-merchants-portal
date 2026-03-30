@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ShoppingBag, Download, Search, Filter, Truck, DollarSign } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import RefundDialog from '@/components/RefundDialog';
 import {
   MerchantButton,
@@ -12,6 +13,7 @@ import {
 } from '@/components/ui/merchant-primitives';
 
 export default function OrdersPage() {
+  const { t } = useMerchantLanguage();
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -271,9 +273,9 @@ export default function OrdersPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Orders"
-        title="Keep sales, fulfillment, and after-sales operations readable at a glance."
-        description="Use Orders as the operational companion to Overview: fulfillment, refunds, and customer follow-through all stay in one merchant-facing workspace."
+        eyebrow={t('dashboard.orders.eyebrow')}
+        title={t('dashboard.orders.title')}
+        description={t('dashboard.orders.description')}
         actions={
           <MerchantButton
             type="button"
@@ -281,56 +283,70 @@ export default function OrdersPage() {
             disabled={exporting}
             icon={Download}
           >
-            {exporting ? 'Exporting…' : 'Export orders'}
+            {exporting ? t('dashboard.orders.exporting') : t('dashboard.orders.export')}
           </MerchantButton>
         }
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="merchant-panel p-5">
-          <p className="text-sm text-[color:var(--merchant-muted)]">Orders in view</p>
+          <p className="text-sm text-[color:var(--merchant-muted)]">
+            {t('dashboard.orders.stats.inView')}
+          </p>
           <div className="mt-1.5 text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             {filteredOrders.length}
           </div>
           <p className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
-            {totalOrders} total orders across the current result set
+            {t('dashboard.orders.stats.inViewMeta', { count: totalOrders })}
           </p>
         </div>
         <div className="merchant-panel p-5">
-          <p className="text-sm text-[color:var(--merchant-muted)]">Needs action</p>
+          <p className="text-sm text-[color:var(--merchant-muted)]">
+            {t('dashboard.orders.stats.needsAction')}
+          </p>
           <div className="mt-1.5 text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             {pendingCount + processingCount}
           </div>
           <p className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
-            {pendingCount} pending · {processingCount} processing
+            {t('dashboard.orders.stats.needsActionMeta', {
+              pending: pendingCount,
+              processing: processingCount,
+            })}
           </p>
         </div>
         <div className="merchant-panel p-5">
-          <p className="text-sm text-[color:var(--merchant-muted)]">Completed</p>
+          <p className="text-sm text-[color:var(--merchant-muted)]">
+            {t('dashboard.orders.stats.completed')}
+          </p>
           <div className="mt-1.5 text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             {completedCount}
           </div>
           <p className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
-            Orders already fulfilled or closed out
+            {t('dashboard.orders.stats.completedMeta')}
           </p>
         </div>
         <div className="merchant-panel p-5">
-          <p className="text-sm text-[color:var(--merchant-muted)]">Visible order value</p>
+          <p className="text-sm text-[color:var(--merchant-muted)]">
+            {t('dashboard.orders.stats.visibleValue')}
+          </p>
           <div className="mt-1.5 text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             {formatCurrency(visibleRevenue)}
           </div>
           <p className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
-            Revenue represented on the current page and filters
+            {t('dashboard.orders.stats.visibleValueMeta')}
           </p>
         </div>
       </div>
 
       <SurfaceCard
-        title="Filter orders"
-        description="Search by order or customer, then narrow the workspace to the fulfillment stage you need."
+        title={t('dashboard.orders.filters.title')}
+        description={t('dashboard.orders.filters.description')}
         action={
           <StatusBadge tone="neutral">
-            {filteredOrders.length} visible · {totalOrders} total
+            {t('dashboard.orders.filters.visibleTotal', {
+              visible: filteredOrders.length,
+              total: totalOrders,
+            })}
           </StatusBadge>
         }
       >
@@ -340,7 +356,7 @@ export default function OrdersPage() {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[color:var(--merchant-muted)]" />
               <input
                 type="text"
-                placeholder="Search orders or customer email"
+                placeholder={t('dashboard.orders.filters.searchPlaceholder')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="merchant-input"
@@ -357,11 +373,11 @@ export default function OrdersPage() {
                 }}
                 className="merchant-select"
               >
-                <option value="all">All Status</option>
-                <option value="pending">Pending</option>
-                <option value="processing">Processing</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
+                <option value="all">{t('dashboard.orders.filters.allStatus')}</option>
+                <option value="pending">{t('dashboard.orders.filters.pending')}</option>
+                <option value="processing">{t('dashboard.orders.filters.processing')}</option>
+                <option value="completed">{t('dashboard.orders.filters.completed')}</option>
+                <option value="cancelled">{t('dashboard.orders.filters.cancelled')}</option>
               </select>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -380,21 +396,25 @@ export default function OrdersPage() {
       </SurfaceCard>
 
       <SurfaceCard
-        title="Order activity"
-        description="Track customer, amount, fulfillment status, and the next action from a single merchant-facing table."
-        action={<StatusBadge tone="neutral">Page {currentPage} of {totalPages}</StatusBadge>}
+        title={t('dashboard.orders.table.title')}
+        description={t('dashboard.orders.table.description')}
+        action={
+          <StatusBadge tone="neutral">
+            {t('dashboard.orders.table.pageOf', { page: currentPage, total: totalPages })}
+          </StatusBadge>
+        }
         className="overflow-hidden"
       >
         <div className="overflow-x-auto">
           <table className="merchant-table min-w-full">
             <thead className="bg-[color:var(--merchant-surface-muted)]/60">
               <tr>
-                <th>Order ID</th>
-                <th>Customer</th>
-                <th>Amount</th>
-                <th>Status</th>
-                <th>Date</th>
-                <th className="text-right">Actions</th>
+                <th>{t('dashboard.orders.table.orderId')}</th>
+                <th>{t('dashboard.orders.table.customer')}</th>
+                <th>{t('dashboard.orders.table.amount')}</th>
+                <th>{t('dashboard.orders.table.status')}</th>
+                <th>{t('dashboard.orders.table.date')}</th>
+                <th className="text-right">{t('dashboard.orders.table.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -410,7 +430,7 @@ export default function OrdersPage() {
                       </span>
                     </td>
                     <td className="text-sm text-[color:var(--merchant-muted-strong)]">
-                      {order.customer?.email || order.customer_email || 'Guest'}
+                      {order.customer?.email || order.customer_email || t('dashboard.orders.table.guest')}
                     </td>
                     <td className="whitespace-nowrap text-sm font-medium text-[color:var(--merchant-ink)]">
                       {formatCurrency(order.amount || order.total_amount || 0)}
@@ -428,7 +448,7 @@ export default function OrdersPage() {
                         onClick={() => handleViewOrder(order.order_id || order.id)}
                         className="font-medium text-[color:var(--merchant-brand)] hover:text-[color:var(--merchant-brand-strong)]"
                       >
-                        Review
+                        {t('dashboard.orders.table.review')}
                       </button>
                     </td>
                   </tr>
@@ -437,7 +457,7 @@ export default function OrdersPage() {
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-[color:var(--merchant-muted)]">
                     <ShoppingBag className="mx-auto mb-3 h-12 w-12 text-[color:var(--merchant-muted)]" />
-                    <p>No orders found</p>
+                    <p>{t('dashboard.orders.table.noOrders')}</p>
                   </td>
                 </tr>
               )}
@@ -449,11 +469,11 @@ export default function OrdersPage() {
         {totalOrders > 0 && (
           <div className="flex flex-col gap-3 border-t border-[color:var(--merchant-line)] px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="text-sm text-[color:var(--merchant-muted-strong)]">
-              Showing <span className="font-medium">{((currentPage - 1) * itemsPerPage) + 1}</span> to{' '}
-              <span className="font-medium">
-                {Math.min(currentPage * itemsPerPage, totalOrders)}
-              </span>{' '}
-              of <span className="font-medium">{totalOrders}</span> orders
+              {t('dashboard.orders.table.showingRange', {
+                start: ((currentPage - 1) * itemsPerPage) + 1,
+                end: Math.min(currentPage * itemsPerPage, totalOrders),
+                total: totalOrders,
+              })}
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -461,17 +481,17 @@ export default function OrdersPage() {
                 disabled={currentPage === 1}
                 className="merchant-button-secondary px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Previous
+                {t('dashboard.orders.table.previous')}
               </button>
               <span className="text-sm text-[color:var(--merchant-muted-strong)]">
-                Page {currentPage} of {totalPages}
+                {t('dashboard.orders.table.pageOf', { page: currentPage, total: totalPages })}
               </span>
               <button
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                 disabled={currentPage >= totalPages}
                 className="merchant-button-secondary px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Next
+                {t('dashboard.orders.table.next')}
               </button>
             </div>
           </div>

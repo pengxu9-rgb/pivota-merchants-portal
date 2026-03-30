@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Lock, AlertCircle, CheckCircle } from 'lucide-react';
-import { PortalLanguageSwitcher } from '@/components/portal/portal-language-switcher';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { API_CONFIG } from '@/lib/config';
 
@@ -71,9 +70,6 @@ export default function ChangePasswordPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
-      <div className="mx-auto flex w-full max-w-md justify-end py-4">
-        <PortalLanguageSwitcher />
-      </div>
       <div className="flex items-center justify-center">
       <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
         <div className="text-center mb-6">

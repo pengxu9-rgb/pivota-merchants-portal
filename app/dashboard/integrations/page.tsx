@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 
 import ConnectStoreModal from '@/components/ConnectStoreModal';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import PSPRoutingConfig from '@/components/PSPRoutingConfig';
 import { PSPConfigForm } from '@/components/PSPConfigForm';
 import { apiClient } from '@/lib/api-client';
@@ -53,6 +54,7 @@ interface WebhookFormState {
 }
 
 export default function IntegrationsPage() {
+  const { t } = useMerchantLanguage();
   const [loading, setLoading] = useState(true);
   const [merchantId, setMerchantId] = useState('');
   const [activeTab, setActiveTab] = useState<ActiveTab>('stores');
@@ -472,16 +474,16 @@ export default function IntegrationsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Integrations"
-        title="Set up sales channels, payments, routing, and merchant-facing API delivery."
-        description="Keep storefront connections, payment setup, failover routing, API credentials, and outbound webhook delivery in one place without promising capabilities that are not live."
+        eyebrow={t('dashboard.integrations.eyebrow')}
+        title={t('dashboard.integrations.title')}
+        description={t('dashboard.integrations.description')}
         actions={
           <>
             <MerchantButton type="button" variant="secondary" onClick={() => setShowConnectPSP(true)} icon={CreditCard}>
-              Add payment setup
+              {t('dashboard.integrations.addPaymentSetup')}
             </MerchantButton>
             <MerchantButton type="button" onClick={() => setShowConnectStore(true)} icon={Store}>
-              Connect sales channel
+              {t('dashboard.integrations.connectSalesChannel')}
             </MerchantButton>
           </>
         }
@@ -504,45 +506,64 @@ export default function IntegrationsPage() {
       <SurfaceCard strong>
         <div className="grid gap-3 px-5 py-5 lg:grid-cols-4">
           <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-3.5">
-            <div className="text-sm text-[color:var(--merchant-muted)]">Sales channels</div>
+            <div className="text-sm text-[color:var(--merchant-muted)]">
+              {t('dashboard.integrations.summary.salesChannels')}
+            </div>
             <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
               {connectedStores.length}
             </div>
             <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
-              Connected storefronts and feeds
+              {t('dashboard.integrations.summary.salesChannelsMeta')}
             </div>
           </div>
           <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-3.5">
-            <div className="text-sm text-[color:var(--merchant-muted)]">Payment setup</div>
+            <div className="text-sm text-[color:var(--merchant-muted)]">
+              {t('dashboard.integrations.summary.paymentSetup')}
+            </div>
             <div className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
               {liveReadyPSPCount}
             </div>
             <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
               {blockedActivePSPCount > 0
-                ? `${blockedActivePSPCount} active processor${blockedActivePSPCount === 1 ? '' : 's'} still blocked`
-                : 'Live-ready processors available for checkout'}
+                ? t('dashboard.integrations.summary.paymentSetupBlocked', {
+                    count: blockedActivePSPCount,
+                    suffix: blockedActivePSPCount === 1 ? '' : 's',
+                  })
+                : t('dashboard.integrations.summary.paymentSetupReady')}
             </div>
           </div>
           <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-3.5">
-            <div className="text-sm text-[color:var(--merchant-muted)]">Routing</div>
+            <div className="text-sm text-[color:var(--merchant-muted)]">
+              {t('dashboard.integrations.summary.routing')}
+            </div>
             <div className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
-              {showRoutingTab ? 'Priority + fallback' : 'Single processor'}
+              {showRoutingTab
+                ? t('dashboard.integrations.summary.routingPriority')
+                : t('dashboard.integrations.summary.routingSingle')}
             </div>
             <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
               {routingSummary}
             </div>
           </div>
           <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-3.5">
-            <div className="text-sm text-[color:var(--merchant-muted)]">API & webhooks</div>
+            <div className="text-sm text-[color:var(--merchant-muted)]">
+              {t('dashboard.integrations.summary.apiWebhooks')}
+            </div>
             <div className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
-              {webhookConfig?.enabled ? 'Configured' : 'Needs attention'}
+              {webhookConfig?.enabled
+                ? t('dashboard.integrations.summary.apiConfigured')
+                : t('dashboard.integrations.summary.apiNeedsAttention')}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <StatusBadge tone={webhookStatusTone}>
-                {webhookConfig?.enabled ? 'Webhook active' : 'Webhook not configured'}
+                {webhookConfig?.enabled
+                  ? t('dashboard.integrations.summary.webhookActive')
+                  : t('dashboard.integrations.summary.webhookNotConfigured')}
               </StatusBadge>
               <StatusBadge tone={apiKeyAvailable ? 'success' : 'warning'}>
-                {apiKeyAvailable ? 'API key issued' : 'API key missing'}
+                {apiKeyAvailable
+                  ? t('dashboard.integrations.summary.apiKeyIssued')
+                  : t('dashboard.integrations.summary.apiKeyMissing')}
               </StatusBadge>
             </div>
           </div>
@@ -554,18 +575,27 @@ export default function IntegrationsPage() {
           <button onClick={() => setActiveTab('stores')} className={tabButtonClass('stores')}>
             <Store className="h-4 w-4" />
             <div className="min-w-0">
-              <div className="text-sm font-medium">Sales channels</div>
+              <div className="text-sm font-medium">
+                {t('dashboard.integrations.tab.salesChannels')}
+              </div>
               <div className="text-xs text-[color:var(--merchant-muted)]">
-                {connectedStores.length} connected storefronts and feeds
+                {t('dashboard.integrations.tab.salesChannelsMeta', {
+                  count: connectedStores.length,
+                })}
               </div>
             </div>
           </button>
           <button onClick={() => setActiveTab('psps')} className={tabButtonClass('psps')}>
             <CreditCard className="h-4 w-4" />
             <div className="min-w-0">
-              <div className="text-sm font-medium">Payment setup</div>
+              <div className="text-sm font-medium">
+                {t('dashboard.integrations.tab.paymentSetup')}
+              </div>
               <div className="text-xs text-[color:var(--merchant-muted)]">
-                {liveReadyPSPCount} live-ready • {blockedActivePSPCount} blocked
+                {t('dashboard.integrations.tab.paymentSetupMeta', {
+                  liveReady: liveReadyPSPCount,
+                  blocked: blockedActivePSPCount,
+                })}
               </div>
             </div>
           </button>
@@ -573,9 +603,11 @@ export default function IntegrationsPage() {
             <button onClick={() => setActiveTab('routing')} className={tabButtonClass('routing')}>
               <Settings className="h-4 w-4" />
               <div className="min-w-0">
-                <div className="text-sm font-medium">Routing</div>
+                <div className="text-sm font-medium">
+                  {t('dashboard.integrations.tab.routing')}
+                </div>
                 <div className="text-xs text-[color:var(--merchant-muted)]">
-                  Primary processor with ordered fallback
+                  {t('dashboard.integrations.tab.routingMeta')}
                 </div>
               </div>
             </button>
@@ -583,9 +615,13 @@ export default function IntegrationsPage() {
           <button onClick={() => setActiveTab('webhooks')} className={tabButtonClass('webhooks')}>
             <Webhook className="h-4 w-4" />
             <div className="min-w-0">
-              <div className="text-sm font-medium">API & webhooks</div>
+              <div className="text-sm font-medium">
+                {t('dashboard.integrations.tab.apiWebhooks')}
+              </div>
               <div className="text-xs text-[color:var(--merchant-muted)]">
-                {inactiveWebhookCount === 0 ? 'Credentialed and live' : 'Finish configuration'}
+                {inactiveWebhookCount === 0
+                  ? t('dashboard.integrations.tab.apiWebhooksMetaLive')
+                  : t('dashboard.integrations.tab.apiWebhooksMetaSetup')}
               </div>
             </div>
           </button>
@@ -595,15 +631,17 @@ export default function IntegrationsPage() {
       {activeTab === 'stores' ? (
         <div className="space-y-4">
           <SurfaceCard
-            title="Sales channels"
-            description="Keep connected storefronts, sync status, and the primary channel in one operational view."
+            title={t('dashboard.integrations.salesChannels.title')}
+            description={t('dashboard.integrations.salesChannels.description')}
             action={
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge tone={primaryStoreId ? 'success' : 'warning'}>
-                  {primaryStoreId ? 'Primary selected' : 'Primary not set'}
+                  {primaryStoreId
+                    ? t('dashboard.integrations.salesChannels.primarySelected')
+                    : t('dashboard.integrations.salesChannels.primaryNotSet')}
                 </StatusBadge>
                 <MerchantButton type="button" onClick={() => setShowConnectStore(true)} icon={Plus}>
-                  Connect channel
+                  {t('dashboard.integrations.salesChannels.connectChannel')}
                 </MerchantButton>
               </div>
             }
@@ -626,9 +664,13 @@ export default function IntegrationsPage() {
                               {store.store_name || store.domain || `Store ${index + 1}`}
                             </h3>
                             {primaryStoreId && store.id === primaryStoreId ? (
-                              <StatusBadge tone="brand">Primary</StatusBadge>
+                              <StatusBadge tone="brand">
+                                {t('dashboard.integrations.salesChannels.primary')}
+                              </StatusBadge>
                             ) : null}
-                            <StatusBadge tone="success">Active</StatusBadge>
+                            <StatusBadge tone="success">
+                              {t('dashboard.integrations.shared.active')}
+                            </StatusBadge>
                           </div>
                           <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted-strong)]">
                             <span className="capitalize">{store.platform}</span>
@@ -646,7 +688,7 @@ export default function IntegrationsPage() {
                             onClick={() => handleSetPrimaryStore(store)}
                             className="merchant-button-secondary px-3 py-2 text-sm"
                           >
-                            Make primary
+                            {t('dashboard.integrations.salesChannels.makePrimary')}
                           </button>
                         ) : null}
                         {store.platform === 'shopify' || store.platform === 'wix' ? (
@@ -654,15 +696,15 @@ export default function IntegrationsPage() {
                             onClick={() => handleSyncProducts(store)}
                             disabled={syncingStoreId === store.id}
                             className="merchant-button-secondary px-3 py-2 text-sm disabled:opacity-50"
-                            aria-label="Sync products"
+                            aria-label={t('dashboard.integrations.salesChannels.syncProducts')}
                           >
                             {syncingStoreId === store.id ? (
                               <>
                                 <Loader2 className="h-4 w-4 animate-spin" />
-                                <span>Syncing…</span>
+                                <span>{t('dashboard.integrations.salesChannels.syncing')}</span>
                               </>
                             ) : (
-                              <span>Sync products</span>
+                              <span>{t('dashboard.integrations.salesChannels.syncProducts')}</span>
                             )}
                           </button>
                         ) : null}
@@ -670,7 +712,7 @@ export default function IntegrationsPage() {
                           onClick={() => handleDeleteStore(store)}
                           className="rounded-full border border-[color:var(--merchant-line)] px-3 py-2 text-sm font-medium text-[color:var(--merchant-muted-strong)] transition hover:bg-[color:var(--merchant-surface-muted)]"
                         >
-                          Remove
+                          {t('dashboard.integrations.shared.remove')}
                         </button>
                       </div>
                     </div>
@@ -679,11 +721,11 @@ export default function IntegrationsPage() {
               ) : (
                 <EmptyState
                   icon={Store}
-                  title="No sales channels connected yet"
-                  description="Connect Shopify, Wix, or another storefront so catalog sync and channel readiness can show up here."
+                  title={t('dashboard.integrations.salesChannels.emptyTitle')}
+                  description={t('dashboard.integrations.salesChannels.emptyDescription')}
                   action={
                     <MerchantButton type="button" onClick={() => setShowConnectStore(true)} icon={Plus}>
-                      Connect first channel
+                      {t('dashboard.integrations.salesChannels.connectFirst')}
                     </MerchantButton>
                   }
                 />
@@ -703,23 +745,33 @@ export default function IntegrationsPage() {
       {activeTab === 'psps' ? (
         <div className="space-y-4">
           <SurfaceCard
-            title="Payment setup"
-            description="Review processor health, validate real live-charge readiness, and keep routing coverage honest before checkout traffic goes live."
+            title={t('dashboard.integrations.paymentSetup.title')}
+            description={t('dashboard.integrations.paymentSetup.description')}
             action={
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge tone={liveReadyPSPCount > 0 ? 'success' : 'warning'}>
-                  {liveReadyPSPCount > 0 ? `${liveReadyPSPCount} live-ready` : 'No live-ready processors'}
+                  {liveReadyPSPCount > 0
+                    ? t('dashboard.integrations.paymentSetup.liveReadyCount', {
+                        count: liveReadyPSPCount,
+                      })
+                    : t('dashboard.integrations.paymentSetup.noLiveReady')}
                 </StatusBadge>
                 {blockedActivePSPCount > 0 ? (
                   <StatusBadge tone="warning">
-                    {blockedActivePSPCount} blocked
+                    {t('dashboard.integrations.paymentSetup.blockedCount', {
+                      count: blockedActivePSPCount,
+                    })}
                   </StatusBadge>
                 ) : null}
                 <StatusBadge tone={activePSPCount > 0 ? 'neutral' : 'warning'}>
-                  {activePSPCount > 0 ? `${activePSPCount} active total` : 'No active processors'}
+                  {activePSPCount > 0
+                    ? t('dashboard.integrations.paymentSetup.activeTotal', {
+                        count: activePSPCount,
+                      })
+                    : t('dashboard.integrations.paymentSetup.noActive')}
                 </StatusBadge>
                 <MerchantButton type="button" onClick={() => setShowConnectPSP(true)} icon={Plus}>
-                  Connect processor
+                  {t('dashboard.integrations.paymentSetup.connectProcessor')}
                 </MerchantButton>
               </div>
             }
@@ -743,9 +795,13 @@ export default function IntegrationsPage() {
                               <h3 className="truncate text-base font-semibold text-[color:var(--merchant-ink)]">
                                 {psp.name}
                               </h3>
-                              <StatusBadge tone="success">Active</StatusBadge>
+                              <StatusBadge tone="success">
+                                {t('dashboard.integrations.shared.active')}
+                              </StatusBadge>
                               <StatusBadge tone={psp.live_charge_ready ? 'success' : 'warning'}>
-                                {psp.live_charge_ready ? 'Live ready' : 'Blocked for live charge'}
+                                {psp.live_charge_ready
+                                  ? t('dashboard.integrations.paymentSetup.liveReady')
+                                  : t('dashboard.integrations.paymentSetup.blockedForLive')}
                               </StatusBadge>
                               <StatusBadge tone={psp.environment === 'live' ? 'brand' : 'warning'}>
                                 {String(psp.environment || 'unknown').toUpperCase()}
@@ -760,10 +816,10 @@ export default function IntegrationsPage() {
                                 }
                               >
                                 {psp.validation_status === 'valid'
-                                  ? 'Validated'
+                                  ? t('dashboard.integrations.paymentSetup.validated')
                                   : psp.validation_status === 'invalid'
-                                    ? 'Validation failed'
-                                    : 'Validation pending'}
+                                    ? t('dashboard.integrations.paymentSetup.validationFailed')
+                                    : t('dashboard.integrations.paymentSetup.validationPending')}
                               </StatusBadge>
                             </div>
                             <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted-strong)]">
@@ -774,7 +830,11 @@ export default function IntegrationsPage() {
                             <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted)]">
                               {psp.type === 'stripe' ? (
                                 <>
-                                  <span>Payment flow: PaymentIntent</span>
+                                  <span>
+                                    {t('dashboard.integrations.paymentSetup.paymentFlow', {
+                                      flow: 'PaymentIntent',
+                                    })}
+                                  </span>
                                   {psp.provider_summary?.account_id ? (
                                     <>
                                       <span>•</span>
@@ -804,7 +864,9 @@ export default function IntegrationsPage() {
                               </p>
                             ) : psp.readiness_blockers?.length ? (
                               <div className="rounded-[0.9rem] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                                <div className="font-medium">Readiness blockers</div>
+                                <div className="font-medium">
+                                  {t('dashboard.integrations.paymentSetup.readinessBlockers')}
+                                </div>
                                 <div className="mt-1">
                                   {psp.readiness_blockers.join(' • ')}
                                 </div>
@@ -821,17 +883,17 @@ export default function IntegrationsPage() {
                             {testingPspId === psp.id ? (
                               <>
                                 <Loader2 className="h-4 w-4 animate-spin" />
-                                <span>Testing…</span>
+                                <span>{t('dashboard.integrations.paymentSetup.testing')}</span>
                               </>
                             ) : (
-                              <span>Run test</span>
+                              <span>{t('dashboard.integrations.paymentSetup.runTest')}</span>
                             )}
                           </button>
                           <button
                             onClick={() => handleDeletePSP(psp)}
                             className="rounded-full border border-[color:var(--merchant-line)] px-3 py-2 text-sm font-medium text-[color:var(--merchant-muted-strong)] transition hover:bg-[color:var(--merchant-surface-muted)]"
                           >
-                            Remove
+                            {t('dashboard.integrations.shared.remove')}
                           </button>
                         </div>
                       </div>
@@ -840,11 +902,11 @@ export default function IntegrationsPage() {
               ) : (
                 <EmptyState
                   icon={CreditCard}
-                  title="No payment processors connected"
-                  description="Add at least one processor so checkout traffic, fallback routing, and settlement reporting can be managed from here."
+                  title={t('dashboard.integrations.paymentSetup.emptyTitle')}
+                  description={t('dashboard.integrations.paymentSetup.emptyDescription')}
                   action={
                     <MerchantButton type="button" onClick={() => setShowConnectPSP(true)} icon={Plus}>
-                      Connect first processor
+                      {t('dashboard.integrations.paymentSetup.connectFirst')}
                     </MerchantButton>
                   }
                 />

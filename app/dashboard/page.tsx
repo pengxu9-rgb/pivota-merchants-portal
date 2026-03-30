@@ -16,6 +16,7 @@ import {
   Users,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import {
   MerchantButton,
   MerchantLinkButton,
@@ -121,6 +122,7 @@ function formatRelativeTime(value?: string | null) {
 }
 
 export default function DashboardPage() {
+  const { t } = useMerchantLanguage();
   const [readinessSummary, setReadinessSummary] = useState<ReadinessSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -666,7 +668,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Overview"
+        eyebrow={t('dashboard.overview.eyebrow')}
         title={heroTitle}
         description={heroDescription}
         actions={
@@ -678,10 +680,12 @@ export default function DashboardPage() {
               disabled={refreshing}
               icon={RefreshCw}
             >
-              {refreshing ? 'Refreshing…' : 'Refresh'}
+              {refreshing
+                ? t('dashboard.overview.refreshing')
+                : t('dashboard.overview.refresh')}
             </MerchantButton>
             <MerchantLinkButton href={readinessHref} icon={Sparkles}>
-              Review catalog issues
+              {t('dashboard.overview.reviewCatalogIssues')}
             </MerchantLinkButton>
           </>
         }
@@ -694,12 +698,12 @@ export default function DashboardPage() {
               <Activity className={`h-4 w-4 ${statsLoading ? 'animate-pulse' : ''}`} />
               <span>
                 {statsLoading
-                  ? 'Refreshing overview metrics in the background.'
+                  ? t('dashboard.overview.banner.refreshing')
                   : statsError && readinessError
-                    ? 'Overview is in a degraded state. Merchant metrics and readiness signals are partially unavailable.'
+                    ? t('dashboard.overview.banner.degradedAll')
                     : statsError
-                      ? 'Revenue, orders, and customers are temporarily unavailable. Readiness panels are still live.'
-                      : 'Catalog readiness is temporarily unavailable. Revenue and order metrics are still live.'}
+                      ? t('dashboard.overview.banner.degradedStats')
+                      : t('dashboard.overview.banner.degradedReadiness')}
               </span>
             </div>
             {statsError || readinessError ? (
@@ -725,13 +729,15 @@ export default function DashboardPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge tone={readinessTone}>
                   {blockedVariants > 0
-                    ? 'Blockers first'
+                    ? t('dashboard.overview.hero.blockersFirst')
                     : qualityNeedsAttention > 0
-                      ? 'Content next'
-                      : 'Ready to scale'}
+                      ? t('dashboard.overview.hero.contentNext')
+                      : t('dashboard.overview.hero.readyToScale')}
                 </StatusBadge>
                 <StatusBadge tone="neutral">
-                  {hasStatsData ? `${totalOrdersValue} orders in the last 30d` : 'Stats unavailable'}
+                  {hasStatsData
+                    ? `${totalOrdersValue} orders in the last 30d`
+                    : t('dashboard.overview.hero.statsUnavailable')}
                 </StatusBadge>
               </div>
               <p className="max-w-3xl text-sm leading-6 text-[color:var(--merchant-muted-strong)] sm:text-[15px]">
@@ -739,10 +745,10 @@ export default function DashboardPage() {
               </p>
               <div className="flex flex-wrap gap-3">
                 <MerchantLinkButton href={readinessHref} icon={ArrowRight}>
-                  Review catalog health
+                  {t('dashboard.overview.reviewCatalogIssues')}
                 </MerchantLinkButton>
                 <MerchantLinkButton href="/dashboard/products" variant="secondary" icon={Package}>
-                  Open catalog
+                  {t('dashboard.overview.openCatalog')}
                 </MerchantLinkButton>
               </div>
             </div>
@@ -798,8 +804,8 @@ export default function DashboardPage() {
 
       <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <SurfaceCard
-          title="Top opportunities"
-          description="Next merchant actions with the clearest near-term impact."
+          title={t('dashboard.overview.topOpportunities.title')}
+          description={t('dashboard.overview.topOpportunities.description')}
         >
           <div className="divide-y divide-[color:var(--merchant-line)]">
             {opportunityItems.length > 0 ? (
@@ -823,18 +829,18 @@ export default function DashboardPage() {
               ))
             ) : (
               <div className="px-6 py-8 text-sm text-[color:var(--merchant-muted)]">
-                Opportunities will appear here once the catalog and analytics snapshots have enough signal.
+                {t('dashboard.overview.topOpportunities.empty')}
               </div>
             )}
           </div>
         </SurfaceCard>
 
         <SurfaceCard
-          title="Recent activity"
-          description="Recent order and merchant activity."
+          title={t('dashboard.overview.recentActivity.title')}
+          description={t('dashboard.overview.recentActivity.description')}
           action={
             <MerchantLinkButton href="/dashboard/orders" variant="ghost" icon={ArrowRight}>
-              Open orders
+              {t('dashboard.overview.recentActivity.openOrders')}
             </MerchantLinkButton>
           }
         >
@@ -855,7 +861,7 @@ export default function DashboardPage() {
               ))
             ) : (
               <div className="px-6 py-8 text-sm text-[color:var(--merchant-muted)]">
-                Recent activity will appear once new orders or merchant events sync into the portal.
+                {t('dashboard.overview.recentActivity.empty')}
               </div>
             )}
           </div>
@@ -863,8 +869,8 @@ export default function DashboardPage() {
       </div>
 
       <SectionHeader
-        title="Operational support"
-        description="Keep channels and payments visible without letting infrastructure dominate the page."
+        title={t('dashboard.overview.operationalSupport.title')}
+        description={t('dashboard.overview.operationalSupport.description')}
         action={
           <StatusBadge tone="neutral">
             {connectedStores.length} channels · {activePSPs.length} payment setups
@@ -899,11 +905,11 @@ export default function DashboardPage() {
 
       <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <SurfaceCard
-          title="Readiness focus"
-          description="Current blocker buckets translated into next steps."
+          title={t('dashboard.overview.readinessFocus.title')}
+          description={t('dashboard.overview.readinessFocus.description')}
           action={
             <MerchantLinkButton href={readinessHref} variant="ghost" icon={ArrowRight}>
-              Open details
+              {t('dashboard.overview.readinessFocus.openDetails')}
             </MerchantLinkButton>
           }
         >
@@ -919,23 +925,25 @@ export default function DashboardPage() {
                       {blocker.label}
                     </p>
                   </div>
-                  <StatusBadge tone="warning">{blocker.count} affected</StatusBadge>
+                  <StatusBadge tone="warning">
+                    {t('dashboard.overview.readinessFocus.affected', { count: blocker.count })}
+                  </StatusBadge>
                 </div>
               ))
             ) : (
               <p className="text-sm leading-6 text-[color:var(--merchant-muted)]">
-                Readiness details will appear after the next assessment cycle.
+                {t('dashboard.overview.readinessFocus.empty')}
               </p>
             )}
           </div>
         </SurfaceCard>
 
         <SurfaceCard
-          title="Catalog spotlight"
-          description="The highest-priority catalog items currently shaping launch readiness and merchant perception."
+          title={t('dashboard.overview.catalogSpotlight.title')}
+          description={t('dashboard.overview.catalogSpotlight.description')}
           action={
             <MerchantLinkButton href={readinessHref} variant="ghost" icon={ArrowRight}>
-              Open catalog health
+              {t('dashboard.overview.catalogSpotlight.openCatalogHealth')}
             </MerchantLinkButton>
           }
         >
@@ -959,7 +967,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="space-y-1.5">
                     <p className="truncate font-medium text-[color:var(--merchant-ink)]">
-                      {product.title || 'Untitled product'}
+                      {product.title || t('dashboard.overview.product.untitled')}
                     </p>
                     <p className="text-sm text-[color:var(--merchant-muted)]">
                       {formatProductPrice(product.price_value, product.price_currency)}
@@ -968,7 +976,7 @@ export default function DashboardPage() {
                       {product.top_issues?.[0]?.label ||
                         (product.blocked_variant_count > 0
                           ? `${product.blocked_variant_count} blocked variants`
-                          : 'Ready for review')}
+                          : t('dashboard.overview.product.readyForReview'))}
                     </p>
                   </div>
                 </div>
@@ -976,8 +984,8 @@ export default function DashboardPage() {
             ) : (
               <div className="sm:col-span-2 text-sm leading-6 text-[color:var(--merchant-muted)]">
                 {qualityLoading
-                  ? 'Refreshing catalog spotlight…'
-                  : 'Once readiness generates a priority queue, Overview will surface the highest-impact catalog items here.'}
+                  ? t('dashboard.overview.catalogSpotlight.loading')
+                  : t('dashboard.overview.catalogSpotlight.empty')}
               </div>
             )}
           </div>
