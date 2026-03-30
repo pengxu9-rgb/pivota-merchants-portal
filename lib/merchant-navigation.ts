@@ -20,82 +20,104 @@ export type MerchantNavigationItem = {
   icon: LucideIcon;
   matchPrefixes?: string[];
   description?: string;
+  labelKey?: string;
+  descriptionKey?: string;
 };
 
 export const primaryNavigation: MerchantNavigationItem[] = [
   {
     label: "Overview",
+    labelKey: "shell.nav.overview",
     href: "/dashboard",
     icon: LayoutDashboard,
     matchPrefixes: ["/dashboard"],
     description: "Attention now",
+    descriptionKey: "shell.nav.overviewDesc",
   },
   {
     label: "Catalog",
+    labelKey: "shell.nav.catalog",
     href: "/dashboard/products",
     icon: Package,
     matchPrefixes: ["/dashboard/products", "/dashboard/product-optimization"],
     description: "Products and content",
+    descriptionKey: "shell.nav.catalogDesc",
   },
   {
     label: "Orders",
+    labelKey: "shell.nav.orders",
     href: "/dashboard/orders",
     icon: ShoppingBag,
     matchPrefixes: ["/dashboard/orders"],
     description: "Sales and refunds",
+    descriptionKey: "shell.nav.ordersDesc",
   },
   {
     label: "Promotions",
+    labelKey: "shell.nav.promotions",
     href: "/dashboard/promotions",
     icon: Tag,
     matchPrefixes: ["/dashboard/promotions", "/portal/promotions"],
     description: "Campaign planning",
+    descriptionKey: "shell.nav.promotionsDesc",
   },
   {
     label: "Analytics",
+    labelKey: "shell.nav.analytics",
     href: "/dashboard/analytics",
     icon: BarChart3,
     matchPrefixes: ["/dashboard/analytics"],
     description: "Sales trends",
+    descriptionKey: "shell.nav.analyticsDesc",
   },
   {
     label: "Payments",
+    labelKey: "shell.nav.payments",
     href: "/dashboard/payouts",
     icon: Wallet,
     matchPrefixes: ["/dashboard/payouts", "/dashboard/commission"],
     description: "Payouts and settlement",
+    descriptionKey: "shell.nav.paymentsDesc",
   },
   {
     label: "Integrations",
+    labelKey: "shell.nav.integrations",
     href: "/dashboard/integrations",
     icon: Store,
     matchPrefixes: ["/dashboard/integrations"],
     description: "Channels and setup",
+    descriptionKey: "shell.nav.integrationsDesc",
   },
 ];
 
 export const settingsNavigationItem: MerchantNavigationItem = {
   label: "Portal settings",
+  labelKey: "shell.nav.settings",
   href: "/dashboard/settings",
   icon: Settings,
   matchPrefixes: ["/dashboard/settings"],
   description: "Access and preferences",
+  descriptionKey: "shell.nav.settingsDesc",
 };
 
 export const workflowNavigation: MerchantNavigationItem[] = [
   {
     label: "Catalog health",
+    labelKey: "shell.nav.catalogHealth",
     href: "/dashboard/product-optimization",
     icon: Sparkles,
     matchPrefixes: ["/dashboard/product-optimization"],
     description: "Readiness actions",
+    descriptionKey: "shell.nav.catalogHealthDesc",
   },
   {
     label: "Commission offers",
+    labelKey: "shell.nav.commissionOffers",
     href: "/dashboard/commission",
     icon: CreditCard,
     matchPrefixes: ["/dashboard/commission"],
     description: "Merchant incentives",
+    descriptionKey: "shell.nav.commissionOffersDesc",
   },
 ];
 

@@ -8,6 +8,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import type { OnboardingData } from '@/lib/onboarding';
 
 interface CompletionStepProps {
@@ -31,6 +32,7 @@ export default function CompletionStep({
   onClearSession,
 }: CompletionStepProps) {
   const router = useRouter();
+  const { t } = useMerchantLanguage();
   const attemptedAutoLogin = useRef(false);
   const [state, setState] = useState<CompletionState>(
     loginEmail && password ? 'authenticating' : 'manual',
@@ -67,7 +69,7 @@ export default function CompletionStep({
         const success = response.success === true || response.status === 'success';
 
         if (!success) {
-          throw new Error(response.message || response.detail || 'Unable to sign in automatically.');
+          throw new Error(response.message || response.detail || t('auth.complete.autoLoginGeneric'));
         }
 
         if (cancelled) return;
@@ -77,7 +79,7 @@ export default function CompletionStep({
         if (cancelled) return;
 
         const message =
-          err instanceof Error ? err.message : 'Unable to sign in automatically right now.';
+          err instanceof Error ? err.message : t('auth.complete.autoLoginFailed');
 
         setError(message);
         setState('manual');
@@ -89,7 +91,7 @@ export default function CompletionStep({
     return () => {
       cancelled = true;
     };
-  }, [loginEmail, onClearSession, password, router]);
+  }, [loginEmail, onClearSession, password, router, t]);
 
   const handleContinueToLogin = () => {
     onClearSession();
@@ -103,12 +105,10 @@ export default function CompletionStep({
           <Loader2 className="h-9 w-9 animate-spin" />
         </div>
         <div className="space-y-2">
-          <div className="merchant-overline">Step 4 · Portal access</div>
-          <h2 className="text-[2rem] font-semibold tracking-[-0.045em] text-[color:var(--merchant-ink)]">
-            Finalizing your merchant portal access
-          </h2>
+          <div className="merchant-overline">{t('auth.complete.authenticatingEyebrow')}</div>
+          <h2 className="text-[2rem] font-semibold tracking-[-0.045em] text-[color:var(--merchant-ink)]">{t('auth.complete.authenticatingTitle')}</h2>
           <p className="mx-auto max-w-xl text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-            Your merchant record is ready. Pivota is signing you into the merchant portal now.
+            {t('auth.complete.authenticatingDescription')}
           </p>
         </div>
       </div>
@@ -121,13 +121,16 @@ export default function CompletionStep({
         <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border border-[color:rgba(63,118,95,0.16)] bg-[color:var(--merchant-success-soft)] text-[color:var(--merchant-success)]">
           <CheckCircle2 className="h-9 w-9" />
         </div>
-        <div className="merchant-overline">Step 4 · Account ready</div>
+        <div className="merchant-overline">{t('auth.complete.readyEyebrow')}</div>
         <h2 className="text-[2rem] font-semibold tracking-[-0.045em] text-[color:var(--merchant-ink)]">
-          Your merchant account is ready
+          {t('auth.complete.readyTitle')}
         </h2>
         <p className="mx-auto max-w-xl text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-          {data.business_name ? `Welcome, ${data.business_name}. ` : ''}
-          Your merchant onboarding record and portal access are now tied to the same merchant ID.
+          {t('auth.complete.readyDescription', {
+            welcome: data.business_name
+              ? t('auth.complete.welcomePrefix', { businessName: data.business_name })
+              : '',
+          })}
         </p>
       </div>
 
@@ -136,29 +139,29 @@ export default function CompletionStep({
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
-                Merchant ID
+                {t('auth.complete.merchantIdLabel')}
               </p>
               <p className="mt-1 text-sm font-semibold text-[color:var(--merchant-ink)]">
-                <span className="font-mono">{data.merchant_id || 'Pending'}</span>
+                <span className="font-mono">{data.merchant_id || t('shell.pending')}</span>
               </p>
             </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
-                Status
+                {t('auth.complete.statusLabel')}
               </p>
               <p className="mt-1 text-sm font-semibold text-[color:var(--merchant-ink)]">
-                {data.auto_approved ? 'Auto-approved' : 'Pending review'}
+                {data.auto_approved ? t('auth.complete.statusAutoApproved') : t('auth.complete.statusPendingReview')}
               </p>
             </div>
           </div>
 
           <div className="mt-5 rounded-[20px] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-4 py-4">
-            <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
-              Next step in the portal
-            </p>
-            <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-              Finish merchant setup inside the dashboard, connect store integrations, and verify the live payment path.
-            </p>
+              <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
+              {t('auth.complete.nextStepTitle')}
+              </p>
+              <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+              {t('auth.complete.nextStepDescription')}
+              </p>
           </div>
 
           {error ? (
@@ -176,7 +179,7 @@ export default function CompletionStep({
               onClick={handleContinueToLogin}
               className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[color:var(--merchant-brand)] px-4 py-3 text-sm font-medium text-white shadow-[0_14px_30px_rgba(51,75,133,0.18)] transition hover:bg-[color:var(--merchant-brand-strong)]"
             >
-              <span>Continue to login</span>
+              <span>{t('auth.complete.continueToLogin')}</span>
               <ArrowRight className="h-4.5 w-4.5" />
             </button>
           </div>
@@ -190,10 +193,10 @@ export default function CompletionStep({
               </div>
               <div>
                 <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
-                  Merchant record stays matched
+                  {t('auth.complete.recordMatchedTitle')}
                 </p>
                 <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-                  The same merchant ID is used for onboarding, portal access, and later merchant configuration.
+                  {t('auth.complete.recordMatchedDescription')}
                 </p>
               </div>
             </div>
@@ -202,10 +205,10 @@ export default function CompletionStep({
           {data.auto_approved ? (
             <div className="rounded-[24px] border border-[color:rgba(157,106,42,0.18)] bg-[color:var(--merchant-warning-soft)] p-4">
               <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
-                Pre-approved account
+                {t('auth.complete.preApprovedTitle')}
               </p>
               <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-                You can continue immediately. Complete any remaining KYB follow-up inside the portal after sign-in.
+                {t('auth.complete.preApprovedDescription')}
               </p>
             </div>
           ) : null}

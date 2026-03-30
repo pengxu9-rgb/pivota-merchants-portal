@@ -1,5 +1,8 @@
+'use client';
+
 import type { FormEvent } from 'react';
 import { AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import type { RegistrationFormData } from '@/lib/onboarding';
 
 interface RegistrationStepProps {
@@ -22,6 +25,7 @@ export default function RegistrationStep({
   onChange,
   onSubmit,
 }: RegistrationStepProps) {
+  const { t } = useMerchantLanguage();
   const passwordsMismatch =
     Boolean(formData.password) &&
     Boolean(formData.confirm_password) &&
@@ -30,142 +34,142 @@ export default function RegistrationStep({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <div className="merchant-overline">Step 1 · Merchant account</div>
+        <div className="merchant-overline">{t('auth.registration.stepEyebrow')}</div>
         <h2 className="text-[1.9rem] font-semibold tracking-[-0.045em] text-[color:var(--merchant-ink)]">
-          Create your merchant portal access
+          {t('auth.registration.title')}
         </h2>
         <p className="max-w-2xl text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-          This creates the merchant record and the account you will use to sign in to the portal.
+          {t('auth.registration.description')}
         </p>
       </div>
 
       <div className="rounded-[24px] border border-[color:var(--merchant-line)] bg-white/78 p-5 sm:p-6">
         <div className="mb-4">
-          <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">Business details</p>
+          <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">{t('auth.registration.businessDetailsTitle')}</p>
           <p className="mt-1 text-xs text-[color:var(--merchant-muted)]">
-            One email and password continue into the merchant portal after onboarding.
+            {t('auth.registration.businessDetailsDescription')}
           </p>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <label className="block">
-              <span className={labelClassName}>Business name</span>
+              <span className={labelClassName}>{t('auth.registration.businessNameLabel')}</span>
               <input
                 type="text"
                 required
                 value={formData.business_name}
                 onChange={(event) => onChange('business_name', event.target.value)}
                 className={inputClassName}
-                placeholder="Acme Corporation"
+                placeholder={t('auth.registration.businessNamePlaceholder')}
               />
             </label>
 
             <label className="block">
-              <span className={labelClassName}>Region</span>
+              <span className={labelClassName}>{t('auth.registration.regionLabel')}</span>
               <select
                 required
                 value={formData.region}
                 onChange={(event) => onChange('region', event.target.value)}
                 className={inputClassName}
               >
-                <option value="">Select region</option>
-                <option value="US">United States</option>
-                <option value="CA">Canada</option>
-                <option value="UK">United Kingdom</option>
-                <option value="EU">European Union</option>
-                <option value="APAC">Asia Pacific</option>
-                <option value="Other">Other</option>
+                <option value="">{t('auth.registration.regionPlaceholder')}</option>
+                <option value="US">{t('auth.registration.regionUS')}</option>
+                <option value="CA">{t('auth.registration.regionCA')}</option>
+                <option value="UK">{t('auth.registration.regionUK')}</option>
+                <option value="EU">{t('auth.registration.regionEU')}</option>
+                <option value="APAC">{t('auth.registration.regionAPAC')}</option>
+                <option value="Other">{t('auth.registration.regionOther')}</option>
               </select>
             </label>
           </div>
 
           <label className="block">
-            <span className={labelClassName}>Store URL</span>
+            <span className={labelClassName}>{t('auth.registration.storeUrlLabel')}</span>
             <input
               type="url"
               required
               value={formData.store_url}
               onChange={(event) => onChange('store_url', event.target.value)}
               className={inputClassName}
-              placeholder="https://mystore.myshopify.com"
+              placeholder={t('auth.registration.storeUrlPlaceholder')}
             />
             <span className="mt-1.5 block text-xs text-[color:var(--merchant-muted)]">
-              Shopify, Wix, WooCommerce, or another merchant storefront URL.
+              {t('auth.registration.storeUrlHelp')}
             </span>
           </label>
 
           <label className="block">
-            <span className={labelClassName}>Website</span>
+            <span className={labelClassName}>{t('auth.registration.websiteLabel')}</span>
             <input
               type="url"
               value={formData.website}
               onChange={(event) => onChange('website', event.target.value)}
               className={inputClassName}
-              placeholder="https://brand.com"
+              placeholder={t('auth.registration.websitePlaceholder')}
             />
             <span className="mt-1.5 block text-xs text-[color:var(--merchant-muted)]">
-              Optional, if your storefront and brand site are different.
+              {t('auth.registration.websiteHelp')}
             </span>
           </label>
 
           <div className="grid gap-4 md:grid-cols-2">
             <label className="block">
-              <span className={labelClassName}>Contact email</span>
+              <span className={labelClassName}>{t('auth.registration.contactEmailLabel')}</span>
               <input
                 type="email"
                 required
                 value={formData.contact_email}
                 onChange={(event) => onChange('contact_email', event.target.value)}
                 className={inputClassName}
-                placeholder="merchant@brand.com"
+                placeholder={t('auth.registration.contactEmailPlaceholder')}
               />
             </label>
 
             <label className="block">
-              <span className={labelClassName}>Contact phone</span>
+              <span className={labelClassName}>{t('auth.registration.contactPhoneLabel')}</span>
               <input
                 type="tel"
                 value={formData.contact_phone}
                 onChange={(event) => onChange('contact_phone', event.target.value)}
                 className={inputClassName}
-                placeholder="+1 (555) 123-4567"
+                placeholder={t('auth.registration.contactPhonePlaceholder')}
               />
             </label>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <label className="block">
-              <span className={labelClassName}>Password</span>
+              <span className={labelClassName}>{t('auth.registration.passwordLabel')}</span>
               <input
                 type="password"
                 required
                 value={formData.password}
                 onChange={(event) => onChange('password', event.target.value)}
                 className={inputClassName}
-                placeholder="Create a secure password"
+                placeholder={t('auth.registration.passwordPlaceholder')}
                 minLength={8}
                 autoComplete="new-password"
               />
               <span className="mt-1.5 block text-xs text-[color:var(--merchant-muted)]">
-                At least 8 characters. If this email already has a Pivota account, enter its current password to convert it into merchant access.
+                {t('auth.registration.passwordHelp')}
               </span>
             </label>
 
             <label className="block">
-              <span className={labelClassName}>Confirm password</span>
+              <span className={labelClassName}>{t('auth.registration.confirmPasswordLabel')}</span>
               <input
                 type="password"
                 required
                 value={formData.confirm_password}
                 onChange={(event) => onChange('confirm_password', event.target.value)}
                 className={inputClassName}
-                placeholder="Re-enter your password"
+                placeholder={t('auth.registration.confirmPasswordPlaceholder')}
                 autoComplete="new-password"
               />
               {passwordsMismatch ? (
                 <span className="mt-1.5 block text-xs text-[color:var(--merchant-critical)]">
-                  Passwords do not match.
+                  {t('auth.signup.passwordMismatch')}
                 </span>
               ) : null}
             </label>
@@ -189,11 +193,11 @@ export default function RegistrationStep({
               {loading ? (
                 <>
                   <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                  <span>Creating account...</span>
+                  <span>{t('auth.registration.creatingAccount')}</span>
                 </>
               ) : (
                 <>
-                  <span>Continue to payment setup</span>
+                  <span>{t('auth.registration.continue')}</span>
                   <ArrowRight className="h-4.5 w-4.5" />
                 </>
               )}

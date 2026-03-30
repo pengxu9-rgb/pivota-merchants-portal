@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Instrument_Sans } from "next/font/google";
+import { MerchantLanguageProvider } from "@/components/portal/merchant-language-provider";
 import "./globals.css";
 
 const instrumentSans = Instrument_Sans({
@@ -19,7 +20,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${instrumentSans.variable} antialiased`}>{children}</body>
+      <body className={`${instrumentSans.variable} antialiased`}>
+        <MerchantLanguageProvider>{children}</MerchantLanguageProvider>
+      </body>
     </html>
   );
 }

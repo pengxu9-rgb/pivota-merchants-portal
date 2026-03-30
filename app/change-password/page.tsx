@@ -3,10 +3,13 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Lock, AlertCircle, CheckCircle } from 'lucide-react';
+import { PortalLanguageSwitcher } from '@/components/portal/portal-language-switcher';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { API_CONFIG } from '@/lib/config';
 
 export default function ChangePasswordPage() {
   const router = useRouter();
+  const { t } = useMerchantLanguage();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -21,12 +24,12 @@ export default function ChangePasswordPage() {
 
     // Validation
     if (newPassword !== confirmPassword) {
-      setError('New passwords do not match');
+      setError(t('auth.change.passwordMismatch'));
       return;
     }
 
     if (newPassword.length < 8) {
-      setError('Password must be at least 8 characters long');
+      setError(t('auth.change.passwordTooShort'));
       return;
     }
 
@@ -57,24 +60,28 @@ export default function ChangePasswordPage() {
           router.push('/dashboard');
         }, 2000);
       } else {
-        setError(data.detail || data.message || 'Failed to change password');
+        setError(data.detail || data.message || t('auth.change.failed'));
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to change password');
+      setError(err.message || t('auth.change.failed'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-50 p-4">
+      <div className="mx-auto flex w-full max-w-md justify-end py-4">
+        <PortalLanguageSwitcher />
+      </div>
+      <div className="flex items-center justify-center">
       <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
         <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
             <Lock className="w-8 h-8 text-blue-600" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Change Password</h1>
-          <p className="text-gray-600 mt-2">Update your account password</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('auth.change.title')}</h1>
+          <p className="text-gray-600 mt-2">{t('auth.change.description')}</p>
         </div>
 
         {error && (
@@ -87,28 +94,28 @@ export default function ChangePasswordPage() {
         {success && (
           <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start space-x-2">
             <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-green-700">Password changed successfully! Redirecting...</p>
+            <p className="text-sm text-green-700">{t('auth.change.success')}</p>
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Current Password
-            </label>
+              {t('auth.change.currentPasswordLabel')}
+              </label>
             <input
               type="password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               required
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Enter current password"
+              placeholder={t('auth.change.currentPasswordPlaceholder')}
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              New Password
+              {t('auth.change.newPasswordLabel')}
             </label>
             <input
               type="password"
@@ -116,24 +123,24 @@ export default function ChangePasswordPage() {
               onChange={(e) => setNewPassword(e.target.value)}
               required
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Enter new password"
+              placeholder={t('auth.change.newPasswordPlaceholder')}
             />
             <p className="text-xs text-gray-500 mt-1">
-              Must be at least 8 characters with uppercase, lowercase, and numbers
+              {t('auth.change.newPasswordHelp')}
             </p>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Confirm New Password
-            </label>
+              {t('auth.change.confirmPasswordLabel')}
+              </label>
             <input
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Confirm new password"
+              placeholder={t('auth.change.confirmPasswordPlaceholder')}
             />
           </div>
 
@@ -142,17 +149,18 @@ export default function ChangePasswordPage() {
             disabled={loading}
             className="w-full py-3 px-4 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Changing Password...' : 'Change Password'}
-          </button>
+              {loading ? t('auth.change.submitting') : t('auth.change.submit')}
+            </button>
 
           <button
             type="button"
             onClick={() => router.push('/dashboard')}
             className="w-full py-2 px-4 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50"
           >
-            Cancel
+            {t('auth.change.cancel')}
           </button>
         </form>
+      </div>
       </div>
     </div>
   );

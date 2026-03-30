@@ -188,10 +188,11 @@ class ApiClient {
   }
 
   async updateSettingsPreferences(data: {
-    email_orders: boolean;
-    email_payments: boolean;
-    email_inventory: boolean;
-    email_weekly: boolean;
+    email_orders?: boolean;
+    email_payments?: boolean;
+    email_inventory?: boolean;
+    email_weekly?: boolean;
+    portal_language?: "en" | "zh-CN" | "ja-JP" | "ko-KR" | "fr-FR" | "de-DE";
   }) {
     const response = await this.client.put('/merchant/settings/preferences', data);
     return response.data?.data || response.data;

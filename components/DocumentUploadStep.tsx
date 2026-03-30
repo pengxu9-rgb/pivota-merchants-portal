@@ -1,3 +1,5 @@
+'use client';
+
 import type { FormEvent } from 'react';
 import {
   AlertCircle,
@@ -10,6 +12,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 
 interface DocumentUploadStepProps {
   merchantId: string;
@@ -36,15 +39,16 @@ export default function DocumentUploadStep({
   onFilesSelected,
   onRemoveFile,
 }: DocumentUploadStepProps) {
+  const { t } = useMerchantLanguage();
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <div className="merchant-overline">Step 3 · KYB documents</div>
+        <div className="merchant-overline">{t('auth.documents.stepEyebrow')}</div>
         <h2 className="text-[1.9rem] font-semibold tracking-[-0.045em] text-[color:var(--merchant-ink)]">
-          Upload business verification documents
+          {t('auth.documents.title')}
         </h2>
         <p className="max-w-2xl text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-          Keep the merchant record complete for onboarding review. If you were pre-approved, you can skip for now and finish documentation later.
+          {t('auth.documents.description')}
         </p>
       </div>
 
@@ -64,10 +68,10 @@ export default function DocumentUploadStep({
                 <Upload className="h-5 w-5" />
               </div>
               <p className="mt-4 text-sm font-semibold text-[color:var(--merchant-ink)]">
-                Click to upload documents
+                {t('auth.documents.uploadTitle')}
               </p>
               <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-                PDF, JPG, or PNG. Up to 10MB per file.
+                {t('auth.documents.uploadDescription')}
               </p>
             </label>
           </div>
@@ -76,9 +80,9 @@ export default function DocumentUploadStep({
             <div className="rounded-[24px] border border-[color:var(--merchant-line)] bg-white/72 p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
-                  Selected files
+                  {t('auth.documents.selectedFilesTitle')}
                 </p>
-                <p className="text-xs text-[color:var(--merchant-muted)]">{files.length} file(s)</p>
+                <p className="text-xs text-[color:var(--merchant-muted)]">{t('auth.documents.fileCount', { count: files.length })}</p>
               </div>
               <div className="space-y-2.5">
                 {files.map((file, index) => (
@@ -104,7 +108,7 @@ export default function DocumentUploadStep({
                       type="button"
                       onClick={() => onRemoveFile(index)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--merchant-line-strong)] text-[color:var(--merchant-muted-strong)] transition hover:bg-white"
-                      aria-label={`Remove ${file.name}`}
+                      aria-label={t('auth.documents.removeFile', { fileName: file.name })}
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -130,7 +134,7 @@ export default function DocumentUploadStep({
               className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[color:var(--merchant-line-strong)] px-4 py-3 text-sm font-medium text-[color:var(--merchant-muted-strong)] transition hover:bg-white"
             >
               <ArrowLeft className="h-4.5 w-4.5" />
-              <span>Back</span>
+              <span>{t('auth.documents.back')}</span>
             </button>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -140,7 +144,7 @@ export default function DocumentUploadStep({
                   onClick={onSkip}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[color:var(--merchant-line-strong)] px-4 py-3 text-sm font-medium text-[color:var(--merchant-ink)] transition hover:bg-white"
                 >
-                  <span>Skip for now</span>
+                  <span>{t('auth.documents.skip')}</span>
                 </button>
               ) : null}
               <button
@@ -151,11 +155,11 @@ export default function DocumentUploadStep({
                 {loading ? (
                   <>
                     <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                    <span>Uploading...</span>
+                    <span>{t('auth.documents.uploading')}</span>
                   </>
                 ) : (
                   <>
-                    <span>{files.length ? 'Upload and continue' : 'Continue'}</span>
+                    <span>{files.length ? t('auth.documents.uploadAndContinue') : t('auth.documents.continue')}</span>
                     <ArrowRight className="h-4.5 w-4.5" />
                   </>
                 )}
@@ -172,10 +176,10 @@ export default function DocumentUploadStep({
               </div>
               <div>
                 <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
-                  Verification for merchant onboarding
+                  {t('auth.documents.verificationTitle')}
                 </p>
                 <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-                  Merchant ID <span className="font-mono text-[color:var(--merchant-ink)]">{merchantId}</span> stays tied to your KYB record and later portal login.
+                  {t('auth.documents.verificationDescription', { merchantId })}
                 </p>
               </div>
             </div>
@@ -189,10 +193,10 @@ export default function DocumentUploadStep({
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
-                    Pre-approved merchant
+                    {t('auth.documents.preApprovedTitle')}
                   </p>
                   <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-                    You can continue now and complete the remaining KYB documents after reaching the dashboard.
+                    {t('auth.documents.preApprovedDescription')}
                   </p>
                 </div>
               </div>
@@ -201,13 +205,13 @@ export default function DocumentUploadStep({
 
           <div className="rounded-[24px] border border-[color:var(--merchant-line)] bg-white/72 p-4">
             <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
-              Recommended documents
+              {t('auth.documents.recommendedTitle')}
             </p>
             <ul className="mt-3 space-y-2 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-              <li>Business registration certificate</li>
-              <li>Tax identification document</li>
-              <li>Bank account statement</li>
-              <li>Owner ID or passport</li>
+              <li>{t('auth.documents.recommendedRegistration')}</li>
+              <li>{t('auth.documents.recommendedTax')}</li>
+              <li>{t('auth.documents.recommendedBank')}</li>
+              <li>{t('auth.documents.recommendedOwner')}</li>
             </ul>
           </div>
         </div>

@@ -1,7 +1,11 @@
+"use client";
+
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import type { LucideIcon } from 'lucide-react';
 import { Mail, Store } from 'lucide-react';
+import { PortalLanguageSwitcher } from '@/components/portal/portal-language-switcher';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { APP_CONFIG } from '@/lib/config';
 import { cx } from '@/lib/cx';
 
@@ -36,6 +40,8 @@ export function AuthShell({
   className,
   panelClassName,
 }: AuthShellProps) {
+  const { t } = useMerchantLanguage();
+
   return (
     <div className="min-h-screen bg-[color:var(--merchant-canvas)] text-[color:var(--merchant-ink)]">
       <div
@@ -95,17 +101,17 @@ export function AuthShell({
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
-                    Need help?
+                    {t('auth.shell.needHelpTitle')}
                   </p>
                   <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-                    If you need onboarding support, email{' '}
                     <a
                       href={`mailto:${APP_CONFIG.SUPPORT_EMAIL}`}
                       className="font-medium text-[color:var(--merchant-brand)] hover:text-[color:var(--merchant-brand-strong)]"
                     >
-                      {APP_CONFIG.SUPPORT_EMAIL}
+                      {t('auth.shell.needHelpDescription', {
+                        email: APP_CONFIG.SUPPORT_EMAIL,
+                      })}
                     </a>
-                    .
                   </p>
                 </div>
               </div>
@@ -159,11 +165,14 @@ export function AuthShell({
                     Pivota
                   </p>
                   <p className="text-[11px] uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
-                    Merchant Portal
+                    {t('auth.shell.portalWordmark')}
                   </p>
                 </div>
               </Link>
-              {panelAction ? <div className="flex items-center gap-2">{panelAction}</div> : null}
+              <div className="flex items-center gap-2">
+                <PortalLanguageSwitcher />
+                {panelAction}
+              </div>
             </div>
 
             {progress ? <div className="mt-6">{progress}</div> : null}

@@ -1,7 +1,9 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
-import { AlertCircle, User, Bell, Shield, Save, Loader2, Lock } from 'lucide-react';
+import { AlertCircle, User, Bell, Shield, Save, Loader2, Lock, Languages } from 'lucide-react';
+import { PortalLanguageSwitcher } from '@/components/portal/portal-language-switcher';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { apiClient } from '@/lib/api-client';
 import {
   MerchantButton,
@@ -10,20 +12,27 @@ import {
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
 
-function validatePassword(password: string): string | null {
-  if (password.length < 8) return 'Password must be at least 8 characters long.';
-  if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter.';
-  if (!/[a-z]/.test(password)) return 'Password must contain at least one lowercase letter.';
-  if (!/[0-9]/.test(password)) return 'Password must contain at least one digit.';
+function validatePassword(
+  password: string,
+  t: (key: string) => string,
+): string | null {
+  if (password.length < 8) return t('settings.passwordTooShort');
+  if (!/[A-Z]/.test(password)) return t('settings.passwordNeedUppercase');
+  if (!/[a-z]/.test(password)) return t('settings.passwordNeedLowercase');
+  if (!/[0-9]/.test(password)) return t('settings.passwordNeedDigit');
   return null;
 }
 
 export default function SettingsPage() {
+  const { t, language, setLanguage } = useMerchantLanguage();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [savingLanguage, setSavingLanguage] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [preferencesError, setPreferencesError] = useState('');
+  const [languageStatus, setLanguageStatus] = useState('');
+  const [languageError, setLanguageError] = useState('');
   
   const [profile, setProfile] = useState({
     business_name: '',
@@ -39,6 +48,7 @@ export default function SettingsPage() {
     email_inventory: false,
     email_weekly: false,
   });
+  const [portalLanguage, setPortalLanguage] = useState(language);
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
     newPassword: '',
@@ -48,8 +58,14 @@ export default function SettingsPage() {
   const [passwordSuccess, setPasswordSuccess] = useState('');
 
   useEffect(() => {
+    // Initial settings hydration is route-scoped; re-fetching on every render is unnecessary.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     loadSettings();
   }, []);
+
+  useEffect(() => {
+    setPortalLanguage(language);
+  }, [language]);
 
   const hydrateProfileFromStoredUser = () => {
     if (typeof window === 'undefined') {
@@ -94,9 +110,7 @@ export default function SettingsPage() {
           address: data.address || '',
         });
       } else {
-        setLoadError(
-          'Business profile details are temporarily unavailable. You can still update password and notification preferences while profile data is being restored.'
-        );
+        setLoadError(t('settings.profileUnavailable'));
         hydrateProfileFromStoredUser();
       }
 
@@ -108,14 +122,17 @@ export default function SettingsPage() {
           email_inventory: preferences.email_inventory ?? false,
           email_weekly: preferences.email_weekly ?? false,
         });
+        const nextLanguage = preferences.portal_language ?? 'en';
+        setPortalLanguage(nextLanguage);
+        setLanguage(nextLanguage);
       } else {
         setPreferencesError(
-          'Notification preferences could not be loaded. Default settings are shown until the connection is restored.'
+          t('settings.preferencesUnavailable')
         );
       }
     } catch (error) {
       console.error('Failed to load settings:', error);
-      setLoadError('Business profile details are temporarily unavailable. You can still update password and notification preferences while profile data is being restored.');
+      setLoadError(t('settings.profileUnavailable'));
       hydrateProfileFromStoredUser();
     } finally {
       setLoading(false);
@@ -127,32 +144,58 @@ export default function SettingsPage() {
     try {
       const [profileResult, preferencesResult] = await Promise.allSettled([
         apiClient.updateProfile(profile),
-        apiClient.updateSettingsPreferences(notifications),
+        apiClient.updateSettingsPreferences({
+          ...notifications,
+          portal_language: portalLanguage,
+        }),
       ]);
 
       if (profileResult.status === 'fulfilled') {
         setLoadError('');
       } else {
-        setLoadError('Business profile details could not be saved. Please try again.');
+        setLoadError(t('settings.profileSaveFailed'));
       }
 
       if (preferencesResult.status === 'fulfilled') {
         setPreferencesError('');
       } else {
-        setPreferencesError('Notification preferences could not be saved. Please try again.');
+        setPreferencesError(t('settings.preferencesSaveFailed'));
       }
 
       if (profileResult.status === 'fulfilled' && preferencesResult.status === 'fulfilled') {
-        alert(profileResult.value.message || '✅ Settings saved successfully!');
+        alert(profileResult.value.message || t('settings.savedSuccess'));
       } else if (profileResult.status === 'fulfilled' || preferencesResult.status === 'fulfilled') {
-        alert('⚠️ Settings saved partially. Review the warnings on this page and retry the failed section.');
+        alert(t('settings.savedPartial'));
       } else {
         throw new Error('Failed to save settings.');
       }
     } catch (error: any) {
-      alert('❌ Failed to save: ' + (error.response?.data?.detail || error.message));
+      alert(
+        t('settings.saveFailedPrefix', {
+          message: error.response?.data?.detail || error.message,
+        }),
+      );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleLanguageChange = async (nextLanguage: typeof portalLanguage) => {
+    setPortalLanguage(nextLanguage);
+    setLanguage(nextLanguage);
+    setSavingLanguage(true);
+    setLanguageError('');
+    setLanguageStatus(t('settings.languageSaving'));
+
+    try {
+      await apiClient.updateSettingsPreferences({ portal_language: nextLanguage });
+      setLanguageStatus(t('settings.languageSaved'));
+    } catch (error) {
+      console.error('Failed to persist portal language:', error);
+      setLanguageStatus('');
+      setLanguageError(t('settings.languageUnsynced'));
+    } finally {
+      setSavingLanguage(false);
     }
   };
 
@@ -162,11 +205,11 @@ export default function SettingsPage() {
     setPasswordSuccess('');
 
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setPasswordError('New passwords do not match.');
+      setPasswordError(t('settings.passwordMismatch'));
       return;
     }
 
-    const validationError = validatePassword(passwordForm.newPassword);
+    const validationError = validatePassword(passwordForm.newPassword, t);
     if (validationError) {
       setPasswordError(validationError);
       return;
@@ -179,7 +222,7 @@ export default function SettingsPage() {
         new_password: passwordForm.newPassword,
       });
 
-      setPasswordSuccess(result.message || 'Password changed successfully. Redirecting to login...');
+      setPasswordSuccess(result.message || t('settings.passwordUpdated'));
       setPasswordForm({
         currentPassword: '',
         newPassword: '',
@@ -193,7 +236,7 @@ export default function SettingsPage() {
         error?.response?.data?.detail ||
           error?.response?.data?.message ||
           error?.message ||
-          'Failed to change password.'
+          t('settings.passwordUpdateFailed')
       );
     } finally {
       setSavingPassword(false);
@@ -213,9 +256,9 @@ export default function SettingsPage() {
   return (
     <div className="max-w-6xl space-y-6">
       <PageHeader
-        eyebrow="Settings"
-        title="Manage merchant profile, notifications, and account access."
-        description="Settings should feel like a calm place to maintain contact details, alert preferences, and security controls without dropping back into an internal admin form."
+        eyebrow={t('settings.eyebrow')}
+        title={t('settings.title')}
+        description={t('settings.description')}
       />
 
       {loadError ? (
@@ -234,15 +277,15 @@ export default function SettingsPage() {
 
       <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <SurfaceCard
-          title="Business profile"
-          description="Keep the merchant-facing identity and contact information used across your workspace up to date."
-          action={<StatusBadge tone="brand" icon={User}>Profile</StatusBadge>}
+          title={t('settings.profileCardTitle')}
+          description={t('settings.profileCardDescription')}
+          action={<StatusBadge tone="brand" icon={User}>{t('settings.profileBadge')}</StatusBadge>}
         >
           <div className="space-y-4 p-5">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-muted-strong)]">
-                  Business Name
+                  {t('settings.businessName')}
                 </label>
                 <input
                   type="text"
@@ -253,7 +296,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-muted-strong)]">
-                  Contact Email
+                  {t('settings.contactEmail')}
                 </label>
                 <input
                   type="email"
@@ -264,7 +307,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-muted-strong)]">
-                  Phone Number
+                  {t('settings.phoneNumber')}
                 </label>
                 <input
                   type="tel"
@@ -275,20 +318,20 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-muted-strong)]">
-                  Website
+                  {t('settings.website')}
                 </label>
                 <input
                   type="url"
                   value={profile.website}
                   onChange={(e) => setProfile({ ...profile, website: e.target.value })}
                   className="merchant-input"
-                  placeholder="https://example.com"
+                  placeholder={t('settings.websitePlaceholder')}
                 />
               </div>
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-muted-strong)]">
-                Business Address
+                {t('settings.businessAddress')}
               </label>
               <textarea
                 value={profile.address}
@@ -301,15 +344,15 @@ export default function SettingsPage() {
         </SurfaceCard>
 
         <SurfaceCard
-          title="Notifications"
-          description="Choose which merchant updates deserve attention in your inbox."
-          action={<StatusBadge tone="neutral" icon={Bell}>Email preferences</StatusBadge>}
+          title={t('settings.notificationsCardTitle')}
+          description={t('settings.notificationsCardDescription')}
+          action={<StatusBadge tone="neutral" icon={Bell}>{t('settings.notificationsBadge')}</StatusBadge>}
         >
           <div className="space-y-3 p-5">
             <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
               <div>
-                <div className="font-medium text-[color:var(--merchant-ink)]">New orders</div>
-                <div className="text-sm text-[color:var(--merchant-muted)]">Get notified when new orders land in the portal</div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">{t('settings.notificationOrdersTitle')}</div>
+                <div className="text-sm text-[color:var(--merchant-muted)]">{t('settings.notificationOrdersDescription')}</div>
               </div>
               <input
                 type="checkbox"
@@ -320,8 +363,8 @@ export default function SettingsPage() {
             </label>
             <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
               <div>
-                <div className="font-medium text-[color:var(--merchant-ink)]">Payment updates</div>
-                <div className="text-sm text-[color:var(--merchant-muted)]">Notifications about settlement or payment status changes</div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">{t('settings.notificationPaymentsTitle')}</div>
+                <div className="text-sm text-[color:var(--merchant-muted)]">{t('settings.notificationPaymentsDescription')}</div>
               </div>
               <input
                 type="checkbox"
@@ -332,8 +375,8 @@ export default function SettingsPage() {
             </label>
             <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
               <div>
-                <div className="font-medium text-[color:var(--merchant-ink)]">Low inventory</div>
-                <div className="text-sm text-[color:var(--merchant-muted)]">Alert the team when stock levels need attention</div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">{t('settings.notificationInventoryTitle')}</div>
+                <div className="text-sm text-[color:var(--merchant-muted)]">{t('settings.notificationInventoryDescription')}</div>
               </div>
               <input
                 type="checkbox"
@@ -344,8 +387,8 @@ export default function SettingsPage() {
             </label>
             <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
               <div>
-                <div className="font-medium text-[color:var(--merchant-ink)]">Weekly reports</div>
-                <div className="text-sm text-[color:var(--merchant-muted)]">Receive a quieter weekly summary of performance and catalog health</div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">{t('settings.notificationWeeklyTitle')}</div>
+                <div className="text-sm text-[color:var(--merchant-muted)]">{t('settings.notificationWeeklyDescription')}</div>
               </div>
               <input
                 type="checkbox"
@@ -358,11 +401,35 @@ export default function SettingsPage() {
         </SurfaceCard>
       </div>
 
+      <SurfaceCard
+        title={t('settings.languageCardTitle')}
+        description={t('settings.languageCardDescription')}
+        action={<StatusBadge tone="brand" icon={Languages}>{t('settings.languageBadge')}</StatusBadge>}
+      >
+        <div className="space-y-4 p-5">
+          <PortalLanguageSwitcher
+            variant="grid"
+            value={portalLanguage}
+            onChange={handleLanguageChange}
+            disabled={savingLanguage}
+          />
+          {languageStatus ? (
+            <p className="text-sm text-[color:var(--merchant-muted)]">{languageStatus}</p>
+          ) : null}
+          {languageError ? (
+            <div className="flex items-start gap-3 rounded-[1rem] border border-[color:var(--merchant-warning-soft)] bg-[color:var(--merchant-warning-soft)]/65 px-4 py-3 text-sm text-[color:var(--merchant-warning)]">
+              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <p>{languageError}</p>
+            </div>
+          ) : null}
+        </div>
+      </SurfaceCard>
+
       {/* Security */}
       <SurfaceCard
-        title="Security"
-        description="Keep merchant credentials current. Additional account-protection controls will return after a full verification flow is available."
-        action={<StatusBadge tone="warning" icon={Shield}>Account access</StatusBadge>}
+        title={t('settings.securityCardTitle')}
+        description={t('settings.securityCardDescription')}
+        action={<StatusBadge tone="warning" icon={Shield}>{t('settings.securityBadge')}</StatusBadge>}
       >
         <div className="space-y-4 p-5">
           {passwordError ? (
@@ -383,14 +450,14 @@ export default function SettingsPage() {
                 <Lock className="w-5 h-5 text-[color:var(--merchant-brand)]" />
               </div>
               <div>
-                <div className="font-medium text-[color:var(--merchant-ink)]">Change password</div>
-                <div className="text-sm text-[color:var(--merchant-muted)]">Update your merchant login password.</div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">{t('settings.changePasswordTitle')}</div>
+                <div className="text-sm text-[color:var(--merchant-muted)]">{t('settings.changePasswordDescription')}</div>
               </div>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-[color:var(--merchant-muted-strong)] mb-2">
-                Current Password
+                {t('settings.currentPassword')}
               </label>
               <input
                 type="password"
@@ -400,14 +467,14 @@ export default function SettingsPage() {
                 }
                 required
                 className="merchant-input"
-                placeholder="Enter your current password"
+                placeholder={t('settings.currentPasswordPlaceholder')}
               />
             </div>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <label className="block text-sm font-medium text-[color:var(--merchant-muted-strong)] mb-2">
-                  New Password
+                  {t('settings.newPassword')}
                 </label>
                 <input
                   type="password"
@@ -417,12 +484,12 @@ export default function SettingsPage() {
                   }
                   required
                   className="merchant-input"
-                  placeholder="Enter a new password"
+                  placeholder={t('settings.newPasswordPlaceholder')}
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-[color:var(--merchant-muted-strong)] mb-2">
-                  Confirm New Password
+                  {t('settings.confirmNewPassword')}
                 </label>
                 <input
                   type="password"
@@ -432,20 +499,20 @@ export default function SettingsPage() {
                   }
                   required
                   className="merchant-input"
-                  placeholder="Confirm the new password"
+                  placeholder={t('settings.confirmNewPasswordPlaceholder')}
                 />
               </div>
             </div>
 
             <p className="text-xs text-[color:var(--merchant-muted)]">
-              Use at least 8 characters with uppercase, lowercase, and a number.
+              {t('settings.passwordHelp')}
             </p>
 
             <MerchantButton
               type="submit"
               disabled={savingPassword}
             >
-              {savingPassword ? 'Updating Password...' : 'Update Password'}
+              {savingPassword ? t('settings.updatingPassword') : t('settings.updatePassword')}
             </MerchantButton>
           </form>
         </div>
@@ -458,7 +525,7 @@ export default function SettingsPage() {
           disabled={saving}
           icon={saving ? Loader2 : Save}
         >
-          <span>{saving ? 'Saving...' : 'Save changes'}</span>
+          <span>{saving ? t('settings.saving') : t('settings.saveChanges')}</span>
         </MerchantButton>
       </div>
     </div>

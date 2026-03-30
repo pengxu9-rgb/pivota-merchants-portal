@@ -1,3 +1,5 @@
+'use client';
+
 import type { FormEvent } from 'react';
 import {
   AlertCircle,
@@ -9,6 +11,7 @@ import {
   Plus,
   Wallet,
 } from 'lucide-react';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { cx } from '@/lib/cx';
 import type { PSPFormData, PSPType } from '@/lib/onboarding';
 
@@ -107,6 +110,30 @@ function fieldCopy(pspType: PSPType) {
   }
 }
 
+function providerDescription(pspType: Exclude<PSPType, ''>, t: (key: string) => string) {
+  switch (pspType) {
+    case 'stripe':
+      return t('auth.psp.providerStripeDescription');
+    case 'adyen':
+      return t('auth.psp.providerAdyenDescription');
+    case 'paypal':
+      return t('auth.psp.providerPaypalDescription');
+    case 'checkout':
+      return t('auth.psp.providerCheckoutDescription');
+    case 'other':
+      return t('auth.psp.providerOtherDescription');
+    default:
+      return '';
+  }
+}
+
+function providerName(pspType: Exclude<PSPType, ''>, fallbackName: string, t: (key: string) => string) {
+  if (pspType === 'other') {
+    return t('auth.psp.providerOtherName');
+  }
+  return fallbackName;
+}
+
 export default function PSPSetupStep({
   merchantId,
   formData,
@@ -117,27 +144,69 @@ export default function PSPSetupStep({
   onChange,
   onSubmit,
 }: PSPSetupStepProps) {
-  const copy = fieldCopy(formData.pspType);
+  const { t } = useMerchantLanguage();
+  const copy = (() => {
+    const defaults = fieldCopy(formData.pspType);
+    switch (formData.pspType) {
+      case 'stripe':
+        return {
+          ...defaults,
+          apiKeyLabel: t('auth.psp.secretKeyLabel'),
+          apiKeyPlaceholder: t('auth.psp.secretKeyPlaceholderStripe'),
+          apiKeyHelp: t('auth.psp.secretKeyHelpStripe'),
+        };
+      case 'adyen':
+        return {
+          ...defaults,
+          apiKeyLabel: t('auth.psp.apiKeyLabel'),
+          apiKeyPlaceholder: t('auth.psp.apiKeyPlaceholderAdyen'),
+          apiKeyHelp: t('auth.psp.apiKeyHelpAdyen'),
+        };
+      case 'paypal':
+        return {
+          ...defaults,
+          apiKeyLabel: t('auth.psp.paypalClientIdLabel'),
+          apiKeyPlaceholder: t('auth.psp.paypalClientIdPlaceholder'),
+          apiKeyHelp: t('auth.psp.paypalClientIdHelp'),
+        };
+      case 'checkout':
+        return {
+          ...defaults,
+          apiKeyLabel: t('auth.psp.secretKeyLabel'),
+          apiKeyPlaceholder: t('auth.psp.secretKeyPlaceholderCheckout'),
+          apiKeyHelp: t('auth.psp.secretKeyHelpCheckout'),
+        };
+      case 'other':
+        return {
+          ...defaults,
+          apiKeyLabel: t('auth.psp.apiKeyLabel'),
+          apiKeyPlaceholder: t('auth.psp.apiKeyPlaceholderOther'),
+          apiKeyHelp: t('auth.psp.apiKeyHelpOther'),
+        };
+      default:
+        return defaults;
+    }
+  })();
 
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <div className="merchant-overline">Step 2 · Payment setup</div>
+        <div className="merchant-overline">{t('auth.psp.stepEyebrow')}</div>
         <h2 className="text-[1.9rem] font-semibold tracking-[-0.045em] text-[color:var(--merchant-ink)]">
-          Connect your payment provider
+          {t('auth.psp.title')}
         </h2>
         <p className="max-w-2xl text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-          Connect the PSP used for merchant-native checkout, or finish onboarding now and configure it later in the dashboard.
+          {t('auth.psp.description')}
         </p>
       </div>
 
       <div className="rounded-[24px] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-4 py-3 text-sm text-[color:var(--merchant-muted-strong)]">
-        Merchant ID: <span className="font-mono text-[color:var(--merchant-ink)]">{merchantId}</span>
+        {t('auth.psp.merchantIdLabel')}: <span className="font-mono text-[color:var(--merchant-ink)]">{merchantId}</span>
       </div>
 
       <form onSubmit={onSubmit} className="space-y-5">
         <div>
-          <span className={labelClassName}>Payment provider</span>
+          <span className={labelClassName}>{t('auth.psp.paymentProviderLabel')}</span>
           <div className="grid gap-3 sm:grid-cols-2">
             {providerCards.map((provider) => {
               const Icon = provider.icon;
@@ -173,10 +242,10 @@ export default function PSPSetupStep({
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-[color:var(--merchant-ink)]">
-                        {provider.name}
+                        {providerName(provider.id, provider.name, t)}
                       </p>
                       <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-                        {provider.description}
+                        {providerDescription(provider.id, t)}
                       </p>
                     </div>
                   </div>
@@ -188,13 +257,13 @@ export default function PSPSetupStep({
 
         {formData.pspType === 'other' ? (
           <label className="block">
-            <span className={labelClassName}>Provider name</span>
+            <span className={labelClassName}>{t('auth.psp.providerNameLabel')}</span>
             <input
               type="text"
               value={formData.customPspName}
               onChange={(event) => onChange('customPspName', event.target.value)}
               className={inputClassName}
-              placeholder="Mollie, Square, Braintree, or another PSP"
+              placeholder={t('auth.psp.providerNamePlaceholder')}
             />
           </label>
         ) : null}
@@ -220,13 +289,13 @@ export default function PSPSetupStep({
 
             {formData.pspType === 'paypal' ? (
               <label className="block sm:col-span-2">
-                <span className={labelClassName}>Client secret</span>
+                <span className={labelClassName}>{t('auth.psp.paypalClientSecretLabel')}</span>
                 <input
                   type="password"
                   value={formData.secretKey}
                   onChange={(event) => onChange('secretKey', event.target.value)}
                   className={inputClassName}
-                  placeholder="Paste your PayPal client secret"
+                  placeholder={t('auth.psp.paypalClientSecretPlaceholder')}
                   autoComplete="off"
                 />
               </label>
@@ -234,26 +303,26 @@ export default function PSPSetupStep({
 
             {formData.pspType === 'adyen' ? (
               <label className="block sm:col-span-2">
-                <span className={labelClassName}>Merchant account</span>
+                <span className={labelClassName}>{t('auth.psp.adyenMerchantAccountLabel')}</span>
                 <input
                   type="text"
                   value={formData.accountId}
                   onChange={(event) => onChange('accountId', event.target.value)}
                   className={inputClassName}
-                  placeholder="YourCompanyECOM"
+                  placeholder={t('auth.psp.adyenMerchantAccountPlaceholder')}
                 />
               </label>
             ) : null}
 
             {formData.pspType === 'checkout' ? (
               <label className="block sm:col-span-2">
-                <span className={labelClassName}>Processing channel ID</span>
+                <span className={labelClassName}>{t('auth.psp.checkoutChannelLabel')}</span>
                 <input
                   type="text"
                   value={formData.accountId}
                   onChange={(event) => onChange('accountId', event.target.value)}
                   className={inputClassName}
-                  placeholder="pc_..."
+                  placeholder={t('auth.psp.checkoutChannelPlaceholder')}
                 />
               </label>
             ) : null}
@@ -275,9 +344,9 @@ export default function PSPSetupStep({
             onClick={onBack}
             className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[color:var(--merchant-line-strong)] px-4 py-3 text-sm font-medium text-[color:var(--merchant-muted-strong)] transition hover:bg-white"
           >
-            <ArrowLeft className="h-4.5 w-4.5" />
-            <span>Back</span>
-          </button>
+              <ArrowLeft className="h-4.5 w-4.5" />
+              <span>{t('auth.psp.back')}</span>
+            </button>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <button
@@ -285,7 +354,7 @@ export default function PSPSetupStep({
               onClick={onSkip}
               className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[color:var(--merchant-line-strong)] px-4 py-3 text-sm font-medium text-[color:var(--merchant-ink)] transition hover:bg-white"
             >
-              <span>Set up later</span>
+              <span>{t('auth.psp.setUpLater')}</span>
             </button>
             <button
               type="submit"
@@ -295,11 +364,11 @@ export default function PSPSetupStep({
               {loading ? (
                 <>
                   <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                  <span>Saving setup...</span>
+                  <span>{t('auth.psp.saving')}</span>
                 </>
               ) : (
                 <>
-                  <span>Continue to documents</span>
+                  <span>{t('auth.psp.continue')}</span>
                   <ArrowRight className="h-4.5 w-4.5" />
                 </>
               )}

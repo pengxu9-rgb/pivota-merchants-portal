@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { apiClient } from "@/lib/api-client";
 import { MerchantAppShell } from "@/components/ui/merchant-app-shell";
+import { useMerchantLanguage } from "@/components/portal/merchant-language-provider";
 
 const INTERNAL_ONLY_PREFIXES = [
   "/dashboard/mcp",
@@ -31,40 +32,61 @@ export default function DashboardLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [routeAllowed, setRouteAllowed] = useState(true);
+  const { setLanguage, t } = useMerchantLanguage();
 
   useEffect(() => {
-    // Check authentication
-    const token = localStorage.getItem("merchant_token");
-    const userData = localStorage.getItem("merchant_user");
+    let cancelled = false;
 
-    if (!token) {
-      router.push("/login");
-      return;
-    }
+    async function initializeWorkspace() {
+      const token = localStorage.getItem("merchant_token");
+      const userData = localStorage.getItem("merchant_user");
 
-    if (userData) {
+      if (!token) {
+        router.push("/login");
+        return;
+      }
+
+      if (userData) {
+        try {
+          const parsed = JSON.parse(userData);
+          const role = String(parsed?.role || "merchant").toLowerCase();
+          const isInternalOnlyRoute = INTERNAL_ONLY_PREFIXES.some((prefix) =>
+            pathname.startsWith(prefix)
+          );
+
+          setUser(parsed);
+
+          if (isInternalOnlyRoute && !INTERNAL_ALLOWED_ROLES.has(role)) {
+            setRouteAllowed(false);
+            router.replace("/dashboard");
+            return;
+          }
+        } catch {
+          setUser(null);
+        }
+      }
+
       try {
-        const parsed = JSON.parse(userData);
-        const role = String(parsed?.role || "merchant").toLowerCase();
-        const isInternalOnlyRoute = INTERNAL_ONLY_PREFIXES.some((prefix) =>
-          pathname.startsWith(prefix)
-        );
-
-        setUser(parsed);
-
-        if (isInternalOnlyRoute && !INTERNAL_ALLOWED_ROLES.has(role)) {
-          setRouteAllowed(false);
-          router.replace("/dashboard");
-          return;
+        const preferences = await apiClient.getSettingsPreferences();
+        if (!cancelled && preferences?.portal_language) {
+          setLanguage(preferences.portal_language);
         }
       } catch {
-        setUser(null);
+        // Keep local language selection when preference fetch is unavailable.
+      }
+
+      if (!cancelled) {
+        setRouteAllowed(true);
+        setLoading(false);
       }
     }
 
-    setRouteAllowed(true);
-    setLoading(false);
-  }, [pathname, router]);
+    void initializeWorkspace();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname, router, setLanguage]);
 
   const handleLogout = () => {
     apiClient.logout();
@@ -78,10 +100,10 @@ export default function DashboardLayout({
             <div className="animate-spin rounded-full h-10 w-10 border-2 border-[color:var(--merchant-line-strong)] border-t-[color:var(--merchant-brand)]"></div>
             <div className="space-y-1">
               <p className="text-sm font-medium text-[color:var(--merchant-ink)]">
-                Loading merchant workspace
+                {t("shell.loadingTitle")}
               </p>
               <p className="text-sm text-[color:var(--merchant-muted)]">
-                Preparing catalog, orders, and payment context.
+                {t("shell.loadingDescription")}
               </p>
             </div>
           </div>

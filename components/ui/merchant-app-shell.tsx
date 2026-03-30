@@ -14,10 +14,12 @@ import {
 import { cx } from "@/lib/cx";
 import {
   isNavigationItemActive,
+  type MerchantNavigationItem,
   primaryNavigation,
   settingsNavigationItem,
   workflowNavigation,
 } from "@/lib/merchant-navigation";
+import { useMerchantLanguage } from "@/components/portal/merchant-language-provider";
 
 type MerchantAppShellProps = {
   children: ReactNode;
@@ -43,12 +45,13 @@ function NavigationGroup({
   collapsed = false,
 }: {
   label: string;
-  items: typeof primaryNavigation;
+  items: MerchantNavigationItem[];
   pathname: string;
   onNavigate: () => void;
   collapsible?: boolean;
   collapsed?: boolean;
 }) {
+  const { t } = useMerchantLanguage();
   const hasActiveItem = items.some((item) => isNavigationItemActive(pathname, item));
   const [isOpen, setIsOpen] = useState(!collapsible || hasActiveItem);
 
@@ -84,9 +87,10 @@ function NavigationGroup({
       <div className={cx("space-y-0.5", !isOpen && "hidden")}>
         {items.map((item) => {
           const isActive = isNavigationItemActive(pathname, item);
+          const translatedLabel = item.labelKey ? t(item.labelKey) : item.label;
           return (
           <Link
-              key={item.label}
+              key={item.href}
               href={item.href}
               onClick={onNavigate}
               className={cx(
@@ -94,8 +98,8 @@ function NavigationGroup({
                 isActive && "merchant-nav-link-active",
                 collapsed && "lg:justify-center lg:px-0 lg:py-2.5"
               )}
-              title={item.label}
-              aria-label={item.label}
+              title={translatedLabel}
+              aria-label={translatedLabel}
             >
               <item.icon className="h-3.5 w-3.5 flex-shrink-0" />
               <div
@@ -104,7 +108,7 @@ function NavigationGroup({
                   collapsed && "lg:hidden"
                 )}
               >
-                {item.label}
+                {translatedLabel}
               </div>
             </Link>
           );
@@ -123,6 +127,7 @@ export function MerchantAppShell({
   user,
 }: MerchantAppShellProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const { t } = useMerchantLanguage();
 
   useEffect(() => {
     try {
@@ -151,7 +156,7 @@ export function MerchantAppShell({
           type="button"
           className="fixed inset-0 z-40 bg-[rgba(34,28,22,0.36)] backdrop-blur-sm lg:hidden"
           onClick={() => setSidebarOpen(false)}
-          aria-label="Close sidebar"
+          aria-label={t("shell.closeSidebar")}
         />
       ) : null}
 
@@ -170,7 +175,7 @@ export function MerchantAppShell({
                 "flex min-w-0 items-start gap-3",
                 sidebarCollapsed && "lg:justify-center lg:gap-0"
               )}
-              title="Pivota merchant portal"
+              title={`Pivota ${t("auth.shell.portalWordmark")}`}
             >
               <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]">
                 <Store className="h-4.5 w-4.5" />
@@ -184,13 +189,13 @@ export function MerchantAppShell({
                 <p className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
                   Pivota
                 </p>
-                <p className="text-[11px] text-[color:var(--merchant-muted)]">Merchant control center</p>
+                <p className="text-[11px] text-[color:var(--merchant-muted)]">{t("shell.controlCenter")}</p>
                 <p className="truncate pt-1 text-[12px] text-[color:var(--merchant-muted-strong)]">
                   {user?.email || "merchant@pivota.cc"}
                 </p>
                 <div className="flex items-start gap-1.5 text-[10px] leading-4 text-[color:var(--merchant-muted)]">
-                  <span className="merchant-overline shrink-0">ID</span>
-                  <span className="break-all">{user?.merchant_id || "Pending"}</span>
+                  <span className="merchant-overline shrink-0">{t("shell.id")}</span>
+                  <span className="break-all">{user?.merchant_id || t("shell.pending")}</span>
                 </div>
               </div>
             </Link>
@@ -199,8 +204,8 @@ export function MerchantAppShell({
                 type="button"
                 className="merchant-icon-button hidden lg:inline-flex"
                 onClick={() => setSidebarCollapsed((value) => !value)}
-                aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                aria-label={sidebarCollapsed ? t("shell.expandSidebar") : t("shell.collapseSidebar")}
+                title={sidebarCollapsed ? t("shell.expandSidebar") : t("shell.collapseSidebar")}
               >
                 {sidebarCollapsed ? (
                   <ChevronsRight className="h-4 w-4" />
@@ -221,14 +226,14 @@ export function MerchantAppShell({
 
         <nav className="mt-2 flex-1 space-y-4 overflow-y-auto pr-1">
           <NavigationGroup
-            label="Navigate"
+            label={t("shell.navigate")}
             items={primaryNavigation}
             pathname={pathname}
             onNavigate={() => setSidebarOpen(false)}
             collapsed={sidebarCollapsed}
           />
           <NavigationGroup
-            label="Workflows"
+            label={t("shell.workflows")}
             items={workflowNavigation}
             pathname={pathname}
             onNavigate={() => setSidebarOpen(false)}
@@ -246,12 +251,12 @@ export function MerchantAppShell({
               isNavigationItemActive(pathname, settingsNavigationItem) &&
                 "merchant-nav-link-active"
             )}
-            title={settingsNavigationItem.label}
-            aria-label={settingsNavigationItem.label}
+            title={settingsNavigationItem.labelKey ? t(settingsNavigationItem.labelKey) : settingsNavigationItem.label}
+            aria-label={settingsNavigationItem.labelKey ? t(settingsNavigationItem.labelKey) : settingsNavigationItem.label}
           >
             <settingsNavigationItem.icon className="h-4 w-4 flex-shrink-0" />
             <div className={cx("font-medium", sidebarCollapsed && "lg:hidden")}>
-              {settingsNavigationItem.label}
+              {settingsNavigationItem.labelKey ? t(settingsNavigationItem.labelKey) : settingsNavigationItem.label}
             </div>
           </Link>
           <button
@@ -261,12 +266,12 @@ export function MerchantAppShell({
               "merchant-nav-link w-full text-left text-[color:var(--merchant-critical)]",
               sidebarCollapsed && "lg:justify-center lg:px-0 lg:py-2.5"
             )}
-            title="Log out"
-            aria-label="Log out"
+            title={t("shell.logout")}
+            aria-label={t("shell.logout")}
           >
             <LogOut className="h-4 w-4" />
             <div className={cx("font-medium", sidebarCollapsed && "lg:hidden")}>
-              Log out
+              {t("shell.logout")}
             </div>
           </button>
         </div>

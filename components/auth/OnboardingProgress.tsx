@@ -1,5 +1,8 @@
+'use client';
+
 import type { LucideIcon } from 'lucide-react';
 import { CheckCircle2 } from 'lucide-react';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { cx } from '@/lib/cx';
 
 type ProgressStep = {
@@ -15,6 +18,7 @@ interface OnboardingProgressProps {
 
 export function OnboardingProgress({ steps, currentStep }: OnboardingProgressProps) {
   const currentStepIndex = steps.findIndex((step) => step.id === currentStep);
+  const { t } = useMerchantLanguage();
 
   return (
     <div className="rounded-[26px] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-4 py-4">
@@ -51,7 +55,7 @@ export function OnboardingProgress({ steps, currentStep }: OnboardingProgressPro
                 </div>
                 <div className="min-w-0">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
-                    Step {index + 1}
+                    {t('auth.signup.progress.step', { count: index + 1 })}
                   </p>
                   <p className="mt-0.5 text-sm font-semibold text-[color:var(--merchant-ink)]">
                     {step.title}

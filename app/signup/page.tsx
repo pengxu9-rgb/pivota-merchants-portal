@@ -9,6 +9,7 @@ import DocumentUploadStep from '@/components/DocumentUploadStep';
 import CompletionStep from '@/components/CompletionStep';
 import { AuthShell } from '@/components/auth/AuthShell';
 import { OnboardingProgress } from '@/components/auth/OnboardingProgress';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { onboardingApi } from '@/lib/api';
 import {
   emptyPspDraft,
@@ -21,34 +22,6 @@ import {
   type SignupSessionState,
   type SignupStepId,
 } from '@/lib/onboarding';
-
-const signupHighlights = [
-  {
-    title: 'One merchant account from start to dashboard',
-    description:
-      'Create the merchant record once and keep the same identity through signup, approval, and portal access.',
-    icon: Store,
-  },
-  {
-    title: 'Merchant-native payment setup',
-    description:
-      'Connect the PSP already used for merchant-native checkout, or finish onboarding first and connect it later.',
-    icon: CreditCard,
-  },
-  {
-    title: 'Portal-ready from day one',
-    description:
-      'Move from onboarding into the merchant portal without switching to a separate registration system.',
-    icon: Sparkles,
-  },
-] as const;
-
-const steps = [
-  { id: 'register', title: 'Business info', icon: Store },
-  { id: 'psp', title: 'Payment setup', icon: CreditCard },
-  { id: 'documents', title: 'Documents', icon: FileText },
-  { id: 'complete', title: 'Complete', icon: Rocket },
-] as const;
 
 function toPublicRegistrationDraft(formData: RegistrationFormData): PublicRegistrationDraft {
   const { password: _password, confirm_password: _confirmPassword, ...publicDraft } = formData;
@@ -142,6 +115,7 @@ function normalizeEmail(value: string) {
 }
 
 export default function MerchantSignup() {
+  const { t } = useMerchantLanguage();
   const [currentStep, setCurrentStep] = useState<SignupStepId>('register');
   const [onboardingData, setOnboardingData] = useState<OnboardingData>({});
   const [registrationForm, setRegistrationForm] =
@@ -195,18 +169,51 @@ export default function MerchantSignup() {
     () => (
       <div className="text-right">
         <p className="text-[11px] uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
-          Already registered?
+          {t('auth.shell.alreadyRegistered')}
         </p>
         <Link
           href="/login"
           className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-[color:var(--merchant-brand)] hover:text-[color:var(--merchant-brand-strong)]"
         >
-          <span>Sign in</span>
+          <span>{t('auth.shell.signIn')}</span>
           <ArrowRight className="h-4 w-4" />
         </Link>
       </div>
     ),
-    [],
+    [t],
+  );
+
+  const signupHighlights = useMemo(
+    () =>
+      [
+        {
+          title: t('auth.signup.highlightAccountTitle'),
+          description: t('auth.signup.highlightAccountDescription'),
+          icon: Store,
+        },
+        {
+          title: t('auth.signup.highlightPaymentsTitle'),
+          description: t('auth.signup.highlightPaymentsDescription'),
+          icon: CreditCard,
+        },
+        {
+          title: t('auth.signup.highlightPortalTitle'),
+          description: t('auth.signup.highlightPortalDescription'),
+          icon: Sparkles,
+        },
+      ] as const,
+    [t],
+  );
+
+  const steps = useMemo(
+    () =>
+      [
+        { id: 'register', title: t('auth.registration.businessDetailsTitle'), icon: Store },
+        { id: 'psp', title: t('auth.psp.title'), icon: CreditCard },
+        { id: 'documents', title: t('auth.documents.recommendedTitle'), icon: FileText },
+        { id: 'complete', title: t('auth.complete.readyTitle'), icon: Rocket },
+      ] as const,
+    [t],
   );
 
   const clearSignupSession = () => {
@@ -235,12 +242,12 @@ export default function MerchantSignup() {
     setError('');
 
     if (registrationForm.password !== registrationForm.confirm_password) {
-      setError('Passwords do not match.');
+      setError(t('auth.signup.passwordMismatch'));
       return;
     }
 
     if (registrationForm.password.length < 8) {
-      setError('Password must be at least 8 characters long.');
+      setError(t('auth.signup.passwordTooShort'));
       return;
     }
 
@@ -273,7 +280,7 @@ export default function MerchantSignup() {
       setCurrentStep('psp');
       setError('');
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Registration failed. Please try again.'));
+      setError(getApiErrorMessage(err, t('auth.signup.registrationFailed')));
     } finally {
       setLoading(false);
     }
@@ -284,33 +291,33 @@ export default function MerchantSignup() {
     setError('');
 
     if (!onboardingData.merchant_id) {
-      setError('Your merchant record is missing. Please restart registration.');
+      setError(t('auth.signup.merchantMissing'));
       setCurrentStep('register');
       return;
     }
 
     if (!pspForm.pspType) {
-      setError('Select a payment provider or choose "Set up later".');
+      setError(t('auth.signup.selectProvider'));
       return;
     }
 
     if (pspForm.pspType === 'other' && !pspForm.customPspName.trim()) {
-      setError('Enter the name of your payment provider.');
+      setError(t('auth.signup.providerNameRequired'));
       return;
     }
 
     if (!pspForm.apiKey.trim()) {
-      setError('Enter the provider credential or choose "Set up later".');
+      setError(t('auth.signup.providerCredentialRequired'));
       return;
     }
 
     if (pspForm.pspType === 'paypal' && !pspForm.secretKey.trim()) {
-      setError('PayPal requires both Client ID and Client Secret.');
+      setError(t('auth.signup.paypalSecretRequired'));
       return;
     }
 
     if ((pspForm.pspType === 'adyen' || pspForm.pspType === 'checkout') && !pspForm.accountId.trim()) {
-      setError('This provider requires the account or channel identifier.');
+      setError(t('auth.signup.providerAccountRequired'));
       return;
     }
 
@@ -350,7 +357,7 @@ export default function MerchantSignup() {
       setCurrentStep('documents');
       setError('');
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Payment setup failed. Please check your credentials.'));
+      setError(getApiErrorMessage(err, t('auth.signup.paymentSetupFailed')));
     } finally {
       setLoading(false);
     }
@@ -367,7 +374,7 @@ export default function MerchantSignup() {
     setError('');
 
     if (!onboardingData.merchant_id) {
-      setError('Your merchant record is missing. Please restart registration.');
+      setError(t('auth.signup.merchantMissing'));
       setCurrentStep('register');
       return;
     }
@@ -378,7 +385,7 @@ export default function MerchantSignup() {
         return;
       }
 
-      setError('Upload at least one document or continue later only if you are pre-approved.');
+      setError(t('auth.signup.uploadRequired'));
       return;
     }
 
@@ -389,7 +396,7 @@ export default function MerchantSignup() {
       setCurrentStep('complete');
       setError('');
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Document upload failed. Please try again.'));
+      setError(getApiErrorMessage(err, t('auth.signup.documentUploadFailed')));
     } finally {
       setLoading(false);
     }
@@ -414,10 +421,10 @@ export default function MerchantSignup() {
   };
 
   return (
-    <AuthShell
-      eyebrow="Merchant control center"
-      title="Start merchant onboarding in the portal"
-      description="Create the merchant record once, complete payment and KYB setup, and continue into the portal with the same merchant account."
+      <AuthShell
+      eyebrow={t('auth.shell.controlCenter')}
+      title={t('auth.signup.pageTitle')}
+      description={t('auth.signup.pageDescription')}
       highlights={signupHighlights}
       showSidebar={false}
       panelAction={panelAction}
