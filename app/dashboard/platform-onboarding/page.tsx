@@ -194,7 +194,7 @@ export default function PlatformOnboardingPage() {
       const detail =
         err?.response?.data?.detail ||
         err?.message ||
-        'Validation failed. Please check your CSV file.';
+        t('dashboard.platformOnboarding.reports.validationFailed');
       setValidateResult(null);
       alert(detail);
     } finally {
@@ -207,7 +207,7 @@ export default function PlatformOnboardingPage() {
     setUploading(true);
     try {
       const data = await platformOnboardingApi.uploadReport(onboardingId, reportType, file);
-      alert('Report uploaded. Import task started.');
+      alert(t('dashboard.platformOnboarding.reports.uploadStarted'));
       if (data?.import_task_id) {
         const tRes = await platformOnboardingApi.listImportTasks(onboardingId);
         const tasks = Array.isArray(tRes.tasks) ? tRes.tasks : null;
@@ -218,7 +218,7 @@ export default function PlatformOnboardingPage() {
       const detail =
         err?.response?.data?.detail ||
         err?.message ||
-        'Upload failed. Please try again.';
+        t('dashboard.platformOnboarding.reports.uploadFailed');
       alert(detail);
     } finally {
       setUploading(false);
@@ -242,7 +242,7 @@ export default function PlatformOnboardingPage() {
       const detail =
         err?.response?.data?.detail ||
         err?.message ||
-        'Failed to load products.';
+        t('dashboard.platformOnboarding.reports.productsFailed');
       alert(detail);
     } finally {
       setProductsLoading(false);
@@ -267,7 +267,7 @@ export default function PlatformOnboardingPage() {
       const detail =
         err?.response?.data?.detail ||
         err?.message ||
-        'Failed to create test order.';
+        t('dashboard.platformOnboarding.reports.createTestOrderFailed');
       alert(detail);
     } finally {
       setOrdering(false);

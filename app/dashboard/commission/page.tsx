@@ -82,7 +82,16 @@ export default function CommissionPage() {
       );
       
       if (duplicate) {
-        alert(`⚠️ Duplicate Offer!\n\nAn offer already exists with these settings:\n• Agent Type: ${agentType || 'All Agents'}\n• Rate: ${(rate * 100).toFixed(2)}%\n• Min Order: $${minAmount.toFixed(2)}\n\nPlease use different parameters or delete the existing offer first.`);
+        alert(
+          `${t('dashboard.commission.alerts.duplicateTitle')}\n\n${t(
+            'dashboard.commission.alerts.duplicateBody',
+            {
+              agentType: agentType || t('dashboard.commission.table.allAgents'),
+              rate: `${(rate * 100).toFixed(2)}%`,
+              minOrder: `$${minAmount.toFixed(2)}`,
+            }
+          )}`
+        );
         return;
       }
       
@@ -100,12 +109,16 @@ export default function CommissionPage() {
       });
       loadOffers();
     } catch (err: any) {
-      alert('Failed to create offer: ' + (err.response?.data?.detail || err.message));
+      alert(
+        t('dashboard.commission.alerts.createFailed', {
+          detail: err.response?.data?.detail || err.message,
+        })
+      );
     }
   };
 
   const handleDelete = async (offerId: number) => {
-    if (!confirm('🗑️ Delete this commission offer?\n\nThis action will remove the offer from your list.')) return;
+    if (!confirm(t('dashboard.commission.alerts.deleteConfirm'))) return;
     
     try {
       const merchantId = localStorage.getItem('merchant_id');
@@ -120,12 +133,16 @@ export default function CommissionPage() {
       // Show success message
       const successMsg = document.createElement('div');
       successMsg.className = 'fixed top-4 right-4 bg-green-50 border border-green-200 text-green-700 px-6 py-3 rounded-lg shadow-lg z-50';
-      successMsg.textContent = '✅ Offer deleted successfully';
+      successMsg.textContent = `✅ ${t('dashboard.commission.alerts.deleteSuccess')}`;
       document.body.appendChild(successMsg);
       setTimeout(() => successMsg.remove(), 3000);
       
     } catch (err: any) {
-      alert('❌ Failed to delete: ' + (err.response?.data?.detail || err.message));
+      alert(
+        `❌ ${t('dashboard.commission.alerts.deleteFailed', {
+          detail: err.response?.data?.detail || err.message,
+        })}`
+      );
       loadOffers();
     }
   };

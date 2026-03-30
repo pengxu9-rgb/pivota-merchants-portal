@@ -864,6 +864,14 @@ Object.assign(enMessages, {
   "dashboard.commission.form.create": "Create",
   "dashboard.commission.errors.noMerchantId": "No merchant ID found",
   "dashboard.commission.errors.loadOffers": "Failed to load offers",
+  "dashboard.commission.alerts.duplicateTitle": "Duplicate offer",
+  "dashboard.commission.alerts.duplicateBody":
+    "An offer already exists with these settings:\n• Agent Type: {agentType}\n• Rate: {rate}\n• Min Order: {minOrder}\n\nUse different parameters or delete the existing offer first.",
+  "dashboard.commission.alerts.createFailed": "Failed to create offer: {detail}",
+  "dashboard.commission.alerts.deleteConfirm":
+    "Delete this commission offer?\n\nThis action will remove the offer from your list.",
+  "dashboard.commission.alerts.deleteSuccess": "Offer deleted successfully",
+  "dashboard.commission.alerts.deleteFailed": "Failed to delete: {detail}",
   "dashboard.platformOnboarding.disabledTitle": "Platform Merchant Onboarding",
   "dashboard.platformOnboarding.disabledDescription":
     "This feature is currently disabled for this environment. Enable NEXT_PUBLIC_FEATURE_PLATFORM_ONBOARDING_V2 and redeploy the merchant portal.",
@@ -951,6 +959,16 @@ Object.assign(enMessages, {
   "dashboard.platformOnboarding.reports.validating": "Validating…",
   "dashboard.platformOnboarding.reports.upload": "Upload report",
   "dashboard.platformOnboarding.reports.uploading": "Uploading…",
+  "dashboard.platformOnboarding.reports.validationFailed":
+    "Validation failed. Please check your CSV file.",
+  "dashboard.platformOnboarding.reports.uploadStarted":
+    "Report uploaded. Import task started.",
+  "dashboard.platformOnboarding.reports.uploadFailed":
+    "Upload failed. Please try again.",
+  "dashboard.platformOnboarding.reports.productsFailed":
+    "Failed to load products.",
+  "dashboard.platformOnboarding.reports.createTestOrderFailed":
+    "Failed to create test order.",
   "dashboard.platformOrders.disabledTitle": "Platform Orders (Preview)",
   "dashboard.platformOrders.disabledDescription":
     "This feature is disabled in this environment. Set NEXT_PUBLIC_FEATURE_PLATFORM_ORDERS_V1=true to enable it.",
@@ -1007,6 +1025,19 @@ Object.assign(enMessages, {
   "dashboard.platformOrders.badges.delivered": "Delivered",
   "dashboard.platformOrders.actions.sendToAcp": "Send to ACP",
   "dashboard.platformOrders.actions.loading": "Loading...",
+  "dashboard.platformOrders.actions.sessionExists":
+    "ACP session already exists: {sessionId}\n{message}",
+  "dashboard.platformOrders.actions.sessionCreated":
+    "ACP Checkout Created!\n\nSession ID: {sessionId}\n\nCheckout page opened in new tab.\nComplete payment to update order status.",
+  "dashboard.platformOrders.actions.sessionGeneric":
+    "ACP session: {message}",
+  "dashboard.platformOrders.actions.sendFailed":
+    "Failed to create ACP checkout:\n\n{detail}\n\nPlease try again or contact support.",
+  "dashboard.platformOrders.actions.validationFailed": "Validation failed",
+  "dashboard.platformOrders.actions.uploadAccepted":
+    "Orders CSV accepted, task: {task} (stub)",
+  "dashboard.platformOrders.actions.uploadFailed": "Upload failed",
+  "dashboard.platformOrders.actions.stubOrderFailed": "Failed to create stub order",
   "dashboard.platformOrders.pagination.prev": "Prev",
   "dashboard.platformOrders.pagination.next": "Next",
   "dashboard.platformOrders.pagination.showing":
@@ -2228,6 +2259,14 @@ Object.assign(localeOverridesRaw["zh-CN"], {
   "dashboard.commission.form.create": "创建",
   "dashboard.commission.errors.noMerchantId": "未找到 merchant ID",
   "dashboard.commission.errors.loadOffers": "加载佣金方案失败",
+  "dashboard.commission.alerts.duplicateTitle": "重复方案",
+  "dashboard.commission.alerts.duplicateBody":
+    "已经存在相同配置的佣金方案：\n• Agent 类型：{agentType}\n• 比例：{rate}\n• 最低订单额：{minOrder}\n\n请使用不同参数，或先删除已有方案。",
+  "dashboard.commission.alerts.createFailed": "创建佣金方案失败：{detail}",
+  "dashboard.commission.alerts.deleteConfirm":
+    "删除这条佣金方案吗？\n\n这个操作会把它从列表中移除。",
+  "dashboard.commission.alerts.deleteSuccess": "佣金方案已删除",
+  "dashboard.commission.alerts.deleteFailed": "删除失败：{detail}",
   "dashboard.platformOnboarding.disabledTitle": "平台商家入驻",
   "dashboard.platformOnboarding.disabledDescription":
     "此环境中该功能当前未启用。开启 NEXT_PUBLIC_FEATURE_PLATFORM_ONBOARDING_V2 后重新部署 merchant portal 即可。",
@@ -2304,6 +2343,11 @@ Object.assign(localeOverridesRaw["zh-CN"], {
   "dashboard.platformOnboarding.reports.validating": "校验中…",
   "dashboard.platformOnboarding.reports.upload": "上传报表",
   "dashboard.platformOnboarding.reports.uploading": "上传中…",
+  "dashboard.platformOnboarding.reports.validationFailed": "校验失败，请检查你的 CSV 文件。",
+  "dashboard.platformOnboarding.reports.uploadStarted": "报表已上传，导入任务已经启动。",
+  "dashboard.platformOnboarding.reports.uploadFailed": "上传失败，请稍后重试。",
+  "dashboard.platformOnboarding.reports.productsFailed": "加载商品失败。",
+  "dashboard.platformOnboarding.reports.createTestOrderFailed": "创建测试订单失败。",
   "dashboard.platformOrders.disabledTitle": "平台订单（预览）",
   "dashboard.platformOrders.disabledDescription":
     "此环境中该功能未启用。设置 NEXT_PUBLIC_FEATURE_PLATFORM_ORDERS_V1=true 后即可打开。",
@@ -2357,6 +2401,19 @@ Object.assign(localeOverridesRaw["zh-CN"], {
   "dashboard.platformOrders.badges.delivered": "已送达",
   "dashboard.platformOrders.actions.sendToAcp": "发送到 ACP",
   "dashboard.platformOrders.actions.loading": "加载中...",
+  "dashboard.platformOrders.actions.sessionExists":
+    "ACP session 已存在：{sessionId}\n{message}",
+  "dashboard.platformOrders.actions.sessionCreated":
+    "ACP Checkout 已创建！\n\nSession ID：{sessionId}\n\n结账页已在新标签打开。\n完成支付后，订单状态会更新。",
+  "dashboard.platformOrders.actions.sessionGeneric":
+    "ACP session：{message}",
+  "dashboard.platformOrders.actions.sendFailed":
+    "创建 ACP checkout 失败：\n\n{detail}\n\n请重试，或联系支持团队。",
+  "dashboard.platformOrders.actions.validationFailed": "校验失败",
+  "dashboard.platformOrders.actions.uploadAccepted":
+    "订单 CSV 已接受，任务：{task}（stub）",
+  "dashboard.platformOrders.actions.uploadFailed": "上传失败",
+  "dashboard.platformOrders.actions.stubOrderFailed": "创建 stub order 失败",
   "dashboard.platformOrders.pagination.prev": "上一页",
   "dashboard.platformOrders.pagination.next": "下一页",
   "dashboard.platformOrders.pagination.showing": "显示 {start}-{end} / 共 {total}",

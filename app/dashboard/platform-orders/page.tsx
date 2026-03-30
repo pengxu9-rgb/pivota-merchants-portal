@@ -86,19 +86,27 @@ export default function PlatformOrdersPage() {
         if (response.checkout_url) {
           window.open(response.checkout_url, '_blank');
         }
-        alert(`ACP session already exists: ${response.session_id}\n${response.message}`);
+        alert(
+          t('dashboard.platformOrders.actions.sessionExists', {
+            sessionId: response.session_id,
+            message: response.message,
+          })
+        );
       } else if (response.checkout_url) {
         // New session created
         window.open(response.checkout_url, '_blank');
         
         // Show success message with instructions
-        const message = `✅ ACP Checkout Created!\n\n` +
-                       `Session ID: ${response.session_id}\n\n` +
-                       `Checkout page opened in new tab.\n` +
-                       `Complete payment to update order status.`;
+        const message = `✅ ${t('dashboard.platformOrders.actions.sessionCreated', {
+          sessionId: response.session_id,
+        })}`;
         alert(message);
       } else {
-        alert(`ACP session: ${response.message || response.session_id}`);
+        alert(
+          t('dashboard.platformOrders.actions.sessionGeneric', {
+            message: response.message || response.session_id,
+          })
+        );
       }
       
       // Refresh orders to show updated status
@@ -106,7 +114,11 @@ export default function PlatformOrdersPage() {
     } catch (err: any) {
       console.error('Failed to create ACP checkout', err);
       const errorDetail = err.response?.data?.detail || err.message;
-      alert(`❌ Failed to create ACP checkout:\n\n${errorDetail}\n\nPlease try again or contact support.`);
+      alert(
+        `❌ ${t('dashboard.platformOrders.actions.sendFailed', {
+          detail: errorDetail,
+        })}`
+      );
     } finally {
       setAcpLoading(null);
     }
@@ -153,7 +165,7 @@ export default function PlatformOrdersPage() {
       setValidateResult(data as ValidateResponse);
     } catch (err: any) {
       console.error('Orders validate failed', err);
-      alert(err?.message || 'Validation failed');
+      alert(err?.message || t('dashboard.platformOrders.actions.validationFailed'));
     } finally {
       setValidating(false);
     }
@@ -167,14 +179,18 @@ export default function PlatformOrdersPage() {
       const data = await platformOnboardingApi.uploadOrders(onboardingId.trim(), platform, file);
       setUploadResult(data);
       if (data?.import_task_id) {
-        alert(`Orders CSV accepted, task: ${data.import_task_id} (stub)`);
+        alert(
+          t('dashboard.platformOrders.actions.uploadAccepted', {
+            task: data.import_task_id,
+          })
+        );
       }
       // reset file after upload
       setFile(null);
       setValidateResult(null);
     } catch (err: any) {
       console.error('Orders upload failed', err);
-      alert(err?.message || 'Upload failed');
+      alert(err?.message || t('dashboard.platformOrders.actions.uploadFailed'));
     } finally {
       setUploading(false);
     }
@@ -195,7 +211,7 @@ export default function PlatformOrdersPage() {
       setStubOrderResult(data);
     } catch (err: any) {
       console.error('Stub order failed', err);
-      alert(err?.message || 'Failed to create stub order');
+      alert(err?.message || t('dashboard.platformOrders.actions.stubOrderFailed'));
     } finally {
       setStubOrdering(false);
     }
