@@ -22,6 +22,7 @@ import {
   StatusBadge,
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { getDescriptionText } from '@/lib/html-text';
 
 function isProductSellable(product: any): boolean {
@@ -58,25 +59,28 @@ function hasContentGap(product: any) {
   return !hasDescription || !hasImage;
 }
 
-function getProductStatusInfo(product: any): { label: string; tone: 'success' | 'warning' | 'neutral' | 'critical' } {
+function getProductStatusInfo(
+  product: any,
+  t: (key: string, variables?: Record<string, string | number | undefined>) => string
+): { label: string; tone: 'success' | 'warning' | 'neutral' | 'critical' } {
   const rawStatus = (product?.status ?? '').toString().toLowerCase();
 
   if (rawStatus === 'active') {
     if (!isProductSellable(product)) {
       return {
-        label: 'Blocked',
+        label: t('dashboard.products.status.blocked'),
         tone: 'warning',
       };
     }
     return {
-      label: 'Channel-ready',
+      label: t('dashboard.products.status.channelReady'),
       tone: 'success',
     };
   }
 
   if (!rawStatus) {
     return {
-      label: 'Draft',
+      label: t('dashboard.products.status.draft'),
       tone: 'neutral',
     };
   }
@@ -722,6 +726,7 @@ function readinessVariantMatchesReason(
 }
 
 export default function ProductsPage() {
+  const { t } = useMerchantLanguage();
   const searchParams = useSearchParams();
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1923,15 +1928,15 @@ export default function ProductsPage() {
 
   const heroTitle =
     blockedCount > 0
-      ? `${blockedCount} catalog items still need work before they are channel-ready.`
+      ? t('dashboard.products.hero.blocked', { count: blockedCount })
       : contentGapCount > 0
-        ? `${contentGapCount} products need content cleanup before the next launch window.`
-        : 'Your catalog is in strong shape for channel launch.';
+        ? t('dashboard.products.hero.content', { count: contentGapCount })
+        : t('dashboard.products.hero.ready');
 
   const heroDescription =
     blockedCount > 0
-      ? 'Review blocked variants, missing details, and low-inventory items from one merchant-facing catalog view.'
-      : 'Use Catalog to keep product content, pricing, imagery, and sellability aligned before promotions go live.';
+      ? t('dashboard.products.hero.descriptionBlocked')
+      : t('dashboard.products.hero.descriptionReady');
   const focusedExcludedCount = focusedReadinessVariants.filter(
     (variant) => variant.agent_push_status === 'excluded_from_agent_push'
   ).length;
@@ -3219,8 +3224,12 @@ export default function ProductsPage() {
           <div className="flex items-center gap-4">
             <div className="animate-spin rounded-full h-10 w-10 border-2 border-[color:var(--merchant-line-strong)] border-t-[color:var(--merchant-brand)]"></div>
             <div className="space-y-1">
-              <p className="text-sm font-medium text-[color:var(--merchant-ink)]">Refreshing catalog</p>
-              <p className="text-sm text-[color:var(--merchant-muted)]">Pulling the latest synced products and content signals.</p>
+              <p className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                {t('dashboard.products.loadingTitle')}
+              </p>
+              <p className="text-sm text-[color:var(--merchant-muted)]">
+                {t('dashboard.products.loadingDescription')}
+              </p>
             </div>
           </div>
         </div>
@@ -3231,16 +3240,16 @@ export default function ProductsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Catalog"
+        eyebrow={t('dashboard.products.eyebrow')}
         title={heroTitle}
         description={heroDescription}
         actions={
           <>
             <MerchantLinkButton href="/dashboard/product-optimization" variant="secondary" icon={Sparkles}>
-              Review catalog health
+              {t('dashboard.products.reviewCatalogHealth')}
             </MerchantLinkButton>
             <MerchantButton type="button" onClick={handleAddProduct} icon={Plus}>
-              Add catalog item
+              {t('dashboard.products.addCatalogItem')}
             </MerchantButton>
           </>
         }
@@ -3249,49 +3258,52 @@ export default function ProductsPage() {
       <SurfaceCard strong className="overflow-hidden">
         <div className="grid gap-3 px-5 py-5 lg:grid-cols-5 lg:px-6">
           <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/75 px-4 py-3.5">
-            <div className="text-sm text-[color:var(--merchant-muted)]">Catalog items</div>
+            <div className="text-sm text-[color:var(--merchant-muted)]">{t('dashboard.products.summary.catalogItems')}</div>
             <div className="mt-1.5 text-[1.7rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
               {products.length}
             </div>
-            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">Current synced assortment</div>
+            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">{t('dashboard.products.summary.catalogItemsMeta')}</div>
           </div>
           <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/75 px-4 py-3.5">
-            <div className="text-sm text-[color:var(--merchant-muted)]">Channel-ready</div>
+            <div className="text-sm text-[color:var(--merchant-muted)]">{t('dashboard.products.summary.channelReady')}</div>
             <div className="mt-1.5 text-[1.7rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
               {sellableCount}
             </div>
-            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">Ready to be merchandised</div>
+            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">{t('dashboard.products.summary.channelReadyMeta')}</div>
           </div>
           <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/75 px-4 py-3.5">
-            <div className="text-sm text-[color:var(--merchant-muted)]">Blocked items</div>
+            <div className="text-sm text-[color:var(--merchant-muted)]">{t('dashboard.products.summary.blockedItems')}</div>
             <div className="mt-1.5 text-[1.7rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
               {blockedCount}
             </div>
-            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">Need sellability or setup fixes</div>
+            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">{t('dashboard.products.summary.blockedItemsMeta')}</div>
           </div>
           <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/75 px-4 py-3.5">
-            <div className="text-sm text-[color:var(--merchant-muted)]">Content gaps</div>
+            <div className="text-sm text-[color:var(--merchant-muted)]">{t('dashboard.products.summary.contentGaps')}</div>
             <div className="mt-1.5 text-[1.7rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
               {contentGapCount}
             </div>
-            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">Descriptions or imagery still missing</div>
+            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">{t('dashboard.products.summary.contentGapsMeta')}</div>
           </div>
           <div className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/75 px-4 py-3.5">
-            <div className="text-sm text-[color:var(--merchant-muted)]">Live inventory</div>
+            <div className="text-sm text-[color:var(--merchant-muted)]">{t('dashboard.products.summary.liveInventory')}</div>
             <div className="mt-1.5 text-[1.7rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
               {liveInventoryCount}
             </div>
-            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">Items with stock available now</div>
+            <div className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">{t('dashboard.products.summary.liveInventoryMeta')}</div>
           </div>
         </div>
       </SurfaceCard>
 
       <SectionHeader
-        title="Catalog view"
-        description="Search, triage, and resolve the items most likely to affect launch readiness and channel performance."
+        title={t('dashboard.products.catalogView.title')}
+        description={t('dashboard.products.catalogView.description')}
         action={
           <StatusBadge tone="neutral">
-            {filteredProducts.length} visible · {products.length} total
+            {t('dashboard.products.catalogView.visibleTotal', {
+              visible: filteredProducts.length,
+              total: products.length,
+            })}
           </StatusBadge>
         }
       />
@@ -3303,7 +3315,7 @@ export default function ProductsPage() {
               <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--merchant-muted)]" />
               <input
                 type="text"
-                placeholder="Search titles or SKU"
+                placeholder={t('dashboard.products.catalogView.searchPlaceholder')}
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
                 className="merchant-input"
@@ -3319,17 +3331,21 @@ export default function ProductsPage() {
                 className="merchant-select"
                 aria-label="Filter by catalog readiness"
               >
-                <option value="all">All readiness states</option>
-                <option value="sellable">Channel-ready only</option>
-                <option value="not_sellable">Needs attention</option>
+                <option value="all">{t('dashboard.products.catalogView.filterAll')}</option>
+                <option value="sellable">{t('dashboard.products.catalogView.filterReady')}</option>
+                <option value="not_sellable">{t('dashboard.products.catalogView.filterAttention')}</option>
               </select>
             </div>
             <div className="flex items-center gap-2 text-sm text-[color:var(--merchant-muted-strong)] xl:justify-end">
               <StatusBadge tone={blockedCount > 0 ? 'warning' : 'success'}>
-                {blockedCount > 0 ? `${blockedCount} blocked` : 'No blockers'}
+                {blockedCount > 0
+                  ? t('dashboard.products.catalogView.blocked', { count: blockedCount })
+                  : t('dashboard.products.catalogView.noBlockers')}
               </StatusBadge>
               <StatusBadge tone={contentGapCount > 0 ? 'warning' : 'success'}>
-                {contentGapCount > 0 ? `${contentGapCount} content gaps` : 'Content covered'}
+                {contentGapCount > 0
+                  ? t('dashboard.products.catalogView.contentGaps', { count: contentGapCount })
+                  : t('dashboard.products.catalogView.contentCovered')}
               </StatusBadge>
             </div>
           </div>
@@ -3340,17 +3356,17 @@ export default function ProductsPage() {
             <table className="merchant-table min-w-full">
               <thead>
                 <tr>
-                  <th>Product</th>
-                  <th>Channel status</th>
-                  <th>Content</th>
-                  <th>Price</th>
-                  <th>Stock</th>
-                  <th className="text-right">Actions</th>
+                  <th>{t('dashboard.products.catalogView.headers.product')}</th>
+                  <th>{t('dashboard.products.catalogView.headers.channelStatus')}</th>
+                  <th>{t('dashboard.products.catalogView.headers.content')}</th>
+                  <th>{t('dashboard.products.catalogView.headers.price')}</th>
+                  <th>{t('dashboard.products.catalogView.headers.stock')}</th>
+                  <th className="text-right">{t('dashboard.products.catalogView.headers.actions')}</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredProducts.map((product) => {
-                  const status = getProductStatusInfo(product);
+                  const status = getProductStatusInfo(product, t);
                   const contentGap = hasContentGap(product);
                   const stock = Number(product?.inventory_quantity ?? product?.stock ?? 0);
 
@@ -3374,7 +3390,7 @@ export default function ProductsPage() {
                               {product.title || product.name}
                             </p>
                             <p className="text-sm text-[color:var(--merchant-muted)]">
-                              {product.sku || 'No SKU'}
+                              {product.sku || t('dashboard.products.catalogView.noSku')}
                             </p>
                           </div>
                         </div>
@@ -3388,11 +3404,11 @@ export default function ProductsPage() {
                         <div>
                           {contentGap ? (
                             <StatusBadge tone="warning" icon={FileText}>
-                              Needs content
+                              {t('dashboard.products.catalogView.needsContent')}
                             </StatusBadge>
                           ) : (
                             <StatusBadge tone="success" icon={CheckCircle2}>
-                              Complete
+                              {t('dashboard.products.catalogView.complete')}
                             </StatusBadge>
                           )}
                         </div>
@@ -3406,7 +3422,9 @@ export default function ProductsPage() {
                             {stock}
                           </p>
                           <p className="text-sm text-[color:var(--merchant-muted)]">
-                            {stock > 0 ? 'In stock' : 'Out of stock'}
+                            {stock > 0
+                              ? t('dashboard.products.catalogView.inStock')
+                              : t('dashboard.products.catalogView.outOfStock')}
                           </p>
                         </div>
                       </td>
@@ -3423,7 +3441,7 @@ export default function ProductsPage() {
                               setShowViewModal(true);
                             }}
                           >
-                            Review
+                            {t('dashboard.products.catalogView.review')}
                           </MerchantButton>
                           <MerchantButton
                             type="button"
@@ -3436,7 +3454,7 @@ export default function ProductsPage() {
                               setShowEditModal(true);
                             }}
                           >
-                            Edit
+                            {t('dashboard.products.catalogView.edit')}
                           </MerchantButton>
                         </div>
                       </td>
@@ -3449,11 +3467,11 @@ export default function ProductsPage() {
         ) : (
           <EmptyState
             icon={Package}
-            title="No catalog items match this view"
-            description="Try a different search term, or connect a sales channel to bring products into Pivota."
+            title={t('dashboard.products.catalogView.emptyTitle')}
+            description={t('dashboard.products.catalogView.emptyDescription')}
             action={
               <MerchantLinkButton href="/dashboard/integrations" variant="secondary" icon={ArrowRight}>
-                Open sales channels
+                {t('dashboard.products.catalogView.openSalesChannels')}
               </MerchantLinkButton>
             }
           />
@@ -3464,18 +3482,18 @@ export default function ProductsPage() {
         <div className="merchant-panel p-6">
           <div className="space-y-3">
             <StatusBadge tone={blockedCount > 0 ? 'critical' : 'success'} icon={AlertCircle}>
-              Launch blockers
+              {t('dashboard.products.launchBlockers')}
             </StatusBadge>
             <p className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
               {blockedCount > 0
-                ? `${blockedCount} items are still not channel-ready.`
-                : 'No major launch blockers in the current catalog snapshot.'}
+                ? t('dashboard.products.launchBlockersWithCount', { count: blockedCount })
+                : t('dashboard.products.noLaunchBlockers')}
             </p>
             <p className="text-sm leading-6 text-[color:var(--merchant-muted)]">
-              Use catalog health to diagnose readiness issues before promotions or channel expansion.
+              {t('dashboard.products.launchBlockersDescription')}
             </p>
             <MerchantLinkButton href="/dashboard/product-optimization" variant="ghost" icon={ArrowRight}>
-              Open catalog health
+              {t('dashboard.products.openCatalogHealth')}
             </MerchantLinkButton>
           </div>
         </div>
@@ -3483,15 +3501,15 @@ export default function ProductsPage() {
         <div className="merchant-panel p-6">
           <div className="space-y-3">
             <StatusBadge tone={contentGapCount > 0 ? 'warning' : 'success'} icon={Sparkles}>
-              Content quality
+              {t('dashboard.products.contentQuality')}
             </StatusBadge>
             <p className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
               {contentGapCount > 0
-                ? `${contentGapCount} items still need descriptions or imagery.`
-                : 'Core content fields are filled for the current catalog snapshot.'}
+                ? t('dashboard.products.contentQualityWithCount', { count: contentGapCount })
+                : t('dashboard.products.contentQualityClear')}
             </p>
             <p className="text-sm leading-6 text-[color:var(--merchant-muted)]">
-              Better titles, descriptions, and imagery help products feel complete to channel and brand teams.
+              {t('dashboard.products.contentQualityDescription')}
             </p>
           </div>
         </div>
@@ -3499,13 +3517,13 @@ export default function ProductsPage() {
         <div className="merchant-panel p-6">
           <div className="space-y-3">
             <StatusBadge tone="brand" icon={Package}>
-              Inventory coverage
+              {t('dashboard.products.inventoryCoverage')}
             </StatusBadge>
             <p className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
-              {liveInventoryCount} items currently have available stock.
+              {t('dashboard.products.inventoryCoverageWithCount', { count: liveInventoryCount })}
             </p>
             <p className="text-sm leading-6 text-[color:var(--merchant-muted)]">
-              Stock gaps are often why otherwise healthy products still fail channel readiness checks.
+              {t('dashboard.products.inventoryCoverageDescription')}
             </p>
           </div>
         </div>
@@ -5071,8 +5089,8 @@ export default function ProductsPage() {
                 <div className="rounded-[1.1rem] bg-white/70 p-4">
                   <div className="text-sm text-[color:var(--merchant-muted)]">Channel status</div>
                   <div className="mt-2">
-                    <StatusBadge tone={getProductStatusInfo(selectedProduct).tone}>
-                      {getProductStatusInfo(selectedProduct).label}
+                    <StatusBadge tone={getProductStatusInfo(selectedProduct, t).tone}>
+                      {getProductStatusInfo(selectedProduct, t).label}
                     </StatusBadge>
                   </div>
                 </div>

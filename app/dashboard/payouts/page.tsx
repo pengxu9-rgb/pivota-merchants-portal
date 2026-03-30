@@ -20,6 +20,7 @@ import {
   Copy
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import {
   MerchantButton,
   PageHeader,
@@ -68,6 +69,7 @@ interface PendingCommissionSummary {
 }
 
 export default function PayoutsPage() {
+  const { t } = useMerchantLanguage();
   const router = useRouter();
   const [payouts, setPayouts] = useState<Payout[]>([]);
   const [loading, setLoading] = useState(true);
@@ -411,11 +413,16 @@ export default function PayoutsPage() {
       uploaded: 'bg-blue-50 text-blue-700 border-blue-200',
       paid: 'bg-green-50 text-green-700 border-green-200'
     };
+    const labels = {
+      pending: t('dashboard.payouts.filters.pending'),
+      uploaded: t('dashboard.payouts.filters.uploaded'),
+      paid: t('dashboard.payouts.filters.paid'),
+    };
     
     return (
       <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full border ${colors[status as keyof typeof colors]}`}>
         {getStatusIcon(status)}
-        <span className="capitalize">{status}</span>
+        <span>{labels[status as keyof typeof labels] || status}</span>
       </span>
     );
   };
@@ -431,16 +438,16 @@ export default function PayoutsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Payments"
-        title="Manage merchant payouts with clearer operational context."
-        description="Track unpaid commissions, create payout records, export bank details, and upload proof without turning the page into an internal finance console."
+        eyebrow={t('dashboard.payouts.eyebrow')}
+        title={t('dashboard.payouts.title')}
+        description={t('dashboard.payouts.description')}
         actions={
           <>
             <MerchantButton type="button" onClick={() => setShowCreateModal(true)} icon={Plus}>
-              Create payout
+              {t('dashboard.payouts.createPayout')}
             </MerchantButton>
             <MerchantButton type="button" variant="secondary" onClick={exportPaymentDetails} icon={Download}>
-              Export payment details
+              {t('dashboard.payouts.exportPaymentDetails')}
             </MerchantButton>
           </>
         }
@@ -455,22 +462,29 @@ export default function PayoutsPage() {
                 <Clock className="mt-0.5 h-5 w-5 text-[color:var(--merchant-warning)]" />
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-[color:var(--merchant-ink)]">
-                    ${pendingCommissionSummary.total_amount.toFixed(2)} is still waiting to be converted into payout records.
+                    {t('dashboard.payouts.pendingBanner.amountWaiting', {
+                      amount: `$${pendingCommissionSummary.total_amount.toFixed(2)}`,
+                    })}
                   </p>
                   <p className="text-sm text-[color:var(--merchant-muted-strong)]">
-                    {pendingCommissionSummary.unique_agents} agents across {pendingCommissionSummary.total_transactions} transactions are ready for settlement prep.
+                    {t('dashboard.payouts.pendingBanner.agentsReady', {
+                      agents: pendingCommissionSummary.unique_agents,
+                      transactions: pendingCommissionSummary.total_transactions,
+                    })}
                   </p>
                 </div>
               </div>
               <StatusBadge tone="warning">
-                {pendingCommissionSummary.period_days}-day settlement window
+                {t('dashboard.payouts.pendingBanner.window', {
+                  days: pendingCommissionSummary.period_days,
+                })}
               </StatusBadge>
             </div>
           </div>
 
           <SurfaceCard
-            title="Unpaid commissions ready to convert"
-            description="Create payout records from earned commissions before exporting bank details and proof of payment."
+            title={t('dashboard.payouts.pendingSection.title')}
+            description={t('dashboard.payouts.pendingSection.description')}
             action={
               <MerchantButton
                 type="button"
@@ -479,7 +493,9 @@ export default function PayoutsPage() {
                 icon={Plus}
                 className="disabled:opacity-50"
               >
-                {generatingPayouts ? 'Generating...' : 'Generate payouts'}
+                {generatingPayouts
+                  ? t('dashboard.payouts.pendingSection.generating')
+                  : t('dashboard.payouts.pendingSection.generate')}
               </MerchantButton>
             }
           >
@@ -488,16 +504,16 @@ export default function PayoutsPage() {
                 <thead className="border-b border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)]/65">
                   <tr>
                     <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
-                      Agent ID
+                      {t('dashboard.payouts.pendingSection.headers.agentId')}
                     </th>
                     <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
-                      Transactions
+                      {t('dashboard.payouts.pendingSection.headers.transactions')}
                     </th>
                     <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
-                      Total commission
+                      {t('dashboard.payouts.pendingSection.headers.totalCommission')}
                     </th>
                     <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
-                      Period
+                      {t('dashboard.payouts.pendingSection.headers.period')}
                     </th>
                   </tr>
                 </thead>
@@ -510,7 +526,9 @@ export default function PayoutsPage() {
                         </div>
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap text-sm text-[color:var(--merchant-muted-strong)]">
-                        {commission.transaction_count} orders
+                        {t('dashboard.payouts.pendingSection.orders', {
+                          count: commission.transaction_count,
+                        })}
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap">
                         <div className="text-sm font-semibold text-[color:var(--merchant-ink)]">
@@ -520,7 +538,7 @@ export default function PayoutsPage() {
                       <td className="px-5 py-3.5 whitespace-nowrap text-sm text-[color:var(--merchant-muted-strong)]">
                         {commission.earliest_transaction
                           ? `${new Date(commission.earliest_transaction).toLocaleDateString()} - ${new Date(commission.latest_transaction!).toLocaleDateString()}`
-                          : 'N/A'}
+                          : t('dashboard.payouts.pendingSection.na')}
                       </td>
                     </tr>
                   ))}
@@ -530,10 +548,15 @@ export default function PayoutsPage() {
 
             <div className="flex flex-col gap-3 border-t border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)]/55 px-5 py-4 text-sm lg:flex-row lg:items-center lg:justify-between">
               <span className="text-[color:var(--merchant-muted-strong)]">
-                {pendingCommissionSummary.total_transactions} transactions from {pendingCommissionSummary.unique_agents} agents are waiting to be turned into payout records.
+                {t('dashboard.payouts.pendingSection.footer', {
+                  transactions: pendingCommissionSummary.total_transactions,
+                  agents: pendingCommissionSummary.unique_agents,
+                })}
               </span>
               <span className="font-semibold text-[color:var(--merchant-ink)]">
-                Total unpaid commissions: ${pendingCommissionSummary.total_amount.toFixed(2)}
+                {t('dashboard.payouts.pendingSection.totalUnpaid', {
+                  amount: `$${pendingCommissionSummary.total_amount.toFixed(2)}`,
+                })}
               </span>
             </div>
           </SurfaceCard>
@@ -541,20 +564,20 @@ export default function PayoutsPage() {
           <div className="merchant-panel merchant-panel-muted px-5 py-4">
             <div className="grid gap-3 text-sm text-[color:var(--merchant-muted-strong)] md:grid-cols-4">
               <div>
-                <div className="font-medium text-[color:var(--merchant-ink)]">1. Generate</div>
-                <div>Create payout records from unpaid commissions.</div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">{t('dashboard.payouts.flow.generateTitle')}</div>
+                <div>{t('dashboard.payouts.flow.generateDescription')}</div>
               </div>
               <div>
-                <div className="font-medium text-[color:var(--merchant-ink)]">2. Settle</div>
-                <div>Pay agents by bank transfer or your usual settlement rail.</div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">{t('dashboard.payouts.flow.settleTitle')}</div>
+                <div>{t('dashboard.payouts.flow.settleDescription')}</div>
               </div>
               <div>
-                <div className="font-medium text-[color:var(--merchant-ink)]">3. Upload proof</div>
-                <div>Attach a reference number or confirmation file for each payout.</div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">{t('dashboard.payouts.flow.uploadProofTitle')}</div>
+                <div>{t('dashboard.payouts.flow.uploadProofDescription')}</div>
               </div>
               <div>
-                <div className="font-medium text-[color:var(--merchant-ink)]">4. Confirm</div>
-                <div>Employees review the proof and mark the payout as completed.</div>
+                <div className="font-medium text-[color:var(--merchant-ink)]">{t('dashboard.payouts.flow.confirmTitle')}</div>
+                <div>{t('dashboard.payouts.flow.confirmDescription')}</div>
               </div>
             </div>
           </div>
@@ -568,7 +591,7 @@ export default function PayoutsPage() {
               <DollarSign className="h-5 w-5 text-[color:var(--merchant-brand)]" />
             </div>
           </div>
-          <p className="mb-1 text-sm text-[color:var(--merchant-muted)]">Total payout amount</p>
+          <p className="mb-1 text-sm text-[color:var(--merchant-muted)]">{t('dashboard.payouts.stats.totalAmount')}</p>
           <p className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             ${summary?.total_amount?.toFixed(2) || '0.00'}
           </p>
@@ -580,7 +603,7 @@ export default function PayoutsPage() {
               <FileText className="h-5 w-5 text-[color:var(--merchant-brand)]" />
             </div>
           </div>
-          <p className="mb-1 text-sm text-[color:var(--merchant-muted)]">Payout records</p>
+          <p className="mb-1 text-sm text-[color:var(--merchant-muted)]">{t('dashboard.payouts.stats.records')}</p>
           <p className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             {summary?.total_count || 0}
           </p>
@@ -592,7 +615,7 @@ export default function PayoutsPage() {
               <CheckCircle className="h-5 w-5 text-[color:var(--merchant-success)]" />
             </div>
           </div>
-          <p className="mb-1 text-sm text-[color:var(--merchant-muted)]">Paid partners</p>
+          <p className="mb-1 text-sm text-[color:var(--merchant-muted)]">{t('dashboard.payouts.stats.paidPartners')}</p>
           <p className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             {summary?.unique_agents || 0}
           </p>
@@ -604,30 +627,39 @@ export default function PayoutsPage() {
               <Clock className="h-5 w-5 text-[color:var(--merchant-warning)]" />
             </div>
           </div>
-          <p className="mb-1 text-sm text-[color:var(--merchant-muted)]">Pending follow-up</p>
+          <p className="mb-1 text-sm text-[color:var(--merchant-muted)]">{t('dashboard.payouts.stats.pendingFollowUp')}</p>
           <p className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             {pendingCommissionSummary?.unique_agents || pendingPayoutCount}
           </p>
           <p className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
             {pendingCommissionSummary?.total_amount
-              ? `${pendingCommissionSummary.total_transactions} unpaid commission lines`
-              : `${uploadedPayoutCount} uploaded, ${pendingPayoutCount} pending`}
+              ? t('dashboard.payouts.stats.unpaidLines', {
+                  count: pendingCommissionSummary.total_transactions,
+                })
+              : t('dashboard.payouts.stats.uploadedPending', {
+                  uploaded: uploadedPayoutCount,
+                  pending: pendingPayoutCount,
+                })}
           </p>
         </div>
       </div>
 
-        {/* Filters */}
+      {/* Filters */}
       <SurfaceCard
-        title="Filter payout activity"
-        description="Search by agent or payout reference, then narrow the table to the settlement stage you need."
-        action={<StatusBadge tone="neutral">{filteredPayouts.length} visible</StatusBadge>}
+        title={t('dashboard.payouts.filters.title')}
+        description={t('dashboard.payouts.filters.description')}
+        action={
+          <StatusBadge tone="neutral">
+            {t('dashboard.payouts.filters.visible', { count: filteredPayouts.length })}
+          </StatusBadge>
+        }
       >
           <div className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[color:var(--merchant-muted)] w-5 h-5" />
               <input
                 type="text"
-                placeholder="Search by agent ID or payout reference"
+                placeholder={t('dashboard.payouts.filters.searchPlaceholder')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="merchant-input pl-10"
@@ -640,27 +672,33 @@ export default function PayoutsPage() {
                 onChange={(e) => setSelectedStatus(e.target.value)}
                 className="merchant-select"
               >
-                <option value="all">All Status</option>
-                <option value="pending">Pending</option>
-                <option value="uploaded">Uploaded</option>
-                <option value="paid">Paid</option>
+                <option value="all">{t('dashboard.payouts.filters.allStatus')}</option>
+                <option value="pending">{t('dashboard.payouts.filters.pending')}</option>
+                <option value="uploaded">{t('dashboard.payouts.filters.uploaded')}</option>
+                <option value="paid">{t('dashboard.payouts.filters.paid')}</option>
               </select>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge tone={pendingPayoutCount > 0 ? 'warning' : 'success'}>
-                {pendingPayoutCount > 0 ? `${pendingPayoutCount} pending` : 'No pending payouts'}
+                {pendingPayoutCount > 0
+                  ? t('dashboard.payouts.filters.pendingCount', { count: pendingPayoutCount })
+                  : t('dashboard.payouts.filters.noPending')}
               </StatusBadge>
               <StatusBadge tone={uploadedPayoutCount > 0 ? 'brand' : 'neutral'}>
-                {uploadedPayoutCount} proof uploaded
+                {t('dashboard.payouts.filters.proofUploaded', { count: uploadedPayoutCount })}
               </StatusBadge>
             </div>
           </div>
       </SurfaceCard>
 
       <SurfaceCard
-        title="Payout activity"
-        description="Track payout records, settlement status, and proof uploads by agent."
-        action={<StatusBadge tone="neutral">{filteredPayouts.length} records</StatusBadge>}
+        title={t('dashboard.payouts.activity.title')}
+        description={t('dashboard.payouts.activity.description')}
+        action={
+          <StatusBadge tone="neutral">
+            {t('dashboard.payouts.activity.records', { count: filteredPayouts.length })}
+          </StatusBadge>
+        }
         className="overflow-hidden"
       >
           <div className="overflow-x-auto">
@@ -668,22 +706,22 @@ export default function PayoutsPage() {
               <thead className="border-b border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)]/65">
                 <tr>
                   <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
-                    Agent
+                    {t('dashboard.payouts.activity.headers.agent')}
                   </th>
                   <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
-                    Amount
+                    {t('dashboard.payouts.activity.headers.amount')}
                   </th>
                   <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
-                    Period
+                    {t('dashboard.payouts.activity.headers.period')}
                   </th>
                   <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
-                    Status
+                    {t('dashboard.payouts.activity.headers.status')}
                   </th>
                   <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
-                    Reference
+                    {t('dashboard.payouts.activity.headers.reference')}
                   </th>
                   <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
-                    Actions
+                    {t('dashboard.payouts.activity.headers.actions')}
                   </th>
                 </tr>
               </thead>
@@ -692,13 +730,13 @@ export default function PayoutsPage() {
                   <tr>
                     <td colSpan={6} className="px-6 py-12 text-center text-[color:var(--merchant-muted-strong)]">
                       <div className="mx-auto mb-2 h-8 w-8 animate-spin rounded-full border-b-2 border-[color:var(--merchant-brand)]"></div>
-                      Loading payouts...
+                      {t('dashboard.payouts.activity.loading')}
                     </td>
                   </tr>
                 ) : filteredPayouts.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-6 py-12 text-center text-[color:var(--merchant-muted-strong)]">
-                      No payouts found
+                      {t('dashboard.payouts.activity.empty')}
                     </td>
                   </tr>
                 ) : (
@@ -737,7 +775,7 @@ export default function PayoutsPage() {
                                 className="flex items-center gap-1 text-sm font-medium text-[color:var(--merchant-success)] hover:text-[color:var(--merchant-success-strong)]"
                               >
                                 <CreditCard className="w-4 h-4" />
-                                View Bank
+                                {t('dashboard.payouts.activity.viewBank')}
                               </button>
                               <button
                                 onClick={() => {
@@ -747,7 +785,7 @@ export default function PayoutsPage() {
                                 className="flex items-center gap-1 text-sm font-medium text-[color:var(--merchant-brand)] hover:text-[color:var(--merchant-brand-strong)]"
                               >
                                 <Upload className="w-4 h-4" />
-                                Upload Proof
+                                {t('dashboard.payouts.activity.uploadProof')}
                               </button>
                             </>
                           )}
@@ -760,7 +798,7 @@ export default function PayoutsPage() {
                               className="flex items-center gap-1 text-sm font-medium text-[color:var(--merchant-brand)] hover:text-[color:var(--merchant-brand-strong)]"
                             >
                               <ExternalLink className="w-4 h-4" />
-                              View Proof
+                              {t('dashboard.payouts.activity.viewProof')}
                             </button>
                           )}
                         </div>

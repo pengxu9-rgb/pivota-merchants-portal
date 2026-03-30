@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { BarChart3, TrendingUp, TrendingDown, Activity, DollarSign } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import {
   MerchantButton,
   PageHeader,
@@ -37,6 +38,7 @@ type AnalyticsTrendsResponse = {
 };
 
 export default function AnalyticsPage() {
+  const { t } = useMerchantLanguage();
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState('30d');
   const [analytics, setAnalytics] = useState<any>(null);
@@ -215,7 +217,7 @@ export default function AnalyticsPage() {
     } catch (error) {
       console.error('❌ Failed to load analytics:', error);
       setAnalytics(null);
-      setAnalyticsError('Merchant performance metrics are temporarily unavailable.');
+      setAnalyticsError(t('dashboard.analytics.error.runtime'));
     } finally {
       setLoading(false);
     }
@@ -236,7 +238,7 @@ export default function AnalyticsPage() {
     } catch (error) {
       console.error('❌ Failed to load trends:', error);
       setTrends(null);
-      setTrendsError('Trend data is temporarily unavailable.');
+      setTrendsError(t('dashboard.analytics.trends.runtime'));
     } finally {
       setLoadingTrends(false);
     }
@@ -282,7 +284,7 @@ export default function AnalyticsPage() {
 
   const displayPaidRevenue = paidRevenueOverride?.revenue ?? paidRevenue;
   const displayPaidRevenueGrowth = paidRevenueOverride?.growth ?? paidRevenueGrowth;
-  const prevPeriodLabel = `vs prev ${timeRange}`;
+  const prevPeriodLabel = t('dashboard.analytics.trends.vsPrevious');
   const chartData = (trends?.series || []).map((point, index) => ({
     date: point.date,
     current: point.value,
@@ -293,30 +295,30 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Analytics"
-        title="Read merchant performance without losing the operational context."
-        description="Analytics should feel like a calm summary of demand, checkout quality, payment health, and revenue momentum, not a default reporting screen."
+        eyebrow={t('dashboard.analytics.eyebrow')}
+        title={t('dashboard.analytics.title')}
+        description={t('dashboard.analytics.description')}
         actions={
           <select
             value={timeRange}
             onChange={(e) => setTimeRange(e.target.value)}
             className="merchant-select min-w-[180px]"
           >
-            <option value="1d">Last 24 hours</option>
-            <option value="7d">Last 7 days</option>
-            <option value="30d">Last 30 days</option>
-            <option value="90d">Last 90 days</option>
+            <option value="1d">{t('dashboard.analytics.range.1d')}</option>
+            <option value="7d">{t('dashboard.analytics.range.7d')}</option>
+            <option value="30d">{t('dashboard.analytics.range.30d')}</option>
+            <option value="90d">{t('dashboard.analytics.range.90d')}</option>
           </select>
         }
       />
 
       {analyticsError ? (
         <SurfaceCard
-          title="Merchant performance metrics"
-          description="The analytics module is live, but this request failed. Retry before treating any blank or zero state as real."
+          title={t('dashboard.analytics.error.title')}
+          description={t('dashboard.analytics.error.description')}
           action={
             <MerchantButton type="button" onClick={loadAnalytics} variant="secondary">
-              Retry metrics
+              {t('dashboard.analytics.error.retry')}
             </MerchantButton>
           }
         >
@@ -346,9 +348,13 @@ export default function AnalyticsPage() {
           <h3 className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             {formatPercent(analytics?.order_generation_rate || 0)}
           </h3>
-          <p className="text-sm text-[color:var(--merchant-muted-strong)]">Order capture rate</p>
+          <p className="text-sm text-[color:var(--merchant-muted-strong)]">
+            {t('dashboard.analytics.stats.orderCaptureRate')}
+          </p>
           <p className="mt-1 text-xs text-[color:var(--merchant-muted)]">
-            {analytics?.total_order_attempts || 0} attempts
+            {t('dashboard.analytics.stats.attempts', {
+              count: analytics?.total_order_attempts || 0,
+            })}
           </p>
         </div>
 
@@ -372,9 +378,13 @@ export default function AnalyticsPage() {
           <h3 className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             {formatPercent(analytics?.order_placement_rate || 0)}
           </h3>
-          <p className="text-sm text-[color:var(--merchant-muted-strong)]">Checkout completion</p>
+          <p className="text-sm text-[color:var(--merchant-muted-strong)]">
+            {t('dashboard.analytics.stats.checkoutCompletion')}
+          </p>
           <p className="mt-1 text-xs text-[color:var(--merchant-muted)]">
-            {analytics?.total_orders_placed || 0} placed
+            {t('dashboard.analytics.stats.placed', {
+              count: analytics?.total_orders_placed || 0,
+            })}
           </p>
         </div>
 
@@ -398,9 +408,13 @@ export default function AnalyticsPage() {
           <h3 className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             {formatPercent(analytics?.payment_success_rate || 0)}
           </h3>
-          <p className="text-sm text-[color:var(--merchant-muted-strong)]">Payment success</p>
+          <p className="text-sm text-[color:var(--merchant-muted-strong)]">
+            {t('dashboard.analytics.stats.paymentSuccess')}
+          </p>
           <p className="mt-1 text-xs text-[color:var(--merchant-muted)]">
-            {analytics?.total_payments_succeeded || 0} succeeded
+            {t('dashboard.analytics.stats.succeeded', {
+              count: analytics?.total_payments_succeeded || 0,
+            })}
           </p>
         </div>
 
@@ -426,10 +440,16 @@ export default function AnalyticsPage() {
           <h3 className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             {formatCurrency(displayPaidRevenue)}
           </h3>
-          <p className="text-sm text-[color:var(--merchant-muted-strong)]">Paid revenue</p>
+          <p className="text-sm text-[color:var(--merchant-muted-strong)]">
+            {t('dashboard.analytics.stats.paidRevenue')}
+          </p>
           <p className="mt-1 text-xs text-[color:var(--merchant-muted)]">
-            Paid orders only (excludes pending/unpaid)
-            {paidRevenueOverrideLoading ? ' • recomputing…' : paidRevenueOverride ? ' • computed from orders' : ''}
+            {t('dashboard.analytics.stats.paidRevenueMeta')}
+            {paidRevenueOverrideLoading
+              ? ` • ${t('dashboard.analytics.stats.recomputing')}`
+              : paidRevenueOverride
+                ? ` • ${t('dashboard.analytics.stats.computedFromOrders')}`
+                : ''}
           </p>
         </div>
       </div>
@@ -438,8 +458,8 @@ export default function AnalyticsPage() {
       {/* Performance by PSP */}
       {analytics?.psp_performance && analytics.psp_performance.length > 0 && (
         <SurfaceCard
-          title="Payment setup performance"
-          description="A merchant-facing view of transaction quality across your active payment setup."
+          title={t('dashboard.analytics.paymentPerformance.title')}
+          description={t('dashboard.analytics.paymentPerformance.description')}
         >
           <div className="p-5">
             <div className="space-y-4">
@@ -448,14 +468,18 @@ export default function AnalyticsPage() {
                   <div>
                     <h3 className="font-medium text-[color:var(--merchant-ink)] capitalize">{psp.psp_type}</h3>
                     <p className="text-sm text-[color:var(--merchant-muted)]">
-                      {psp.transaction_count} transactions
+                      {t('dashboard.analytics.paymentPerformance.transactions', {
+                        count: psp.transaction_count,
+                      })}
                     </p>
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-bold text-[color:var(--merchant-ink)]">
                       {formatPercent(psp.success_rate || 0)}
                     </p>
-                    <p className="text-sm text-[color:var(--merchant-muted)]">Success rate</p>
+                    <p className="text-sm text-[color:var(--merchant-muted)]">
+                      {t('dashboard.analytics.paymentPerformance.successRate')}
+                    </p>
                   </div>
                 </div>
               ))}
@@ -466,21 +490,23 @@ export default function AnalyticsPage() {
 
       {/* Trends Over Time */}
       <SurfaceCard
-        title="Trends over time"
-        description="Compare demand, conversion, and payment quality over the selected reporting window."
+        title={t('dashboard.analytics.trends.title')}
+        description={t('dashboard.analytics.trends.description')}
         action={
           <div className="flex flex-wrap items-center gap-3">
-            <label className="text-sm text-[color:var(--merchant-muted)]">Metric</label>
+            <label className="text-sm text-[color:var(--merchant-muted)]">
+              {t('dashboard.analytics.trends.metric')}
+            </label>
             <select
               value={metric}
               onChange={(e) => setMetric(e.target.value as any)}
               className="merchant-select py-2 text-sm"
             >
-              <option value="gmv">GMV</option>
-              <option value="orders">Orders</option>
-              <option value="aov">AOV</option>
-              <option value="success_rate">Success Rate</option>
-              <option value="refunds">Refunds</option>
+              <option value="gmv">{t('dashboard.analytics.trends.metric.gmv')}</option>
+              <option value="orders">{t('dashboard.analytics.trends.metric.orders')}</option>
+              <option value="aov">{t('dashboard.analytics.trends.metric.aov')}</option>
+              <option value="success_rate">{t('dashboard.analytics.trends.metric.successRate')}</option>
+              <option value="refunds">{t('dashboard.analytics.trends.metric.refunds')}</option>
             </select>
             <label className="flex items-center gap-2 text-sm text-gray-700">
               <input
@@ -488,10 +514,14 @@ export default function AnalyticsPage() {
                 checked={netMode}
                 onChange={(e) => setNetMode(e.target.checked)}
               />
-              Net after refunds
+              {t('dashboard.analytics.trends.netAfterRefunds')}
             </label>
             {trends?.base_currency && (
-              <span className="text-xs text-[color:var(--merchant-muted)]">Base: {trends.base_currency}</span>
+              <span className="text-xs text-[color:var(--merchant-muted)]">
+                {t('dashboard.analytics.trends.baseCurrency', {
+                  currency: trends.base_currency,
+                })}
+              </span>
             )}
             {exportError ? (
               <span className="text-xs text-[color:var(--merchant-critical)]">{exportError}</span>
@@ -520,7 +550,7 @@ export default function AnalyticsPage() {
                   window.URL.revokeObjectURL(url);
                 } catch (e) {
                   console.error('CSV export failed', e);
-                  setExportError('CSV export failed. Try again after trend data reloads.');
+                  setExportError(t('dashboard.analytics.trends.exportError'));
                 } finally {
                   setExportingCsv(false);
                 }
@@ -528,7 +558,9 @@ export default function AnalyticsPage() {
               disabled={exportingCsv}
               variant="secondary"
             >
-              {exportingCsv ? 'Exporting…' : 'Export CSV'}
+              {exportingCsv
+                ? t('dashboard.analytics.trends.exporting')
+                : t('dashboard.analytics.trends.exportCsv')}
             </MerchantButton>
           </div>
         }
@@ -542,7 +574,7 @@ export default function AnalyticsPage() {
             <div className="space-y-4 rounded-[1rem] border border-[color:var(--merchant-warning-soft)] bg-[color:var(--merchant-warning-soft)]/40 px-4 py-5 text-sm text-[color:var(--merchant-muted-strong)]">
               <p>{trendsError}</p>
               <MerchantButton type="button" onClick={loadTrends} variant="secondary">
-                Retry trend data
+                {t('dashboard.analytics.trends.retry')}
               </MerchantButton>
             </div>
           ) : chartData.length > 0 ? (
@@ -598,14 +630,14 @@ export default function AnalyticsPage() {
                     />
                     <Bar 
                       dataKey="current" 
-                      name="Current Period" 
+                      name={t('dashboard.analytics.trends.currentPeriod')} 
                       fill="#3b82f6"
                       radius={[4, 4, 0, 0]}
                     />
                     {hasComparisonSeries ? (
                       <Bar
                         dataKey="previous"
-                        name="Prior Period"
+                        name={t('dashboard.analytics.trends.priorPeriod')}
                         fill="#cbd5e1"
                         radius={[4, 4, 0, 0]}
                       />
@@ -664,7 +696,7 @@ export default function AnalyticsPage() {
                     <Line 
                       type="monotone" 
                       dataKey="current" 
-                      name="Current Period" 
+                      name={t('dashboard.analytics.trends.currentPeriod')} 
                       stroke="#3b82f6" 
                       strokeWidth={2}
                       dot={{ fill: '#3b82f6', r: 4 }}
@@ -674,7 +706,7 @@ export default function AnalyticsPage() {
                       <Line
                         type="monotone"
                         dataKey="previous"
-                        name="Prior Period"
+                        name={t('dashboard.analytics.trends.priorPeriod')}
                         stroke="#94a3b8"
                         strokeWidth={2}
                         strokeDasharray="4 4"
@@ -689,8 +721,10 @@ export default function AnalyticsPage() {
             <div className="flex items-center justify-center h-64 text-[color:var(--merchant-muted)]">
               <div className="text-center">
                 <BarChart3 className="w-12 h-12 mx-auto mb-3 text-[color:var(--merchant-muted)]" />
-                <p className="text-sm">No trend data available for the selected range.</p>
-                <p className="text-xs mt-1 text-[color:var(--merchant-muted)]">Data will appear once you have transactions.</p>
+                <p className="text-sm">{t('dashboard.analytics.trends.noData')}</p>
+                <p className="text-xs mt-1 text-[color:var(--merchant-muted)]">
+                  {t('dashboard.analytics.trends.noDataHelp')}
+                </p>
               </div>
             </div>
           )}
@@ -699,11 +733,13 @@ export default function AnalyticsPage() {
 
       {/* Summary */}
       <div className="merchant-panel merchant-panel-muted p-4">
-        <h3 className="font-medium text-[color:var(--merchant-ink)] mb-2">How to read these metrics</h3>
+        <h3 className="font-medium text-[color:var(--merchant-ink)] mb-2">
+          {t('dashboard.analytics.help.title')}
+        </h3>
         <ul className="text-sm text-[color:var(--merchant-muted-strong)] space-y-1">
-          <li><strong>Order capture rate:</strong> share of attempts that become created orders</li>
-          <li><strong>Checkout completion:</strong> share of created orders that are successfully placed</li>
-          <li><strong>Payment success:</strong> share of placed orders with successful payment completion</li>
+          <li>{t('dashboard.analytics.help.orderCapture')}</li>
+          <li>{t('dashboard.analytics.help.checkoutCompletion')}</li>
+          <li>{t('dashboard.analytics.help.paymentSuccess')}</li>
         </ul>
       </div>
     </div>
