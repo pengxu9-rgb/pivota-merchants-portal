@@ -79,18 +79,25 @@ type DashboardStats = {
 
 type Tone = 'brand' | 'success' | 'warning' | 'critical' | 'neutral';
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('en-US', {
+function formatCurrency(language: string, amount: number, currency = 'USD') {
+  return new Intl.NumberFormat(language, {
     style: 'currency',
-    currency: 'USD',
+    currency,
   }).format(amount);
 }
 
-function formatProductPrice(amount?: number | null, currency?: string | null) {
-  if (typeof amount !== 'number' || !Number.isFinite(amount)) return 'Price unavailable';
+function formatProductPrice(
+  language: string,
+  amount?: number | null,
+  currency?: string | null,
+  fallbackLabel?: string
+) {
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) {
+    return fallbackLabel || 'Price unavailable';
+  }
 
   try {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat(language, {
       style: 'currency',
       currency: currency || 'USD',
     }).format(amount);
@@ -99,30 +106,31 @@ function formatProductPrice(amount?: number | null, currency?: string | null) {
   }
 }
 
-function formatRelativeTime(value?: string | null) {
-  if (!value) return 'Recent';
+function formatRelativeTime(language: string, value?: string | null, fallbackLabel?: string) {
+  if (!value) return fallbackLabel || 'Recent';
 
   const timestamp = new Date(value).getTime();
-  if (!Number.isFinite(timestamp)) return 'Recent';
+  if (!Number.isFinite(timestamp)) return fallbackLabel || 'Recent';
 
   const diffMs = Date.now() - timestamp;
   const minute = 60 * 1000;
   const hour = 60 * minute;
   const day = 24 * hour;
+  const formatter = new Intl.RelativeTimeFormat(language, { numeric: 'auto' });
 
   if (diffMs < hour) {
-    return `${Math.max(1, Math.round(diffMs / minute))} min ago`;
+    return formatter.format(-Math.max(1, Math.round(diffMs / minute)), 'minute');
   }
 
   if (diffMs < day) {
-    return `${Math.max(1, Math.round(diffMs / hour))} hr ago`;
+    return formatter.format(-Math.max(1, Math.round(diffMs / hour)), 'hour');
   }
 
-  return `${Math.max(1, Math.round(diffMs / day))} day${diffMs >= 2 * day ? 's' : ''} ago`;
+  return formatter.format(-Math.max(1, Math.round(diffMs / day)), 'day');
 }
 
 export default function DashboardPage() {
-  const { t } = useMerchantLanguage();
+  const { t, language } = useMerchantLanguage();
   const [readinessSummary, setReadinessSummary] = useState<ReadinessSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -222,7 +230,7 @@ export default function DashboardPage() {
         setCatalogQuality(null);
         setOptimizationQueue([]);
         setReadinessSummary(null);
-        setReadinessError('Catalog readiness is temporarily unavailable.');
+        setReadinessError(t('dashboard.overview.banner.degradedReadiness'));
       } else {
         const optimizationPayload = optimizationResult.value;
         const readiness = optimizationPayload.readiness_summary || null;
@@ -270,7 +278,7 @@ export default function DashboardPage() {
 
       if (statsResult.status !== 'fulfilled' || !statsResult.value) {
         setRecentOrders([]);
-        setStatsError('Revenue, order, and customer metrics are temporarily unavailable.');
+        setStatsError(t('dashboard.overview.banner.degradedStats'));
       } else {
         const payload = statsResult.value;
         const recentOrdersData = Array.isArray(payload?.recent_orders)
@@ -405,45 +413,73 @@ export default function DashboardPage() {
   const blockerLabel =
     readinessSummary?.blocker_breakdown?.[0]?.label ||
     readinessSummary?.top_blockers?.[0]?.replace(/_/g, ' ') ||
-    'Readiness gaps';
+    t('dashboard.overview.common.readinessGaps');
 
   const heroTitle =
     blockedVariants > 0
-      ? `${blockedVariants} variants are blocking channel launch.`
+      ? t('dashboard.overview.hero.title.blockedVariants', { count: blockedVariants })
       : qualityNeedsAttention > 0
-        ? `${qualityNeedsAttention} products need content updates before they can go live.`
+        ? t('dashboard.overview.hero.title.contentUpdates', {
+            count: qualityNeedsAttention,
+          })
         : readyVariants > 0
-          ? `${readyVariants} variants are ready to launch across your connected channels.`
-          : 'Your merchant workspace is set up for the next launch cycle.';
+          ? t('dashboard.overview.hero.title.readyVariants', { count: readyVariants })
+          : t('dashboard.overview.hero.title.workspaceReady');
 
   const heroDescription =
     blockedVariants > 0
-      ? 'Clear blockers first, then move to content and channel setup.'
+      ? t('dashboard.overview.hero.description.blockers')
       : qualityNeedsAttention > 0
-        ? 'Tighten content before the next launch or campaign push.'
-        : 'Track readiness, sales, and setup from one merchant workspace.';
+        ? t('dashboard.overview.hero.description.content')
+        : t('dashboard.overview.hero.description.default');
 
   const heroLead =
     blockedVariants > 0
-      ? `${blockerLabel} is the clearest drag on launch readiness right now.`
+      ? t('dashboard.overview.hero.lead.blocker', { label: blockerLabel })
       : qualityNeedsAttention > 0
-        ? `${qualityNeedsAttention} products still need content before they feel launch-ready.`
+        ? t('dashboard.overview.hero.lead.content', {
+            count: qualityNeedsAttention,
+          })
         : connectedStores.length === 0 || activePSPs.length === 0
-          ? 'Commerce setup is the next constraint for channel launch.'
-          : 'Catalog and commerce setup are in a workable state.';
+          ? t('dashboard.overview.hero.lead.setup')
+          : t('dashboard.overview.hero.lead.default');
 
   const heroFacts = [
     blockedVariants > 0
-      ? { label: `${blockedVariants} blocked variants`, tone: 'critical' as Tone, icon: AlertCircle }
+      ? {
+          label: t('dashboard.overview.hero.fact.blockedVariants', {
+            count: blockedVariants,
+          }),
+          tone: 'critical' as Tone,
+          icon: AlertCircle,
+        }
       : null,
     qualityNeedsAttention > 0
-      ? { label: `${qualityNeedsAttention} products missing details`, tone: 'warning' as Tone, icon: Sparkles }
+      ? {
+          label: t('dashboard.overview.hero.fact.productsMissingDetails', {
+            count: qualityNeedsAttention,
+          }),
+          tone: 'warning' as Tone,
+          icon: Sparkles,
+        }
       : null,
     readyVariants > 0
-      ? { label: `${readyVariants} channel-ready variants`, tone: 'success' as Tone, icon: CheckCircle2 }
+      ? {
+          label: t('dashboard.overview.hero.fact.channelReadyVariants', {
+            count: readyVariants,
+          }),
+          tone: 'success' as Tone,
+          icon: CheckCircle2,
+        }
       : null,
     connectedStores.length > 0
-      ? { label: `${connectedStores.length} sales channels connected`, tone: 'brand' as Tone, icon: Store }
+      ? {
+          label: t('dashboard.overview.hero.fact.channelsConnected', {
+            count: connectedStores.length,
+          }),
+          tone: 'brand' as Tone,
+          icon: Store,
+        }
       : null,
   ].filter(Boolean) as Array<{
     label: string;
@@ -461,108 +497,138 @@ export default function DashboardPage() {
     cta: string;
   }> = [
     {
-      title: 'Catalog health',
+      title: t('dashboard.overview.panels.catalogHealth.title'),
       tone: readinessTone,
       value:
         readinessSummary?.score != null
           ? `${readinessSummary.score}`
           : blockedVariants > 0
             ? `${blockedVariants}`
-            : 'Ready',
+            : t('dashboard.overview.panels.catalogHealth.value.ready'),
       supporting:
         readinessSummary?.score != null
-          ? `Readiness score · ${readinessSummary.label}`
+          ? t('dashboard.overview.panels.catalogHealth.supporting.score', {
+              label: readinessSummary.label,
+            })
           : blockedVariants > 0
-            ? `${blockerLabel} is the biggest issue`
-            : 'No major catalog blockers detected',
+            ? t('dashboard.overview.panels.catalogHealth.supporting.issue', {
+                label: blockerLabel,
+              })
+            : t('dashboard.overview.panels.catalogHealth.supporting.noBlockers'),
       detail:
         blockedVariants > 0
-          ? `${blockedVariants} variants still need fixes before launch.`
+          ? t('dashboard.overview.panels.catalogHealth.detail.blocked', {
+              count: blockedVariants,
+            })
           : averageContentScore != null
-            ? `Average content quality ${averageContentScore}/100.`
-            : 'Catalog health is being assessed.',
+            ? t('dashboard.overview.panels.catalogHealth.detail.avgQuality', {
+                score: averageContentScore,
+              })
+            : t('dashboard.overview.panels.catalogHealth.detail.assessing'),
       href: readinessHref,
-      cta: 'Review catalog health',
+      cta: t('dashboard.overview.panels.catalogHealth.cta'),
     },
     {
-      title: 'Blocked variants',
+      title: t('dashboard.overview.panels.blockedVariants.title'),
       tone: blockedVariants > 0 ? 'critical' : 'success',
       value: `${blockedVariants}`,
-      supporting: blockedVariants > 0 ? blockerLabel : 'No blocking readiness issues',
+      supporting:
+        blockedVariants > 0
+          ? blockerLabel
+          : t('dashboard.overview.panels.blockedVariants.supporting.none'),
       detail:
         blockedVariants > 0
-          ? 'Start with the biggest blocker bucket first.'
-          : 'No blocking readiness issues in the latest snapshot.',
+          ? t('dashboard.overview.panels.blockedVariants.detail.startBucket')
+          : t('dashboard.overview.panels.blockedVariants.detail.none'),
       href: readinessHref,
-      cta: blockedVariants > 0 ? 'Resolve blocked variants' : 'View readiness details',
+      cta:
+        blockedVariants > 0
+          ? t('dashboard.overview.panels.blockedVariants.cta.resolve')
+          : t('dashboard.overview.panels.blockedVariants.cta.view'),
     },
     {
-      title: 'Content quality',
+      title: t('dashboard.overview.panels.contentQuality.title'),
       tone: qualityNeedsAttention > 0 ? 'warning' : 'success',
       value: `${qualityNeedsAttention}`,
       supporting:
         averageContentScore != null
-          ? `Average quality score ${averageContentScore}/100`
+          ? t('dashboard.overview.panels.contentQuality.supporting.avg', {
+              score: averageContentScore,
+            })
           : qualityLoading
-            ? 'Refreshing quality signals'
-            : 'Quality score pending',
+            ? t('dashboard.overview.panels.contentQuality.supporting.refreshing')
+            : t('dashboard.overview.panels.contentQuality.supporting.pending'),
       detail:
         qualityNeedsAttention > 0
-          ? `${missingDescriptionCount} descriptions missing · ${missingImageCount} images missing.`
-          : 'Descriptions and imagery look complete.',
+          ? t('dashboard.overview.panels.contentQuality.detail.missing', {
+              descriptions: missingDescriptionCount,
+              images: missingImageCount,
+            })
+          : t('dashboard.overview.panels.contentQuality.detail.complete'),
       href: '/dashboard/products',
-      cta: 'Improve product content',
+      cta: t('dashboard.overview.panels.contentQuality.cta'),
     },
     {
-      title: 'Channel readiness',
+      title: t('dashboard.overview.panels.channelReadiness.title'),
       tone: connectedStores.length > 0 && activePSPs.length > 0 ? 'success' : 'warning',
       value: `${readyVariants || totalProductsValue}`,
-      supporting: `${connectedStores.length} channels · ${activePSPs.length} payment setups`,
+      supporting: t('dashboard.overview.panels.channelReadiness.supporting', {
+        channels: connectedStores.length,
+        payments: activePSPs.length,
+      }),
       detail:
         connectedStores.length === 0
-          ? 'Connect a sales channel first.'
+          ? t('dashboard.overview.panels.channelReadiness.detail.connectChannel')
           : activePSPs.length === 0
-            ? 'Add payment setup to complete checkout.'
-            : 'Setup is in place. Focus the team on products next.',
+            ? t('dashboard.overview.panels.channelReadiness.detail.addPayment')
+            : t('dashboard.overview.panels.channelReadiness.detail.ready'),
       href: '/dashboard/integrations',
-      cta: 'Check channel readiness',
+      cta: t('dashboard.overview.panels.channelReadiness.cta'),
     },
   ];
 
   const opportunityItems = [
     blockedVariants > 0
       ? {
-          title: `Unblock ${blockedVariants} variants`,
-          detail: `${blockerLabel} is the clearest drag on channel launch right now.`,
+          title: t('dashboard.overview.opportunities.unblock.title', {
+            count: blockedVariants,
+          }),
+          detail: t('dashboard.overview.opportunities.unblock.detail', {
+            label: blockerLabel,
+          }),
           href: readinessHref,
-          cta: 'Open catalog health',
+          cta: t('dashboard.overview.opportunities.openCatalogHealth'),
         }
       : null,
     qualityNeedsAttention > 0
       ? {
-          title: `Improve ${qualityNeedsAttention} products before the next push`,
-          detail: 'Tightening descriptions and imagery will help products surface more confidently across channels.',
+          title: t('dashboard.overview.opportunities.improve.title', {
+            count: qualityNeedsAttention,
+          }),
+          detail: t('dashboard.overview.opportunities.improve.detail'),
           href: readinessHref,
-          cta: 'Open catalog health',
+          cta: t('dashboard.overview.opportunities.openCatalogHealth'),
         }
       : null,
     connectedStores.length === 0 || activePSPs.length === 0
       ? {
-          title: 'Complete commerce setup',
+          title: t('dashboard.overview.opportunities.completeSetup.title'),
           detail:
             connectedStores.length === 0
-              ? 'Add a storefront connection so catalog and orders can start syncing.'
-              : 'Finish payment setup so ready products can move cleanly into checkout.',
+              ? t('dashboard.overview.opportunities.completeSetup.detail.channels')
+              : t('dashboard.overview.opportunities.completeSetup.detail.payments'),
           href: '/dashboard/integrations',
-          cta: 'Open setup',
+          cta: t('dashboard.overview.opportunities.openSetup'),
         }
       : null,
     revenueGrowthValue > 0
       ? {
-          title: `Revenue is up ${Math.abs(revenueGrowthValue)}% vs the prior 30 days`,
-          detail: 'Use the current momentum to prioritize content fixes on the products most likely to convert next.',
+          title: t('dashboard.overview.opportunities.revenueUp.title', {
+            percent: Math.abs(revenueGrowthValue),
+          }),
+          detail: t('dashboard.overview.opportunities.revenueUp.detail'),
           href: '/dashboard/analytics',
-          cta: 'View analytics',
+          cta: t('dashboard.overview.opportunities.viewAnalytics'),
         }
       : null,
   ].filter(Boolean) as Array<{
@@ -575,92 +641,157 @@ export default function DashboardPage() {
   const recentActivity = recentOrders.slice(0, 4).map((order) => ({
     title:
       order?.order_number
-        ? `Order ${order.order_number}`
+        ? t('dashboard.overview.recentActivity.orderPrefix', {
+            value: order.order_number,
+          })
         : order?.order_id
-          ? `Order ${order.order_id}`
-          : order?.customer_name || order?.customer_email || 'Recent order',
+          ? t('dashboard.overview.recentActivity.orderPrefix', {
+              value: order.order_id,
+            })
+          : order?.customer_name ||
+            order?.customer_email ||
+            t('dashboard.overview.recentActivity.recentOrder'),
     detail: `${formatCurrency(
+      language,
       Number(order?.total_amount ?? order?.total ?? order?.amount ?? 0)
-    )} · ${order?.customer_name || order?.customer_email || order?.status || 'Order activity'}`,
+    )} · ${
+      order?.customer_name ||
+      order?.customer_email ||
+      order?.status ||
+      t('dashboard.overview.recentActivity.orderActivity')
+    }`,
     timestamp: formatRelativeTime(
-      order?.created_at || order?.createdAt || order?.order_date || null
+      language,
+      order?.created_at || order?.createdAt || order?.order_date || null,
+      t('dashboard.overview.common.recent')
     ),
   }));
 
   const supportCards = [
     {
-      title: 'Orders snapshot',
+      title: t('dashboard.overview.support.ordersSnapshot.title'),
       icon: ShoppingBag,
-      detail: hasStatsData ? `${totalOrdersValue} orders in the last 30 days` : 'Order metrics unavailable',
+      detail: hasStatsData
+        ? t('dashboard.overview.support.ordersSnapshot.detail.available', {
+            count: totalOrdersValue,
+          })
+        : t('dashboard.overview.support.ordersSnapshot.detail.unavailable'),
       meta: hasStatsData
-        ? `${paidOrdersValue} paid · ${formatCurrency(totalRevenueValue)} confirmed revenue`
-        : 'Reconnect to dashboard stats to restore order and revenue visibility.',
+        ? t('dashboard.overview.support.ordersSnapshot.meta.available', {
+            paid: paidOrdersValue,
+            revenue: formatCurrency(language, totalRevenueValue),
+          })
+        : t('dashboard.overview.support.ordersSnapshot.meta.unavailable'),
       href: '/dashboard/orders',
-      cta: 'Open orders',
+      cta: t('dashboard.overview.support.ordersSnapshot.cta'),
     },
     {
-      title: 'Sales channels',
+      title: t('dashboard.overview.support.salesChannels.title'),
       icon: Store,
       detail:
         storesLoading
-          ? 'Refreshing channel connections'
+          ? t('dashboard.overview.support.salesChannels.detail.refreshing')
           : connectedStores.length > 0
             ? connectedStores
                 .slice(0, 2)
                 .map((store) => store.store_name || store.domain || store.platform)
                 .join(' · ')
-            : 'No channels connected yet',
+            : t('dashboard.overview.support.salesChannels.detail.none'),
       meta:
         connectedStores.length > 0
-          ? `${connectedStores.length} active channel${connectedStores.length === 1 ? '' : 's'}`
-          : 'Connect Shopify or Wix to start syncing catalog and orders.',
+          ? connectedStores.length === 1
+            ? t('dashboard.overview.common.activeChannels.one', {
+                count: connectedStores.length,
+              })
+            : t('dashboard.overview.common.activeChannels.other', {
+                count: connectedStores.length,
+              })
+          : t('dashboard.overview.support.salesChannels.meta.none'),
       href: '/dashboard/integrations',
-      cta: connectedStores.length > 0 ? 'Manage channels' : 'Connect channel',
+      cta:
+        connectedStores.length > 0
+          ? t('dashboard.overview.support.salesChannels.cta.manage')
+          : t('dashboard.overview.support.salesChannels.cta.connect'),
     },
     {
-      title: 'Payment setup',
+      title: t('dashboard.overview.support.paymentSetup.title'),
       icon: CreditCard,
       detail:
         pspsLoading
-          ? 'Refreshing payment setup'
+          ? t('dashboard.overview.support.paymentSetup.detail.refreshing')
           : activePSPs.length > 0
-            ? `${activePSPs.length} payment setup${activePSPs.length === 1 ? '' : 's'} active`
-            : 'Payment setup still needs attention',
+            ? activePSPs.length === 1
+              ? t('dashboard.overview.common.activePaymentSetups.one', {
+                  count: activePSPs.length,
+                })
+              : t('dashboard.overview.common.activePaymentSetups.other', {
+                  count: activePSPs.length,
+                })
+            : t('dashboard.overview.support.paymentSetup.detail.needsAttention'),
       meta:
         activePSPs.length > 0
-          ? `Avg success rate ${Math.round(
-              activePSPs.reduce((sum, psp) => sum + Number(psp.success_rate || 0), 0) /
-                Math.max(activePSPs.length, 1)
-            )}%`
-          : 'Add payment setup to turn ready products into completed orders.',
+          ? t('dashboard.overview.support.paymentSetup.meta.successRate', {
+              rate: Math.round(
+                activePSPs.reduce((sum, psp) => sum + Number(psp.success_rate || 0), 0) /
+                  Math.max(activePSPs.length, 1)
+              ),
+            })
+          : t('dashboard.overview.support.paymentSetup.meta.addSetup'),
       href: '/dashboard/integrations',
-      cta: activePSPs.length > 0 ? 'Review payment setup' : 'Connect payments',
+      cta:
+        activePSPs.length > 0
+          ? t('dashboard.overview.support.paymentSetup.cta.review')
+          : t('dashboard.overview.support.paymentSetup.cta.connect'),
     },
   ];
 
   const businessSnapshot = [
     {
-      label: 'Orders (30d)',
+      label: t('dashboard.overview.snapshot.orders'),
       value: hasStatsData ? `${totalOrdersValue}` : '—',
-      meta: hasStatsData ? `${paidOrdersValue} paid` : 'Temporarily unavailable',
+      meta: hasStatsData
+        ? t('dashboard.overview.snapshot.paid', { count: paidOrdersValue })
+        : t('dashboard.overview.snapshot.unavailable'),
       icon: ShoppingBag,
     },
     {
-      label: 'Paid revenue',
-      value: hasStatsData ? formatCurrency(totalRevenueValue) : '—',
-      meta: hasStatsData ? `${Math.abs(revenueGrowthValue)}% vs prior 30d` : 'Temporarily unavailable',
+      label: t('dashboard.overview.snapshot.revenue'),
+      value: hasStatsData ? formatCurrency(language, totalRevenueValue) : '—',
+      meta: hasStatsData
+        ? t('dashboard.overview.snapshot.vsPrior30d', {
+            percent: Math.abs(revenueGrowthValue),
+          })
+        : t('dashboard.overview.snapshot.unavailable'),
       icon: Sparkles,
     },
     {
-      label: 'Customers',
+      label: t('dashboard.overview.snapshot.customers'),
       value: hasStatsData ? `${totalCustomersValue}` : '—',
-      meta: hasStatsData ? `${totalProductsValue} products in catalog` : 'Temporarily unavailable',
+      meta: hasStatsData
+        ? t('dashboard.overview.snapshot.productsInCatalog', {
+            count: totalProductsValue,
+          })
+        : t('dashboard.overview.snapshot.unavailable'),
       icon: Users,
     },
     {
-      label: 'Commerce setup',
-      value: `${connectedStores.length} channels`,
-      meta: `${connectedPSPs.length} payment setups`,
+      label: t('dashboard.overview.snapshot.commerceSetup'),
+      value:
+        connectedStores.length === 1
+          ? t('dashboard.overview.common.channelsCount.one', {
+              count: connectedStores.length,
+            })
+          : t('dashboard.overview.common.channelsCount.other', {
+              count: connectedStores.length,
+            }),
+      meta:
+        connectedPSPs.length === 1
+          ? t('dashboard.overview.common.paymentSetupsCount.one', {
+              count: connectedPSPs.length,
+            })
+          : t('dashboard.overview.common.paymentSetupsCount.other', {
+              count: connectedPSPs.length,
+            }),
       icon: Store,
     },
   ];
@@ -736,7 +867,9 @@ export default function DashboardPage() {
                 </StatusBadge>
                 <StatusBadge tone="neutral">
                   {hasStatsData
-                    ? `${totalOrdersValue} orders in the last 30d`
+                    ? t('dashboard.overview.hero.statsLast30d', {
+                        count: totalOrdersValue,
+                      })
                     : t('dashboard.overview.hero.statsUnavailable')}
                 </StatusBadge>
               </div>
@@ -870,12 +1003,15 @@ export default function DashboardPage() {
 
       <SectionHeader
         title={t('dashboard.overview.operationalSupport.title')}
-        description={t('dashboard.overview.operationalSupport.description')}
-        action={
-          <StatusBadge tone="neutral">
-            {connectedStores.length} channels · {activePSPs.length} payment setups
-          </StatusBadge>
-        }
+          description={t('dashboard.overview.operationalSupport.description')}
+          action={
+            <StatusBadge tone="neutral">
+              {t('dashboard.overview.common.channelsAndPayments', {
+                channels: connectedStores.length,
+                payments: activePSPs.length,
+              })}
+            </StatusBadge>
+          }
       />
       <div className="grid gap-4 xl:grid-cols-3">
         {supportCards.map((card) => (
@@ -970,12 +1106,19 @@ export default function DashboardPage() {
                       {product.title || t('dashboard.overview.product.untitled')}
                     </p>
                     <p className="text-sm text-[color:var(--merchant-muted)]">
-                      {formatProductPrice(product.price_value, product.price_currency)}
+                      {formatProductPrice(
+                        language,
+                        product.price_value,
+                        product.price_currency,
+                        t('dashboard.overview.common.priceUnavailable')
+                      )}
                     </p>
                     <p className="text-sm text-[color:var(--merchant-muted-strong)]">
                       {product.top_issues?.[0]?.label ||
                         (product.blocked_variant_count > 0
-                          ? `${product.blocked_variant_count} blocked variants`
+                          ? t('dashboard.overview.common.blockedVariants', {
+                              count: product.blocked_variant_count,
+                            })
                           : t('dashboard.overview.product.readyForReview'))}
                     </p>
                   </div>

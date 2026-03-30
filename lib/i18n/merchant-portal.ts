@@ -427,6 +427,120 @@ Object.assign(enMessages, {
   "dashboard.overview.hero.contentNext": "Content next",
   "dashboard.overview.hero.readyToScale": "Ready to scale",
   "dashboard.overview.hero.statsUnavailable": "Stats unavailable",
+  "dashboard.overview.hero.statsLast30d": "{count} orders in the last 30d",
+  "dashboard.overview.hero.title.blockedVariants":
+    "{count} variants are blocking channel launch.",
+  "dashboard.overview.hero.title.contentUpdates":
+    "{count} products need content updates before they can go live.",
+  "dashboard.overview.hero.title.readyVariants":
+    "{count} variants are ready to launch across your connected channels.",
+  "dashboard.overview.hero.title.workspaceReady":
+    "Your merchant workspace is set up for the next launch cycle.",
+  "dashboard.overview.hero.description.blockers":
+    "Clear blockers first, then move to content and channel setup.",
+  "dashboard.overview.hero.description.content":
+    "Tighten content before the next launch or campaign push.",
+  "dashboard.overview.hero.description.default":
+    "Track readiness, sales, and setup from one merchant workspace.",
+  "dashboard.overview.hero.lead.blocker":
+    "{label} is the clearest drag on launch readiness right now.",
+  "dashboard.overview.hero.lead.content":
+    "{count} products still need content before they feel launch-ready.",
+  "dashboard.overview.hero.lead.setup":
+    "Commerce setup is the next constraint for channel launch.",
+  "dashboard.overview.hero.lead.default":
+    "Catalog and commerce setup are in a workable state.",
+  "dashboard.overview.hero.fact.blockedVariants": "{count} blocked variants",
+  "dashboard.overview.hero.fact.productsMissingDetails":
+    "{count} products missing details",
+  "dashboard.overview.hero.fact.channelReadyVariants":
+    "{count} channel-ready variants",
+  "dashboard.overview.hero.fact.channelsConnected":
+    "{count} sales channels connected",
+  "dashboard.overview.common.recent": "Recent",
+  "dashboard.overview.common.priceUnavailable": "Price unavailable",
+  "dashboard.overview.common.readinessGaps": "Readiness gaps",
+  "dashboard.overview.common.blockedVariants": "{count} blocked variants",
+  "dashboard.overview.common.channelsAndPayments":
+    "{channels} channels · {payments} payment setups",
+  "dashboard.overview.common.channelsCount.one": "{count} channel",
+  "dashboard.overview.common.channelsCount.other": "{count} channels",
+  "dashboard.overview.common.paymentSetupsCount.one": "{count} payment setup",
+  "dashboard.overview.common.paymentSetupsCount.other": "{count} payment setups",
+  "dashboard.overview.common.activeChannels.one": "{count} active channel",
+  "dashboard.overview.common.activeChannels.other": "{count} active channels",
+  "dashboard.overview.common.activePaymentSetups.one":
+    "{count} payment setup active",
+  "dashboard.overview.common.activePaymentSetups.other":
+    "{count} payment setups active",
+  "dashboard.overview.panels.catalogHealth.title": "Catalog health",
+  "dashboard.overview.panels.catalogHealth.value.ready": "Ready",
+  "dashboard.overview.panels.catalogHealth.supporting.score":
+    "Readiness score · {label}",
+  "dashboard.overview.panels.catalogHealth.supporting.issue":
+    "{label} is the biggest issue",
+  "dashboard.overview.panels.catalogHealth.supporting.noBlockers":
+    "No major catalog blockers detected",
+  "dashboard.overview.panels.catalogHealth.detail.blocked":
+    "{count} variants still need fixes before launch.",
+  "dashboard.overview.panels.catalogHealth.detail.avgQuality":
+    "Average content quality {score}/100.",
+  "dashboard.overview.panels.catalogHealth.detail.assessing":
+    "Catalog health is being assessed.",
+  "dashboard.overview.panels.catalogHealth.cta": "Review catalog health",
+  "dashboard.overview.panels.blockedVariants.title": "Blocked variants",
+  "dashboard.overview.panels.blockedVariants.supporting.none":
+    "No blocking readiness issues",
+  "dashboard.overview.panels.blockedVariants.detail.startBucket":
+    "Start with the biggest blocker bucket first.",
+  "dashboard.overview.panels.blockedVariants.detail.none":
+    "No blocking readiness issues in the latest snapshot.",
+  "dashboard.overview.panels.blockedVariants.cta.resolve":
+    "Resolve blocked variants",
+  "dashboard.overview.panels.blockedVariants.cta.view":
+    "View readiness details",
+  "dashboard.overview.panels.contentQuality.title": "Content quality",
+  "dashboard.overview.panels.contentQuality.supporting.avg":
+    "Average quality score {score}/100",
+  "dashboard.overview.panels.contentQuality.supporting.refreshing":
+    "Refreshing quality signals",
+  "dashboard.overview.panels.contentQuality.supporting.pending":
+    "Quality score pending",
+  "dashboard.overview.panels.contentQuality.detail.missing":
+    "{descriptions} descriptions missing · {images} images missing.",
+  "dashboard.overview.panels.contentQuality.detail.complete":
+    "Descriptions and imagery look complete.",
+  "dashboard.overview.panels.contentQuality.cta": "Improve product content",
+  "dashboard.overview.panels.channelReadiness.title": "Channel readiness",
+  "dashboard.overview.panels.channelReadiness.supporting":
+    "{channels} channels · {payments} payment setups",
+  "dashboard.overview.panels.channelReadiness.detail.connectChannel":
+    "Connect a sales channel first.",
+  "dashboard.overview.panels.channelReadiness.detail.addPayment":
+    "Add payment setup to complete checkout.",
+  "dashboard.overview.panels.channelReadiness.detail.ready":
+    "Setup is in place. Focus the team on products next.",
+  "dashboard.overview.panels.channelReadiness.cta": "Check channel readiness",
+  "dashboard.overview.opportunities.unblock.title": "Unblock {count} variants",
+  "dashboard.overview.opportunities.unblock.detail":
+    "{label} is the clearest drag on channel launch right now.",
+  "dashboard.overview.opportunities.improve.title":
+    "Improve {count} products before the next push",
+  "dashboard.overview.opportunities.improve.detail":
+    "Tightening descriptions and imagery will help products surface more confidently across channels.",
+  "dashboard.overview.opportunities.completeSetup.title":
+    "Complete commerce setup",
+  "dashboard.overview.opportunities.completeSetup.detail.channels":
+    "Add a storefront connection so catalog and orders can start syncing.",
+  "dashboard.overview.opportunities.completeSetup.detail.payments":
+    "Finish payment setup so ready products can move cleanly into checkout.",
+  "dashboard.overview.opportunities.openCatalogHealth": "Open catalog health",
+  "dashboard.overview.opportunities.openSetup": "Open setup",
+  "dashboard.overview.opportunities.revenueUp.title":
+    "Revenue is up {percent}% vs the prior 30 days",
+  "dashboard.overview.opportunities.revenueUp.detail":
+    "Use the current momentum to prioritize content fixes on the products most likely to convert next.",
+  "dashboard.overview.opportunities.viewAnalytics": "View analytics",
   "dashboard.overview.topOpportunities.title": "Top opportunities",
   "dashboard.overview.topOpportunities.description":
     "Next merchant actions with the clearest near-term impact.",
@@ -435,11 +549,53 @@ Object.assign(enMessages, {
   "dashboard.overview.recentActivity.title": "Recent activity",
   "dashboard.overview.recentActivity.description": "Recent order and merchant activity.",
   "dashboard.overview.recentActivity.openOrders": "Open orders",
+  "dashboard.overview.recentActivity.orderPrefix": "Order {value}",
+  "dashboard.overview.recentActivity.recentOrder": "Recent order",
+  "dashboard.overview.recentActivity.orderActivity": "Order activity",
   "dashboard.overview.recentActivity.empty":
     "Recent activity will appear once new orders or merchant events sync into the portal.",
   "dashboard.overview.operationalSupport.title": "Operational support",
   "dashboard.overview.operationalSupport.description":
     "Keep channels and payments visible without letting infrastructure dominate the page.",
+  "dashboard.overview.support.ordersSnapshot.title": "Orders snapshot",
+  "dashboard.overview.support.ordersSnapshot.detail.available":
+    "{count} orders in the last 30 days",
+  "dashboard.overview.support.ordersSnapshot.detail.unavailable":
+    "Order metrics unavailable",
+  "dashboard.overview.support.ordersSnapshot.meta.available":
+    "{paid} paid · {revenue} confirmed revenue",
+  "dashboard.overview.support.ordersSnapshot.meta.unavailable":
+    "Reconnect to dashboard stats to restore order and revenue visibility.",
+  "dashboard.overview.support.ordersSnapshot.cta": "Open orders",
+  "dashboard.overview.support.salesChannels.title": "Sales channels",
+  "dashboard.overview.support.salesChannels.detail.refreshing":
+    "Refreshing channel connections",
+  "dashboard.overview.support.salesChannels.detail.none":
+    "No channels connected yet",
+  "dashboard.overview.support.salesChannels.meta.none":
+    "Connect Shopify or Wix to start syncing catalog and orders.",
+  "dashboard.overview.support.salesChannels.cta.manage": "Manage channels",
+  "dashboard.overview.support.salesChannels.cta.connect": "Connect channel",
+  "dashboard.overview.support.paymentSetup.title": "Payment setup",
+  "dashboard.overview.support.paymentSetup.detail.refreshing":
+    "Refreshing payment setup",
+  "dashboard.overview.support.paymentSetup.detail.needsAttention":
+    "Payment setup still needs attention",
+  "dashboard.overview.support.paymentSetup.meta.successRate":
+    "Avg success rate {rate}%",
+  "dashboard.overview.support.paymentSetup.meta.addSetup":
+    "Add payment setup to turn ready products into completed orders.",
+  "dashboard.overview.support.paymentSetup.cta.review":
+    "Review payment setup",
+  "dashboard.overview.support.paymentSetup.cta.connect": "Connect payments",
+  "dashboard.overview.snapshot.orders": "Orders (30d)",
+  "dashboard.overview.snapshot.revenue": "Paid revenue",
+  "dashboard.overview.snapshot.customers": "Customers",
+  "dashboard.overview.snapshot.commerceSetup": "Commerce setup",
+  "dashboard.overview.snapshot.paid": "{count} paid",
+  "dashboard.overview.snapshot.unavailable": "Temporarily unavailable",
+  "dashboard.overview.snapshot.vsPrior30d": "{percent}% vs prior 30d",
+  "dashboard.overview.snapshot.productsInCatalog": "{count} products in catalog",
   "dashboard.overview.readinessFocus.title": "Readiness focus",
   "dashboard.overview.readinessFocus.description":
     "Current blocker buckets translated into next steps.",
@@ -1858,6 +2014,110 @@ Object.assign(localeOverridesRaw["zh-CN"], {
   "dashboard.overview.hero.contentNext": "接着补内容",
   "dashboard.overview.hero.readyToScale": "可以继续放量",
   "dashboard.overview.hero.statsUnavailable": "统计暂不可用",
+  "dashboard.overview.hero.statsLast30d": "最近 30 天共 {count} 笔订单",
+  "dashboard.overview.hero.title.blockedVariants": "{count} 个变体正在阻塞渠道上线。",
+  "dashboard.overview.hero.title.contentUpdates":
+    "{count} 个商品还需要补内容后才能上线。",
+  "dashboard.overview.hero.title.readyVariants":
+    "{count} 个变体已可在已连接渠道中上线。",
+  "dashboard.overview.hero.title.workspaceReady":
+    "你的商家工作台已为下一轮上线周期做好准备。",
+  "dashboard.overview.hero.description.blockers":
+    "先清除阻塞项，再推进内容和渠道配置。",
+  "dashboard.overview.hero.description.content":
+    "在下一次上线或活动推进前，先把内容收紧。",
+  "dashboard.overview.hero.description.default":
+    "在一个商家工作台里持续跟踪 readiness、销售和配置进度。",
+  "dashboard.overview.hero.lead.blocker":
+    "{label} 是当前最明显拖慢上线 readiness 的问题。",
+  "dashboard.overview.hero.lead.content":
+    "还有 {count} 个商品需要补内容，才能更接近可上线状态。",
+  "dashboard.overview.hero.lead.setup": "商业化配置仍是当前渠道上线的主要约束。",
+  "dashboard.overview.hero.lead.default": "目录和商业化配置目前已进入可运作状态。",
+  "dashboard.overview.hero.fact.blockedVariants": "{count} 个阻塞中的变体",
+  "dashboard.overview.hero.fact.productsMissingDetails":
+    "{count} 个商品缺少关键信息",
+  "dashboard.overview.hero.fact.channelReadyVariants": "{count} 个可上渠道的变体",
+  "dashboard.overview.hero.fact.channelsConnected": "已连接 {count} 个销售渠道",
+  "dashboard.overview.common.recent": "最近",
+  "dashboard.overview.common.priceUnavailable": "价格暂不可用",
+  "dashboard.overview.common.readinessGaps": "Readiness 缺口",
+  "dashboard.overview.common.blockedVariants": "{count} 个阻塞中的变体",
+  "dashboard.overview.common.channelsAndPayments":
+    "{channels} 个渠道 · {payments} 个支付配置",
+  "dashboard.overview.common.channelsCount.one": "{count} 个渠道",
+  "dashboard.overview.common.channelsCount.other": "{count} 个渠道",
+  "dashboard.overview.common.paymentSetupsCount.one": "{count} 个支付配置",
+  "dashboard.overview.common.paymentSetupsCount.other": "{count} 个支付配置",
+  "dashboard.overview.common.activeChannels.one": "{count} 个活跃渠道",
+  "dashboard.overview.common.activeChannels.other": "{count} 个活跃渠道",
+  "dashboard.overview.common.activePaymentSetups.one": "{count} 个支付配置已激活",
+  "dashboard.overview.common.activePaymentSetups.other": "{count} 个支付配置已激活",
+  "dashboard.overview.panels.catalogHealth.title": "目录健康",
+  "dashboard.overview.panels.catalogHealth.value.ready": "就绪",
+  "dashboard.overview.panels.catalogHealth.supporting.score":
+    "Readiness 评分 · {label}",
+  "dashboard.overview.panels.catalogHealth.supporting.issue":
+    "{label} 是当前最大的目录问题",
+  "dashboard.overview.panels.catalogHealth.supporting.noBlockers":
+    "暂未发现主要目录阻塞项",
+  "dashboard.overview.panels.catalogHealth.detail.blocked":
+    "还有 {count} 个变体需要修复后才能上线。",
+  "dashboard.overview.panels.catalogHealth.detail.avgQuality":
+    "平均内容质量得分 {score}/100。",
+  "dashboard.overview.panels.catalogHealth.detail.assessing":
+    "目录健康正在评估中。",
+  "dashboard.overview.panels.catalogHealth.cta": "查看目录健康",
+  "dashboard.overview.panels.blockedVariants.title": "阻塞变体",
+  "dashboard.overview.panels.blockedVariants.supporting.none":
+    "当前没有阻塞 readiness 的问题",
+  "dashboard.overview.panels.blockedVariants.detail.startBucket":
+    "先从最大的阻塞桶开始处理。",
+  "dashboard.overview.panels.blockedVariants.detail.none":
+    "最新快照中没有阻塞 readiness 的问题。",
+  "dashboard.overview.panels.blockedVariants.cta.resolve": "解决阻塞变体",
+  "dashboard.overview.panels.blockedVariants.cta.view": "查看 readiness 详情",
+  "dashboard.overview.panels.contentQuality.title": "内容质量",
+  "dashboard.overview.panels.contentQuality.supporting.avg":
+    "平均质量得分 {score}/100",
+  "dashboard.overview.panels.contentQuality.supporting.refreshing":
+    "正在刷新质量信号",
+  "dashboard.overview.panels.contentQuality.supporting.pending":
+    "质量评分待生成",
+  "dashboard.overview.panels.contentQuality.detail.missing":
+    "{descriptions} 个描述缺失 · {images} 个图片缺失。",
+  "dashboard.overview.panels.contentQuality.detail.complete":
+    "描述和图片当前看起来较完整。",
+  "dashboard.overview.panels.contentQuality.cta": "提升商品内容",
+  "dashboard.overview.panels.channelReadiness.title": "渠道 readiness",
+  "dashboard.overview.panels.channelReadiness.supporting":
+    "{channels} 个渠道 · {payments} 个支付配置",
+  "dashboard.overview.panels.channelReadiness.detail.connectChannel":
+    "先连接销售渠道。",
+  "dashboard.overview.panels.channelReadiness.detail.addPayment":
+    "补齐支付配置后才能完整进入结账流程。",
+  "dashboard.overview.panels.channelReadiness.detail.ready":
+    "基础配置已就位，下一步应把团队重心放回商品。",
+  "dashboard.overview.panels.channelReadiness.cta": "检查渠道 readiness",
+  "dashboard.overview.opportunities.unblock.title": "先解锁 {count} 个变体",
+  "dashboard.overview.opportunities.unblock.detail":
+    "{label} 是当前最明显拖慢渠道上线的问题。",
+  "dashboard.overview.opportunities.improve.title":
+    "在下一次推进前先优化 {count} 个商品",
+  "dashboard.overview.opportunities.improve.detail":
+    "把描述和图片补齐后，商品会更有机会稳定地出现在各个渠道中。",
+  "dashboard.overview.opportunities.completeSetup.title": "完成商业化配置",
+  "dashboard.overview.opportunities.completeSetup.detail.channels":
+    "先补 storefront 连接，让目录和订单开始同步。",
+  "dashboard.overview.opportunities.completeSetup.detail.payments":
+    "先完成支付配置，让已就绪商品能顺利进入结账流程。",
+  "dashboard.overview.opportunities.openCatalogHealth": "打开目录健康",
+  "dashboard.overview.opportunities.openSetup": "打开配置",
+  "dashboard.overview.opportunities.revenueUp.title":
+    "营收较前 30 天提升了 {percent}%",
+  "dashboard.overview.opportunities.revenueUp.detail":
+    "利用当前势能，把内容修复优先落到最可能继续转化的商品上。",
+  "dashboard.overview.opportunities.viewAnalytics": "查看分析",
   "dashboard.overview.topOpportunities.title": "优先机会",
   "dashboard.overview.topOpportunities.description": "接下来最值得优先处理的商家动作。",
   "dashboard.overview.topOpportunities.empty":
@@ -1865,11 +2125,51 @@ Object.assign(localeOverridesRaw["zh-CN"], {
   "dashboard.overview.recentActivity.title": "最近活动",
   "dashboard.overview.recentActivity.description": "最近的订单与商家活动。",
   "dashboard.overview.recentActivity.openOrders": "打开订单",
+  "dashboard.overview.recentActivity.orderPrefix": "订单 {value}",
+  "dashboard.overview.recentActivity.recentOrder": "最近订单",
+  "dashboard.overview.recentActivity.orderActivity": "订单活动",
   "dashboard.overview.recentActivity.empty":
     "当新订单或商家事件同步到门户后，这里会显示最近活动。",
   "dashboard.overview.operationalSupport.title": "运营支持",
   "dashboard.overview.operationalSupport.description":
     "让渠道和支付状态保持可见，但不要让基础设施信息占据整个页面。",
+  "dashboard.overview.support.ordersSnapshot.title": "订单快照",
+  "dashboard.overview.support.ordersSnapshot.detail.available":
+    "最近 30 天共 {count} 笔订单",
+  "dashboard.overview.support.ordersSnapshot.detail.unavailable":
+    "订单指标暂不可用",
+  "dashboard.overview.support.ordersSnapshot.meta.available":
+    "{paid} 笔已支付 · {revenue} 已确认营收",
+  "dashboard.overview.support.ordersSnapshot.meta.unavailable":
+    "重新接通 dashboard 统计后，这里的订单与营收可见性会恢复。",
+  "dashboard.overview.support.ordersSnapshot.cta": "打开订单",
+  "dashboard.overview.support.salesChannels.title": "销售渠道",
+  "dashboard.overview.support.salesChannels.detail.refreshing":
+    "正在刷新渠道连接状态",
+  "dashboard.overview.support.salesChannels.detail.none": "还没有连接任何渠道",
+  "dashboard.overview.support.salesChannels.meta.none":
+    "连接 Shopify 或 Wix 后即可开始同步目录与订单。",
+  "dashboard.overview.support.salesChannels.cta.manage": "管理渠道",
+  "dashboard.overview.support.salesChannels.cta.connect": "连接渠道",
+  "dashboard.overview.support.paymentSetup.title": "支付配置",
+  "dashboard.overview.support.paymentSetup.detail.refreshing":
+    "正在刷新支付配置",
+  "dashboard.overview.support.paymentSetup.detail.needsAttention":
+    "支付配置仍需处理",
+  "dashboard.overview.support.paymentSetup.meta.successRate":
+    "平均成功率 {rate}%",
+  "dashboard.overview.support.paymentSetup.meta.addSetup":
+    "补齐支付配置后，已就绪商品才能真正转成完成订单。",
+  "dashboard.overview.support.paymentSetup.cta.review": "查看支付配置",
+  "dashboard.overview.support.paymentSetup.cta.connect": "连接支付",
+  "dashboard.overview.snapshot.orders": "订单（30天）",
+  "dashboard.overview.snapshot.revenue": "已支付营收",
+  "dashboard.overview.snapshot.customers": "客户",
+  "dashboard.overview.snapshot.commerceSetup": "商业化配置",
+  "dashboard.overview.snapshot.paid": "{count} 笔已支付",
+  "dashboard.overview.snapshot.unavailable": "暂不可用",
+  "dashboard.overview.snapshot.vsPrior30d": "较前 30 天 {percent}%",
+  "dashboard.overview.snapshot.productsInCatalog": "目录中共 {count} 个商品",
   "dashboard.overview.readinessFocus.title": "Readiness 重点",
   "dashboard.overview.readinessFocus.description": "把当前主要阻塞项直接转成下一步动作。",
   "dashboard.overview.readinessFocus.openDetails": "查看详情",
