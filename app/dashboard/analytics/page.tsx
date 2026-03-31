@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { BarChart3, TrendingUp, TrendingDown, Activity, DollarSign } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import {
+  apiClient,
+  type CommerceFunnelGroupBy,
+  type CommerceFunnelParams,
+} from '@/lib/api-client';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import {
   MerchantButton,
@@ -37,6 +41,81 @@ type AnalyticsTrendsResponse = {
   comparison_series?: AnalyticsTrendsPoint[];
 };
 
+type CommerceFunnelFilters = Pick<
+  CommerceFunnelParams,
+  | 'source_channel'
+  | 'source_family'
+  | 'protocol_name'
+  | 'agent_id'
+  | 'query_source'
+  | 'llm_provider'
+  | 'llm_model'
+  | 'commerce_surface'
+>;
+
+const INITIAL_FUNNEL_FILTERS: CommerceFunnelFilters = {
+  source_channel: '',
+  source_family: '',
+  protocol_name: '',
+  agent_id: '',
+  query_source: '',
+  llm_provider: '',
+  llm_model: '',
+  commerce_surface: '',
+};
+
+const FUNNEL_GROUP_OPTIONS: Array<{ value: CommerceFunnelGroupBy; label: string }> = [
+  { value: 'source_channel', label: 'Source channel' },
+  { value: 'protocol_name', label: 'Protocol' },
+  { value: 'query_source', label: 'Query source' },
+  { value: 'agent_id', label: 'Agent ID' },
+  { value: 'llm_provider', label: 'LLM provider' },
+  { value: 'llm_model', label: 'LLM model' },
+  { value: 'commerce_surface', label: 'Commerce surface' },
+  { value: 'source_family', label: 'Source family' },
+  { value: 'product', label: 'Product' },
+  { value: 'variant', label: 'Variant' },
+  { value: 'surface', label: 'Surface' },
+];
+
+const SURFACE_SCOPE_OPTIONS = [
+  { value: '', label: 'All surfaces' },
+  { value: 'ucp', label: 'UCP' },
+  { value: 'agent_api', label: 'Agent API' },
+  { value: 'acp', label: 'ACP' },
+  { value: 'mcp', label: 'MCP' },
+  { value: 'ap2', label: 'AP2' },
+];
+
+const SOURCE_FAMILY_OPTIONS = [
+  { value: '', label: 'Any source family' },
+  { value: 'internal', label: 'Internal' },
+  { value: 'external_agent', label: 'External agent' },
+  { value: 'partner', label: 'Partner' },
+  { value: 'employee', label: 'Employee' },
+  { value: 'system', label: 'System' },
+  { value: 'unknown', label: 'Unknown' },
+];
+
+const TAXONOMY_FIELDS: Array<keyof CommerceFunnelFilters> = [
+  'source_channel',
+  'source_family',
+  'protocol_name',
+  'agent_id',
+  'query_source',
+  'llm_provider',
+  'llm_model',
+  'commerce_surface',
+];
+
+function humanizeToken(value: string) {
+  return value
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
 export default function AnalyticsPage() {
   const { t } = useMerchantLanguage();
   const [loading, setLoading] = useState(true);
@@ -60,6 +139,9 @@ export default function AnalyticsPage() {
   const [netMode, setNetMode] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [funnelGroupBy, setFunnelGroupBy] = useState<CommerceFunnelGroupBy>('source_channel');
+  const [funnelSurface, setFunnelSurface] = useState('');
+  const [funnelFilters, setFunnelFilters] = useState<CommerceFunnelFilters>(INITIAL_FUNNEL_FILTERS);
   const revenueComputeSeqRef = useRef(0);
   const [paidRevenueOverride, setPaidRevenueOverride] = useState<{
     revenue: number;
@@ -84,7 +166,7 @@ export default function AnalyticsPage() {
       await loadCommerceIssues();
       await loadReadinessState();
     })();
-  }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [t, funnelGroupBy, funnelSurface, funnelFilters]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Trace loading should only follow the selected interaction id.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -285,7 +367,13 @@ export default function AnalyticsPage() {
   const loadCommerceFunnel = async () => {
     try {
       setCommerceFunnelError(null);
-      const data = await apiClient.getCommerceFunnel({ group_by: 'product' });
+      const data = await apiClient.getCommerceFunnel({
+        group_by: funnelGroupBy,
+        surface: funnelSurface || undefined,
+        ...Object.fromEntries(
+          Object.entries(funnelFilters).filter(([, value]) => String(value || '').trim())
+        ),
+      });
       setCommerceFunnel(data);
     } catch (error) {
       console.error('❌ Failed to load commerce funnel:', error);
@@ -297,7 +385,10 @@ export default function AnalyticsPage() {
   const loadCommerceIssues = async () => {
     try {
       setCommerceIssuesError(null);
-      const data = await apiClient.getCommerceFunnelIssues({ limit: 20 });
+      const data = await apiClient.getCommerceFunnelIssues({
+        limit: 20,
+        surface: funnelSurface || undefined,
+      });
       setCommerceIssues(data);
     } catch (error) {
       console.error('❌ Failed to load commerce funnel issues:', error);
@@ -355,6 +446,19 @@ export default function AnalyticsPage() {
     return parsed.toLocaleString();
   };
 
+  const setFunnelFilter = (field: keyof CommerceFunnelFilters, value: string) => {
+    setFunnelFilters((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  };
+
+  const clearTrafficFilters = () => {
+    setFunnelGroupBy('source_channel');
+    setFunnelSurface('');
+    setFunnelFilters(INITIAL_FUNNEL_FILTERS);
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-[320px] items-center justify-center">
@@ -393,6 +497,12 @@ export default function AnalyticsPage() {
   const hasComparisonSeries = chartData.some((point) => typeof point.previous === 'number');
   const funnelSummary = commerceFunnel?.summary || {};
   const funnelSlices = Array.isArray(commerceFunnel?.slices) ? commerceFunnel.slices : [];
+  const appliedTrafficFilters = commerceFunnel?.applied_filters || {};
+  const activeFilterEntries = Object.entries(appliedTrafficFilters).filter(
+    ([, value]) => String(value || '').trim().length > 0
+  );
+  const funnelGroupLabel =
+    FUNNEL_GROUP_OPTIONS.find((option) => option.value === funnelGroupBy)?.label || 'Key';
   const listingRowsTotal = Number(funnelSummary?.listing_rows_total || 0);
   const listingStatusBreakdown =
     funnelSummary?.listing_status_breakdown_rows || funnelSummary?.listing_status_breakdown || {};
@@ -428,6 +538,11 @@ export default function AnalyticsPage() {
   const commerceIssuesList = Array.isArray(commerceIssues?.issues) ? commerceIssues.issues : [];
   const traceInteraction = interactionTrace?.interaction || null;
   const traceEvents = Array.isArray(interactionTrace?.events) ? interactionTrace.events : [];
+  const traceTaxonomyEntries = TAXONOMY_FIELDS.map((field) => ({
+    field,
+    label: humanizeToken(field),
+    value: traceInteraction?.[field] || traceInteraction?.metadata?.traffic_taxonomy?.[field] || '',
+  })).filter((item) => String(item.value || '').trim());
 
   return (
     <div className="space-y-6">
@@ -606,6 +721,150 @@ export default function AnalyticsPage() {
         }
       >
         <div className="p-5 space-y-5">
+          <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/70 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium text-[color:var(--merchant-ink)]">Traffic breakdown controls</div>
+                <div className="mt-1 text-xs text-[color:var(--merchant-muted)]">
+                  Switch the funnel by source, protocol, query path, model, or agent identity without leaving this page.
+                </div>
+              </div>
+              <MerchantButton type="button" variant="secondary" onClick={clearTrafficFilters}>
+                Clear filters
+              </MerchantButton>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <label className="space-y-1 text-xs text-[color:var(--merchant-muted-strong)]">
+                <span className="uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">Group by</span>
+                <select
+                  value={funnelGroupBy}
+                  onChange={(event) => setFunnelGroupBy(event.target.value as CommerceFunnelGroupBy)}
+                  className="merchant-select w-full"
+                >
+                  {FUNNEL_GROUP_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-1 text-xs text-[color:var(--merchant-muted-strong)]">
+                <span className="uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">Surface scope</span>
+                <select
+                  value={funnelSurface}
+                  onChange={(event) => setFunnelSurface(event.target.value)}
+                  className="merchant-select w-full"
+                >
+                  {SURFACE_SCOPE_OPTIONS.map((option) => (
+                    <option key={option.value || 'all'} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-1 text-xs text-[color:var(--merchant-muted-strong)]">
+                <span className="uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">Source channel</span>
+                <input
+                  value={funnelFilters.source_channel || ''}
+                  onChange={(event) => setFunnelFilter('source_channel', event.target.value)}
+                  className="merchant-input w-full"
+                  placeholder="shopping-agent-ui"
+                />
+              </label>
+
+              <label className="space-y-1 text-xs text-[color:var(--merchant-muted-strong)]">
+                <span className="uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">Protocol</span>
+                <input
+                  value={funnelFilters.protocol_name || ''}
+                  onChange={(event) => setFunnelFilter('protocol_name', event.target.value)}
+                  className="merchant-input w-full"
+                  placeholder="ucp / acp / mcp"
+                />
+              </label>
+
+              <label className="space-y-1 text-xs text-[color:var(--merchant-muted-strong)]">
+                <span className="uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">Query source</span>
+                <input
+                  value={funnelFilters.query_source || ''}
+                  onChange={(event) => setFunnelFilter('query_source', event.target.value)}
+                  className="merchant-input w-full"
+                  placeholder="cache_multi_intent"
+                />
+              </label>
+
+              <label className="space-y-1 text-xs text-[color:var(--merchant-muted-strong)]">
+                <span className="uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">Agent ID</span>
+                <input
+                  value={funnelFilters.agent_id || ''}
+                  onChange={(event) => setFunnelFilter('agent_id', event.target.value)}
+                  className="merchant-input w-full"
+                  placeholder="agent_xxx"
+                />
+              </label>
+
+              <label className="space-y-1 text-xs text-[color:var(--merchant-muted-strong)]">
+                <span className="uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">Source family</span>
+                <select
+                  value={funnelFilters.source_family || ''}
+                  onChange={(event) => setFunnelFilter('source_family', event.target.value)}
+                  className="merchant-select w-full"
+                >
+                  {SOURCE_FAMILY_OPTIONS.map((option) => (
+                    <option key={option.value || 'all'} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-1 text-xs text-[color:var(--merchant-muted-strong)]">
+                <span className="uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">Commerce surface</span>
+                <input
+                  value={funnelFilters.commerce_surface || ''}
+                  onChange={(event) => setFunnelFilter('commerce_surface', event.target.value)}
+                  className="merchant-input w-full"
+                  placeholder="agent_api / ucp"
+                />
+              </label>
+
+              <label className="space-y-1 text-xs text-[color:var(--merchant-muted-strong)]">
+                <span className="uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">LLM provider</span>
+                <input
+                  value={funnelFilters.llm_provider || ''}
+                  onChange={(event) => setFunnelFilter('llm_provider', event.target.value)}
+                  className="merchant-input w-full"
+                  placeholder="openai / anthropic"
+                />
+              </label>
+
+              <label className="space-y-1 text-xs text-[color:var(--merchant-muted-strong)] md:col-span-2 xl:col-span-3">
+                <span className="uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">LLM model</span>
+                <input
+                  value={funnelFilters.llm_model || ''}
+                  onChange={(event) => setFunnelFilter('llm_model', event.target.value)}
+                  className="merchant-input w-full"
+                  placeholder="gpt-5.4 / claude-sonnet-4.5"
+                />
+              </label>
+            </div>
+
+            {activeFilterEntries.length ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {activeFilterEntries.map(([key, value]) => (
+                  <span
+                    key={key}
+                    className="inline-flex items-center rounded-full border border-[color:var(--merchant-line)] px-3 py-1 text-xs text-[color:var(--merchant-muted-strong)]"
+                  >
+                    {humanizeToken(key)}: {String(value)}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
           {commerceFunnelError ? (
             <div className="rounded-[1rem] border border-[color:var(--merchant-warning-soft)] bg-[color:var(--merchant-warning-soft)]/40 px-4 py-4 text-sm text-[color:var(--merchant-muted-strong)]">
               {commerceFunnelError}
@@ -677,14 +936,14 @@ export default function AnalyticsPage() {
                     {t('dashboard.analytics.commerceFunnel.groupedTitle')}
                   </div>
                   <div className="text-xs text-[color:var(--merchant-muted)]">
-                    {t('dashboard.analytics.commerceFunnel.groupedDescription')}
+                    {t('dashboard.analytics.commerceFunnel.groupedDescription')} Viewing by <strong>{funnelGroupLabel}</strong>.
                   </div>
                 </div>
                 <div className="overflow-x-auto rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/80">
                   <table className="min-w-full text-sm">
                     <thead className="bg-[color:var(--merchant-surface-muted)]/70 text-left text-xs uppercase tracking-[0.14em] text-[color:var(--merchant-muted)]">
                       <tr>
-                        <th className="px-4 py-3">{t('dashboard.analytics.commerceFunnel.groupedHeaders.key')}</th>
+                        <th className="px-4 py-3">{funnelGroupLabel}</th>
                         <th className="px-4 py-3">{t('dashboard.analytics.commerceFunnel.groupedHeaders.indexed')}</th>
                         <th className="px-4 py-3">{t('dashboard.analytics.commerceFunnel.groupedHeaders.surfaced')}</th>
                         <th className="px-4 py-3">{t('dashboard.analytics.commerceFunnel.groupedHeaders.clicked')}</th>
@@ -1033,10 +1292,56 @@ export default function AnalyticsPage() {
                       ) : null}
 
                       {Array.isArray(issue?.samples) && issue.samples.length ? (
-                        <div className="mt-3 overflow-x-auto rounded-[0.9rem] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)]/40 px-3 py-3 text-xs text-[color:var(--merchant-muted-strong)]">
-                          <pre className="whitespace-pre-wrap break-words">
-                            {JSON.stringify(issue.samples, null, 2)}
-                          </pre>
+                        <div className="mt-3 space-y-3">
+                          {issue.samples.map((sample: any, sampleIndex: number) => {
+                            const taxonomy = sample?.traffic_taxonomy || {};
+                            const sampleEntries = Object.entries(sample || {}).filter(
+                              ([key, value]) =>
+                                key !== 'traffic_taxonomy' &&
+                                value !== null &&
+                                value !== undefined &&
+                                String(value).trim().length > 0
+                            );
+
+                            return (
+                              <div
+                                key={`${String(issue?.code || 'issue')}-sample-${sampleIndex}`}
+                                className="rounded-[0.9rem] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)]/35 px-3 py-3"
+                              >
+                                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                                  {sampleEntries.map(([key, value]) => (
+                                    <div key={key} className="text-xs text-[color:var(--merchant-muted-strong)]">
+                                      <span className="block uppercase tracking-[0.14em] text-[10px] text-[color:var(--merchant-muted)]">
+                                        {humanizeToken(key)}
+                                      </span>
+                                      <span className="break-all">{String(value)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                {Object.keys(taxonomy).length ? (
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {TAXONOMY_FIELDS.map((field) => {
+                                      const value = taxonomy?.[field];
+                                      if (!String(value || '').trim()) return null;
+                                      return (
+                                        <span
+                                          key={`${field}:${String(value)}`}
+                                          className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-700"
+                                        >
+                                          {humanizeToken(field)}: {String(value)}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <div className="mt-3 text-[11px] text-[color:var(--merchant-muted)]">
+                                    No traffic taxonomy on this sample yet. Listing-only diagnostics will usually look like this.
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       ) : null}
                     </div>
@@ -1111,6 +1416,26 @@ export default function AnalyticsPage() {
                   </div>
                 ))}
               </div>
+
+              {traceTaxonomyEntries.length ? (
+                <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/70 px-4 py-4">
+                  <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+                    Traffic taxonomy
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    {traceTaxonomyEntries.map((entry) => (
+                      <div key={entry.field} className="text-sm text-[color:var(--merchant-muted-strong)]">
+                        <div className="text-[11px] uppercase tracking-[0.14em] text-[color:var(--merchant-muted)]">
+                          {entry.label}
+                        </div>
+                        <div className="mt-1 break-all font-medium text-[color:var(--merchant-ink)]">
+                          {String(entry.value)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/80">
                 <div className="border-b border-[color:var(--merchant-line)] px-4 py-3 text-sm font-medium text-[color:var(--merchant-ink)]">

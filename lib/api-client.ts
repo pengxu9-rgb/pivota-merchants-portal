@@ -1,6 +1,32 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { API_CONFIG } from './config';
 
+export type CommerceFunnelGroupBy =
+  | 'product'
+  | 'variant'
+  | 'surface'
+  | 'commerce_surface'
+  | 'source_channel'
+  | 'source_family'
+  | 'protocol_name'
+  | 'agent_id'
+  | 'query_source'
+  | 'llm_provider'
+  | 'llm_model';
+
+export interface CommerceFunnelParams {
+  surface?: string;
+  group_by?: CommerceFunnelGroupBy;
+  source_channel?: string;
+  source_family?: string;
+  protocol_name?: string;
+  agent_id?: string;
+  query_source?: string;
+  llm_provider?: string;
+  llm_model?: string;
+  commerce_surface?: string;
+}
+
 class ApiClient {
   private client: AxiosInstance;
 
@@ -750,10 +776,7 @@ class ApiClient {
     return response.data?.data || response.data;
   }
 
-  async getCommerceFunnel(params?: {
-    surface?: string;
-    group_by?: 'product' | 'variant' | 'surface';
-  }) {
+  async getCommerceFunnel(params?: CommerceFunnelParams) {
     const response = await this.client.get('/merchant/analytics/commerce-funnel', {
       params,
     });
@@ -825,11 +848,6 @@ class ApiClient {
   async getOrderDetails(orderId: string) {
     const response = await this.client.get(`/merchant/orders/${orderId}`);
     return response.data?.data || response.data;
-  }
-
-  async markOrderShipped(orderId: string, trackingData: { tracking_number: string; carrier: string }) {
-    const response = await this.client.post(`/merchant/orders/${orderId}/ship`, trackingData);
-    return response.data;
   }
 
   async exportOrders() {
