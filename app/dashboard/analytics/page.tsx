@@ -116,6 +116,41 @@ function humanizeToken(value: string) {
     .join(' ');
 }
 
+function normalizeStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item ?? '').trim())
+      .filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    if (trimmed === '[]') return [];
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed
+            .map((item) => String(item ?? '').trim())
+            .filter(Boolean);
+        }
+      } catch {
+        // Fall through to the plain-string case below.
+      }
+    }
+    return [trimmed];
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>)
+      .map((item) => String(item ?? '').trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
 export default function AnalyticsPage() {
   const { t } = useMerchantLanguage();
   const [loading, setLoading] = useState(true);
@@ -513,25 +548,25 @@ export default function AnalyticsPage() {
       key: 'foundation',
       label: t('dashboard.analytics.readiness.foundation'),
       status: readinessState?.foundation_status,
-      blockers: readinessState?.foundation_blockers || [],
+      blockers: normalizeStringList(readinessState?.foundation_blockers),
     },
     {
       key: 'discover',
       label: t('dashboard.analytics.readiness.discover'),
       status: readinessState?.discover_status,
-      blockers: readinessState?.discover_blockers || [],
+      blockers: normalizeStringList(readinessState?.discover_blockers),
     },
     {
       key: 'signals',
       label: t('dashboard.analytics.readiness.signals'),
       status: readinessState?.signals_status,
-      blockers: readinessState?.signals_blockers || [],
+      blockers: normalizeStringList(readinessState?.signals_blockers),
     },
     {
       key: 'execute',
       label: t('dashboard.analytics.readiness.execute'),
       status: readinessState?.execute_status,
-      blockers: readinessState?.execute_blockers || [],
+      blockers: normalizeStringList(readinessState?.execute_blockers),
     },
   ];
   const readinessMetadata = readinessState?.metadata || {};
