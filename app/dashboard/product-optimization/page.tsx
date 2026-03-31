@@ -613,8 +613,18 @@ const getManualReviewLabel = (
 };
 
 const getStoreAdminLabel = (platform?: string | null) => {
-  if (String(platform || '').toLowerCase() === 'shopify') {
+  const normalizedPlatform = String(platform || '').toLowerCase();
+  if (normalizedPlatform === 'shopify') {
     return 'Open in Shopify admin';
+  }
+  if (normalizedPlatform === 'wix') {
+    return 'Open in Wix admin';
+  }
+  if (normalizedPlatform === 'woocommerce') {
+    return 'Open in WooCommerce admin';
+  }
+  if (normalizedPlatform === 'bigcommerce') {
+    return 'Open in BigCommerce admin';
   }
   return 'Open in store admin';
 };
