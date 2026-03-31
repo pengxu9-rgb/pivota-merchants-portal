@@ -1120,7 +1120,7 @@ export interface OrderItem {
 
 export interface Store {
   id: string;
-  platform: 'shopify' | 'wix' | 'woocommerce';
+  platform: 'shopify' | 'wix' | 'woocommerce' | 'bigcommerce';
   store_name: string;
   domain: string;
   is_active: boolean;

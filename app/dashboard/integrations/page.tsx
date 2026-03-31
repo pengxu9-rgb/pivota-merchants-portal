@@ -691,7 +691,7 @@ export default function IntegrationsPage() {
                             {t('dashboard.integrations.salesChannels.makePrimary')}
                           </button>
                         ) : null}
-                        {store.platform === 'shopify' || store.platform === 'wix' ? (
+                        {['shopify', 'wix', 'woocommerce', 'bigcommerce'].includes(store.platform) ? (
                           <button
                             onClick={() => handleSyncProducts(store)}
                             disabled={syncingStoreId === store.id}

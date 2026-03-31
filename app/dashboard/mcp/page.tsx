@@ -25,7 +25,7 @@ export default function MCPPage() {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
   const [catalogTotal, setCatalogTotal] = useState(0);
-  const [catalogFilter, setCatalogFilter] = useState<'all' | 'shopify' | 'wix' | 'amazon' | 'temu'>('all');
+  const [catalogFilter, setCatalogFilter] = useState<'all' | 'shopify' | 'wix' | 'woocommerce' | 'bigcommerce' | 'amazon' | 'temu'>('all');
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogPage, setCatalogPage] = useState(1);
   const catalogPageSize = 20;
@@ -164,7 +164,7 @@ export default function MCPPage() {
   };
 
   const loadCatalogProducts = async (
-    platform: 'all' | 'shopify' | 'wix' | 'amazon' | 'temu' = catalogFilter,
+    platform: 'all' | 'shopify' | 'wix' | 'woocommerce' | 'bigcommerce' | 'amazon' | 'temu' = catalogFilter,
     page: number = catalogPage
   ) => {
     const merchantId = localStorage.getItem('merchant_id') || '';
@@ -325,35 +325,23 @@ export default function MCPPage() {
           } catch (e: any) {
             errors.push(`${store.platform}: ${e.message}`);
           }
-        } else if (store.platform === 'wix') {
+        } else if (
+          store.platform === 'wix' ||
+          store.platform === 'woocommerce' ||
+          store.platform === 'bigcommerce'
+        ) {
           try {
-            const syncResponse = await fetch(
-              `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.SYNC_WIX}`,
-              {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${localStorage.getItem('merchant_token')}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  merchant_id: merchantId
-                })
-              }
-            );
-
-            const syncData = await syncResponse.json();
-            
-            if (syncResponse.ok) {
+            const syncData = await apiClient.syncPlatformProducts(store.platform);
+            if (syncData?.status === 'success') {
               synced++;
             } else {
-              errors.push(`${store.platform}: ${syncData.detail || 'Failed'}`);
+              errors.push(`${store.platform}: ${syncData?.detail || syncData?.message || 'Failed'}`);
             }
           } catch (e: any) {
             errors.push(`${store.platform}: ${e.message}`);
           }
         } else {
-          // Other platforms not implemented yet
-          errors.push(`${store.platform}: Sync not implemented yet`);
+          errors.push(`${store.platform}: Sync not supported`);
         }
       }
 
@@ -714,6 +702,8 @@ export default function MCPPage() {
               <option value="temu">Temu</option>
               <option value="shopify">Shopify</option>
               <option value="wix">Wix</option>
+              <option value="woocommerce">WooCommerce</option>
+              <option value="bigcommerce">BigCommerce</option>
             </select>
             <input
               type="text"
