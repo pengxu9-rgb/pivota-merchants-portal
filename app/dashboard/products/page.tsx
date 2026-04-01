@@ -1095,8 +1095,11 @@ export default function ProductsPage() {
         ? await apiClient.refreshMerchantReadinessOptimization({
             scope: options?.scope ?? 'merchant',
             reason: options?.reason ?? 'catalog_review_retry',
+            queue_mode: 'none',
           })
-        : await apiClient.getMerchantReadinessOptimization();
+        : await apiClient.getMerchantReadinessOptimization({
+            queue_mode: 'none',
+          });
       const plan = optimization?.plan;
       if (!plan?.plan_id) {
         throw new Error('Optimization plan unavailable.');

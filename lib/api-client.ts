@@ -293,8 +293,29 @@ class ApiClient {
     return response.data;
   }
 
-  async getMerchantReadinessOptimization(options?: RequestOptions) {
+  async getMerchantReadinessOptimization(options?: RequestOptions & {
+    queue_mode?: 'full' | 'page' | 'none';
+    page?: number;
+    page_size?: number;
+    search?: string;
+    issue_bucket?: string;
+    push_status?: 'all' | 'eligible' | 'excluded';
+    blocked_only?: boolean;
+    low_quality_only?: boolean;
+    sort_by?: 'default' | 'cq_desc' | 'mr_desc';
+  }) {
     const response = await this.client.get('/merchant/readiness/optimization', {
+      params: {
+        queue_mode: options?.queue_mode,
+        page: options?.page,
+        page_size: options?.page_size,
+        search: options?.search,
+        issue_bucket: options?.issue_bucket,
+        push_status: options?.push_status,
+        blocked_only: options?.blocked_only,
+        low_quality_only: options?.low_quality_only,
+        sort_by: options?.sort_by,
+      },
       timeout: options?.timeoutMs,
     });
     return response.data?.data || response.data;
@@ -311,6 +332,15 @@ class ApiClient {
     scope?: string;
     reason?: string;
     reason_code?: string;
+    queue_mode?: 'full' | 'page' | 'none';
+    page?: number;
+    page_size?: number;
+    search?: string;
+    issue_bucket?: string;
+    push_status?: 'all' | 'eligible' | 'excluded';
+    blocked_only?: boolean;
+    low_quality_only?: boolean;
+    sort_by?: 'default' | 'cq_desc' | 'mr_desc';
   }) {
     const response = await this.refreshMerchantReadinessOptimizationDetailed(params);
     return response?.data || response;
@@ -320,6 +350,15 @@ class ApiClient {
     scope?: string;
     reason?: string;
     reason_code?: string;
+    queue_mode?: 'full' | 'page' | 'none';
+    page?: number;
+    page_size?: number;
+    search?: string;
+    issue_bucket?: string;
+    push_status?: 'all' | 'eligible' | 'excluded';
+    blocked_only?: boolean;
+    low_quality_only?: boolean;
+    sort_by?: 'default' | 'cq_desc' | 'mr_desc';
   }) {
     const response = await this.client.post(
       '/merchant/readiness/actions/refresh',
@@ -327,6 +366,15 @@ class ApiClient {
         scope: params?.scope ?? 'merchant',
         reason: params?.reason ?? 'manual',
         reason_code: params?.reason_code,
+        queue_mode: params?.queue_mode,
+        page: params?.page,
+        page_size: params?.page_size,
+        search: params?.search,
+        issue_bucket: params?.issue_bucket,
+        push_status: params?.push_status,
+        blocked_only: params?.blocked_only,
+        low_quality_only: params?.low_quality_only,
+        sort_by: params?.sort_by,
       }
     );
     return response.data;

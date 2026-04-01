@@ -208,6 +208,22 @@ type ReadinessOptimizationPayload = {
   issue_buckets: ReadinessIssueBucket[];
   merchant_actions: MerchantReadinessAction[];
   product_queue: ProductQueueItem[];
+  product_queue_page?: {
+    page: number;
+    page_size: number;
+    total_items: number;
+    total_pages: number;
+    has_next: boolean;
+    has_prev: boolean;
+    applied_filters?: {
+      search?: string | null;
+      issue_bucket?: string | null;
+      push_status?: string | null;
+      blocked_only?: boolean;
+      low_quality_only?: boolean;
+      sort_by?: string | null;
+    };
+  };
   content_opportunity_count?: number;
   source_data_lanes?: SourceDataLaneSummary[];
   agent_push_summary?: AgentPushSummary;
@@ -1046,6 +1062,7 @@ export default function ProductOptimizationPage() {
   const focusIssue = searchParams.get('focus');
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<MerchantProductListItem[]>([]);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [optimizationData, setOptimizationData] = useState<ReadinessOptimizationPayload | null>(null);
   const [readinessLoading, setReadinessLoading] = useState(true);
@@ -1098,18 +1115,15 @@ export default function ProductOptimizationPage() {
   );
   const [showBlockedOnly, setShowBlockedOnly] = useState(false);
   const [showOnlyLowQuality, setShowOnlyLowQuality] = useState(false);
-  const [issueFilter, setIssueFilter] = useState<string>('all');
+  const [issueFilter, setIssueFilter] = useState<string>(focusIssue || 'all');
   const [pushFilter, setPushFilter] = useState<'all' | 'eligible' | 'excluded'>(
     'all'
   );
+  const [currentPage, setCurrentPage] = useState(1);
   const [bulkOptimizing, setBulkOptimizing] = useState(false);
   const detailPaneRef = useRef<HTMLDivElement | null>(null);
   const entryFocusResolutionRef = useRef<string | null>(null);
   const triageRequestIdRef = useRef(0);
-
-  useEffect(() => {
-    void loadOptimizationData();
-  }, []);
 
   useEffect(() => {
     if (focusIssue) {
@@ -1121,21 +1135,45 @@ export default function ProductOptimizationPage() {
     setTriageReason(getInitialTriageReason(focusIssue));
   }, [focusIssue]);
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setSearch(searchInput.trim());
+    }, 250);
+    return () => window.clearTimeout(timeoutId);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, sortBy, showBlockedOnly, showOnlyLowQuality, issueFilter, pushFilter]);
+
   const loadOptimizationData = async (options?: {
     refresh?: boolean;
     scope?: 'merchant' | 'product' | 'variant';
     reason?: string;
     reasonCode?: SourceDataReasonCode;
+    page?: number;
   }) => {
     try {
       setReadinessLoading(true);
+      const requestParams = {
+        queue_mode: 'page' as const,
+        page: options?.page ?? currentPage,
+        page_size: 50,
+        search: search || undefined,
+        issue_bucket: issueFilter !== 'all' ? issueFilter : undefined,
+        push_status: pushFilter,
+        blocked_only: showBlockedOnly,
+        low_quality_only: showOnlyLowQuality,
+        sort_by: sortBy,
+      };
       const response = options?.refresh
         ? await apiClient.refreshMerchantReadinessOptimizationDetailed({
             scope: options.scope ?? 'merchant',
             reason: options.reason ?? 'manual',
             reason_code: options.reasonCode,
+            ...requestParams,
           })
-        : await apiClient.getMerchantReadinessOptimization();
+        : await apiClient.getMerchantReadinessOptimization(requestParams);
       const data = options?.refresh ? response?.data || response : response;
       if (options?.refresh) {
         const laneDelta = (response as any)?.meta?.lane_delta || null;
@@ -1158,6 +1196,10 @@ export default function ProductOptimizationPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    void loadOptimizationData({ page: currentPage });
+  }, [currentPage, search, sortBy, showBlockedOnly, showOnlyLowQuality, issueFilter, pushFilter]);
 
   const upsertCachedProduct = (nextItem: MerchantProductListItem) => {
     setProducts((prev) => {
@@ -1441,6 +1483,7 @@ export default function ProductOptimizationPage() {
   const issueBuckets = optimizationData?.issue_buckets || [];
   const merchantActions = optimizationData?.merchant_actions || [];
   const productQueue = optimizationData?.product_queue || [];
+  const productQueuePage = optimizationData?.product_queue_page || null;
   const contentOpportunityCount = optimizationData?.content_opportunity_count || 0;
   const sourceDataLaneSummaries = optimizationData?.source_data_lanes || [];
 
@@ -1501,7 +1544,7 @@ export default function ProductOptimizationPage() {
   }, [products]);
 
   const queueDrivenProducts = useMemo<WorkspaceProductItem[]>(() => {
-    if (productQueue.length === 0) {
+    if (!optimizationData) {
       return products.map((item) => ({
         ...item,
         readiness:
@@ -1511,6 +1554,10 @@ export default function ProductOptimizationPage() {
           productQueueMap.get(`${item.platform}|${item.platform_product_id}`)
             ?.index ?? Number.MAX_SAFE_INTEGER,
       }));
+    }
+
+    if (productQueue.length === 0) {
+      return [];
     }
 
     return productQueue.map((queueItem, index) => {
@@ -1934,93 +1981,7 @@ export default function ProductOptimizationPage() {
       await loadProductDetail(selected.platform, selected.platform_product_id);
   };
 
-  const filteredProducts = (() => {
-    // Text search
-    const base = queueDrivenProducts.filter((item) => {
-      const title = item.enrichment?.title_override || item.standard?.title || '';
-      const overrideTitle = item.enrichment?.title_override || '';
-      const query = search.toLowerCase();
-      if (!query) return true;
-      return (
-        title.toLowerCase().includes(query) ||
-        overrideTitle.toLowerCase().includes(query)
-      );
-    });
-
-    // Optional low-quality filter
-    const filtered = base.filter((item) => {
-      if (showBlockedOnly && !item.readiness?.blocked_variant_count) return false;
-      if (
-        pushFilter === 'excluded' &&
-        item.agent_push?.agent_push_status !== 'excluded_from_agent_push'
-      ) {
-        return false;
-      }
-      if (
-        pushFilter === 'eligible' &&
-        item.agent_push?.agent_push_status === 'excluded_from_agent_push'
-      ) {
-        return false;
-      }
-      if (!showOnlyLowQuality) return true;
-      const cq = item.quality?.content_quality_score;
-      // Treat undefined scores as "not low-quality" for this filter
-      return typeof cq === 'number' && cq < 60;
-    });
-
-    const issueFiltered = filtered.filter((item) => {
-      if (issueFilter === 'all') return true;
-      const issues = item.readiness?.top_issues || [];
-      return issues.some((issue) => getIssueBucketCodeForReason(issue.code) === issueFilter);
-    });
-
-    // Sorting
-    if (sortBy === 'default') {
-      return [...issueFiltered].sort((a, b) => {
-        const indexDiff = a.readinessIndex - b.readinessIndex;
-        if (indexDiff !== 0) return indexDiff;
-
-        const blockedDiff =
-          (b.readiness?.blocked_variant_count || 0) -
-          (a.readiness?.blocked_variant_count || 0);
-        if (blockedDiff !== 0) return blockedDiff;
-
-        const aCq =
-          typeof a.quality?.content_quality_score === 'number'
-            ? a.quality.content_quality_score
-            : -1;
-        const bCq =
-          typeof b.quality?.content_quality_score === 'number'
-            ? b.quality.content_quality_score
-            : -1;
-        return aCq - bCq;
-      });
-    }
-
-    const sorted = [...issueFiltered];
-    if (sortBy === 'cq_desc') {
-      sorted.sort((a, b) => {
-        const av = typeof a.quality?.content_quality_score === 'number'
-          ? a.quality!.content_quality_score!
-          : -1;
-        const bv = typeof b.quality?.content_quality_score === 'number'
-          ? b.quality!.content_quality_score!
-          : -1;
-        return bv - av;
-      });
-    } else if (sortBy === 'mr_desc') {
-      sorted.sort((a, b) => {
-        const av = typeof a.quality?.model_readiness_score === 'number'
-          ? a.quality!.model_readiness_score!
-          : -1;
-        const bv = typeof b.quality?.model_readiness_score === 'number'
-          ? b.quality!.model_readiness_score!
-          : -1;
-        return bv - av;
-      });
-    }
-    return sorted;
-  })();
+  const filteredProducts = queueDrivenProducts;
 
   useEffect(() => {
     if (!fromReadiness || !focusIssue) {
@@ -3507,7 +3468,7 @@ export default function ProductOptimizationPage() {
               </p>
             </div>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">
-              {filteredProducts.length} in view
+              {productQueuePage?.total_items ?? filteredProducts.length} matching products
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -3570,8 +3531,8 @@ export default function ProductOptimizationPage() {
               <input
                 type="text"
                 placeholder="Search products by title..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 className="w-full rounded-md border py-2 pl-10 pr-3 text-sm"
               />
             </div>
@@ -3651,6 +3612,37 @@ export default function ProductOptimizationPage() {
             {entryFilterNotice && (
               <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
                 {entryFilterNotice}
+              </div>
+            )}
+            {productQueuePage && productQueuePage.total_pages > 1 && (
+              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-600 ring-1 ring-slate-200">
+                <span>
+                  Page {productQueuePage.page} of {productQueuePage.total_pages}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={!productQueuePage.has_prev || readinessLoading}
+                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                    className="rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!productQueuePage.has_next || readinessLoading}
+                    onClick={() =>
+                      setCurrentPage((prev) =>
+                        productQueuePage.total_pages > 0
+                          ? Math.min(productQueuePage.total_pages, prev + 1)
+                          : prev + 1
+                      )
+                    }
+                    className="rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             )}
           </div>
