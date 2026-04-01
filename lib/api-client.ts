@@ -300,6 +300,13 @@ class ApiClient {
     return response.data?.data || response.data;
   }
 
+  async getDashboardReadiness(options?: RequestOptions) {
+    const response = await this.client.get('/merchant/dashboard/readiness', {
+      timeout: options?.timeoutMs,
+    });
+    return response.data?.data || response.data;
+  }
+
   async refreshMerchantReadinessOptimization(params?: {
     scope?: string;
     reason?: string;

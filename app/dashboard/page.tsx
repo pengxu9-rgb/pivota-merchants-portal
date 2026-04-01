@@ -41,29 +41,15 @@ type ReadinessSummary = {
   }>;
 };
 
-type ReadinessOptimizationPayload = {
-  readiness_summary?: ReadinessSummary | null;
-  quality_coverage?: {
-    total_products?: number | null;
-    snapshot_scored_products?: number | null;
-    effective_scored_products?: number | null;
-    preview_only_products?: number | null;
-    unscored_products?: number | null;
-  } | null;
-  product_queue?: Array<{
-    queue_item_id: string;
-    title: string;
-    image_url?: string | null;
-    price_value?: number | null;
-    price_currency?: string | null;
-    blocked_variant_count: number;
-    top_issues?: Array<{
-      code: string;
-      label: string;
-    }>;
-    content_quality_score?: number | null;
-    model_readiness_score?: number | null;
-  }>;
+type CommerceReadinessState = {
+  foundation_status?: string | null;
+  discover_status?: string | null;
+  signals_status?: string | null;
+  execute_status?: string | null;
+  foundation_blockers?: string[] | null;
+  discover_blockers?: string[] | null;
+  signals_blockers?: string[] | null;
+  execute_blockers?: string[] | null;
 };
 
 type DashboardStats = {
@@ -80,6 +66,60 @@ type DashboardStats = {
 type Tone = 'brand' | 'success' | 'warning' | 'critical' | 'neutral';
 
 const OVERVIEW_OPTIMIZATION_TIMEOUT_MS = 12_000;
+
+function humanizeReadinessCode(code: string) {
+  return code.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function summarizeCommerceReadinessState(
+  state: CommerceReadinessState | null
+): ReadinessSummary | null {
+  if (!state) return null;
+
+  const blockers = [
+    ...(state.foundation_blockers || []),
+    ...(state.discover_blockers || []),
+    ...(state.signals_blockers || []),
+    ...(state.execute_blockers || []),
+  ].filter(Boolean);
+
+  const statuses = [
+    state.foundation_status,
+    state.discover_status,
+    state.signals_status,
+    state.execute_status,
+  ]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
+
+  const hasBlockedStatus = statuses.some((status) =>
+    ['blocked', 'error', 'unavailable'].some((token) => status.includes(token))
+  );
+  const hasAttentionStatus = statuses.some(
+    (status) => status && !['ready', 'supported'].includes(status)
+  );
+
+  const tier: ReadinessSummary['tier'] = hasBlockedStatus
+    ? 'red'
+    : blockers.length > 0 || hasAttentionStatus
+      ? 'yellow'
+      : 'green';
+
+  return {
+    tier,
+    label: tier === 'green' ? 'Ready' : tier === 'yellow' ? 'Needs attention' : 'Blocked',
+    assessment_state: 'assessed',
+    score: null,
+    ready_variant_count: 0,
+    blocked_variant_count: 0,
+    top_blockers: blockers.slice(0, 3),
+    blocker_breakdown: blockers.slice(0, 3).map((code) => ({
+      code,
+      label: humanizeReadinessCode(code),
+      count: 1,
+    })),
+  };
+}
 
 function formatCurrency(language: string, amount: number, currency = 'USD') {
   return new Intl.NumberFormat(language, {
@@ -150,17 +190,6 @@ export default function DashboardPage() {
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [connectedStores, setConnectedStores] = useState<any[]>([]);
   const [connectedPSPs, setConnectedPSPs] = useState<any[]>([]);
-  const [optimizationQueue, setOptimizationQueue] = useState<
-    NonNullable<ReadinessOptimizationPayload['product_queue']>
-  >([]);
-  const [catalogQuality, setCatalogQuality] = useState<{
-    total_products: number;
-    scored_products: number;
-    avg_content_quality: number | null;
-    avg_model_readiness: number | null;
-    low_cq_threshold: number;
-    low_cq_count: number;
-  } | null>(null);
 
   useEffect(() => {
     const id = localStorage.getItem('merchant_id') || '';
@@ -186,8 +215,12 @@ export default function DashboardPage() {
       return payload;
     });
 
-    const optimizationPromise = apiClient.getMerchantReadinessOptimization({
+    const commerceReadinessPromise = apiClient.getCommerceReadinessState();
+    const dashboardReadinessPromise = apiClient.getDashboardReadiness({
       timeoutMs: OVERVIEW_OPTIMIZATION_TIMEOUT_MS,
+    }).catch((error) => {
+      console.warn('Dashboard readiness timed out, keeping lightweight readiness state only.', error);
+      return null;
     });
 
     const storesPromise = currentMerchantId
@@ -253,57 +286,32 @@ export default function DashboardPage() {
         setRefreshing(false);
       });
 
-    void optimizationPromise
-      .then((optimizationPayload) => {
+    void Promise.allSettled([commerceReadinessPromise, dashboardReadinessPromise])
+      .then((results) => {
         if (loadSeq !== loadSeqRef.current) return;
 
-        const readiness = optimizationPayload.readiness_summary || null;
-        const queue = Array.isArray(optimizationPayload.product_queue)
-          ? optimizationPayload.product_queue
-          : [];
-        const qualityCoverage = optimizationPayload.quality_coverage || null;
+        const commerceReadinessResult = results[0];
+        const dashboardReadinessResult = results[1];
 
-        setOptimizationQueue(queue);
-        setReadinessSummary(readiness);
+        const commerceReadiness =
+          commerceReadinessResult.status === 'fulfilled'
+            ? (commerceReadinessResult.value as CommerceReadinessState)
+            : null;
+        const dashboardReadiness =
+          dashboardReadinessResult.status === 'fulfilled'
+            ? (dashboardReadinessResult.value as ReadinessSummary | null)
+            : null;
 
-        const scoredProducts = queue.filter(
-          (item) =>
-            typeof item.content_quality_score === 'number' ||
-            typeof item.model_readiness_score === 'number'
-        );
-        const cqValues = scoredProducts
-          .map((item) => item.content_quality_score)
-          .filter((value): value is number => typeof value === 'number');
-        const mrValues = scoredProducts
-          .map((item) => item.model_readiness_score)
-          .filter((value): value is number => typeof value === 'number');
-
-        setCatalogQuality({
-          total_products:
-            Number(qualityCoverage?.total_products) > 0
-              ? Number(qualityCoverage?.total_products)
-              : queue.length,
-          scored_products:
-            Number(qualityCoverage?.effective_scored_products) > 0
-              ? Number(qualityCoverage?.effective_scored_products)
-              : scoredProducts.length,
-          avg_content_quality:
-            cqValues.length > 0
-              ? cqValues.reduce((sum, value) => sum + value, 0) / cqValues.length
-              : null,
-          avg_model_readiness:
-            mrValues.length > 0
-              ? mrValues.reduce((sum, value) => sum + value, 0) / mrValues.length
-              : null,
-          low_cq_threshold: 60,
-          low_cq_count: cqValues.filter((value) => value < 60).length,
-        });
+        const summary =
+          dashboardReadiness || summarizeCommerceReadinessState(commerceReadiness);
+        setReadinessSummary(summary);
+        if (!summary) {
+          setReadinessError(t('dashboard.overview.banner.degradedReadiness'));
+        }
       })
       .catch((error) => {
         if (loadSeq !== loadSeqRef.current) return;
-        console.error('Failed to load readiness optimization:', error);
-        setCatalogQuality(null);
-        setOptimizationQueue([]);
+        console.error('Failed to load readiness summary:', error);
         setReadinessSummary(null);
         setReadinessError(t('dashboard.overview.banner.degradedReadiness'));
       })
@@ -395,26 +403,25 @@ export default function DashboardPage() {
   const totalCustomersValue = stats?.totalCustomers ?? 0;
   const totalProductsValue = stats?.totalProducts ?? 0;
   const revenueGrowthValue = stats?.revenueGrowth ?? 0;
-  const missingImageCount = optimizationQueue.filter(
-    (product) =>
-      product.top_issues?.some((issue) => issue.code === 'missing_primary_image') ||
-      !product.image_url
-  ).length;
-  const missingDescriptionCount = optimizationQueue.filter((product) =>
-    product.top_issues?.some((issue) => issue.code === 'missing_description')
-  ).length;
-  const spotlightProducts = optimizationQueue.slice(0, 4);
+  const missingImageCount = 0;
+  const missingDescriptionCount = 0;
+  const spotlightProducts: Array<{
+    queue_item_id: string;
+    title: string;
+    image_url?: string | null;
+    price_value?: number | null;
+    price_currency?: string | null;
+    blocked_variant_count: number;
+    top_issues?: Array<{
+      code: string;
+      label: string;
+    }>;
+  }> = [];
 
   const blockedVariants = readinessSummary?.blocked_variant_count || 0;
   const readyVariants = readinessSummary?.ready_variant_count || 0;
-  const qualityNeedsAttention = Math.max(
-    catalogQuality?.low_cq_count || 0,
-    Math.max(missingImageCount, missingDescriptionCount)
-  );
-  const averageContentScore =
-    catalogQuality?.avg_content_quality != null
-      ? Math.round(catalogQuality.avg_content_quality)
-      : null;
+  const qualityNeedsAttention = 0;
+  const averageContentScore = null;
 
   const readinessTone: Tone =
     readinessSummary?.tier === 'green'
