@@ -79,6 +79,8 @@ type DashboardStats = {
 
 type Tone = 'brand' | 'success' | 'warning' | 'critical' | 'neutral';
 
+const OVERVIEW_OPTIMIZATION_TIMEOUT_MS = 12_000;
+
 function formatCurrency(language: string, amount: number, currency = 'USD') {
   return new Intl.NumberFormat(language, {
     style: 'currency',
@@ -164,75 +166,95 @@ export default function DashboardPage() {
     const id = localStorage.getItem('merchant_id') || '';
     setMerchantId(id);
     void loadDashboardData(id);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadDashboardData = async (currentMerchantId: string) => {
+  const loadDashboardData = (currentMerchantId: string) => {
     const loadSeq = ++loadSeqRef.current;
 
-    try {
-      setStatsError(null);
-      setReadinessError(null);
-      setLoading(true);
+    setStatsError(null);
+    setReadinessError(null);
+    setLoading(true);
+    setStatsLoading(true);
+    setQualityLoading(true);
+    setStoresLoading(Boolean(currentMerchantId));
+    setPspsLoading(Boolean(currentMerchantId));
 
-      setStoresLoading(Boolean(currentMerchantId));
-      const storesPromise = currentMerchantId
-        ? apiClient.getConnectedStores(currentMerchantId).catch((err) => {
-            console.warn('Stores failed:', err);
-            return [];
-          })
-        : Promise.resolve([]);
+    const statsPromise = apiClient.getAnalyticsDashboard().then((payload) => {
+      if (payload?.error) {
+        throw new Error(payload.error);
+      }
+      return payload;
+    });
 
-      setPspsLoading(Boolean(currentMerchantId));
-      const pspsPromise = currentMerchantId
-        ? apiClient.getPSPs(currentMerchantId).catch((err) => {
-            console.warn('PSPs failed:', err);
-            return [];
-          })
-        : Promise.resolve([]);
+    const optimizationPromise = apiClient.getMerchantReadinessOptimization({
+      timeoutMs: OVERVIEW_OPTIMIZATION_TIMEOUT_MS,
+    });
 
-      setQualityLoading(true);
-      setStatsLoading(true);
-      const statsPromise = apiClient.getAnalyticsDashboard().then((payload) => {
-        if (payload?.error) {
-          throw new Error(payload.error);
-        }
-        return payload;
+    const storesPromise = currentMerchantId
+      ? apiClient.getConnectedStores(currentMerchantId).catch((err) => {
+          console.warn('Stores failed:', err);
+          return [];
+        })
+      : Promise.resolve([]);
+
+    const pspsPromise = currentMerchantId
+      ? apiClient.getPSPs(currentMerchantId).catch((err) => {
+          console.warn('PSPs failed:', err);
+          return [];
+        })
+      : Promise.resolve([]);
+
+    void statsPromise
+      .then((payload) => {
+        if (loadSeq !== loadSeqRef.current) return;
+
+        const recentOrdersData = Array.isArray(payload?.recent_orders)
+          ? payload.recent_orders
+          : Array.isArray(payload?.recentOrders)
+            ? payload.recentOrders
+            : [];
+
+        setStats({
+          totalOrders: Number(payload?.total_orders || 0),
+          paidOrders:
+            Number(payload?.order_breakdown?.paid) ||
+            Number(payload?.paid_orders) ||
+            Number(payload?.total_payments_succeeded) ||
+            0,
+          totalRevenue:
+            Number(payload?.revenue_breakdown?.confirmed) ||
+            Number(payload?.confirmed_revenue) ||
+            Number(payload?.total_revenue) ||
+            0,
+          totalCustomers: Number(payload?.total_customers || 0),
+          totalProducts: Number(payload?.total_products || 0),
+          orderGrowth: Number(payload?.order_growth || 0),
+          revenueGrowth:
+            Number(payload?.confirmed_revenue_growth) ||
+            Number(payload?.paid_revenue_growth) ||
+            Number(payload?.revenue_growth) ||
+            0,
+          recentOrders: recentOrdersData,
+        });
+        setRecentOrders(recentOrdersData);
+      })
+      .catch((error) => {
+        if (loadSeq !== loadSeqRef.current) return;
+        console.error('Failed to load dashboard stats:', error);
+        setRecentOrders([]);
+        setStatsError(t('dashboard.overview.banner.degradedStats'));
+      })
+      .finally(() => {
+        if (loadSeq !== loadSeqRef.current) return;
+        setStatsLoading(false);
+        setLoading(false);
+        setRefreshing(false);
       });
-      const optimizationPromise = apiClient.getMerchantReadinessOptimization();
 
-      void storesPromise
-        .then((storesData) => {
-          if (loadSeq !== loadSeqRef.current) return;
-          setConnectedStores(Array.isArray(storesData) ? storesData : []);
-        })
-        .finally(() => {
-          if (loadSeq !== loadSeqRef.current) return;
-          setStoresLoading(false);
-        });
+    void optimizationPromise
+      .then((optimizationPayload) => {
+        if (loadSeq !== loadSeqRef.current) return;
 
-      void pspsPromise
-        .then((pspsData) => {
-          if (loadSeq !== loadSeqRef.current) return;
-          setConnectedPSPs(Array.isArray(pspsData) ? pspsData : []);
-        })
-        .finally(() => {
-          if (loadSeq !== loadSeqRef.current) return;
-          setPspsLoading(false);
-        });
-
-      const [statsResult, optimizationResult] = await Promise.allSettled([
-        statsPromise,
-        optimizationPromise,
-      ]);
-      if (loadSeq !== loadSeqRef.current) return;
-
-      if (optimizationResult.status !== 'fulfilled' || !optimizationResult.value) {
-        setCatalogQuality(null);
-        setOptimizationQueue([]);
-        setReadinessSummary(null);
-        setReadinessError(t('dashboard.overview.banner.degradedReadiness'));
-      } else {
-        const optimizationPayload = optimizationResult.value;
         const readiness = optimizationPayload.readiness_summary || null;
         const queue = Array.isArray(optimizationPayload.product_queue)
           ? optimizationPayload.product_queue
@@ -274,53 +296,39 @@ export default function DashboardPage() {
           low_cq_threshold: 60,
           low_cq_count: cqValues.filter((value) => value < 60).length,
         });
-      }
-
-      if (statsResult.status !== 'fulfilled' || !statsResult.value) {
-        setRecentOrders([]);
-        setStatsError(t('dashboard.overview.banner.degradedStats'));
-      } else {
-        const payload = statsResult.value;
-        const recentOrdersData = Array.isArray(payload?.recent_orders)
-          ? payload.recent_orders
-          : Array.isArray(payload?.recentOrders)
-            ? payload.recentOrders
-            : [];
-
-        setStats({
-          totalOrders: Number(payload?.total_orders || 0),
-          paidOrders:
-            Number(payload?.order_breakdown?.paid) ||
-            Number(payload?.paid_orders) ||
-            Number(payload?.total_payments_succeeded) ||
-            0,
-          totalRevenue:
-            Number(payload?.revenue_breakdown?.confirmed) ||
-            Number(payload?.confirmed_revenue) ||
-            Number(payload?.total_revenue) ||
-            0,
-          totalCustomers: Number(payload?.total_customers || 0),
-          totalProducts: Number(payload?.total_products || 0),
-          orderGrowth: Number(payload?.order_growth || 0),
-          revenueGrowth:
-            Number(payload?.confirmed_revenue_growth) ||
-            Number(payload?.paid_revenue_growth) ||
-            Number(payload?.revenue_growth) ||
-            0,
-          recentOrders: recentOrdersData,
-        });
-        setRecentOrders(recentOrdersData);
-      }
-    } catch (error) {
-      console.error('Failed to load dashboard data:', error);
-    } finally {
-      if (loadSeq === loadSeqRef.current) {
-        setLoading(false);
-        setRefreshing(false);
-        setStatsLoading(false);
+      })
+      .catch((error) => {
+        if (loadSeq !== loadSeqRef.current) return;
+        console.error('Failed to load readiness optimization:', error);
+        setCatalogQuality(null);
+        setOptimizationQueue([]);
+        setReadinessSummary(null);
+        setReadinessError(t('dashboard.overview.banner.degradedReadiness'));
+      })
+      .finally(() => {
+        if (loadSeq !== loadSeqRef.current) return;
         setQualityLoading(false);
-      }
-    }
+      });
+
+    void storesPromise
+      .then((storesData) => {
+        if (loadSeq !== loadSeqRef.current) return;
+        setConnectedStores(Array.isArray(storesData) ? storesData : []);
+      })
+      .finally(() => {
+        if (loadSeq !== loadSeqRef.current) return;
+        setStoresLoading(false);
+      });
+
+    void pspsPromise
+      .then((pspsData) => {
+        if (loadSeq !== loadSeqRef.current) return;
+        setConnectedPSPs(Array.isArray(pspsData) ? pspsData : []);
+      })
+      .finally(() => {
+        if (loadSeq !== loadSeqRef.current) return;
+        setPspsLoading(false);
+      });
   };
 
   const handleRefresh = () => {
@@ -375,7 +383,9 @@ export default function DashboardPage() {
   const activePSPs = connectedPSPs.filter((psp) => psp?.is_active);
   const needsChannelSetup = connectedStores.length === 0;
   const needsPaymentSetup = activePSPs.length === 0;
-  const showSetupReminder = !loading && (needsChannelSetup || needsPaymentSetup);
+  const overviewRefreshing = statsLoading || qualityLoading;
+  const setupReadinessLoaded = !loading && !storesLoading && !pspsLoading;
+  const showSetupReminder = setupReadinessLoaded && (needsChannelSetup || needsPaymentSetup);
   const hasStatsData = Boolean(stats);
   const totalOrdersValue = stats?.totalOrders ?? 0;
   const paidOrdersValue = stats?.paidOrders ?? 0;
@@ -881,13 +891,13 @@ export default function DashboardPage() {
         </SurfaceCard>
       ) : null}
 
-      {(statsLoading || statsError || readinessError) && (
+      {(overviewRefreshing || statsError || readinessError) && (
         <div className="merchant-panel px-5 py-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3 text-sm text-[color:var(--merchant-muted-strong)]">
-              <Activity className={`h-4 w-4 ${statsLoading ? 'animate-pulse' : ''}`} />
+              <Activity className={`h-4 w-4 ${overviewRefreshing ? 'animate-pulse' : ''}`} />
               <span>
-                {statsLoading
+                {overviewRefreshing
                   ? t('dashboard.overview.banner.refreshing')
                   : statsError && readinessError
                     ? t('dashboard.overview.banner.degradedAll')

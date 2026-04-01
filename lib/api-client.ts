@@ -27,6 +27,10 @@ export interface CommerceFunnelParams {
   commerce_surface?: string;
 }
 
+interface RequestOptions {
+  timeoutMs?: number;
+}
+
 class ApiClient {
   private client: AxiosInstance;
 
@@ -289,8 +293,10 @@ class ApiClient {
     return response.data;
   }
 
-  async getMerchantReadinessOptimization() {
-    const response = await this.client.get('/merchant/readiness/optimization');
+  async getMerchantReadinessOptimization(options?: RequestOptions) {
+    const response = await this.client.get('/merchant/readiness/optimization', {
+      timeout: options?.timeoutMs,
+    });
     return response.data?.data || response.data;
   }
 

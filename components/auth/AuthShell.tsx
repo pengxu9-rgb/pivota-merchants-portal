@@ -62,9 +62,11 @@ export function AuthShell({
             <h1 className="mt-5 text-[clamp(2.65rem,4.6vw,4.4rem)] font-semibold tracking-[-0.055em] text-[color:var(--merchant-ink)]">
               {title}
             </h1>
-            <p className="mt-4 max-w-lg text-[15px] leading-7 text-[color:var(--merchant-muted-strong)]">
-              {description}
-            </p>
+            {description.trim() ? (
+              <p className="mt-4 max-w-lg text-[15px] leading-7 text-[color:var(--merchant-muted-strong)]">
+                {description}
+              </p>
+            ) : null}
 
             <div className="mt-8 grid gap-3.5">
               {highlights.map((item) => {
@@ -138,14 +140,16 @@ export function AuthShell({
             >
               {title}
             </h1>
-            <p
-              className={cx(
-                'mt-3 leading-6 text-[color:var(--merchant-muted-strong)]',
-                showSidebar ? 'text-sm' : 'max-w-2xl text-[15px]',
-              )}
-            >
-              {description}
-            </p>
+            {description.trim() ? (
+              <p
+                className={cx(
+                  'mt-3 leading-6 text-[color:var(--merchant-muted-strong)]',
+                  showSidebar ? 'text-sm' : 'max-w-2xl text-[15px]',
+                )}
+              >
+                {description}
+              </p>
+            ) : null}
           </div>
 
           <div

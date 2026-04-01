@@ -54,8 +54,7 @@ const enMessages: MessageCatalog = {
   "auth.shell.signIn": "Sign in",
 
   "auth.login.pageTitle": "Sign in to the Pivota Merchant Portal",
-  "auth.login.pageDescription":
-    "Use your merchant account to review readiness, improve LLM and agent exposure, and keep the path from discovery to merchant-native execution moving cleanly.",
+  "auth.login.pageDescription": "",
   "auth.login.highlightReadyTitle": "Ready for LLM and agent traffic",
   "auth.login.highlightReadyDescription":
     "Prepare your catalog and storefront experience for product discovery and buyer traffic coming from LLMs and agents.",
@@ -1342,7 +1341,7 @@ const localeOverridesRaw: Record<Exclude<MerchantPortalLanguage, "en">, PartialL
     "auth.shell.alreadyRegistered": "已经注册？",
     "auth.shell.signIn": "登录",
     "auth.login.pageTitle": "登录 Pivota 商家门户",
-    "auth.login.pageDescription": "使用商家账号查看 readiness、提升 LLM 与 agent 曝光，并保持从发现到商家原生执行的路径顺畅。",
+    "auth.login.pageDescription": "",
     "auth.login.highlightReadyTitle": "面向 LLM 与 agent 流量准备就绪",
     "auth.login.highlightReadyDescription": "为来自 LLM 与 agent 的商品发现和买家流量准备你的商品目录和店铺体验。",
     "auth.login.highlightCatalogTitle": "商品目录 readiness 与曝光",
@@ -1602,7 +1601,7 @@ const localeOverridesRaw: Record<Exclude<MerchantPortalLanguage, "en">, PartialL
     "auth.shell.alreadyRegistered": "すでに登録済みですか？",
     "auth.shell.signIn": "サインイン",
     "auth.login.pageTitle": "Pivota Merchant Portal にサインイン",
-    "auth.login.pageDescription": "マーチャントアカウントで readiness を確認し、LLM と agent への露出を改善し、発見からマーチャント実行までの流れを整えます。",
+    "auth.login.pageDescription": "",
     "auth.login.accessOverline": "マーチャントアクセス",
     "auth.login.accessTitle": "サインイン",
     "auth.login.accessDescription": "オンボーディング中に作成した同じマーチャントアカウントを使用してポータルにアクセスします。",
