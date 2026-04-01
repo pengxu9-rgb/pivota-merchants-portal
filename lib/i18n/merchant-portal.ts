@@ -766,8 +766,8 @@ Object.assign(enMessages, {
   "dashboard.analytics.stats.placed": "{count} placed",
   "dashboard.analytics.stats.clickThroughRate": "Click-through rate",
   "dashboard.analytics.stats.clickedExposureMeta": "{clicked} clicked from {surfaced} surfaced/indexed",
-  "dashboard.analytics.stats.orderRateFromClicks": "Order rate from clicks",
-  "dashboard.analytics.stats.orderedExposureMeta": "{ordered} orders from {clicked} clicked interactions",
+  "dashboard.analytics.stats.orderRateFromClicks": "Paid order rate from clicks",
+  "dashboard.analytics.stats.orderedExposureMeta": "{ordered} paid orders from {clicked} clicked interactions",
   "dashboard.analytics.stats.paymentSuccess": "Payment success",
   "dashboard.analytics.stats.succeeded": "{count} succeeded",
   "dashboard.analytics.stats.paidRevenue": "Paid revenue",
@@ -811,7 +811,7 @@ Object.assign(enMessages, {
   "dashboard.analytics.help.clickThrough":
     "Click-through rate: share of surfaced or indexed commerce interactions that reached a tracked click.",
   "dashboard.analytics.help.orderRateFromClicks":
-    "Order rate from clicks: share of clicked interactions that later produced an attributed order.",
+    "Paid order rate from clicks: share of clicked interactions that later produced a paid or settled order.",
   "dashboard.analytics.help.paymentSuccess":
     "Payment success: share of placed orders with successful payment completion",
   "dashboard.analytics.commerceFunnel.title": "Commerce funnel",
@@ -823,15 +823,16 @@ Object.assign(enMessages, {
   "dashboard.analytics.commerceFunnel.surfacedMeta": "Surface support: {supported}",
   "dashboard.analytics.commerceFunnel.clicked": "Clicked exposure",
   "dashboard.analytics.commerceFunnel.clickedMeta": "{count} total click events",
-  "dashboard.analytics.commerceFunnel.ordered": "Ordered conversion",
+  "dashboard.analytics.commerceFunnel.ordered": "Paid conversions",
+  "dashboard.analytics.commerceFunnel.orderedMeta": "{count} attributed order-created edges",
   "dashboard.analytics.commerceFunnel.refunded": "Refunded orders",
   "dashboard.analytics.commerceFunnel.refundedMeta": "{amount} refunded",
   "dashboard.analytics.commerceFunnel.clickedRate": "Click-through rate",
   "dashboard.analytics.commerceFunnel.clickedRateMeta":
     "Clicked interactions divided by surfaced/indexed denominator",
-  "dashboard.analytics.commerceFunnel.orderedRate": "Order rate from clicks",
+  "dashboard.analytics.commerceFunnel.orderedRate": "Paid order rate from clicks",
   "dashboard.analytics.commerceFunnel.orderedRateMeta":
-    "Attributed orders divided by clicked interactions",
+    "Paid or settled orders divided by clicked interactions",
   "dashboard.analytics.commerceFunnel.groupedTitle": "Grouped funnel table",
   "dashboard.analytics.commerceFunnel.groupedDescription":
     "Read-model slices built from the canonical interaction ledger, listing registry, and attribution edges.",
@@ -876,7 +877,7 @@ Object.assign(enMessages, {
   "dashboard.analytics.readiness.summary.indexed": "{count} indexed variants",
   "dashboard.analytics.readiness.summary.surfaced": "{count} surfaced interactions",
   "dashboard.analytics.readiness.summary.clicked": "{count} clicked interactions",
-  "dashboard.analytics.readiness.summary.ordered": "{count} attributed orders",
+  "dashboard.analytics.readiness.summary.ordered": "{count} attributed paid orders",
   "dashboard.analytics.readiness.runtime":
     "Commerce readiness is temporarily unavailable.",
   "dashboard.analytics.issues.title": "Signals and attribution issues",
@@ -2459,8 +2460,8 @@ Object.assign(localeOverridesRaw["zh-CN"], {
   "dashboard.analytics.stats.placed": "{count} 笔已提交",
   "dashboard.analytics.stats.clickThroughRate": "点击转化率",
   "dashboard.analytics.stats.clickedExposureMeta": "{surfaced} 个 surfaced/indexed 交互中有 {clicked} 个产生点击",
-  "dashboard.analytics.stats.orderRateFromClicks": "点击到下单率",
-  "dashboard.analytics.stats.orderedExposureMeta": "{clicked} 个点击交互中有 {ordered} 个产生归因订单",
+  "dashboard.analytics.stats.orderRateFromClicks": "点击到支付订单率",
+  "dashboard.analytics.stats.orderedExposureMeta": "{clicked} 个点击交互中有 {ordered} 个形成已支付订单",
   "dashboard.analytics.stats.paymentSuccess": "支付成功率",
   "dashboard.analytics.stats.succeeded": "{count} 笔成功",
   "dashboard.analytics.stats.paidRevenue": "已支付营收",
@@ -2501,7 +2502,7 @@ Object.assign(localeOverridesRaw["zh-CN"], {
   "dashboard.analytics.help.clickThrough":
     "点击转化率：surfaced 或 indexed 的商业交互中，最终到达可追踪点击的占比。",
   "dashboard.analytics.help.orderRateFromClicks":
-    "点击到下单率：已点击交互中，后续成功形成归因订单的占比。",
+    "点击到支付订单率：已点击交互中，后续成功形成已支付或已结算订单的占比。",
   "dashboard.analytics.help.paymentSuccess":
     "支付成功率：已提交订单中最终支付成功的占比",
   "dashboard.analytics.commerceFunnel.title": "商业漏斗",
@@ -2513,15 +2514,16 @@ Object.assign(localeOverridesRaw["zh-CN"], {
   "dashboard.analytics.commerceFunnel.surfacedMeta": "Surface 支持：{supported}",
   "dashboard.analytics.commerceFunnel.clicked": "点击曝光",
   "dashboard.analytics.commerceFunnel.clickedMeta": "{count} 次点击事件",
-  "dashboard.analytics.commerceFunnel.ordered": "下单转化",
+  "dashboard.analytics.commerceFunnel.ordered": "已支付转化",
+  "dashboard.analytics.commerceFunnel.orderedMeta": "{count} 个归因下单边",
   "dashboard.analytics.commerceFunnel.refunded": "已退款订单",
   "dashboard.analytics.commerceFunnel.refundedMeta": "已退款 {amount}",
   "dashboard.analytics.commerceFunnel.clickedRate": "点击转化率",
   "dashboard.analytics.commerceFunnel.clickedRateMeta":
     "点击交互数 ÷ surfaced 或 indexed 分母",
-  "dashboard.analytics.commerceFunnel.orderedRate": "点击到下单率",
+  "dashboard.analytics.commerceFunnel.orderedRate": "点击到支付订单率",
   "dashboard.analytics.commerceFunnel.orderedRateMeta":
-    "归因订单数 ÷ 点击交互数",
+    "已支付或已结算订单数 ÷ 点击交互数",
   "dashboard.analytics.commerceFunnel.groupedTitle": "分组漏斗表",
   "dashboard.analytics.commerceFunnel.groupedDescription":
     "从 canonical interaction ledger、listing registry 和 attribution edges 派生出的 merchant 读模型切片。",
@@ -2566,7 +2568,7 @@ Object.assign(localeOverridesRaw["zh-CN"], {
   "dashboard.analytics.readiness.summary.indexed": "{count} 个 indexed variants",
   "dashboard.analytics.readiness.summary.surfaced": "{count} 个 surfaced interactions",
   "dashboard.analytics.readiness.summary.clicked": "{count} 个 clicked interactions",
-  "dashboard.analytics.readiness.summary.ordered": "{count} 个 attributed orders",
+  "dashboard.analytics.readiness.summary.ordered": "{count} 个归因已支付订单",
   "dashboard.analytics.readiness.runtime":
     "Commerce readiness 暂时不可用。",
   "dashboard.analytics.issues.title": "Signals 与 attribution 问题",

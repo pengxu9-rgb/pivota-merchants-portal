@@ -158,6 +158,29 @@ function normalizeStringList(value: unknown): string[] {
   return [];
 }
 
+function normalizeObjectLike(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return {};
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        return {};
+      }
+    }
+  }
+
+  return {};
+}
+
 function getMerchantFieldLabel(field: string) {
   return FUNNEL_FIELD_LABELS[field as keyof typeof FUNNEL_FIELD_LABELS] || humanizeToken(field);
 }
@@ -295,8 +318,10 @@ export default function AnalyticsPage() {
         const rangeDays = getRangeDays(timeRange);
         const nowMs = Date.now();
         const dayMs = 24 * 60 * 60 * 1000;
-        const currentStartMs = nowMs - rangeDays * dayMs;
-        const prevStartMs = nowMs - rangeDays * 2 * dayMs;
+        const now = new Date(nowMs);
+        const utcDayStartMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+        const currentStartMs = utcDayStartMs - rangeDays * dayMs;
+        const prevStartMs = utcDayStartMs - rangeDays * 2 * dayMs;
 
         const pageSize = 100;
         const maxOrders = 20000;
@@ -569,6 +594,15 @@ export default function AnalyticsPage() {
     funnelSummary?.listing_status_breakdown_rows || funnelSummary?.listing_status_breakdown || {};
   const listingStatusBreakdownBySurface =
     funnelSummary?.listing_status_breakdown_by_surface || {};
+  const paidConversionCount = Number(
+    funnelSummary?.paid_conversion ?? funnelSummary?.ordered_conversion ?? 0
+  );
+  const paidOrderRate = Number(
+    funnelSummary?.paid_order_rate ?? funnelSummary?.ordered_rate ?? 0
+  );
+  const attributedOrdersCount = Number(
+    funnelSummary?.attributed_orders ?? funnelSummary?.ordered_conversion ?? 0
+  );
   const readinessDomains = [
     {
       key: 'foundation',
@@ -595,7 +629,10 @@ export default function AnalyticsPage() {
       blockers: normalizeStringList(readinessState?.execute_blockers),
     },
   ];
-  const readinessMetadata = readinessState?.metadata || {};
+  const readinessMetadata = normalizeObjectLike(readinessState?.metadata);
+  const readinessPaidConversionCount = Number(
+    readinessMetadata?.paid_conversion ?? readinessMetadata?.ordered_conversion ?? 0
+  );
   const commerceIssuesList = Array.isArray(commerceIssues?.issues) ? commerceIssues.issues : [];
   const traceInteraction = interactionTrace?.interaction || null;
   const traceEvents = Array.isArray(interactionTrace?.events) ? interactionTrace.events : [];
@@ -679,25 +716,25 @@ export default function AnalyticsPage() {
               <BarChart3 className="w-6 h-6 text-green-600" />
             </div>
             <div className={`flex items-center text-sm ${
-              Number(funnelSummary?.ordered_rate || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+              paidOrderRate >= 0 ? 'text-green-600' : 'text-red-600'
             }`}>
-              {(Number(funnelSummary?.ordered_rate || 0) >= 0) ? (
+              {paidOrderRate >= 0 ? (
                 <TrendingUp className="w-4 h-4" />
               ) : (
                 <TrendingDown className="w-4 h-4" />
               )}
-              <span>{formatRatioPercent(Number(funnelSummary?.ordered_rate || 0))}</span>
+              <span>{formatRatioPercent(paidOrderRate)}</span>
             </div>
           </div>
           <h3 className="text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
-            {formatRatioPercent(Number(funnelSummary?.ordered_rate || 0))}
+            {formatRatioPercent(paidOrderRate)}
           </h3>
           <p className="text-sm text-[color:var(--merchant-muted-strong)]">
             {t('dashboard.analytics.stats.orderRateFromClicks')}
           </p>
           <p className="mt-1 text-xs text-[color:var(--merchant-muted)]">
             {t('dashboard.analytics.stats.orderedExposureMeta', {
-              ordered: Number(funnelSummary?.ordered_conversion || 0),
+              ordered: paidConversionCount,
               clicked: Number(funnelSummary?.clicked_exposure || 0),
             })}
           </p>
@@ -911,7 +948,10 @@ export default function AnalyticsPage() {
                   },
                   {
                     label: t('dashboard.analytics.commerceFunnel.ordered'),
-                    value: Number(funnelSummary?.ordered_conversion || 0),
+                    value: paidConversionCount,
+                    meta: t('dashboard.analytics.commerceFunnel.orderedMeta', {
+                      count: attributedOrdersCount,
+                    }),
                   },
                   {
                     label: t('dashboard.analytics.commerceFunnel.refunded'),
@@ -927,7 +967,7 @@ export default function AnalyticsPage() {
                   },
                   {
                     label: t('dashboard.analytics.commerceFunnel.orderedRate'),
-                    value: formatRatioPercent(Number(funnelSummary?.ordered_rate || 0)),
+                    value: formatRatioPercent(paidOrderRate),
                     meta: t('dashboard.analytics.commerceFunnel.orderedRateMeta'),
                   },
                 ].map((item) => (
@@ -982,8 +1022,12 @@ export default function AnalyticsPage() {
                             <td className="px-4 py-3">{Number(slice?.surfaced_exposure || 0)}</td>
                             <td className="px-4 py-3">{Number(slice?.clicked_exposure || 0)}</td>
                             <td className="px-4 py-3">{formatRatioPercent(Number(slice?.clicked_rate || 0))}</td>
-                            <td className="px-4 py-3">{Number(slice?.ordered_conversion || 0)}</td>
-                            <td className="px-4 py-3">{formatRatioPercent(Number(slice?.ordered_rate || 0))}</td>
+                            <td className="px-4 py-3">
+                              {Number((slice?.paid_conversion ?? slice?.ordered_conversion) || 0)}
+                            </td>
+                            <td className="px-4 py-3">
+                              {formatRatioPercent(Number((slice?.paid_order_rate ?? slice?.ordered_rate) || 0))}
+                            </td>
                             <td className="px-4 py-3">
                               {Number(slice?.refunded_orders || 0)} / {String(slice?.refunded_amount || '0')}
                             </td>
@@ -1190,7 +1234,7 @@ export default function AnalyticsPage() {
                   </div>
                   <div className="text-sm text-[color:var(--merchant-muted-strong)]">
                     {t('dashboard.analytics.readiness.summary.ordered', {
-                      count: Number(readinessMetadata?.ordered_conversion || 0),
+                      count: readinessPaidConversionCount,
                     })}
                   </div>
                 </div>

@@ -226,7 +226,9 @@ export default function DashboardPage() {
             Number(payload?.confirmed_revenue) ||
             Number(payload?.total_revenue) ||
             0,
-          totalCustomers: Number(payload?.total_customers || 0),
+          totalCustomers: Number(
+            payload?.customer_breakdown?.last_30_days ?? payload?.total_customers ?? 0
+          ),
           totalProducts: Number(payload?.total_products || 0),
           orderGrowth: Number(payload?.order_growth || 0),
           revenueGrowth:
