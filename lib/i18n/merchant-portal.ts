@@ -3016,7 +3016,7 @@ export function translatePortalMessage(
   const localized =
     language === "en"
       ? enMessages[key]
-      : localeOverrides[language]?.[key] || enMessages[key];
+      : (localeOverrides[language]?.[key] ?? enMessages[key]);
 
-  return interpolate(localized || key, variables);
+  return interpolate(localized ?? key, variables);
 }
