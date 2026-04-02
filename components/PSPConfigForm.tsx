@@ -32,6 +32,7 @@ export function PSPConfigForm({
 
   const canSave =
     Boolean(providerLower && merchantId && apiKey) &&
+    (!isStripe || Boolean(publicKey)) &&
     (!isAdyen || (Boolean(accountId) && Boolean(clientKey))) &&
     (!isCheckout || (Boolean(accountId) && Boolean(publicKey))) &&
     !saving;
@@ -54,6 +55,7 @@ export function PSPConfigForm({
 
       if (isStripe) {
         if (accountId.trim()) payload.account_id = accountId.trim();
+        payload.public_key = publicKey.trim();
       }
 
       if (isAdyen) {
@@ -147,6 +149,21 @@ export function PSPConfigForm({
             />
           </div>
 
+          {isStripe ? (
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
+                Publishable key <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="password"
+                value={publicKey}
+                onChange={(event) => setPublicKey(event.target.value)}
+                placeholder="pk_live_... or pk_test_..."
+                className="w-full rounded-[1rem] border border-[color:var(--merchant-line)] px-3 py-2 text-sm text-[color:var(--merchant-ink)]"
+              />
+            </div>
+          ) : null}
+
           <div>
             <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
               {isStripe ? 'Connected account ID (optional, Stripe Connect only)' : isAdyen ? 'Merchant account' : 'Processing channel ID'}
@@ -199,7 +216,7 @@ export function PSPConfigForm({
 
           <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-4 py-3 text-sm text-[color:var(--merchant-muted-strong)]">
             {isStripe
-              ? 'Merchant Stripe setup always uses PaymentIntent. Stripe Checkout is handled internally when a flow explicitly requires a hosted redirect.'
+              ? 'Merchant Stripe setup uses PaymentIntent and requires the merchant publishable key so agent checkout can render Stripe Elements directly.'
               : isAdyen
                 ? 'Adyen requires both merchant account and client key so the returned session can be used by the frontend.'
                 : 'Checkout.com requires both processing channel ID and public key so the returned payment session is usable by the frontend.'}
