@@ -597,8 +597,8 @@ Object.assign(enMessages, {
     "Refreshing payment setup",
   "dashboard.overview.support.paymentSetup.detail.needsAttention":
     "Payment setup still needs attention",
-  "dashboard.overview.support.paymentSetup.meta.successRate":
-    "Avg success rate {rate}%",
+  "dashboard.overview.support.paymentSetup.meta.liveReady":
+    "{liveReady}/{active} live-ready",
   "dashboard.overview.support.paymentSetup.meta.addSetup":
     "Add payment setup to turn ready products into completed orders.",
   "dashboard.overview.support.paymentSetup.cta.review":
@@ -1248,8 +1248,6 @@ Object.assign(enMessages, {
     "Upload failed. Please try again.",
   "dashboard.platformOnboarding.reports.productsFailed":
     "Failed to load products.",
-  "dashboard.platformOnboarding.reports.createTestOrderFailed":
-    "Failed to create test order.",
   "dashboard.platformOrders.disabledTitle": "Platform Orders (Preview)",
   "dashboard.platformOrders.disabledDescription":
     "This feature is disabled in this environment. Set NEXT_PUBLIC_FEATURE_PLATFORM_ORDERS_V1=true to enable it.",
@@ -1269,10 +1267,10 @@ Object.assign(enMessages, {
   "dashboard.platformOrders.form.reset": "Reset",
   "dashboard.platformOrders.form.ordersCsv": "Orders CSV",
   "dashboard.platformOrders.form.validate": "Validate",
-  "dashboard.platformOrders.form.upload": "Upload (stub)",
+  "dashboard.platformOrders.form.upload": "Upload",
   "dashboard.platformOrders.form.uploading": "Uploading…",
   "dashboard.platformOrders.form.spec":
-    "See PLATFORM_ORDERS_CSV_SPEC.md for required columns. Current flow is validation-only; ingestion is deferred.",
+    "See PLATFORM_ORDERS_CSV_SPEC.md for required columns. Accepted files create an import task; run the worker to ingest orders.",
   "dashboard.platformOrders.validation.title": "Validation result",
   "dashboard.platformOrders.validation.ready": "Ready to import",
   "dashboard.platformOrders.validation.needsFixes": "Needs fixes",
@@ -1282,7 +1280,7 @@ Object.assign(enMessages, {
   "dashboard.platformOrders.validation.row": "Row {row}",
   "dashboard.platformOrders.validation.missing": "(missing: {fields})",
   "dashboard.platformOrders.upload.accepted":
-    "Accepted. Import task (stub): {task}",
+    "Accepted. Import task: {task}",
   "dashboard.platformOrders.imported.title": "Imported orders",
   "dashboard.platformOrders.imported.description":
     "Orders ingested from orders_report tasks (Amazon/Temu).",
@@ -1316,19 +1314,14 @@ Object.assign(enMessages, {
     "Failed to create ACP checkout:\n\n{detail}\n\nPlease try again or contact support.",
   "dashboard.platformOrders.actions.validationFailed": "Validation failed",
   "dashboard.platformOrders.actions.uploadAccepted":
-    "Orders CSV accepted, task: {task} (stub)",
+    "Orders CSV accepted, task: {task}",
   "dashboard.platformOrders.actions.uploadFailed": "Upload failed",
-  "dashboard.platformOrders.actions.stubOrderFailed": "Failed to create stub order",
   "dashboard.platformOrders.pagination.prev": "Prev",
   "dashboard.platformOrders.pagination.next": "Next",
   "dashboard.platformOrders.pagination.showing":
     "Showing {start}-{end} of {total}",
   "dashboard.platformOrders.pagination.page":
     "Page {page} / {totalPages}",
-  "dashboard.platformOrders.note.title":
-    "Note: Stub Order feature is temporarily unavailable",
-  "dashboard.platformOrders.note.body":
-    "The POC order creation endpoint is currently admin-only. Merchants can use the CSV upload feature to test order import flow (stub mode).",
 });
 
 const localeOverridesRaw: Record<Exclude<MerchantPortalLanguage, "en">, PartialLocaleCatalog> = {
@@ -2298,8 +2291,8 @@ Object.assign(localeOverridesRaw["zh-CN"], {
     "正在刷新支付配置",
   "dashboard.overview.support.paymentSetup.detail.needsAttention":
     "支付配置仍需处理",
-  "dashboard.overview.support.paymentSetup.meta.successRate":
-    "平均成功率 {rate}%",
+  "dashboard.overview.support.paymentSetup.meta.liveReady":
+    "{liveReady}/{active} 可用于 live",
   "dashboard.overview.support.paymentSetup.meta.addSetup":
     "补齐支付配置后，已就绪商品才能真正转成完成订单。",
   "dashboard.overview.support.paymentSetup.cta.review": "查看支付配置",
@@ -2898,7 +2891,6 @@ Object.assign(localeOverridesRaw["zh-CN"], {
   "dashboard.platformOnboarding.reports.uploadStarted": "报表已上传，导入任务已经启动。",
   "dashboard.platformOnboarding.reports.uploadFailed": "上传失败，请稍后重试。",
   "dashboard.platformOnboarding.reports.productsFailed": "加载商品失败。",
-  "dashboard.platformOnboarding.reports.createTestOrderFailed": "创建测试订单失败。",
   "dashboard.platformOrders.disabledTitle": "平台订单（预览）",
   "dashboard.platformOrders.disabledDescription":
     "此环境中该功能未启用。设置 NEXT_PUBLIC_FEATURE_PLATFORM_ORDERS_V1=true 后即可打开。",
@@ -2917,10 +2909,10 @@ Object.assign(localeOverridesRaw["zh-CN"], {
   "dashboard.platformOrders.form.reset": "重置",
   "dashboard.platformOrders.form.ordersCsv": "订单 CSV",
   "dashboard.platformOrders.form.validate": "校验",
-  "dashboard.platformOrders.form.upload": "上传（stub）",
+  "dashboard.platformOrders.form.upload": "上传",
   "dashboard.platformOrders.form.uploading": "上传中…",
   "dashboard.platformOrders.form.spec":
-    "必填列请查看 PLATFORM_ORDERS_CSV_SPEC.md。当前流程只做校验，正式 ingestion 还未打开。",
+    "必填列请查看 PLATFORM_ORDERS_CSV_SPEC.md。已接受的文件会创建导入任务；运行 worker 后导入订单。",
   "dashboard.platformOrders.validation.title": "校验结果",
   "dashboard.platformOrders.validation.ready": "可导入",
   "dashboard.platformOrders.validation.needsFixes": "需要修复",
@@ -2928,7 +2920,7 @@ Object.assign(localeOverridesRaw["zh-CN"], {
   "dashboard.platformOrders.validation.previewed": "已预览 {preview} 行（扫描 {scanned} 行）。",
   "dashboard.platformOrders.validation.row": "第 {row} 行",
   "dashboard.platformOrders.validation.missing": "（缺少：{fields}）",
-  "dashboard.platformOrders.upload.accepted": "已接受。导入任务（stub）：{task}",
+  "dashboard.platformOrders.upload.accepted": "已接受。导入任务：{task}",
   "dashboard.platformOrders.imported.title": "已导入订单",
   "dashboard.platformOrders.imported.description":
     "来自 orders_report 任务导入的订单（Amazon/Temu）。",
@@ -2962,16 +2954,12 @@ Object.assign(localeOverridesRaw["zh-CN"], {
     "创建 ACP checkout 失败：\n\n{detail}\n\n请重试，或联系支持团队。",
   "dashboard.platformOrders.actions.validationFailed": "校验失败",
   "dashboard.platformOrders.actions.uploadAccepted":
-    "订单 CSV 已接受，任务：{task}（stub）",
+    "订单 CSV 已接受，任务：{task}",
   "dashboard.platformOrders.actions.uploadFailed": "上传失败",
-  "dashboard.platformOrders.actions.stubOrderFailed": "创建 stub order 失败",
   "dashboard.platformOrders.pagination.prev": "上一页",
   "dashboard.platformOrders.pagination.next": "下一页",
   "dashboard.platformOrders.pagination.showing": "显示 {start}-{end} / 共 {total}",
   "dashboard.platformOrders.pagination.page": "第 {page} 页 / 共 {totalPages} 页",
-  "dashboard.platformOrders.note.title": "注意：Stub Order 功能暂时不可用",
-  "dashboard.platformOrders.note.body":
-    "POC 订单创建端点目前仅对管理员开放。商家可以使用 CSV 上传功能来测试订单导入流程（stub 模式）。",
 });
 
 const localeOverrides: Record<Exclude<MerchantPortalLanguage, "en">, MessageCatalog> =

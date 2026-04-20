@@ -36,7 +36,7 @@ export default function MCPPage() {
     shop_domain: null,
     nodes: [] as any[],
     total_requests: 0,
-    avg_latency: 0,
+    avg_latency: null,
     success_rate: 0,
     last_sync: null as string | null,
     latest_sync: null as string | null,
@@ -137,8 +137,8 @@ export default function MCPPage() {
                 id: store.id || store.store_id || `${store.platform}-fallback`,
                 name: store.store_name || store.name || store.domain || 'Store',
                 status: 'online',
-                latency_ms: 0,
-                uptime: 99.9,
+                latency_ms: null,
+                uptime: null,
                 product_count: store.product_count || 0,
                 domain: store.domain,
                 last_sync: store.last_sync || null,
@@ -195,14 +195,14 @@ export default function MCPPage() {
 
   const formatLatency = (value?: number | null) => {
     if (value === null || value === undefined || Number.isNaN(value)) {
-      return '—';
+      return 'Not measured';
     }
     return `${Math.round(value)}ms`;
   };
 
   const formatPercent = (value?: number | null) => {
     if (value === null || value === undefined || Number.isNaN(value)) {
-      return '—';
+      return 'Not measured';
     }
     const formatted = Number(value).toFixed(2);
     return `${formatted.endsWith('.00') ? formatted.slice(0, -3) : formatted}%`;

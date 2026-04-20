@@ -291,23 +291,6 @@ export const platformOnboardingApi = {
     return response.data;
   },
 
-  createPlatformOrderPoc: async (
-    onboardingId: string,
-    payload: {
-      platform: 'amazon' | 'temu';
-      platform_product_id: string;
-      variant_id?: string;
-      quantity: number;
-      buyer_email?: string;
-    }
-  ) => {
-    const base = API_CONFIG.ENDPOINTS.PLATFORM_ONBOARDING_DETAILS;
-    const response = await apiClient.post(
-      `${base}/${encodeURIComponent(onboardingId)}/orders/poc`,
-      payload
-    );
-    return response.data;
-  },
 };
 
 export const integrationsApi = {
