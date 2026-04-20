@@ -391,6 +391,7 @@ export default function DashboardPage() {
       : '/dashboard/product-optimization?source=readiness';
 
   const activePSPs = connectedPSPs.filter((psp) => psp?.is_active);
+  const liveReadyActivePSPs = activePSPs.filter((psp) => psp?.live_charge_ready);
   const needsChannelSetup = connectedStores.length === 0;
   const needsPaymentSetup = activePSPs.length === 0;
   const overviewRefreshing = statsLoading || qualityLoading;
@@ -766,11 +767,9 @@ export default function DashboardPage() {
             : t('dashboard.overview.support.paymentSetup.detail.needsAttention'),
       meta:
         activePSPs.length > 0
-          ? t('dashboard.overview.support.paymentSetup.meta.successRate', {
-              rate: Math.round(
-                activePSPs.reduce((sum, psp) => sum + Number(psp.success_rate || 0), 0) /
-                  Math.max(activePSPs.length, 1)
-              ),
+          ? t('dashboard.overview.support.paymentSetup.meta.liveReady', {
+              liveReady: liveReadyActivePSPs.length,
+              active: activePSPs.length,
             })
           : t('dashboard.overview.support.paymentSetup.meta.addSetup'),
       href: '/dashboard/integrations',

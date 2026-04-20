@@ -90,11 +90,6 @@ export default function PlatformOnboardingPage() {
   const [uploading, setUploading] = useState(false);
   const [productsLoading, setProductsLoading] = useState(false);
   const [products, setProducts] = useState<StandardProduct[]>([]);
-  const [orderProductId, setOrderProductId] = useState('');
-  const [orderVariantId, setOrderVariantId] = useState('');
-  const [orderQuantity, setOrderQuantity] = useState(1);
-  const [ordering, setOrdering] = useState(false);
-  const [orderResult, setOrderResult] = useState<any | null>(null);
 
   useEffect(() => {
     if (!FEATURE_FLAGS.PLATFORM_ONBOARDING_V2) return;
@@ -246,31 +241,6 @@ export default function PlatformOnboardingPage() {
       alert(detail);
     } finally {
       setProductsLoading(false);
-    }
-  };
-
-  const handleCreateStubOrder = async () => {
-    if (!onboardingId || !orderProductId) return;
-    setOrdering(true);
-    setOrderResult(null);
-    try {
-      const payload = {
-        platform: reportType,
-        platform_product_id: orderProductId.trim(),
-        variant_id: orderVariantId.trim() || undefined,
-        quantity: orderQuantity > 0 ? orderQuantity : 1,
-      } as const;
-      const data = await platformOnboardingApi.createPlatformOrderPoc(onboardingId, payload);
-      setOrderResult(data);
-    } catch (err: any) {
-      console.error('Create stub order failed', err);
-      const detail =
-        err?.response?.data?.detail ||
-        err?.message ||
-        t('dashboard.platformOnboarding.reports.createTestOrderFailed');
-      alert(detail);
-    } finally {
-      setOrdering(false);
     }
   };
 

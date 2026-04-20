@@ -1552,7 +1552,9 @@ export default function AnalyticsPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-bold text-[color:var(--merchant-ink)]">
-                      {formatPercent(psp.success_rate || 0)}
+                      {typeof psp.success_rate === 'number' && Number.isFinite(psp.success_rate)
+                        ? formatPercent(psp.success_rate)
+                        : t('dashboard.analytics.shared.notAvailable')}
                     </p>
                     <p className="text-sm text-[color:var(--merchant-muted)]">
                       {t('dashboard.analytics.paymentPerformance.successRate')}

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FEATURE_FLAGS } from '@/lib/config';
 import { platformOnboardingApi } from '@/lib/api';
-import { RefreshCw, Upload, CheckCircle2, XCircle, Activity, Package, Play } from 'lucide-react';
+import { RefreshCw, Upload, CheckCircle2, Activity } from 'lucide-react';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 
 type Platform = 'amazon' | 'temu';
@@ -44,11 +44,6 @@ export default function PlatformOrdersPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<any | null>(null);
 
-  const [orderProductId, setOrderProductId] = useState('');
-  const [orderVariantId, setOrderVariantId] = useState('');
-  const [orderQuantity, setOrderQuantity] = useState(1);
-  const [stubOrdering, setStubOrdering] = useState(false);
-  const [stubOrderResult, setStubOrderResult] = useState<any | null>(null);
   const [orders, setOrders] = useState<any[]>([]);
   const [ordersTotal, setOrdersTotal] = useState(0);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -193,27 +188,6 @@ export default function PlatformOrdersPage() {
       alert(err?.message || t('dashboard.platformOrders.actions.uploadFailed'));
     } finally {
       setUploading(false);
-    }
-  };
-
-  const handleCreateStubOrder = async () => {
-    if (!onboardingId.trim() || !orderProductId.trim()) return;
-    setStubOrdering(true);
-    setStubOrderResult(null);
-    try {
-      const payload = {
-        platform: orderPlatform,
-        platform_product_id: orderProductId.trim(),
-        variant_id: orderVariantId.trim() || undefined,
-        quantity: orderQuantity > 0 ? orderQuantity : 1,
-      } as const;
-      const data = await platformOnboardingApi.createPlatformOrderPoc(onboardingId.trim(), payload);
-      setStubOrderResult(data);
-    } catch (err: any) {
-      console.error('Stub order failed', err);
-      alert(err?.message || t('dashboard.platformOrders.actions.stubOrderFailed'));
-    } finally {
-      setStubOrdering(false);
     }
   };
 
@@ -444,101 +418,6 @@ export default function PlatformOrdersPage() {
         )}
       </div>
 
-      {/* Temporarily disabled - POC endpoint requires admin access */}
-      {false && (
-        <div className="bg-white shadow-sm border border-slate-200 rounded-lg p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Package className="w-4 h-4 text-slate-700" />
-            <h2 className="text-lg font-semibold text-gray-900">Create stub order (optional)</h2>
-          </div>
-          <span className="text-[11px] text-slate-500">
-            Amazon/Temu stub only; no real fulfillment or payment.
-          </span>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3 text-sm">
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Platform</label>
-            <select
-              value={orderPlatform}
-              onChange={(e) => setOrderPlatform(e.target.value as Platform)}
-              className="w-full px-3 py-2 border rounded-lg text-sm"
-            >
-              <option value="amazon">Amazon</option>
-              <option value="temu">Temu</option>
-            </select>
-          </div>
-          <div className="md:col-span-2">
-            <label className="block text-xs font-medium text-slate-700 mb-1">Product ID</label>
-            <input
-              type="text"
-              value={orderProductId}
-              onChange={(e) => setOrderProductId(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg text-sm"
-              placeholder="e.g., B08N5WRWNW or PROD-12345"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Variant ID</label>
-            <input
-              type="text"
-              value={orderVariantId}
-              onChange={(e) => setOrderVariantId(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg text-sm"
-              placeholder="e.g., SKU-001"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Quantity</label>
-            <input
-              type="text"
-              value={orderQuantity}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === '') {
-                  setOrderQuantity(1);
-                } else {
-                  const num = parseInt(val, 10);
-                  if (!isNaN(num) && num > 0) {
-                    setOrderQuantity(num);
-                  }
-                }
-              }}
-              onBlur={() => {
-                if (orderQuantity < 1) setOrderQuantity(1);
-              }}
-              className="w-full px-3 py-2 border rounded-lg text-sm"
-              placeholder="1"
-            />
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleCreateStubOrder}
-            disabled={!onboardingId.trim() || !orderProductId.trim() || stubOrdering}
-            className="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
-          >
-            {stubOrdering ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
-            Create stub order
-          </button>
-        </div>
-        {stubOrderResult && (
-          <div className="border border-slate-200 rounded-lg p-3 text-xs text-slate-700 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="font-semibold">Last stub order</span>
-              <span className="text-[11px] text-slate-500">
-                Status: {stubOrderResult.status} · Mode: {stubOrderResult.poc_mode || 'stub'}
-              </span>
-            </div>
-            <div className="text-[11px] text-slate-700">
-              <div>Platform: {stubOrderResult.platform}</div>
-              <div>Platform order ID: {stubOrderResult.platform_order_id || 'n/a'}</div>
-            </div>
-          </div>
-        )}
-      </div>
-      )}
-
       <div className="bg-white shadow-sm border border-slate-200 rounded-lg p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div>
@@ -671,16 +550,6 @@ export default function PlatformOrdersPage() {
             </button>
           </div>
         </div>
-      </div>
-      
-      {/* Note about stub orders */}
-      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm">
-        <p className="text-amber-800 font-medium">
-          {t('dashboard.platformOrders.note.title')}
-        </p>
-        <p className="text-amber-700 text-xs mt-1">
-          {t('dashboard.platformOrders.note.body')}
-        </p>
       </div>
     </div>
   );

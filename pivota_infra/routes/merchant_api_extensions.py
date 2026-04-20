@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from typing import Dict, Any, Optional
 from utils.auth import get_current_user
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from db.database import database
 from db.orders import mark_order_shipped
 from db.products import log_order_event
@@ -56,7 +56,17 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
     merchant_id = await get_merchant_id_from_user(current_user)
     
     try:
-        # Query orders directly from database
+        window_start = datetime.now(timezone.utc) - timedelta(days=30)
+
+        def safe_float(value):
+            if value is None:
+                return 0.0
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return 0.0
+
+        # Query the same 30d window shown on the dashboard.
         orders_query = """
         SELECT 
             order_id,
@@ -67,10 +77,14 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
             created_at
         FROM orders
         WHERE merchant_id = :merchant_id
+          AND created_at >= :window_start
         ORDER BY created_at DESC
         LIMIT 1000
         """
-        orders = await database.fetch_all(orders_query, {"merchant_id": merchant_id})
+        orders = await database.fetch_all(
+            orders_query,
+            {"merchant_id": merchant_id, "window_start": window_start}
+        )
         
         # Get PSP count
         psp_query = """
@@ -80,15 +94,44 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         """
         psp_result = await database.fetch_one(psp_query, {"merchant_id": merchant_id})
         psp_count = psp_result["count"] if psp_result else 0
+
+        # Count products separately from PSPs. Prefer product cache, then store product_count.
+        total_products = 0
+        try:
+            products_query = """
+            SELECT COUNT(*) as count
+            FROM products_cache
+            WHERE merchant_id = :merchant_id
+            """
+            products_result = await database.fetch_one(products_query, {"merchant_id": merchant_id})
+            total_products = int(products_result["count"] or 0) if products_result else 0
+        except Exception:
+            try:
+                store_products_query = """
+                SELECT COALESCE(SUM(product_count), 0) as count
+                FROM merchant_stores
+                WHERE merchant_id = :merchant_id
+                """
+                store_products_result = await database.fetch_one(
+                    store_products_query,
+                    {"merchant_id": merchant_id}
+                )
+                total_products = int(store_products_result["count"] or 0) if store_products_result else 0
+            except Exception:
+                total_products = 0
         
         # Calculate statistics
         total_orders = len(orders)
-        total_revenue = sum(float(order["total"]) for order in orders if order["total"])
-        paid_orders = [o for o in orders if o["status"] == "paid"]
+        paid_statuses = {"paid", "captured", "succeeded", "completed"}
+        paid_orders = [
+            order for order in orders
+            if str(order["status"] or "").lower() in paid_statuses
+        ]
+        total_revenue = sum(safe_float(order["total"]) for order in paid_orders)
         
         # Get unique customers
         customers = set()
-        for order in orders:
+        for order in paid_orders:
             if order.get("customer_email"):
                 customers.add(order["customer_email"])
         
@@ -126,7 +169,7 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         for order in orders[:5]:
             recent_orders.append({
                 "order_id": order["order_id"],
-                "amount": float(order["amount"]),
+                "amount": safe_float(order["total"]),
                 "status": order["status"],
                 "customer": {
                     "email": order.get("customer_email", "")
@@ -140,12 +183,13 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
                 "total_orders": total_orders,
                 "total_revenue": round(total_revenue, 2),
                 "total_customers": len(customers),
-                "total_products": psp_count,  # Using PSP count for now
-                "average_order_value": round(total_revenue / total_orders, 2) if total_orders > 0 else 0,
+                "total_products": total_products,
+                "average_order_value": round(total_revenue / len(paid_orders), 2) if paid_orders else 0,
                 "conversion_rate": round(len(paid_orders) / total_orders * 100, 2) if total_orders > 0 else 0,
                 "top_products": top_products,
                 "recent_orders": recent_orders,
-                "psp_count": psp_count  # Add real PSP count
+                "psp_count": psp_count,  # Keep PSP count separate from product count.
+                "window_days": 30
             }
         }
     except Exception as e:
@@ -313,7 +357,7 @@ async def get_merchant_mcp_summary(current_user: dict = Depends(get_current_user
             # Latency should be API response time, not time since last sync
             # Set to null since we don't have real-time API latency monitoring yet
             latency_ms = None
-            uptime = 99.9 if store_status in active_statuses else 0.0
+            uptime = None
 
             nodes.append({
                 "id": store.get("store_id"),

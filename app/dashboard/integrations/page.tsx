@@ -37,6 +37,39 @@ const MERCHANT_WEBHOOK_EVENTS = [
 
 const SUPPORTED_CONNECT_PROVIDERS = ['Stripe', 'Adyen', 'Checkout.com'];
 
+const isFiniteMetric = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
+const formatPaymentVolume = (value: number) =>
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(value);
+
+const renderPaymentTelemetry = (psp: any) => {
+  const hasSuccessRate = isFiniteMetric(psp.success_rate);
+  const hasVolumeToday = isFiniteMetric(psp.volume_today);
+
+  if (!hasSuccessRate && !hasVolumeToday) {
+    return (
+      <div className="text-sm text-[color:var(--merchant-muted-strong)]">
+        Payment telemetry not reported
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted-strong)]">
+      {hasSuccessRate ? <span>{psp.success_rate}% success rate</span> : null}
+      {hasSuccessRate && hasVolumeToday ? <span>•</span> : null}
+      {hasVolumeToday ? (
+        <span>{formatPaymentVolume(psp.volume_today)} volume today</span>
+      ) : null}
+    </div>
+  );
+};
+
 type ActiveTab = 'stores' | 'psps' | 'routing' | 'webhooks';
 type NoticeTone = 'success' | 'warning' | 'critical';
 
@@ -822,11 +855,7 @@ export default function IntegrationsPage() {
                                     : t('dashboard.integrations.paymentSetup.validationPending')}
                               </StatusBadge>
                             </div>
-                            <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted-strong)]">
-                              <span>{psp.success_rate || 0}% success rate</span>
-                              <span>•</span>
-                              <span>${psp.volume_today || 0} volume today</span>
-                            </div>
+                            {renderPaymentTelemetry(psp)}
                             <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted)]">
                               {psp.type === 'stripe' ? (
                                 <>

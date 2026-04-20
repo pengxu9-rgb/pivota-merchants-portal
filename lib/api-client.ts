@@ -31,6 +31,12 @@ interface RequestOptions {
   timeoutMs?: number;
 }
 
+function finiteNumberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
 class ApiClient {
   private client: AxiosInstance;
 
@@ -732,9 +738,9 @@ class ApiClient {
         const status = (p.status || '').toLowerCase();
         return status === 'active' || p.is_active === true;
       })(),
-      success_rate: p.success_rate ?? 98.5,
-      volume_today: p.volume_today ?? 0,
-      transaction_count: p.transaction_count ?? 0,
+      success_rate: finiteNumberOrNull(p.success_rate),
+      volume_today: finiteNumberOrNull(p.volume_today),
+      transaction_count: finiteNumberOrNull(p.transaction_count),
       environment: p.environment || 'unknown',
       validation_status: p.validation_status || 'unknown',
       validation_error: p.validation_error || null,
@@ -1212,7 +1218,7 @@ export interface PSP {
   type: string;
   name: string;
   is_active: boolean;
-  success_rate: number;
-  volume_today: number;
-  transaction_count: number;
+  success_rate?: number | null;
+  volume_today?: number | null;
+  transaction_count?: number | null;
 }
