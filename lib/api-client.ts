@@ -31,6 +31,12 @@ interface RequestOptions {
   timeoutMs?: number;
 }
 
+function finiteNumberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
 class ApiClient {
   private client: AxiosInstance;
 
@@ -723,29 +729,33 @@ class ApiClient {
     const response = await this.client.get(`/merchant/${merchantId}/psps`);
     const raw = response.data?.data?.psps || [];
     // Normalize to UI expected fields
-    return raw.map((p: any) => ({
-      id: p.id || p.provider,
-      type: p.provider || p.type,
-      name: p.name || (p.provider ? p.provider.charAt(0).toUpperCase() + p.provider.slice(1) : 'PSP'),
-      status: p.status,
-      is_active: (() => {
-        const status = (p.status || '').toLowerCase();
-        return status === 'active' || p.is_active === true;
-      })(),
-      payment_telemetry_reported: false,
-      success_rate: null,
-      volume_today: null,
-      transaction_count: null,
-      environment: p.environment || 'unknown',
-      validation_status: p.validation_status || 'unknown',
-      validation_error: p.validation_error || null,
-      live_charge_ready: Boolean(p.live_charge_ready),
-      readiness_blockers: Array.isArray(p.readiness_blockers) ? p.readiness_blockers : [],
-      last_validated_at: p.last_validated_at || null,
-      provider_summary: p.provider_summary || {},
-      account_id: p.account_id || null,
-      api_key_last4: p.api_key_last4 || '****',
-    }));
+    return raw.map((p: any) => {
+      const paymentTelemetryReported = p.payment_telemetry_reported === true;
+
+      return {
+        id: p.id || p.provider,
+        type: p.provider || p.type,
+        name: p.name || (p.provider ? p.provider.charAt(0).toUpperCase() + p.provider.slice(1) : 'PSP'),
+        status: p.status,
+        is_active: (() => {
+          const status = (p.status || '').toLowerCase();
+          return status === 'active' || p.is_active === true;
+        })(),
+        payment_telemetry_reported: paymentTelemetryReported,
+        success_rate: paymentTelemetryReported ? finiteNumberOrNull(p.success_rate) : null,
+        volume_today: paymentTelemetryReported ? finiteNumberOrNull(p.volume_today) : null,
+        transaction_count: paymentTelemetryReported ? finiteNumberOrNull(p.transaction_count) : null,
+        environment: p.environment || 'unknown',
+        validation_status: p.validation_status || 'unknown',
+        validation_error: p.validation_error || null,
+        live_charge_ready: Boolean(p.live_charge_ready),
+        readiness_blockers: Array.isArray(p.readiness_blockers) ? p.readiness_blockers : [],
+        last_validated_at: p.last_validated_at || null,
+        provider_summary: p.provider_summary || {},
+        account_id: p.account_id || null,
+        api_key_last4: p.api_key_last4 || '****',
+      };
+    });
   }
 
   // Sync products by platform

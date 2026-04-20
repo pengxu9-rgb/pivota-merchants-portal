@@ -37,6 +37,48 @@ const MERCHANT_WEBHOOK_EVENTS = [
 
 const SUPPORTED_CONNECT_PROVIDERS = ['Stripe', 'Adyen', 'Checkout.com'];
 
+const isFiniteMetric = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
+const formatPaymentVolume = (value: number) =>
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(value);
+
+const renderPaymentTelemetry = (psp: any) => {
+  const telemetryReported = psp.payment_telemetry_reported === true;
+  const hasSuccessRate = telemetryReported && isFiniteMetric(psp.success_rate);
+  const hasVolumeToday = telemetryReported && isFiniteMetric(psp.volume_today);
+  const hasTransactionCount = telemetryReported && isFiniteMetric(psp.transaction_count);
+
+  if (!hasSuccessRate && !hasVolumeToday && !hasTransactionCount) {
+    return (
+      <div className="text-sm text-[color:var(--merchant-muted-strong)]">
+        Payment telemetry not reported
+      </div>
+    );
+  }
+
+  const items = [
+    hasSuccessRate ? `${psp.success_rate}% success rate` : null,
+    hasVolumeToday ? `${formatPaymentVolume(psp.volume_today)} volume today` : null,
+    hasTransactionCount ? `${psp.transaction_count} transactions today` : null,
+  ].filter((item): item is string => Boolean(item));
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted-strong)]">
+      {items.map((item, index) => (
+        <span key={item}>
+          {index > 0 ? <span className="mr-2">•</span> : null}
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+};
+
 type ActiveTab = 'stores' | 'psps' | 'routing' | 'webhooks';
 type NoticeTone = 'success' | 'warning' | 'critical';
 
@@ -822,9 +864,7 @@ export default function IntegrationsPage() {
                                     : t('dashboard.integrations.paymentSetup.validationPending')}
                               </StatusBadge>
                             </div>
-                            <div className="text-sm text-[color:var(--merchant-muted-strong)]">
-                              Payment telemetry not reported
-                            </div>
+                            {renderPaymentTelemetry(psp)}
                             <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--merchant-muted)]">
                               {psp.type === 'stripe' ? (
                                 <>
