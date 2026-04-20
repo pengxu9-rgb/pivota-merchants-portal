@@ -48,8 +48,9 @@ const formatPaymentVolume = (value: number) =>
   }).format(value);
 
 const renderPaymentTelemetry = (psp: any) => {
-  const hasSuccessRate = isFiniteMetric(psp.success_rate);
-  const hasVolumeToday = isFiniteMetric(psp.volume_today);
+  const telemetryReported = psp.payment_telemetry_reported === true;
+  const hasSuccessRate = telemetryReported && isFiniteMetric(psp.success_rate);
+  const hasVolumeToday = telemetryReported && isFiniteMetric(psp.volume_today);
 
   if (!hasSuccessRate && !hasVolumeToday) {
     return (

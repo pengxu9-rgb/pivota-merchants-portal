@@ -37,6 +37,29 @@ function finiteNumberOrNull(value: unknown): number | null {
   return Number.isFinite(numberValue) ? numberValue : null;
 }
 
+function hasReportedPaymentTelemetry(value: any): boolean {
+  const rawSource =
+    value?.telemetry_source ??
+    value?.metrics_source ??
+    value?.metric_source ??
+    value?.telemetry?.source ??
+    '';
+  const source = String(rawSource).toLowerCase();
+
+  return (
+    value?.payment_telemetry_reported === true ||
+    value?.telemetry_reported === true ||
+    value?.metrics_reported === true ||
+    [
+      'payment_aggregate',
+      'payment_telemetry',
+      'psp_telemetry',
+      'runtime_payment_events',
+      'orders_aggregate',
+    ].includes(source)
+  );
+}
+
 class ApiClient {
   private client: AxiosInstance;
 
@@ -729,28 +752,33 @@ class ApiClient {
     const response = await this.client.get(`/merchant/${merchantId}/psps`);
     const raw = response.data?.data?.psps || [];
     // Normalize to UI expected fields
-    return raw.map((p: any) => ({
-      id: p.id || p.provider,
-      type: p.provider || p.type,
-      name: p.name || (p.provider ? p.provider.charAt(0).toUpperCase() + p.provider.slice(1) : 'PSP'),
-      status: p.status,
-      is_active: (() => {
-        const status = (p.status || '').toLowerCase();
-        return status === 'active' || p.is_active === true;
-      })(),
-      success_rate: finiteNumberOrNull(p.success_rate),
-      volume_today: finiteNumberOrNull(p.volume_today),
-      transaction_count: finiteNumberOrNull(p.transaction_count),
-      environment: p.environment || 'unknown',
-      validation_status: p.validation_status || 'unknown',
-      validation_error: p.validation_error || null,
-      live_charge_ready: Boolean(p.live_charge_ready),
-      readiness_blockers: Array.isArray(p.readiness_blockers) ? p.readiness_blockers : [],
-      last_validated_at: p.last_validated_at || null,
-      provider_summary: p.provider_summary || {},
-      account_id: p.account_id || null,
-      api_key_last4: p.api_key_last4 || '****',
-    }));
+    return raw.map((p: any) => {
+      const paymentTelemetryReported = hasReportedPaymentTelemetry(p);
+
+      return {
+        id: p.id || p.provider,
+        type: p.provider || p.type,
+        name: p.name || (p.provider ? p.provider.charAt(0).toUpperCase() + p.provider.slice(1) : 'PSP'),
+        status: p.status,
+        is_active: (() => {
+          const status = (p.status || '').toLowerCase();
+          return status === 'active' || p.is_active === true;
+        })(),
+        payment_telemetry_reported: paymentTelemetryReported,
+        success_rate: paymentTelemetryReported ? finiteNumberOrNull(p.success_rate) : null,
+        volume_today: paymentTelemetryReported ? finiteNumberOrNull(p.volume_today) : null,
+        transaction_count: paymentTelemetryReported ? finiteNumberOrNull(p.transaction_count) : null,
+        environment: p.environment || 'unknown',
+        validation_status: p.validation_status || 'unknown',
+        validation_error: p.validation_error || null,
+        live_charge_ready: Boolean(p.live_charge_ready),
+        readiness_blockers: Array.isArray(p.readiness_blockers) ? p.readiness_blockers : [],
+        last_validated_at: p.last_validated_at || null,
+        provider_summary: p.provider_summary || {},
+        account_id: p.account_id || null,
+        api_key_last4: p.api_key_last4 || '****',
+      };
+    });
   }
 
   // Sync products by platform
@@ -1218,6 +1246,7 @@ export interface PSP {
   type: string;
   name: string;
   is_active: boolean;
+  payment_telemetry_reported?: boolean;
   success_rate?: number | null;
   volume_today?: number | null;
   transaction_count?: number | null;
