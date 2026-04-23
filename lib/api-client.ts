@@ -457,6 +457,33 @@ class ApiClient {
     return response.data;
   }
 
+  async getMerchantPdpStatus(platform: string, platformProductId: string, market = 'US') {
+    const encodedId = encodeURIComponent(platformProductId);
+    const response = await this.client.get(
+      `/merchant/pdps/product/${platform}/${encodedId}`,
+      { params: { market } }
+    );
+    return response.data;
+  }
+
+  async submitMerchantPdpContribution(
+    platform: string,
+    platformProductId: string,
+    body: {
+      module_key: string;
+      payload: Record<string, unknown>;
+      notes?: string;
+      market?: string;
+    }
+  ) {
+    const encodedId = encodeURIComponent(platformProductId);
+    const response = await this.client.post(
+      `/merchant/pdps/product/${platform}/${encodedId}/contributions`,
+      body
+    );
+    return response.data;
+  }
+
   async getMerchantProductBlockers(
     platform: string,
     platformProductId: string,
