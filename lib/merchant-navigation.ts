@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
+  ClipboardCheck,
   CreditCard,
   LayoutDashboard,
   Package,
@@ -109,6 +110,13 @@ export const workflowNavigation: MerchantNavigationItem[] = [
     matchPrefixes: ["/dashboard/product-optimization"],
     description: "Readiness actions",
     descriptionKey: "shell.nav.catalogHealthDesc",
+  },
+  {
+    label: "PDP status",
+    href: "/dashboard/pdp-status",
+    icon: ClipboardCheck,
+    matchPrefixes: ["/dashboard/pdp-status"],
+    description: "Shared PDP review",
   },
   {
     label: "Commission offers",
