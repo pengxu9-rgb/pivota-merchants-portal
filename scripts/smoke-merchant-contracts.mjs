@@ -1,6 +1,6 @@
 const portalBaseUrl = process.env.MERCHANT_PORTAL_BASE_URL || 'https://merchant.pivota.cc';
 const apiBaseUrl =
-  process.env.MERCHANT_API_BASE_URL || 'https://web-production-fedb.up.railway.app';
+  process.env.MERCHANT_API_BASE_URL || 'https://api.pivota.cc';
 const email = process.env.MERCHANT_EMAIL;
 const password = process.env.MERCHANT_PASSWORD;
 
