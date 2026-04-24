@@ -1,6 +1,6 @@
 // API Configuration
 export const API_CONFIG = {
-  BASE_URL: process.env.NEXT_PUBLIC_API_URL || 'https://web-production-fedb.up.railway.app',
+  BASE_URL: process.env.NEXT_PUBLIC_API_URL || 'https://api.pivota.cc',
   ENDPOINTS: {
     // Auth
     LOGIN: '/api/auth/login',
