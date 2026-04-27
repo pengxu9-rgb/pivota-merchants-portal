@@ -7,7 +7,15 @@
 
 import { useState } from 'react';
 import { X, Store, Loader2, Link as LinkIcon, Copy } from 'lucide-react';
+import { IntegrationGuideDialog } from '@/components/integration-guides/IntegrationGuideDialog';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { API_CONFIG } from '@/lib/config';
+import { formatIntegrationCopy, getStoreFormCopy } from '@/lib/integration-form-copy';
+import {
+  getIntegrationGuideUiText,
+  normalizeIntegrationGuideKey,
+  type IntegrationGuideKey,
+} from '@/lib/integration-guides';
 
 interface ConnectStoreModalProps {
   isOpen: boolean;
@@ -17,6 +25,9 @@ interface ConnectStoreModalProps {
 }
 
 export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchantId }: ConnectStoreModalProps) {
+  const { language } = useMerchantLanguage();
+  const copy = getStoreFormCopy(language);
+  const guideUiText = getIntegrationGuideUiText(language);
   // Keep OAuth hidden by default until the product is ready.
   const SHOPIFY_OAUTH_ENABLED = (
     process.env.NEXT_PUBLIC_FEATURE_SHOPIFY_OAUTH ||
@@ -24,6 +35,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
     'false'
   ).toLowerCase() === 'true';
   const [platform, setPlatform] = useState<string>('');
+  const [openGuideKey, setOpenGuideKey] = useState<IntegrationGuideKey | null>(null);
   const [loading, setLoading] = useState(false);
   const baseUrl = API_CONFIG.BASE_URL;
   
@@ -52,6 +64,8 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
   const [psApiKey, setPsApiKey] = useState('');
 
   if (!isOpen) return null;
+
+  const selectedGuideKey = normalizeIntegrationGuideKey(platform);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,7 +134,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
           break;
 
         default:
-          alert('Please select a platform');
+          alert(copy.selectPlatformAlert);
           setLoading(false);
           return;
       }
@@ -139,7 +153,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
       if (response.ok) {
         if (platform === 'shopify') {
           if (!SHOPIFY_OAUTH_ENABLED || shopifyConnectMode === 'custom_token') {
-            alert('✅ Shopify store connected successfully!');
+            alert(copy.shopifyConnected);
             onSuccess();
             handleClose();
           } else {
@@ -147,23 +161,25 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
             if (installUrl) {
               setShopifyInstallUrl(installUrl);
               window.open(installUrl, '_blank', 'noopener,noreferrer');
-              alert(
-                `✅ Install link created. Complete the Shopify authorization, then return here and click "I've installed, refresh stores".`
-              );
+              alert(copy.installCreated);
             } else {
-              alert('✅ Install link created, but no URL was returned. Please try again.');
+              alert(copy.installMissing);
             }
           }
         } else {
-          alert(`✅ ${platform.charAt(0).toUpperCase() + platform.slice(1)} store connected successfully!`);
+          alert(
+            formatIntegrationCopy(copy.platformConnected, {
+              platform: platform.charAt(0).toUpperCase() + platform.slice(1),
+            }),
+          );
           onSuccess();
           handleClose();
         }
       } else {
-        alert(`❌ Failed: ${data.detail || data.message || 'Unknown error'}`);
+        alert(`${copy.failedPrefix}: ${data.detail || data.message || 'Unknown error'}`);
       }
     } catch (error: any) {
-      alert(`❌ Error: ${error.message}`);
+      alert(`${copy.errorPrefix}: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -171,6 +187,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
 
   const handleClose = () => {
     setPlatform('');
+    setOpenGuideKey(null);
     setShopifyDomain('');
     setShopifyConnectMode(SHOPIFY_OAUTH_ENABLED ? 'oauth' : 'custom_token');
     setShopifyInstallUrl('');
@@ -201,7 +218,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
         <div className="sticky top-0 bg-white px-6 py-4 border-b flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Store className="w-6 h-6 text-blue-600" />
-            <h2 className="text-xl font-semibold">Connect Store</h2>
+            <h2 className="text-xl font-semibold">{copy.connectStore}</h2>
           </div>
           <button onClick={handleClose} className="text-gray-400 hover:text-gray-600">
             <X className="w-6 h-6" />
@@ -212,7 +229,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
           {/* Platform Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Select Platform *
+              {copy.selectPlatform} *
             </label>
             <select
               value={platform}
@@ -220,7 +237,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
               className="w-full px-3 py-2 border rounded-lg"
               required
             >
-              <option value="">-- Choose Platform --</option>
+              <option value="">{copy.choosePlatform}</option>
               <option value="shopify">Shopify</option>
               <option value="wix">Wix</option>
               <option value="woocommerce">WooCommerce</option>
@@ -229,12 +246,22 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
             </select>
           </div>
 
+          {selectedGuideKey ? (
+            <button
+              type="button"
+              onClick={() => setOpenGuideKey(selectedGuideKey)}
+              className="inline-flex items-center justify-center rounded-full border border-[color:var(--merchant-line)] px-3 py-2 text-sm font-medium text-[color:var(--merchant-muted-strong)] transition hover:border-[color:var(--merchant-brand)] hover:text-[color:var(--merchant-brand)]"
+            >
+              {guideUiText.viewGuide}
+            </button>
+          ) : null}
+
           {/* Shopify Fields */}
           {platform === 'shopify' && (
             <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Store Domain * <span className="text-gray-500 text-xs">(e.g., mystore.myshopify.com)</span>
+                  {copy.storeDomain} * <span className="text-gray-500 text-xs">({copy.storeDomainHint})</span>
                 </label>
                 <input
                   type="text"
@@ -248,7 +275,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
 
               {SHOPIFY_OAUTH_ENABLED && (
                 <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                  <div className="text-sm font-medium text-gray-700 mb-2">Connection method</div>
+                  <div className="text-sm font-medium text-gray-700 mb-2">{copy.connectionMethod}</div>
                   <div className="flex flex-col gap-2">
                     <label className="flex items-start gap-2 cursor-pointer">
                       <input
@@ -264,9 +291,9 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                         className="mt-1"
                       />
                       <div className="text-sm">
-                        <div className="font-medium text-gray-900">Pivota app (OAuth) — recommended</div>
+                        <div className="font-medium text-gray-900">{copy.oauthTitle}</div>
                         <div className="text-gray-600">
-                          Generates a one-time install link and opens Shopify for authorization. No Admin API token required.
+                          {copy.oauthDescription}
                         </div>
                       </div>
                     </label>
@@ -283,8 +310,8 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                         className="mt-1"
                       />
                       <div className="text-sm">
-                        <div className="font-medium text-gray-900">Custom app credentials (manual)</div>
-                        <div className="text-gray-600">Use when public app install is unavailable. Pivota will rotate Admin token automatically.</div>
+                        <div className="font-medium text-gray-900">{copy.customTitle}</div>
+                        <div className="text-gray-600">{copy.customDescription}</div>
                       </div>
                     </label>
                   </div>
@@ -294,11 +321,11 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
               {SHOPIFY_OAUTH_ENABLED && shopifyConnectMode === 'oauth' ? (
                 <>
                   <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
-                    Use the store&apos;s MyShopify domain. Install links are one-time use.
+                    {copy.oauthHint}
                   </div>
                   {shopifyInstallUrl ? (
                     <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                      <div className="text-xs text-gray-500 mb-2">Install link (valid for ~15 minutes, one-time use)</div>
+                      <div className="text-xs text-gray-500 mb-2">{copy.installLink}</div>
                       <div className="flex items-center gap-2">
                         <input
                           type="text"
@@ -310,7 +337,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                           type="button"
                           onClick={() => navigator.clipboard.writeText(shopifyInstallUrl)}
                           className="inline-flex items-center px-2 py-2 rounded-lg border text-gray-600 hover:text-gray-900"
-                          title="Copy"
+                          title={copy.copy}
                         >
                           <Copy className="w-4 h-4" />
                         </button>
@@ -318,7 +345,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                           type="button"
                           onClick={() => window.open(shopifyInstallUrl, '_blank', 'noopener,noreferrer')}
                           className="inline-flex items-center px-2 py-2 rounded-lg border text-blue-600 hover:text-blue-800"
-                          title="Open"
+                          title={copy.open}
                         >
                           <LinkIcon className="w-4 h-4" />
                         </button>
@@ -329,7 +356,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                           onClick={handleShopifyInstalled}
                           className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700 hover:bg-blue-100"
                         >
-                          I&apos;ve installed, refresh stores
+                          {copy.installedRefresh}
                         </button>
                       </div>
                     </div>
@@ -338,28 +365,28 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
               ) : (
                 <>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Client ID *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{copy.clientId} *</label>
                     <input
                       type="text"
                       value={shopifyClientId}
                       onChange={(e) => setShopifyClientId(e.target.value)}
                       className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
-                      placeholder="Shopify app client ID"
+                      placeholder={copy.clientIdPlaceholder}
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Client Secret *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{copy.clientSecret} *</label>
                     <input
                       type="password"
                       value={shopifyClientSecret}
                       onChange={(e) => setShopifyClientSecret(e.target.value)}
                       className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
-                      placeholder="Shopify app client secret"
+                      placeholder={copy.clientSecretPlaceholder}
                       required
                     />
                     <p className="mt-1 text-xs text-gray-500">
-                      Get from Shopify Admin → Apps → Develop apps → Your app → API credentials
+                      {copy.shopifyCredentialHelp}
                     </p>
                   </div>
                 </>
@@ -372,7 +399,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
             <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Site ID *
+                  {copy.siteId} *
                 </label>
                 <input
                   type="text"
@@ -385,7 +412,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  API Key *
+                  {copy.apiKey} *
                 </label>
                 <input
                   type="password"
@@ -398,14 +425,14 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Store Name (Optional)
+                  {copy.storeNameOptional}
                 </label>
                 <input
                   type="text"
                   value={wixStoreName}
                   onChange={(e) => setWixStoreName(e.target.value)}
                   className="w-full px-3 py-2 border rounded-lg"
-                  placeholder="My Wix Store"
+                  placeholder={copy.storeNamePlaceholder}
                 />
               </div>
             </>
@@ -416,7 +443,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
             <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Store URL * <span className="text-gray-500 text-xs">(e.g., https://mystore.com)</span>
+                  {copy.storeUrl} * <span className="text-gray-500 text-xs">(e.g., https://mystore.com)</span>
                 </label>
                 <input
                   type="url"
@@ -429,7 +456,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Consumer Key *
+                  {copy.consumerKey} *
                 </label>
                 <input
                   type="text"
@@ -442,7 +469,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Consumer Secret *
+                  {copy.consumerSecret} *
                 </label>
                 <input
                   type="password"
@@ -453,7 +480,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                   required
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  Get from WooCommerce → Settings → Advanced → REST API
+                  {copy.wooCredentialHelp}
                 </p>
               </div>
             </>
@@ -464,7 +491,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
             <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Store Hash * <span className="text-gray-500 text-xs">(e.g., abc123def)</span>
+                  {copy.storeHash} * <span className="text-gray-500 text-xs">(e.g., abc123def)</span>
                 </label>
                 <input
                   type="text"
@@ -477,7 +504,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Access Token *
+                  {copy.accessToken} *
                 </label>
                 <input
                   type="password"
@@ -489,7 +516,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Client ID (Optional)
+                  {copy.bcClientIdOptional}
                 </label>
                 <input
                   type="text"
@@ -506,7 +533,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
             <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Store URL * <span className="text-gray-500 text-xs">(e.g., https://mystore.com)</span>
+                  {copy.storeUrl} * <span className="text-gray-500 text-xs">(e.g., https://mystore.com)</span>
                 </label>
                 <input
                   type="url"
@@ -519,7 +546,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  API Key *
+                  {copy.apiKey} *
                 </label>
                 <input
                   type="password"
@@ -529,7 +556,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                   required
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  Get from PrestaShop → Advanced Parameters → Webservice
+                  {copy.prestashopCredentialHelp}
                 </p>
               </div>
             </>
@@ -543,7 +570,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
               className="px-4 py-2 border rounded-lg hover:bg-gray-50"
               disabled={loading}
             >
-              Cancel
+              {copy.cancel}
             </button>
             <button
               type="submit"
@@ -562,8 +589,8 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span>
                     {platform === 'shopify' && SHOPIFY_OAUTH_ENABLED && shopifyConnectMode === 'oauth'
-                      ? 'Generating link...'
-                      : 'Connecting...'}
+                      ? copy.generatingLink
+                      : copy.connecting}
                   </span>
                 </>
               ) : (
@@ -572,9 +599,9 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                   <span>
                     {platform === 'shopify'
                       ? SHOPIFY_OAUTH_ENABLED && shopifyConnectMode === 'oauth'
-                        ? 'Generate Install Link'
-                        : 'Connect Store'
-                      : 'Connect Store'}
+                        ? copy.generateInstallLink
+                        : copy.connectStoreButton
+                      : copy.connectStoreButton}
                   </span>
                 </>
               )}
@@ -582,6 +609,11 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
           </div>
         </form>
       </div>
+      <IntegrationGuideDialog
+        guideKey={openGuideKey}
+        onClose={() => setOpenGuideKey(null)}
+        shopifyOAuthEnabled={SHOPIFY_OAUTH_ENABLED}
+      />
     </div>
   );
 }
