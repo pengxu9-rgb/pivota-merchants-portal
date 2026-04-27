@@ -15,10 +15,19 @@ import {
 } from 'lucide-react';
 
 import ConnectStoreModal from '@/components/ConnectStoreModal';
+import { IntegrationGuideChooserDialog } from '@/components/integration-guides/IntegrationGuideChooserDialog';
+import { IntegrationGuideDialog } from '@/components/integration-guides/IntegrationGuideDialog';
+import { IntegrationHelpButton } from '@/components/integration-guides/IntegrationHelpButton';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import PSPRoutingConfig from '@/components/PSPRoutingConfig';
 import { PSPConfigForm } from '@/components/PSPConfigForm';
 import { apiClient } from '@/lib/api-client';
+import {
+  getIntegrationGuideUiText,
+  normalizeIntegrationGuideKey,
+  type IntegrationGuideCategory,
+  type IntegrationGuideKey,
+} from '@/lib/integration-guides';
 import {
   EmptyState,
   MerchantButton,
@@ -36,6 +45,12 @@ const MERCHANT_WEBHOOK_EVENTS = [
 ];
 
 const SUPPORTED_CONNECT_PROVIDERS = ['Stripe', 'Adyen', 'Checkout.com'];
+
+const SHOPIFY_OAUTH_ENABLED = (
+  process.env.NEXT_PUBLIC_FEATURE_SHOPIFY_OAUTH ||
+  process.env.NEXT_PUBLIC_ENABLE_SHOPIFY_OAUTH ||
+  'false'
+).toLowerCase() === 'true';
 
 const isFiniteMetric = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
@@ -96,7 +111,7 @@ interface WebhookFormState {
 }
 
 export default function IntegrationsPage() {
-  const { t } = useMerchantLanguage();
+  const { t, language } = useMerchantLanguage();
   const [loading, setLoading] = useState(true);
   const [merchantId, setMerchantId] = useState('');
   const [activeTab, setActiveTab] = useState<ActiveTab>('stores');
@@ -112,6 +127,9 @@ export default function IntegrationsPage() {
   const [showConnectStore, setShowConnectStore] = useState(false);
   const [showConnectPSP, setShowConnectPSP] = useState(false);
   const [selectedPSPProvider, setSelectedPSPProvider] = useState('');
+  const [openGuideKey, setOpenGuideKey] = useState<IntegrationGuideKey | null>(null);
+  const [guideChooserCategory, setGuideChooserCategory] =
+    useState<IntegrationGuideCategory | null>(null);
   const [syncingStoreId, setSyncingStoreId] = useState<string | null>(null);
   const [testingPspId, setTestingPspId] = useState<string | null>(null);
   const [savingWebhook, setSavingWebhook] = useState(false);
@@ -142,6 +160,7 @@ export default function IntegrationsPage() {
   const webhookStatusTone: 'success' | 'warning' = webhookConfig?.enabled ? 'success' : 'warning';
   const apiKeyAvailable = Boolean(apiCredentials?.issued && apiCredentials?.api_key);
   const quickStartApiKey = apiCredentials?.api_key || '<your-merchant-api-key>';
+  const guideUiText = getIntegrationGuideUiText(language);
   const selectedTestEvent =
     webhookForm.events.find((event) => MERCHANT_WEBHOOK_EVENTS.includes(event)) ||
     'order.created';
@@ -155,6 +174,11 @@ export default function IntegrationsPage() {
     }
     return 'Connect another live-ready processor to configure failover';
   }, [activePSPCount, blockedActivePSPCount, liveReadyPSPCount]);
+
+  const openGuide = (guideKey: IntegrationGuideKey) => {
+    setGuideChooserCategory(null);
+    setOpenGuideKey(guideKey);
+  };
 
   useEffect(() => {
     const id = localStorage.getItem('merchant_id') || '';
@@ -521,9 +545,17 @@ export default function IntegrationsPage() {
         description={t('dashboard.integrations.description')}
         actions={
           <>
+            <IntegrationHelpButton
+              label={guideUiText.helpLabel}
+              onClick={() => setGuideChooserCategory('payment_setup')}
+            />
             <MerchantButton type="button" variant="secondary" onClick={() => setShowConnectPSP(true)} icon={CreditCard}>
               {t('dashboard.integrations.addPaymentSetup')}
             </MerchantButton>
+            <IntegrationHelpButton
+              label={guideUiText.helpLabel}
+              onClick={() => setGuideChooserCategory('sales_channels')}
+            />
             <MerchantButton type="button" onClick={() => setShowConnectStore(true)} icon={Store}>
               {t('dashboard.integrations.connectSalesChannel')}
             </MerchantButton>
@@ -685,16 +717,23 @@ export default function IntegrationsPage() {
                 <MerchantButton type="button" onClick={() => setShowConnectStore(true)} icon={Plus}>
                   {t('dashboard.integrations.salesChannels.connectChannel')}
                 </MerchantButton>
+                <IntegrationHelpButton
+                  label={guideUiText.helpLabel}
+                  onClick={() => setGuideChooserCategory('sales_channels')}
+                />
               </div>
             }
           >
             <div className="space-y-3 p-5">
               {connectedStores.length > 0 ? (
-                connectedStores.map((store, index) => (
-                  <div
-                    key={index}
-                    className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-4"
-                  >
+                connectedStores.map((store, index) => {
+                  const guideKey = normalizeIntegrationGuideKey(store.platform);
+
+                  return (
+                    <div
+                      key={index}
+                      className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-4"
+                    >
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                       <div className="flex min-w-0 items-start gap-3">
                         <div className="rounded-xl bg-[color:var(--merchant-brand-soft)] p-2">
@@ -705,6 +744,12 @@ export default function IntegrationsPage() {
                             <h3 className="truncate text-base font-semibold text-[color:var(--merchant-ink)]">
                               {store.store_name || store.domain || `Store ${index + 1}`}
                             </h3>
+                            {guideKey ? (
+                              <IntegrationHelpButton
+                                label={guideUiText.helpLabel}
+                                onClick={() => openGuide(guideKey)}
+                              />
+                            ) : null}
                             {primaryStoreId && store.id === primaryStoreId ? (
                               <StatusBadge tone="brand">
                                 {t('dashboard.integrations.salesChannels.primary')}
@@ -759,16 +804,23 @@ export default function IntegrationsPage() {
                       </div>
                     </div>
                   </div>
-                ))
+                  );
+                })
               ) : (
                 <EmptyState
                   icon={Store}
                   title={t('dashboard.integrations.salesChannels.emptyTitle')}
                   description={t('dashboard.integrations.salesChannels.emptyDescription')}
                   action={
-                    <MerchantButton type="button" onClick={() => setShowConnectStore(true)} icon={Plus}>
-                      {t('dashboard.integrations.salesChannels.connectFirst')}
-                    </MerchantButton>
+                    <div className="flex items-center gap-2">
+                      <MerchantButton type="button" onClick={() => setShowConnectStore(true)} icon={Plus}>
+                        {t('dashboard.integrations.salesChannels.connectFirst')}
+                      </MerchantButton>
+                      <IntegrationHelpButton
+                        label={guideUiText.helpLabel}
+                        onClick={() => setGuideChooserCategory('sales_channels')}
+                      />
+                    </div>
                   }
                 />
               )}
@@ -815,6 +867,10 @@ export default function IntegrationsPage() {
                 <MerchantButton type="button" onClick={() => setShowConnectPSP(true)} icon={Plus}>
                   {t('dashboard.integrations.paymentSetup.connectProcessor')}
                 </MerchantButton>
+                <IntegrationHelpButton
+                  label={guideUiText.helpLabel}
+                  onClick={() => setGuideChooserCategory('payment_setup')}
+                />
               </div>
             }
           >
@@ -822,11 +878,14 @@ export default function IntegrationsPage() {
               {activePSPCount > 0 ? (
                 connectedPSPs
                   .filter((psp) => psp.is_active)
-                  .map((psp) => (
-                    <div
-                      key={psp.id}
-                      className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-4"
-                    >
+                  .map((psp) => {
+                    const guideKey = normalizeIntegrationGuideKey(psp.type || psp.provider || psp.name);
+
+                    return (
+                      <div
+                        key={psp.id}
+                        className="rounded-[1.1rem] border border-[color:var(--merchant-line)] bg-white/78 px-4 py-4"
+                      >
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                         <div className="flex min-w-0 items-start gap-3">
                           <div className="rounded-xl bg-[color:var(--merchant-brand-soft)] p-2">
@@ -837,6 +896,12 @@ export default function IntegrationsPage() {
                               <h3 className="truncate text-base font-semibold text-[color:var(--merchant-ink)]">
                                 {psp.name}
                               </h3>
+                              {guideKey ? (
+                                <IntegrationHelpButton
+                                  label={guideUiText.helpLabel}
+                                  onClick={() => openGuide(guideKey)}
+                                />
+                              ) : null}
                               <StatusBadge tone="success">
                                 {t('dashboard.integrations.shared.active')}
                               </StatusBadge>
@@ -936,16 +1001,23 @@ export default function IntegrationsPage() {
                         </div>
                       </div>
                     </div>
-                  ))
+                    );
+                  })
               ) : (
                 <EmptyState
                   icon={CreditCard}
                   title={t('dashboard.integrations.paymentSetup.emptyTitle')}
                   description={t('dashboard.integrations.paymentSetup.emptyDescription')}
                   action={
-                    <MerchantButton type="button" onClick={() => setShowConnectPSP(true)} icon={Plus}>
-                      {t('dashboard.integrations.paymentSetup.connectFirst')}
-                    </MerchantButton>
+                    <div className="flex items-center gap-2">
+                      <MerchantButton type="button" onClick={() => setShowConnectPSP(true)} icon={Plus}>
+                        {t('dashboard.integrations.paymentSetup.connectFirst')}
+                      </MerchantButton>
+                      <IntegrationHelpButton
+                        label={guideUiText.helpLabel}
+                        onClick={() => setGuideChooserCategory('payment_setup')}
+                      />
+                    </div>
                   }
                 />
               )}
@@ -1383,6 +1455,16 @@ export default function IntegrationsPage() {
           </SurfaceCard>
         </div>
       ) : null}
+      <IntegrationGuideChooserDialog
+        category={guideChooserCategory}
+        onClose={() => setGuideChooserCategory(null)}
+        onSelect={openGuide}
+      />
+      <IntegrationGuideDialog
+        guideKey={openGuideKey}
+        onClose={() => setOpenGuideKey(null)}
+        shopifyOAuthEnabled={SHOPIFY_OAUTH_ENABLED}
+      />
     </div>
   );
 }

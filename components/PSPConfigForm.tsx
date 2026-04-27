@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
+import { IntegrationGuideDialog } from '@/components/integration-guides/IntegrationGuideDialog';
+import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
+import { formatIntegrationCopy, getPspFormCopy } from '@/lib/integration-form-copy';
+import {
+  getIntegrationGuideUiText,
+  normalizeIntegrationGuideKey,
+  type IntegrationGuideKey,
+} from '@/lib/integration-guides';
 
 interface PSPConfigFormProps {
   provider: string;
@@ -18,13 +26,18 @@ export function PSPConfigForm({
   onSuccess,
   apiClient,
 }: PSPConfigFormProps) {
+  const { language } = useMerchantLanguage();
+  const copy = getPspFormCopy(language);
+  const guideUiText = getIntegrationGuideUiText(language);
   const providerLower = provider.toLowerCase().replace('.com', '').replace('.', '');
+  const guideKey = normalizeIntegrationGuideKey(providerLower) as IntegrationGuideKey | null;
   const [apiKey, setApiKey] = useState('');
   const [accountId, setAccountId] = useState('');
   const [clientKey, setClientKey] = useState('');
   const [publicKey, setPublicKey] = useState('');
   const [environment, setEnvironment] = useState<Environment>('test');
   const [saving, setSaving] = useState(false);
+  const [openGuideKey, setOpenGuideKey] = useState<IntegrationGuideKey | null>(null);
 
   const isStripe = providerLower === 'stripe';
   const isAdyen = providerLower === 'adyen';
@@ -39,7 +52,7 @@ export function PSPConfigForm({
 
   const handleSave = async () => {
     if (!canSave) {
-      alert('Please fill in all required fields');
+      alert(copy.requiredFields);
       return;
     }
 
@@ -71,21 +84,25 @@ export function PSPConfigForm({
       }
 
       await apiClient.connectPSPProvider(payload);
-      alert(`✅ ${provider} connected successfully.`);
+      alert(formatIntegrationCopy(copy.connected, { provider }));
       onSuccess();
       onClose();
     } catch (error: any) {
-      alert(`❌ Failed to connect ${provider}: ${error.response?.data?.detail || error.message}`);
+      alert(
+        `${formatIntegrationCopy(copy.failedToConnect, { provider })}: ${
+          error.response?.data?.detail || error.message
+        }`,
+      );
     } finally {
       setSaving(false);
     }
   };
 
   const title = isStripe
-    ? 'Connect Stripe'
+    ? formatIntegrationCopy(copy.connectProvider, { provider: 'Stripe' })
     : isAdyen
-      ? 'Connect Adyen'
-      : 'Connect Checkout.com';
+      ? formatIntegrationCopy(copy.connectProvider, { provider: 'Adyen' })
+      : formatIntegrationCopy(copy.connectProvider, { provider: 'Checkout.com' });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -94,8 +111,17 @@ export function PSPConfigForm({
           <div>
             <h3 className="text-lg font-semibold text-[color:var(--merchant-ink)]">{title}</h3>
             <p className="mt-1 text-sm text-[color:var(--merchant-muted)]">
-              Save the real provider credentials and runtime settings used for payment initiation.
+              {copy.description}
             </p>
+            {guideKey ? (
+              <button
+                type="button"
+                onClick={() => setOpenGuideKey(guideKey)}
+                className="mt-3 inline-flex items-center rounded-full border border-[color:var(--merchant-line)] px-3 py-1.5 text-sm font-medium text-[color:var(--merchant-muted-strong)] transition hover:border-[color:var(--merchant-brand)] hover:text-[color:var(--merchant-brand)]"
+              >
+                {guideUiText.viewGuide}
+              </button>
+            ) : null}
           </div>
           <button
             onClick={onClose}
@@ -107,7 +133,7 @@ export function PSPConfigForm({
 
         <div className="space-y-4">
           <div>
-            <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">Merchant ID</label>
+            <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">{copy.merchantId}</label>
             <input
               type="text"
               value={merchantId}
@@ -118,21 +144,21 @@ export function PSPConfigForm({
 
           <div>
             <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
-              Environment <span className="text-rose-500">*</span>
+              {copy.environment} <span className="text-rose-500">*</span>
             </label>
             <select
               value={environment}
               onChange={(event) => setEnvironment(event.target.value as Environment)}
               className="w-full rounded-[1rem] border border-[color:var(--merchant-line)] px-3 py-2 text-sm text-[color:var(--merchant-ink)]"
             >
-              <option value="test">Test</option>
-              <option value="live">Live</option>
+              <option value="test">{copy.test}</option>
+              <option value="live">{copy.live}</option>
             </select>
           </div>
 
           <div>
             <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
-              {isStripe ? 'Secret key' : isCheckout ? 'Secret key' : 'API key'} <span className="text-rose-500">*</span>
+              {isStripe ? copy.secretKey : isCheckout ? copy.secretKey : copy.apiKey} <span className="text-rose-500">*</span>
             </label>
             <input
               type="password"
@@ -143,7 +169,7 @@ export function PSPConfigForm({
                   ? 'sk_live_... or sk_test_...'
                   : isCheckout
                     ? 'sk_live_... or sk_test_...'
-                    : 'AQE...'
+                    : copy.apiKeyPlaceholderAdyen
               }
               className="w-full rounded-[1rem] border border-[color:var(--merchant-line)] px-3 py-2 text-sm text-[color:var(--merchant-ink)]"
             />
@@ -152,7 +178,7 @@ export function PSPConfigForm({
           {isStripe ? (
             <div>
               <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
-                Publishable key <span className="text-rose-500">*</span>
+                {copy.publishableKey} <span className="text-rose-500">*</span>
               </label>
               <input
                 type="password"
@@ -166,7 +192,7 @@ export function PSPConfigForm({
 
           <div>
             <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
-              {isStripe ? 'Connected account ID (optional, Stripe Connect only)' : isAdyen ? 'Merchant account' : 'Processing channel ID'}
+              {isStripe ? copy.connectedAccountId : isAdyen ? copy.merchantAccount : copy.processingChannelId}
               {!isStripe ? <span className="text-rose-500"> *</span> : null}
             </label>
             <input
@@ -175,10 +201,10 @@ export function PSPConfigForm({
               onChange={(event) => setAccountId(event.target.value)}
               placeholder={
                 isStripe
-                  ? 'Leave blank unless you are using Stripe Connect'
+                  ? copy.stripeAccountPlaceholder
                   : isAdyen
-                    ? 'Your Adyen merchantAccount'
-                    : 'pc_...'
+                    ? copy.adyenMerchantPlaceholder
+                    : copy.checkoutChannelPlaceholder
               }
               className="w-full rounded-[1rem] border border-[color:var(--merchant-line)] px-3 py-2 text-sm text-[color:var(--merchant-ink)]"
             />
@@ -187,13 +213,13 @@ export function PSPConfigForm({
           {isAdyen ? (
             <div>
               <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
-                Client key <span className="text-rose-500">*</span>
+                {copy.clientKey} <span className="text-rose-500">*</span>
               </label>
               <input
                 type="password"
                 value={clientKey}
                 onChange={(event) => setClientKey(event.target.value)}
-                placeholder="Your Adyen clientKey"
+                placeholder="clientKey"
                 className="w-full rounded-[1rem] border border-[color:var(--merchant-line)] px-3 py-2 text-sm text-[color:var(--merchant-ink)]"
               />
             </div>
@@ -202,7 +228,7 @@ export function PSPConfigForm({
           {isCheckout ? (
             <div>
               <label className="mb-2 block text-sm font-medium text-[color:var(--merchant-ink)]">
-                Public key <span className="text-rose-500">*</span>
+                {copy.publicKey} <span className="text-rose-500">*</span>
               </label>
               <input
                 type="password"
@@ -216,10 +242,10 @@ export function PSPConfigForm({
 
           <div className="rounded-[1rem] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-4 py-3 text-sm text-[color:var(--merchant-muted-strong)]">
             {isStripe
-              ? 'Merchant Stripe setup uses PaymentIntent and requires the merchant publishable key so agent checkout can render Stripe Elements directly.'
+              ? copy.stripeNote
               : isAdyen
-                ? 'Adyen requires both merchant account and client key so the returned session can be used by the frontend.'
-                : 'Checkout.com requires both processing channel ID and public key so the returned payment session is usable by the frontend.'}
+                ? copy.adyenNote
+                : copy.checkoutNote}
           </div>
         </div>
 
@@ -229,16 +255,20 @@ export function PSPConfigForm({
             disabled={!canSave}
             className="flex-1 rounded-full bg-[color:var(--merchant-brand)] px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {saving ? 'Saving…' : `Connect ${provider}`}
+            {saving ? copy.saving : formatIntegrationCopy(copy.connect, { provider })}
           </button>
           <button
             onClick={onClose}
             className="rounded-full border border-[color:var(--merchant-line)] px-4 py-2.5 text-sm font-semibold text-[color:var(--merchant-muted-strong)] transition hover:bg-[color:var(--merchant-surface-muted)]"
           >
-            Cancel
+            {copy.cancel}
           </button>
         </div>
       </div>
+      <IntegrationGuideDialog
+        guideKey={openGuideKey}
+        onClose={() => setOpenGuideKey(null)}
+      />
     </div>
   );
 }
