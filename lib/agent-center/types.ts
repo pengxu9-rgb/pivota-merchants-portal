@@ -402,6 +402,15 @@ export type DemandVisibilityScore = Timestamped & {
     attribute_readiness_score: number;
     pivota_pdp_readiness_score: number;
   };
+  score_explanations: Record<
+    keyof DemandVisibilityScore["aggregate_scores"],
+    {
+      score: number;
+      formula: string;
+      explanation: string;
+      supporting_runs: string[];
+    }
+  >;
 };
 
 export type AgenticGMVIssue = Timestamped & {
@@ -425,6 +434,9 @@ export type AgenticGMVIssue = Timestamped & {
   merchant_source_patch: Record<string, unknown>;
   pivota_unified_pdp_patch: Record<string, unknown>;
   estimated_gmv_at_risk: number;
+  gmv_estimation_method: string;
+  estimated_gmv_at_risk_confidence: "low" | "medium" | "high";
+  merchant_facing_summary: string;
   approval_required: boolean;
   verification_plan: {
     retest_query_clusters: string[];
@@ -433,6 +445,21 @@ export type AgenticGMVIssue = Timestamped & {
     success_metric: "visibility_rate" | "attribute_readiness_score";
     target_improvement: string;
   };
+};
+
+export type RetestPreparation = Timestamped & {
+  id: string;
+  merchant_id: string;
+  store_id: string;
+  scan_target_id: string;
+  issue_id: string;
+  status: "prepared" | "consumed";
+  query_cluster_ids: string[];
+  providers: ProviderName[];
+  prompt_templates: string[];
+  repetitions: number;
+  source_job_id?: string;
+  planned_job_type: "retest";
 };
 
 export type VerificationRun = Timestamped & {
@@ -507,6 +534,7 @@ export type AgentCenterState = {
   matches: ProductMatchResult[];
   scores: DemandVisibilityScore[];
   issues: AgenticGMVIssue[];
+  retestPreparations: RetestPreparation[];
   verificationRuns: VerificationRun[];
   usageEvents: UsageEvent[];
   usagePlan: {

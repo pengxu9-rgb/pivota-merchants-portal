@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { CheckCircle2, RotateCcw, Send, XCircle } from "lucide-react";
+import { CheckCircle2, ClipboardList, RotateCcw, Send, XCircle } from "lucide-react";
 import {
   MerchantButton,
   PageHeader,
@@ -27,6 +27,7 @@ export default function IssueDetailPage() {
   const params = useParams<{ issueId: string }>();
   const router = useRouter();
   const [issue, setIssue] = useState<any>(null);
+  const [retestPreparation, setRetestPreparation] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   async function loadIssue(issueId: string) {
@@ -58,6 +59,17 @@ export default function IssueDetailPage() {
       { method: "POST" }
     );
     router.push(`/agent-center/verification/${payload.verification.id}`);
+  }
+
+  async function prepareRetest() {
+    if (!issue) return;
+    setLoading(true);
+    const payload = await agentFetch<{ retest_preparation: any }>(
+      `/api/agent-center/issues/${issue.id}/retest-preparation`,
+      { method: "POST" }
+    );
+    setRetestPreparation(payload.retest_preparation);
+    setLoading(false);
   }
 
   return (
@@ -96,6 +108,14 @@ export default function IssueDetailPage() {
               <MerchantButton icon={RotateCcw} onClick={retest} disabled={loading}>
                 Retest
               </MerchantButton>
+              <MerchantButton
+                icon={ClipboardList}
+                variant="secondary"
+                onClick={prepareRetest}
+                disabled={loading}
+              >
+                Prepare Retest
+              </MerchantButton>
             </>
           ) : null
         }
@@ -112,9 +132,26 @@ export default function IssueDetailPage() {
           />
           <MetricTile
             label="GMV risk"
-            value={issue?.estimated_gmv_at_risk || 0}
+            value={`${issue?.estimated_gmv_at_risk || 0} (${issue?.estimated_gmv_at_risk_confidence || "low"})`}
             tone="critical"
           />
+        </div>
+      </SurfaceCard>
+
+      <SurfaceCard title="Merchant Summary">
+        <div className="grid gap-4 px-5 py-5 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <p className="merchant-overline">Summary</p>
+            <p className="mt-2 text-sm text-[color:var(--merchant-ink)]">
+              {issue?.merchant_facing_summary || "No summary available."}
+            </p>
+          </div>
+          <div>
+            <p className="merchant-overline">GMV estimate method</p>
+            <p className="mt-2 text-sm text-[color:var(--merchant-muted)]">
+              {issue?.gmv_estimation_method || "Directional V1 estimate."}
+            </p>
+          </div>
         </div>
       </SurfaceCard>
 
@@ -128,6 +165,26 @@ export default function IssueDetailPage() {
               ))}
             </div>
             <JsonBlock value={issue?.evidence || {}} />
+            <div className="grid gap-3 text-sm md:grid-cols-3">
+              <div>
+                <p className="merchant-overline">Query cluster</p>
+                <p className="mt-1 text-[color:var(--merchant-ink)]">
+                  {issue?.affected_query_clusters?.join(", ") || "..."}
+                </p>
+              </div>
+              <div>
+                <p className="merchant-overline">Product entity</p>
+                <p className="mt-1 text-[color:var(--merchant-ink)]">
+                  {issue?.affected_product_entities?.join(", ") || "..."}
+                </p>
+              </div>
+              <div>
+                <p className="merchant-overline">SKU</p>
+                <p className="mt-1 text-[color:var(--merchant-ink)]">
+                  {issue?.affected_skus?.join(", ") || "..."}
+                </p>
+              </div>
+            </div>
           </div>
         </SurfaceCard>
 
@@ -165,6 +222,14 @@ export default function IssueDetailPage() {
           </div>
         </SurfaceCard>
       </div>
+
+      {retestPreparation ? (
+        <SurfaceCard title="Retest Preparation">
+          <div className="px-5 py-5">
+            <JsonBlock value={retestPreparation} />
+          </div>
+        </SurfaceCard>
+      ) : null}
     </main>
   );
 }

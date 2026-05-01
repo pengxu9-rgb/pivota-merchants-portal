@@ -282,6 +282,7 @@ function createInitialState(): AgentCenterState {
     matches: [],
     scores: [],
     issues: [],
+    retestPreparations: [],
     verificationRuns: [],
     usageEvents: [],
     usagePlan: {

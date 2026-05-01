@@ -3,6 +3,7 @@ import { getAgentCenterState, DEMO_MERCHANT_ID } from "./repository.ts";
 import {
   DemandTestJobService,
   getAgentCenterOverview,
+  getIssueDebugView,
   getPublicState,
   getUsageSummary,
   InputReadinessService,
@@ -166,6 +167,9 @@ export async function handleAgentCenterRequest(
 
     if (resource === "issues") {
       if (req.method === "GET" && id) {
+        if (action === "debug") {
+          return json({ debug: getIssueDebugView(id) });
+        }
         const issue = state.issues.find((item) => item.id === id);
         return issue ? json({ issue }) : json({ error: "Issue not found" }, 404);
       }
@@ -192,6 +196,14 @@ export async function handleAgentCenterRequest(
       if (req.method === "POST" && id && action === "retest") {
         const verification = await new VerificationService().retestIssue(id);
         return json({ verification });
+      }
+      if (
+        req.method === "POST" &&
+        id &&
+        (action === "retest-preparation" || action === "prepare-retest")
+      ) {
+        const retestPreparation = new VerificationService().prepareRetestIssue(id);
+        return json({ retest_preparation: retestPreparation }, 201);
       }
     }
 

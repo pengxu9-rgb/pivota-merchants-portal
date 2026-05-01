@@ -26,6 +26,7 @@ import type {
   ProviderName,
   QueryCluster,
   QueryIntentType,
+  RetestPreparation,
   ScanMode,
   ScanTarget,
   UsageEstimate,
@@ -78,6 +79,36 @@ function asLower(value: unknown) {
 
 function titleCase(value: string) {
   return value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function isAttributePresent(value: unknown) {
+  return value !== undefined && value !== null && value !== "" && value !== false;
+}
+
+function missingAttributesForLayer(
+  product: ProductRecord | undefined,
+  cluster: QueryCluster,
+  layer: "merchant" | "pivota"
+) {
+  const attributes =
+    layer === "merchant" ? product?.attributes || {} : product?.pivota_attributes || {};
+  return cluster.required_attributes.filter(
+    (attribute) => !isAttributePresent(attributes[attribute])
+  );
+}
+
+function scoreExplanation(
+  score: number,
+  formula: string,
+  explanation: string,
+  supportingRuns: string[]
+) {
+  return {
+    score,
+    formula,
+    explanation,
+    supporting_runs: supportingRuns,
+  };
 }
 
 function getMerchantId(merchantId?: string) {
@@ -435,7 +466,15 @@ export class QueryClusterService {
 
   requiredAttributes(intent: QueryIntentType, product: ProductRecord) {
     const title = asLower(product.title);
+    const category = asLower(product.category);
     const attributes = new Set<string>();
+    if (title.includes("sunscreen") || category.includes("sunscreen")) {
+      attributes.add("spf_level");
+      attributes.add("pa_rating");
+      attributes.add("skin_type");
+      attributes.add("finish");
+      attributes.add("active_ingredients");
+    }
     if (title.includes("sensitive")) attributes.add("sensitive_skin");
     if (title.includes("moisturizer")) attributes.add("fragrance_free");
     if (title.includes("vitamin c")) attributes.add("vitamin_c");
@@ -728,6 +767,7 @@ export class ScoringService {
       product_entity_id: product?.product_entity_id,
       provider_scores: providerScores,
       aggregate_scores: aggregate,
+      score_explanations: this.explainScores(input.parsed, product, input.cluster, aggregate),
       created_at: now,
       updated_at: now,
     };
@@ -757,17 +797,20 @@ export class ScoringService {
         item.competitor_substitution_detected && !item.merchant_product_mentioned
     ).length;
     const missingAttributes = unique(
-      parsed.flatMap((item) => item.missing_attributes_identified)
+      parsed
+        .flatMap((item) => item.missing_attributes_identified)
+        .concat(missingAttributesForLayer(product, cluster, "merchant"))
     );
     const required = cluster.required_attributes.length
       ? cluster.required_attributes
       : missingAttributes;
+    const merchantMissingRequired = required.filter((attribute) =>
+      missingAttributes.includes(attribute)
+    );
     const attributeReadiness =
       required.length === 0
         ? 86
-        : ((required.length -
-            required.filter((attribute) => missingAttributes.includes(attribute)).length) /
-            required.length) *
+        : ((required.length - merchantMissingRequired.length) / required.length) *
           100;
     const productReadiness = product
       ? this.pivotaPdpReadiness(product, cluster)
@@ -781,6 +824,66 @@ export class ScoringService {
       competitor_substitution_score: clampScore((substitutions / total) * 100),
       attribute_readiness_score: clampScore(attributeReadiness),
       pivota_pdp_readiness_score: clampScore(productReadiness),
+    };
+  }
+
+  explainScores(
+    parsed: ParsedRecommendation[],
+    product: ProductRecord | undefined,
+    cluster: QueryCluster,
+    scores: DemandVisibilityScore["aggregate_scores"]
+  ): DemandVisibilityScore["score_explanations"] {
+    const total = Math.max(1, parsed.length);
+    const supportingRuns = parsed.map((item) => item.test_run_id).filter(Boolean);
+    const merchantMentions = parsed.filter(
+      (item) => item.merchant_product_mentioned
+    ).length;
+    const substitutions = parsed.filter(
+      (item) =>
+        item.competitor_substitution_detected && !item.merchant_product_mentioned
+    ).length;
+    const ranks = parsed
+      .map((item) => item.recommendation_rank)
+      .filter((rank): rank is number => typeof rank === "number");
+    const required = cluster.required_attributes;
+    const merchantMissing = missingAttributesForLayer(product, cluster, "merchant");
+    const pivotaMissing = missingAttributesForLayer(product, cluster, "pivota");
+
+    return {
+      visibility_score: scoreExplanation(
+        scores.visibility_score,
+        "merchant_product_mentions / total_completed_runs * 100",
+        `visibility_score = ${scores.visibility_score} because merchant product was mentioned in ${merchantMentions} of ${parsed.length} completed Gemini runs.`,
+        supportingRuns
+      ),
+      recommendation_rank_score: scoreExplanation(
+        scores.recommendation_rank_score,
+        "average(max(0, 120 - recommendation_rank * 20)) for merchant-mentioned runs",
+        ranks.length
+          ? `recommendation_rank_score = ${scores.recommendation_rank_score} from merchant recommendation ranks: ${ranks.join(", ")}.`
+          : "recommendation_rank_score = 0 because the merchant product was not ranked in completed Gemini runs.",
+        supportingRuns
+      ),
+      competitor_substitution_score: scoreExplanation(
+        scores.competitor_substitution_score,
+        "runs_where_competitor_appears_and_merchant_absent / total_relevant_runs * 100",
+        `competitor_substitution_score = ${scores.competitor_substitution_score} because competitors appeared while the merchant product was absent in ${substitutions} of ${total} relevant Gemini runs.`,
+        supportingRuns
+      ),
+      attribute_readiness_score: scoreExplanation(
+        scores.attribute_readiness_score,
+        "required_attributes_present_on_merchant_pdp / required_attributes * 100",
+        required.length
+          ? `attribute_readiness_score = ${scores.attribute_readiness_score} because ${required.length - merchantMissing.length} of ${required.length} required merchant PDP attributes are present. Missing: ${merchantMissing.join(", ") || "none"}.`
+          : "attribute_readiness_score defaults to 86 because no required attributes were inferred for this query cluster.",
+        supportingRuns
+      ),
+      pivota_pdp_readiness_score: scoreExplanation(
+        scores.pivota_pdp_readiness_score,
+        "required_normalized_attributes + agent_summary + product_entity_id + graph_completeness",
+        `pivota_pdp_readiness_score = ${scores.pivota_pdp_readiness_score}. Missing Pivota normalized attributes: ${pivotaMissing.join(", ") || "none"}.`,
+        supportingRuns
+      ),
     };
   }
 
@@ -835,10 +938,16 @@ export class FixTargetRouter {
     }
 
     if (input.issueType === "competitor_substitution") {
+      if (input.missingAttributes.length > 0) {
+        return ["merchant_pdp", "pivota_unified_pdp"];
+      }
       return ["both_merchant_and_pivota"];
     }
 
     if (input.issueType === "ai_visibility_loss") {
+      if (input.missingAttributes.length > 0) {
+        return ["merchant_pdp", "pivota_unified_pdp"];
+      }
       return ["both_merchant_and_pivota"];
     }
 
@@ -860,7 +969,9 @@ export class IssueEngine {
     const issues: AgenticGMVIssue[] = [];
     const aggregate = input.score.aggregate_scores;
     const missingAttributes = unique(
-      input.parsed.flatMap((item) => item.missing_attributes_identified)
+      input.parsed
+        .flatMap((item) => item.missing_attributes_identified)
+        .concat(missingAttributesForLayer(product, input.cluster, "merchant"))
     );
     const parserConfidence = Math.min(
       ...input.parsed.map((item) => item.parser_confidence),
@@ -998,6 +1109,16 @@ export class IssueEngine {
     const missingAttributeMap = Object.fromEntries(
       input.missingAttributes.map((attribute) => [attribute, true])
     );
+    const gmvConfidence: AgenticGMVIssue["estimated_gmv_at_risk_confidence"] =
+      input.input.parsed.length >= 5
+        ? "high"
+        : input.input.parsed.length >= 3
+          ? "medium"
+          : "low";
+    const queryLabel = input.input.cluster.cluster_name;
+    const merchantSummary =
+      `${titleCase(input.issueType)} detected for ${input.product?.title || "this product"} in "${queryLabel}". ` +
+      `${merchantMentions} of ${input.input.parsed.length} completed Gemini runs mentioned the merchant product, while ${competitorMentions} competitor recommendations were detected.`;
 
     return {
       id: nextId("issue"),
@@ -1017,6 +1138,9 @@ export class IssueEngine {
       affected_query_clusters: [input.input.cluster.id],
       evidence: {
         query_cluster: input.input.cluster.cluster_name,
+        query_cluster_id: input.input.cluster.id,
+        product_entity_id: input.product?.product_entity_id,
+        sku: input.product?.sku,
         total_test_runs: input.input.parsed.length,
         merchant_product_mentions: merchantMentions,
         visibility_rate: input.input.score.aggregate_scores.visibility_score / 100,
@@ -1028,6 +1152,7 @@ export class IssueEngine {
         ).slice(0, 3),
         missing_attributes: input.missingAttributes,
         aggregate_scores: input.input.score.aggregate_scores,
+        score_explanations: input.input.score.score_explanations,
       },
       root_cause: input.rootCause,
       fix_targets: fixTargets,
@@ -1047,6 +1172,10 @@ export class IssueEngine {
             : "Update Pivota product graph and agent-facing summary.",
       },
       estimated_gmv_at_risk: input.input.cluster.estimated_demand_value,
+      gmv_estimation_method:
+        "V1 estimate uses query_cluster.estimated_demand_value as directional GMV-at-risk, not transaction attribution.",
+      estimated_gmv_at_risk_confidence: gmvConfidence,
+      merchant_facing_summary: merchantSummary,
       approval_required: true,
       verification_plan: {
         retest_query_clusters: [input.input.cluster.id],
@@ -1360,6 +1489,9 @@ function aggregateScores(scores: DemandVisibilityScore[]) {
       attribute_readiness_score: 0,
       pivota_pdp_readiness_score: 0,
       estimated_gmv_at_risk: 0,
+      gmv_estimation_method:
+        "No completed score clusters; GMV-at-risk is unavailable.",
+      estimated_gmv_at_risk_confidence: "low" as const,
     };
   }
 
@@ -1391,10 +1523,52 @@ function aggregateScores(scores: DemandVisibilityScore[]) {
     attribute_readiness_score: clampScore(sum.attribute_readiness_score / count),
     pivota_pdp_readiness_score: clampScore(sum.pivota_pdp_readiness_score / count),
     estimated_gmv_at_risk: scores.length * 3600,
+    gmv_estimation_method:
+      "V1 estimate multiplies scored query clusters by a directional demand value proxy; it is not transaction attribution.",
+    estimated_gmv_at_risk_confidence:
+      scores.length >= 5 ? "medium" : ("low" as const),
   };
 }
 
 export class VerificationService {
+  prepareRetestIssue(issueId: string): RetestPreparation {
+    const state = getAgentCenterState();
+    const issue = state.issues.find((item) => item.id === issueId);
+    if (!issue) throw new Error(`Issue not found: ${issueId}`);
+
+    const sourceRun = [...state.testRuns]
+      .reverse()
+      .find(
+        (run) =>
+          run.scan_target_id === issue.scan_target_id &&
+          issue.affected_query_clusters.includes(run.query_cluster_id)
+      );
+    const sourceJob = sourceRun
+      ? state.jobs.find((job) => job.id === sourceRun.job_id)
+      : undefined;
+    const now = nowIso();
+    const preparation: RetestPreparation = {
+      id: nextId("retest_prep"),
+      merchant_id: issue.merchant_id,
+      store_id: issue.store_id,
+      scan_target_id: issue.scan_target_id,
+      issue_id: issue.id,
+      status: "prepared",
+      query_cluster_ids: issue.affected_query_clusters,
+      providers: sourceJob?.scope.providers || issue.verification_plan.providers,
+      prompt_templates:
+        sourceJob?.scope.prompt_templates || issue.verification_plan.prompt_templates,
+      repetitions: sourceJob?.scope.repetitions || 2,
+      source_job_id: sourceJob?.id,
+      planned_job_type: "retest",
+      created_at: now,
+      updated_at: now,
+    };
+
+    state.retestPreparations.push(preparation);
+    return preparation;
+  }
+
   async retestIssue(issueId: string) {
     const state = getAgentCenterState();
     const issue = state.issues.find((item) => item.id === issueId);
@@ -1495,6 +1669,60 @@ export function getAgentCenterOverview(merchantId = DEMO_MERCHANT_ID) {
     ),
     open_issues: openIssues.length,
     usage,
+  };
+}
+
+export function getIssueDebugView(issueId: string) {
+  const state = getAgentCenterState();
+  const issue = state.issues.find((item) => item.id === issueId);
+  if (!issue) throw new Error(`Issue not found: ${issueId}`);
+
+  const queryClusters = state.queryClusters.filter((cluster) =>
+    issue.affected_query_clusters.includes(cluster.id)
+  );
+  const runs = state.testRuns.filter(
+    (run) =>
+      run.scan_target_id === issue.scan_target_id &&
+      issue.affected_query_clusters.includes(run.query_cluster_id)
+  );
+  const runIds = new Set(runs.map((run) => run.id));
+  const results = state.results.filter((result) => runIds.has(result.test_run_id));
+  const parsed = state.parsedRecommendations.filter((item) =>
+    runIds.has(item.test_run_id)
+  );
+  const parsedIds = new Set(parsed.map((item) => item.id));
+  const matches = state.matches.filter((match) =>
+    parsedIds.has(match.parsed_recommendation_id)
+  );
+  const scores = state.scores.filter(
+    (score) =>
+      score.scan_target_id === issue.scan_target_id &&
+      issue.affected_query_clusters.includes(score.query_cluster_id)
+  );
+  const usageEvents = state.usageEvents.filter(
+    (event) =>
+      event.scan_target_id === issue.scan_target_id &&
+      issue.affected_query_clusters.includes(event.query_cluster_id)
+  );
+
+  return {
+    issue_id: issue.id,
+    query_clusters: queryClusters,
+    test_runs: runs,
+    raw_gemini_recommendation_list: results.map((result) => ({
+      result_id: result.id,
+      test_run_id: result.test_run_id,
+      provider: result.provider,
+      model: result.model,
+      raw_output: result.raw_output,
+      normalized_output: result.normalized_output,
+    })),
+    parsed_recommendations: parsed,
+    match_results: matches,
+    generated_scores: scores,
+    generated_issue_json: issue,
+    usage_event_ids: usageEvents.map((event) => event.id),
+    usage_events: usageEvents,
   };
 }
 
