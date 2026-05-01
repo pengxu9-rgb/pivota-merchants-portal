@@ -8,6 +8,7 @@ import {
 import {
   DEFAULT_GEMINI_MODEL,
   DEMO_MERCHANT_ID,
+  getAgentCenterRepository,
   getAgentCenterState,
   nextId,
   nowIso,
@@ -1142,7 +1143,8 @@ export class UsageMeteringService {
       promptTemplateId: input.run.prompt_template_id,
       repetitionIndex: input.run.repetition_index,
     });
-    const state = getAgentCenterState();
+    const repository = getAgentCenterRepository();
+    const state = repository.getState();
     const existing = state.usageEvents.find((event) => event.idempotency_key === key);
     if (existing) return existing;
 
@@ -1171,7 +1173,7 @@ export class UsageMeteringService {
       created_at: now,
       updated_at: now,
     };
-    state.usageEvents.push(event);
+    repository.upsert("usageEvents", event);
     return event;
   }
 
@@ -1181,7 +1183,8 @@ export class UsageMeteringService {
     quantity?: number;
   }) {
     const key = `product_understanding:${input.issue.id}:product_diagnosis:v1`;
-    const state = getAgentCenterState();
+    const repository = getAgentCenterRepository();
+    const state = repository.getState();
     const existing = state.usageEvents.find((event) => event.idempotency_key === key);
     if (existing) return existing;
 
@@ -1211,7 +1214,7 @@ export class UsageMeteringService {
       created_at: now,
       updated_at: now,
     };
-    state.usageEvents.push(event);
+    repository.upsert("usageEvents", event);
     return event;
   }
 
@@ -1221,7 +1224,8 @@ export class UsageMeteringService {
     quantity?: number;
   }) {
     const key = `offer_execution:${input.issue.id}:offer_readiness:v1`;
-    const state = getAgentCenterState();
+    const repository = getAgentCenterRepository();
+    const state = repository.getState();
     const existing = state.usageEvents.find((event) => event.idempotency_key === key);
     if (existing) return existing;
 
@@ -1251,7 +1255,7 @@ export class UsageMeteringService {
       created_at: now,
       updated_at: now,
     };
-    state.usageEvents.push(event);
+    repository.upsert("usageEvents", event);
     return event;
   }
 
@@ -1261,7 +1265,8 @@ export class UsageMeteringService {
     quantity?: number;
   }) {
     const key = `checkout_verification:${input.issue.id}:checkout_readiness:v1`;
-    const state = getAgentCenterState();
+    const repository = getAgentCenterRepository();
+    const state = repository.getState();
     const existing = state.usageEvents.find((event) => event.idempotency_key === key);
     if (existing) return existing;
 
@@ -1291,7 +1296,7 @@ export class UsageMeteringService {
       created_at: now,
       updated_at: now,
     };
-    state.usageEvents.push(event);
+    repository.upsert("usageEvents", event);
     return event;
   }
 
@@ -1301,7 +1306,8 @@ export class UsageMeteringService {
     quantity?: number;
   }) {
     const key = `resolution_workflow:${input.issue.id}:issue_resolution:v1`;
-    const state = getAgentCenterState();
+    const repository = getAgentCenterRepository();
+    const state = repository.getState();
     const existing = state.usageEvents.find((event) => event.idempotency_key === key);
     if (existing) return existing;
 
@@ -1331,7 +1337,7 @@ export class UsageMeteringService {
       created_at: now,
       updated_at: now,
     };
-    state.usageEvents.push(event);
+    repository.upsert("usageEvents", event);
     return event;
   }
 }
@@ -5686,7 +5692,7 @@ export class IssueResolutionService {
       created_at: now,
       updated_at: now,
     };
-    getAgentCenterState().issueResolutionPlans.push(plan);
+    getAgentCenterRepository().upsert("issueResolutionPlans", plan);
     return plan;
   }
 
@@ -6900,7 +6906,9 @@ function hasRecordInput(value: unknown) {
 
 function arrayOfStringInput(value: unknown) {
   return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string" && item.trim())
+    ? value.filter(
+        (item): item is string => typeof item === "string" && item.trim().length > 0
+      )
     : [];
 }
 
@@ -7063,13 +7071,14 @@ export class ProductionValidationRunService {
     extendedRun.competitor_products = input.competitor_products;
     extendedRun.repetitions = input.repetitions;
 
-    getAgentCenterState().productionValidationRuns.push(run);
+    getAgentCenterRepository().upsert("productionValidationRuns", run);
     return run;
   }
 
   get(runId: string) {
-    const run = getAgentCenterState().productionValidationRuns.find(
-      (item) => item.id === runId
+    const run = getAgentCenterRepository().getById(
+      "productionValidationRuns",
+      runId
     );
     if (!run) throw new Error(`Production validation run not found: ${runId}`);
     return run;
@@ -7201,7 +7210,8 @@ export class ProductionValidationRunService {
       demandSummaries.push({
         scan_mode: scanMode,
         job_id: job.id,
-        aggregate_scores: results.aggregate_scores,
+        aggregate_scores:
+          results.aggregate_scores as ProductionValidationReport["demand_test_summary"]["modes_run"][number]["aggregate_scores"],
         issue_ids: results.issues.map((issue) => issue.id),
       });
     }
@@ -8428,7 +8438,7 @@ export class DemoFixtureService {
       created_at: createdAt,
       updated_at: createdAt,
     };
-    state.demoFixtures.push(fixture);
+    getAgentCenterRepository().upsert("demoFixtures", fixture);
 
     return {
       fixture,
@@ -8451,9 +8461,7 @@ export class DemoFixtureService {
 
   get(fixtureId: string) {
     this.cleanupExpiredDemoFixtures();
-    const fixture = getAgentCenterState().demoFixtures.find(
-      (item) => item.fixture_id === fixtureId
-    );
+    const fixture = getAgentCenterRepository().getById("demoFixtures", fixtureId);
     if (!fixture) throw new Error(`Demo fixture not found: ${fixtureId}`);
     return {
       fixture,
@@ -8538,7 +8546,7 @@ export class DemoFixtureService {
     cleanupStatus: "deleted" | "expired"
   ) {
     const state = getAgentCenterState();
-    const fixture = state.demoFixtures.find((item) => item.fixture_id === fixtureId);
+    const fixture = getAgentCenterRepository().getById("demoFixtures", fixtureId);
     if (!fixture) throw new Error(`Demo fixture not found: ${fixtureId}`);
 
     const targetIds = state.scanTargets
@@ -8631,7 +8639,8 @@ export class DemoFixtureService {
     state.stores = state.stores.filter((item) => !hasFixtureId(item, fixtureId));
 
     fixture.cleanup_status = cleanupStatus;
-    fixture.updated_at = nowIso();
+    touch(fixture);
+    getAgentCenterRepository().upsert("demoFixtures", fixture);
     return { fixture };
   }
 }

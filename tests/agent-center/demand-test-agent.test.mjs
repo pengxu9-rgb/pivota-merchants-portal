@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 process.env.PIVOTA_AGENT_CENTER_MOCK_GEMINI = "true";
 
@@ -12,8 +14,12 @@ const { NextRequest } = await import("next/server.js");
 
 const {
   DEFAULT_GEMINI_MODEL,
+  FileBackedAgentCenterRepository,
   getAgentCenterState,
+  getAgentCenterRepository,
+  InMemoryAgentCenterRepository,
   resetAgentCenterState,
+  setAgentCenterRepositoryForTests,
 } = repository;
 const {
   buildPivotaAttributionPreflight,
@@ -81,6 +87,23 @@ function createConnectedTarget() {
     selected_product_ids: store.products.map((product) => product.id),
   });
   return { store, target };
+}
+
+async function withTempPersistentRepository(callback) {
+  const directory = await mkdtemp(join(tmpdir(), "agent-center-state-"));
+  const filePath = join(directory, "state.json");
+  const previousRepository = getAgentCenterRepository();
+
+  try {
+    const repository = new FileBackedAgentCenterRepository(filePath);
+    setAgentCenterRepositoryForTests(repository);
+    resetAgentCenterState();
+    return await callback({ repository, filePath });
+  } finally {
+    setAgentCenterRepositoryForTests(previousRepository || new InMemoryAgentCenterRepository());
+    resetAgentCenterState();
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 function demandInput(store, target, cluster, product) {
@@ -785,6 +808,191 @@ function productionValidationPayload(overrides = {}) {
     ...overrides,
   };
 }
+
+test("AgentCenterRepository CRUD and query helpers cover persisted core records", () => {
+  resetAgentCenterState();
+  const repository = getAgentCenterRepository();
+  const timestamp = new Date().toISOString();
+  const persistedCollections = [
+    "stores",
+    "scanTargets",
+    "issues",
+    "productUnderstandingDiagnoses",
+    "offerExecutionDiagnoses",
+    "checkoutVerificationDiagnoses",
+    "gmvAssuranceSnapshots",
+    "issueResolutionPlans",
+    "usageEvents",
+    "productionValidationRuns",
+    "demoFixtures",
+  ];
+
+  for (const collection of persistedCollections) {
+    const record = {
+      id: `repo_${collection}`,
+      merchant_id: "merchant_repo",
+      store_id: "store_repo",
+      scan_target_id: "scan_target_repo",
+      issue_id: "issue_repo",
+      fixture_id: "fixture_repo",
+      production_validation_run_id: "prod_validation_repo",
+      product_entity_id: "product_entity_repo",
+      agent_type: "repository_test_agent",
+      provider: "internal",
+      idempotency_key: `repository:${collection}`,
+      created_at: timestamp,
+      updated_at: timestamp,
+    };
+
+    repository.upsert(collection, record);
+
+    assert.equal(repository.getById(collection, record.id).id, record.id);
+    assert.ok(
+      repository.byMerchantId(collection, "merchant_repo").some((item) => item.id === record.id)
+    );
+    assert.ok(
+      repository.byStoreId(collection, "store_repo").some((item) => item.id === record.id)
+    );
+    assert.ok(
+      repository.byScanTargetId(collection, "scan_target_repo").some(
+        (item) => item.id === record.id
+      )
+    );
+    assert.ok(
+      repository.byFixtureId(collection, "fixture_repo").some(
+        (item) => item.id === record.id
+      )
+    );
+  }
+
+  assert.equal(
+    repository.usageEventsBy({
+      merchant_id: "merchant_repo",
+      store_id: "store_repo",
+      agent_type: "repository_test_agent",
+      provider: "internal",
+    })[0].id,
+    "repo_usageEvents"
+  );
+  assert.equal(
+    repository.snapshotsBy({
+      merchant_id: "merchant_repo",
+      store_id: "store_repo",
+      product_entity_id: "product_entity_repo",
+    })[0].id,
+    "repo_gmvAssuranceSnapshots"
+  );
+
+  for (const collection of persistedCollections) {
+    assert.equal(repository.deleteById(collection, `repo_${collection}`), true);
+  }
+});
+
+test("persistent repository reload preserves issues and resolution plans", async () => {
+  await withTempPersistentRepository(async ({ filePath }) => {
+    const fixture = new DemoFixtureService().create({ preset: "price_mismatch" });
+    const plan = new IssueResolutionService().generate(fixture.issue.id);
+
+    setAgentCenterRepositoryForTests(new FileBackedAgentCenterRepository(filePath));
+
+    assert.ok(
+      getAgentCenterState().issues.some((issue) => issue.id === fixture.issue.id)
+    );
+    assert.ok(
+      getAgentCenterState().issueResolutionPlans.some(
+        (item) => item.id === plan.id && item.issue_id === fixture.issue.id
+      )
+    );
+  });
+});
+
+test("persistent repository keeps usage event idempotency across reload", async () => {
+  await withTempPersistentRepository(async ({ filePath }) => {
+    const fixture = new DemoFixtureService().create({ preset: "price_mismatch" });
+    new OfferExecutionService().runDiagnosis(fixture.issue.id);
+    const usageCount = getAgentCenterState().usageEvents.length;
+
+    setAgentCenterRepositoryForTests(new FileBackedAgentCenterRepository(filePath));
+    new OfferExecutionService().runDiagnosis(fixture.issue.id);
+
+    assert.equal(getAgentCenterState().usageEvents.length, usageCount);
+    assert.ok(
+      getAgentCenterState().usageEvents.every(
+        (event) =>
+          event.billing_mode === "preview_only" &&
+          event.billing_status === "not_invoiced"
+      )
+    );
+  });
+});
+
+test("production validation run survives fetch and delete across persistent repository reloads", async () => {
+  await withTempPersistentRepository(async ({ filePath }) => {
+    await withMockProductionValidationFetch(async () => {
+      const service = new ProductionValidationRunService();
+      const run = service.create(
+        productionValidationPayload({
+          merchant_offer_input: {
+            price: 18.99,
+            currency: "USD",
+            coupon_status: "none",
+            inventory_status: "in_stock",
+          },
+        })
+      );
+
+      setAgentCenterRepositoryForTests(new FileBackedAgentCenterRepository(filePath));
+      const fetched = new ProductionValidationRunService().get(run.id);
+      assert.equal(fetched.status, "created");
+
+      const completed = await new ProductionValidationRunService().run(run.id);
+      assert.equal(completed.status, "completed");
+      assert.ok(completed.scan_target_id);
+
+      setAgentCenterRepositoryForTests(new FileBackedAgentCenterRepository(filePath));
+      const deleted = new ProductionValidationRunService().delete(run.id);
+      assert.equal(deleted.status, "deleted");
+
+      setAgentCenterRepositoryForTests(new FileBackedAgentCenterRepository(filePath));
+      assert.equal(new ProductionValidationRunService().get(run.id).status, "deleted");
+      assert.equal(
+        getAgentCenterState().scanTargets.some(
+          (target) => target.id === completed.scan_target_id
+        ),
+        false
+      );
+    });
+  });
+});
+
+test("demo fixture fetch and cleanup work through persistent repository reloads", async () => {
+  await withTempPersistentRepository(async ({ filePath }) => {
+    const created = new DemoFixtureService().create({
+      preset: "clean_offer",
+      ttl_minutes: 60,
+      environment: "persistent-test",
+    });
+    const fixtureId = created.fixture.fixture_id;
+
+    setAgentCenterRepositoryForTests(new FileBackedAgentCenterRepository(filePath));
+    const fetched = new DemoFixtureService().get(fixtureId);
+    assert.equal(fetched.fixture.cleanup_status, "active");
+    assert.ok(fetched.records.stores.length > 0);
+
+    new DemoFixtureService().delete(fixtureId);
+
+    setAgentCenterRepositoryForTests(new FileBackedAgentCenterRepository(filePath));
+    assert.equal(
+      getAgentCenterState().stores.some((store) => store.fixture_id === fixtureId),
+      false
+    );
+    assert.equal(
+      getAgentCenterState().demoFixtures.find((fixture) => fixture.fixture_id === fixtureId)
+        .cleanup_status,
+      "deleted"
+    );
+  });
+});
 
 test("scan target creation requires a store and preserves scan scope", () => {
   const { store, target } = createConnectedTarget();
