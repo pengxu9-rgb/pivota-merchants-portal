@@ -127,12 +127,13 @@ test("usage estimate and job creation can scope to selected query clusters", () 
   assert.equal(job.estimated_credits, 1);
 });
 
-test("Gemini provider registry enforces the V1 minimum model", () => {
+test("Gemini provider registry defaults to the free-tier live test model", () => {
   const originalGeminiModel = process.env.GEMINI_MODEL;
-  const originalPublicGeminiModel = process.env.NEXT_PUBLIC_GEMINI_MODEL;
+  const originalAgentCenterGeminiModel =
+    process.env.PIVOTA_AGENT_CENTER_GEMINI_MODEL;
 
-  process.env.GEMINI_MODEL = "gemini-2.0-flash";
-  delete process.env.NEXT_PUBLIC_GEMINI_MODEL;
+  process.env.GEMINI_MODEL = "gemini-3-flash-preview";
+  delete process.env.PIVOTA_AGENT_CENTER_GEMINI_MODEL;
   resetAgentCenterState();
 
   const gemini = getAgentCenterState().providers.find(
@@ -142,10 +143,10 @@ test("Gemini provider registry enforces the V1 minimum model", () => {
 
   if (originalGeminiModel === undefined) delete process.env.GEMINI_MODEL;
   else process.env.GEMINI_MODEL = originalGeminiModel;
-  if (originalPublicGeminiModel === undefined) {
-    delete process.env.NEXT_PUBLIC_GEMINI_MODEL;
+  if (originalAgentCenterGeminiModel === undefined) {
+    delete process.env.PIVOTA_AGENT_CENTER_GEMINI_MODEL;
   } else {
-    process.env.NEXT_PUBLIC_GEMINI_MODEL = originalPublicGeminiModel;
+    process.env.PIVOTA_AGENT_CENTER_GEMINI_MODEL = originalAgentCenterGeminiModel;
   }
   resetAgentCenterState();
 });

@@ -8,30 +8,24 @@ import type {
 } from "./types";
 
 const DEMO_MERCHANT_ID = "merchant_demo";
-const DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview";
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 
 function nowIso() {
   return new Date().toISOString();
 }
 
 function configuredGeminiModel() {
-  const configured = (
-    process.env.NEXT_PUBLIC_GEMINI_MODEL ||
-    process.env.GEMINI_MODEL ||
-    ""
-  )
+  const configured = (process.env.PIVOTA_AGENT_CENTER_GEMINI_MODEL || "")
     .trim()
     .replace(/^models\//, "");
 
-  if (
-    !configured ||
-    configured === "gemini-3.0-flash-preview" ||
-    /^gemini-[12]\./.test(configured)
-  ) {
+  if (!configured) {
     return DEFAULT_GEMINI_MODEL;
   }
 
-  return configured;
+  return configured === "gemini-3.0-flash-preview"
+    ? "gemini-3-flash-preview"
+    : configured;
 }
 
 function skincareProducts(): ProductRecord[] {
