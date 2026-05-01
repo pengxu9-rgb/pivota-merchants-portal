@@ -558,6 +558,33 @@ Rules:
 - Prefer storing normalized findings, recommendations, and references over raw full transcripts when possible.
 - Restrict DB service credentials to server-side runtime only.
 
+### Production Runtime DB Role
+
+Merchant pilot deployments must use a restricted runtime role for the merchant portal Agent Center repository. Do not use the broad backend application or database owner credential as `AGENT_CENTER_DATABASE_URL` for merchant pilots.
+
+Recommended role:
+
+```sql
+CREATE ROLE agent_center_app LOGIN PASSWORD '<managed-secret>';
+ALTER ROLE agent_center_app SET search_path = agent_center;
+REVOKE ALL PRIVILEGES ON SCHEMA public FROM agent_center_app;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM agent_center_app;
+GRANT USAGE ON SCHEMA agent_center TO agent_center_app;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA agent_center TO agent_center_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA agent_center
+  GRANT SELECT, INSERT, UPDATE ON TABLES TO agent_center_app;
+```
+
+The current DB repository performs soft deletes by updating `deleted_at`; it does not require SQL `DELETE` permissions. It also uses caller-provided text IDs, so sequence privileges are not required. Add `DELETE` or sequence grants only if a future repository implementation introduces hard deletes or database-generated IDs.
+
+Validation checklist after rotating to the restricted role:
+
+1. Verify grants only expose the `agent_center` schema.
+2. Validate restricted role `SELECT`, `INSERT`, and `UPDATE` in a rolled-back transaction.
+3. Update Vercel production `AGENT_CENTER_DATABASE_URL` to the restricted role URL.
+4. Redeploy without temporary env overrides.
+5. Run Agent Center production smoke: overview, production validation run create/run/fetch/delete, resolution plan create/fetch, cleanup behavior, and usage `preview_only` / `not_invoiced`.
+
 ## Validation Commands
 
 ```bash
