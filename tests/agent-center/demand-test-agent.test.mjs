@@ -27,6 +27,7 @@ const {
   InputReadinessService,
   IssueEngine,
   MerchantStoreService,
+  ProductNameNormalizer,
   ProductMatchService,
   QueryClusterService,
   ScanTargetService,
@@ -110,6 +111,63 @@ function createControlledSunscreenTarget({ attributes = {}, pivotaAttributes = {
       "Heartleaf Silky Moisture Sunscreen",
     ],
     products: [product],
+  });
+  const target = new ScanTargetService().create({
+    store_id: store.id,
+    selected_product_ids: [product.id],
+  });
+  const cluster = new QueryClusterService()
+    .generateForScanTarget(target.id, [product.id])
+    .find((item) => item.intent_type === "category_recommendation");
+
+  return { store, target, product, cluster };
+}
+
+function createIsntreeSunscreenTarget(extraProducts = []) {
+  resetAgentCenterState();
+  const product = {
+    id: "prod_isntree_watery_sun_gel",
+    product_entity_id: "pe_isntree_watery_sun_gel",
+    sku: "ISNTREE-WATERY-SUN-GEL-SPF50-PA4-50ML",
+    title: "Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml",
+    brand: "Isntree",
+    category: "skincare sunscreen",
+    price: 26,
+    currency: "USD",
+    pdp_url:
+      "https://isntree-global.com/products/isntree-hyaluronic-acid-watery-sun-gel-50ml",
+    attributes: {
+      spf_level: "SPF50+",
+      pa_rating: "PA++++",
+      skin_type: "dehydrated, normal, combination",
+      finish: "fresh finish",
+      active_ingredients: "chemical UV filters",
+    },
+    pivota_attributes: {
+      spf_level: "SPF50+",
+      pa_rating: "PA++++",
+      skin_type: "dehydrated, normal, combination",
+      finish: "fresh finish",
+      active_ingredients: "chemical UV filters",
+      agent_summary: "A hydrating Korean sun gel with SPF50+ PA++++.",
+    },
+    agent_summary: "A hydrating Korean sun gel with SPF50+ PA++++.",
+    priority: "high",
+  };
+  const store = new MerchantStoreService().create({
+    store_name: "Isntree Official Global Live Validation",
+    store_url: "https://isntree-global.com",
+    platform: "shopify",
+    integration_status: "connected",
+    primary_category: "skincare sunscreen",
+    competitor_brands: ["Beauty of Joseon", "COSRX", "Laneige", "Anua"],
+    competitor_products: [
+      "Relief Sun: Rice + Probiotics SPF50+ PA++++",
+      "Aloe Soothing Sun Cream SPF50+ PA+++",
+      "Hydro UV Defense Sunscreen",
+      "Heartleaf Silky Moisture Sun Cream SPF50+ PA++++",
+    ],
+    products: [product, ...extraProducts],
   });
   const target = new ScanTargetService().create({
     store_id: store.id,
@@ -379,6 +437,211 @@ test("parser schema validation handles malformed JSON as parse evidence", () => 
 
   assert.equal(parsed.schema_valid, false);
   assert.ok(parsed.validation_errors.includes("raw_output_json_invalid"));
+});
+
+test("ProductNameNormalizer extracts optional sunscreen suffixes without removing the core family", () => {
+  const { product, store } = createIsntreeSunscreenTarget();
+  const profile = new ProductNameNormalizer().productProfile(product, store);
+
+  assert.equal(
+    profile.normalized_canonical_name,
+    "isntree hyaluronic acid watery sun gel spf50+ pa++++ 50ml"
+  );
+  assert.equal(profile.normalized_core_name, "hyaluronic acid watery sun gel");
+  assert.deepEqual(profile.optional_suffix_terms, ["SPF50+", "PA++++", "50ml"]);
+  assert.ok(profile.normalized_core_name.includes("sun gel"));
+});
+
+test("partial Isntree product name counts as product visibility but not exact SKU", () => {
+  const { store, target, product, cluster } = createIsntreeSunscreenTarget();
+  const input = demandInput(store, target, cluster, product);
+  const parsed = parseProviderOutput(
+    {
+      provider: "gemini",
+      model: DEFAULT_GEMINI_MODEL,
+      raw_output: {
+        mentioned_brands: ["Isntree"],
+        mentioned_products: [
+          {
+            name: "Isntree Hyaluronic Acid Watery Sun Gel",
+            brand: "Isntree",
+            rank: 1,
+            reason: "Hydrating daily sun gel.",
+            purchase_path_present: true,
+          },
+        ],
+        missing_attributes_identified: [],
+        reasoning_summary: "The model returned the product family without SPF/PA/size suffixes.",
+      },
+      normalized_output: {
+        mentioned_brands: ["Isntree"],
+        mentioned_products: [
+          {
+            name: "Isntree Hyaluronic Acid Watery Sun Gel",
+            brand: "Isntree",
+            rank: 1,
+            reason: "Hydrating daily sun gel.",
+            purchase_path_present: true,
+          },
+        ],
+        missing_attributes_identified: [],
+        reasoning_summary: "The model returned the product family without SPF/PA/size suffixes.",
+      },
+      input_tokens: 100,
+      output_tokens: 120,
+      tool_calls: 0,
+      provider_request_id: "isntree_partial",
+    },
+    input
+  );
+  const match = new ProductMatchService().match(parsed, store, cluster);
+  const score = new ScoringService().scoreCluster({
+    scanTarget: target,
+    cluster,
+    parsed: [parsed],
+    matches: [match],
+  });
+
+  assert.equal(parsed.merchant_product_mentioned, false);
+  assert.equal(match.raw_model_product_name, "Isntree Hyaluronic Acid Watery Sun Gel");
+  assert.equal(
+    match.canonical_product_name,
+    "Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml"
+  );
+  assert.equal(match.normalized_model_name, "isntree hyaluronic acid watery sun gel");
+  assert.equal(
+    match.normalized_canonical_name,
+    "isntree hyaluronic acid watery sun gel spf50+ pa++++ 50ml"
+  );
+  assert.equal(match.brand_match, true);
+  assert.equal(match.core_product_match, true);
+  assert.equal(match.match_level, "canonical_product_match");
+  assert.equal(match.match_confidence, "high");
+  assert.equal(match.counts_for_visibility, true);
+  assert.equal(match.counts_for_sku_exact_match, false);
+  assert.equal(match.ambiguous_match, false);
+  assert.deepEqual(match.suffix_terms_missing, ["SPF50+", "PA++++", "50ml"]);
+  assert.equal(score.aggregate_scores.visibility_score, 100);
+  assert.match(
+    score.score_explanations.visibility_score.explanation,
+    /Counted as visibility match because brand and core product name matched/
+  );
+  assert.match(
+    score.score_explanations.visibility_score.explanation,
+    /not counted as an exact SKU match/
+  );
+});
+
+test("Isntree partial matcher avoids unrelated same-brand products", () => {
+  const { store, product, cluster } = createIsntreeSunscreenTarget();
+  const input = demandInput(store, { id: "target_isntree", store_id: store.id }, cluster, product);
+  const negativeNames = [
+    "Isntree Hyaluronic Acid Toner",
+    "Isntree Watery Sun Stick",
+    "Isntree Hyaluronic Acid Aqua Gel Cream",
+  ];
+
+  for (const name of negativeNames) {
+    const parsed = parseProviderOutput(
+      {
+        provider: "gemini",
+        model: DEFAULT_GEMINI_MODEL,
+        raw_output: {
+          mentioned_brands: ["Isntree"],
+          mentioned_products: [
+            {
+              name,
+              brand: "Isntree",
+              rank: 1,
+              reason: "Same brand but different product.",
+              purchase_path_present: true,
+            },
+          ],
+          missing_attributes_identified: [],
+          reasoning_summary: "Negative matcher fixture.",
+        },
+        normalized_output: {
+          mentioned_brands: ["Isntree"],
+          mentioned_products: [
+            {
+              name,
+              brand: "Isntree",
+              rank: 1,
+              reason: "Same brand but different product.",
+              purchase_path_present: true,
+            },
+          ],
+          missing_attributes_identified: [],
+          reasoning_summary: "Negative matcher fixture.",
+        },
+        input_tokens: 100,
+        output_tokens: 120,
+        tool_calls: 0,
+        provider_request_id: `negative_${name}`,
+      },
+      input
+    );
+    const match = new ProductMatchService().match(parsed, store, cluster);
+
+    assert.equal(match.brand_match, true);
+    assert.equal(match.core_product_match, false);
+    assert.notEqual(match.match_level, "canonical_product_match");
+    assert.notEqual(match.match_level, "sku_match");
+    assert.notEqual(match.match_level, "variant_match");
+    assert.equal(match.counts_for_visibility, false);
+    assert.equal(match.counts_for_sku_exact_match, false);
+  }
+});
+
+test("partial Isntree product name is guarded when same-brand SKU variants are ambiguous", () => {
+  const variant = {
+    id: "prod_isntree_watery_sun_gel_100ml",
+    product_entity_id: "pe_isntree_watery_sun_gel_100ml",
+    sku: "ISNTREE-WATERY-SUN-GEL-SPF50-PA4-100ML",
+    title: "Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 100ml",
+    brand: "Isntree",
+    category: "skincare sunscreen",
+    price: 42,
+    currency: "USD",
+    attributes: {},
+    pivota_attributes: {},
+  };
+  const { store, product, cluster } = createIsntreeSunscreenTarget([variant]);
+  const input = demandInput(store, { id: "target_isntree", store_id: store.id }, cluster, product);
+  const output = {
+    mentioned_brands: ["Isntree"],
+    mentioned_products: [
+      {
+        name: "Isntree Hyaluronic Acid Watery Sun Gel",
+        brand: "Isntree",
+        rank: 1,
+        reason: "Product family without size.",
+        purchase_path_present: true,
+      },
+    ],
+    missing_attributes_identified: [],
+    reasoning_summary: "The model omitted variant suffixes.",
+  };
+  const parsed = parseProviderOutput(
+    {
+      provider: "gemini",
+      model: DEFAULT_GEMINI_MODEL,
+      raw_output: output,
+      normalized_output: output,
+      input_tokens: 100,
+      output_tokens: 120,
+      tool_calls: 0,
+      provider_request_id: "isntree_ambiguous_variant",
+    },
+    input
+  );
+  const match = new ProductMatchService().match(parsed, store, cluster);
+
+  assert.equal(match.ambiguous_match, true);
+  assert.equal(match.match_level, "product_family_match");
+  assert.equal(match.counts_for_visibility, false);
+  assert.equal(match.counts_for_sku_exact_match, false);
+  assert.match(match.match_reason, /multiple same-brand products/);
 });
 
 test("product and competitor matching drives scoring and issue generation", async () => {
@@ -774,7 +1037,7 @@ test("manual parser, matcher, and scorer work for a focused cluster", async () =
     matches: [match],
   });
 
-  assert.ok(match.match_confidence >= 0.7);
+  assert.ok(match.match_confidence_score >= 0.7);
   assert.ok(score.aggregate_scores.visibility_score >= 0);
   assert.ok(score.aggregate_scores.competitor_substitution_score >= 0);
 });

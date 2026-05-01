@@ -357,12 +357,41 @@ export type ParsedRecommendation = Timestamped & {
   validation_errors: string[];
 };
 
+export type ProductMatchLevel =
+  | "no_match"
+  | "brand_match"
+  | "product_family_match"
+  | "canonical_product_match"
+  | "sku_match"
+  | "variant_match";
+
+export type MatchConfidence = "low" | "medium" | "high";
+
 export type ProductMatchResult = Timestamped & {
   id: string;
   parsed_recommendation_id: string;
   merchant_id: string;
   store_id: string;
   product_entity_id?: string;
+  raw_model_product_name?: string;
+  canonical_product_name?: string;
+  normalized_model_name?: string;
+  normalized_canonical_name?: string;
+  normalized_core_name?: string;
+  optional_suffix_terms?: string[];
+  brand_aliases?: string[];
+  product_aliases?: string[];
+  brand_match: boolean;
+  core_product_match: boolean;
+  suffix_terms_missing: string[];
+  match_level: ProductMatchLevel;
+  match_confidence: MatchConfidence;
+  match_confidence_score: number;
+  counts_for_visibility: boolean;
+  counts_for_sku_exact_match: boolean;
+  ambiguous_match: boolean;
+  match_reason: string;
+  matched_recommendation_rank?: number | null;
   matched_level: 0 | 1 | 2 | 3 | 4 | 5;
   matched_brand: boolean;
   matched_product_family: boolean;
@@ -374,7 +403,6 @@ export type ProductMatchResult = Timestamped & {
     product_name: string;
     confidence: number;
   }>;
-  match_confidence: number;
 };
 
 export type DemandVisibilityScore = Timestamped & {

@@ -20,7 +20,9 @@ import type {
   LLMSurfaceResult,
   LLMSurfaceTestRun,
   MerchantStore,
+  MatchConfidence,
   ParsedRecommendation,
+  ProductMatchLevel,
   ProductMatchResult,
   ProductRecord,
   ProviderName,
@@ -115,6 +117,247 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+type ProductNameProfile = {
+  canonical_name: string;
+  normalized_canonical_name: string;
+  normalized_core_name: string;
+  optional_suffix_terms: string[];
+  brand_aliases: string[];
+  product_aliases: string[];
+};
+
+type ProductMentionEvaluation = {
+  product: ProductRecord;
+  raw_model_product_name: string;
+  canonical_product_name: string;
+  normalized_model_name: string;
+  normalized_model_core_name: string;
+  normalized_canonical_name: string;
+  normalized_core_name: string;
+  optional_suffix_terms: string[];
+  brand_aliases: string[];
+  product_aliases: string[];
+  brand_match: boolean;
+  core_product_match: boolean;
+  suffix_terms_missing: string[];
+  match_level: ProductMatchLevel;
+  match_confidence_score: number;
+  counts_for_visibility: boolean;
+  counts_for_sku_exact_match: boolean;
+  ambiguous_match: boolean;
+  match_reason: string;
+  matched_recommendation_rank: number | null;
+};
+
+const PRODUCT_FAMILY_PHRASES = [
+  "sunscreen",
+  "sun gel",
+  "sun cream",
+  "sun stick",
+  "serum",
+  "toner",
+  "cleanser",
+  "moisturizer",
+  "cream",
+  "stick",
+  "gel",
+  "sun",
+];
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function compactWhitespace(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function confidenceLabel(score: number): MatchConfidence {
+  if (score >= 0.86) return "high";
+  if (score >= 0.62) return "medium";
+  return "low";
+}
+
+function numericMatchLevel(level: ProductMatchLevel): ProductMatchResult["matched_level"] {
+  const levels: Record<ProductMatchLevel, ProductMatchResult["matched_level"]> = {
+    no_match: 0,
+    brand_match: 1,
+    product_family_match: 2,
+    canonical_product_match: 3,
+    sku_match: 4,
+    variant_match: 5,
+  };
+  return levels[level];
+}
+
+function isVisibilityMatch(match: { match_level: ProductMatchLevel }) {
+  return ["canonical_product_match", "sku_match", "variant_match"].includes(
+    match.match_level
+  );
+}
+
+function isSkuExactMatch(match: { match_level: ProductMatchLevel }) {
+  return ["sku_match", "variant_match"].includes(match.match_level);
+}
+
+function displayModelProductName(product: { brand?: string; name?: string }) {
+  const brand = compactWhitespace(product.brand || "");
+  const name = compactWhitespace(product.name || "");
+  if (!brand) return name;
+  if (!name) return brand;
+  const normalizedName = new ProductNameNormalizer().normalizeForCompare(name);
+  const normalizedBrand = new ProductNameNormalizer().normalizeForCompare(brand);
+  return normalizedName.startsWith(`${normalizedBrand} `) || normalizedName === normalizedBrand
+    ? name
+    : `${brand} ${name}`;
+}
+
+function tokenSet(value: string) {
+  return new Set(value.split(" ").filter(Boolean));
+}
+
+function tokenSimilarity(left: string, right: string) {
+  const leftTokens = tokenSet(left);
+  const rightTokens = tokenSet(right);
+  if (!leftTokens.size || !rightTokens.size) return 0;
+  const overlap = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  const union = new Set([...leftTokens, ...rightTokens]).size;
+  return overlap / union;
+}
+
+function tokenCoverage(source: string, target: string) {
+  const sourceTokens = tokenSet(source);
+  const targetTokens = tokenSet(target);
+  if (!sourceTokens.size || !targetTokens.size) return 0;
+  const overlap = [...sourceTokens].filter((token) => targetTokens.has(token)).length;
+  return overlap / targetTokens.size;
+}
+
+function primaryProductFamily(value: string) {
+  return PRODUCT_FAMILY_PHRASES.find((phrase) =>
+    new RegExp(`(^|\\s)${escapeRegExp(phrase)}(?=\\s|$)`).test(value)
+  );
+}
+
+function productFamilyCompatible(modelCore: string, canonicalCore: string) {
+  const modelFamily = primaryProductFamily(modelCore);
+  const canonicalFamily = primaryProductFamily(canonicalCore);
+  if (!modelFamily || !canonicalFamily) return modelCore === canonicalCore;
+  return modelFamily === canonicalFamily;
+}
+
+function suffixFamilyLabel(terms: string[]) {
+  const families = new Set<string>();
+  if (terms.some((term) => term.startsWith("SPF"))) families.add("SPF");
+  if (terms.some((term) => term.startsWith("PA"))) families.add("PA");
+  if (terms.some((term) => /\d+(ml|g|oz)$/i.test(term))) families.add("size");
+  return [...families].join("/") || "suffix";
+}
+
+export class ProductNameNormalizer {
+  normalizeUnicode(value: string) {
+    return String(value || "")
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
+
+  normalizeForCompare(value: string) {
+    return compactWhitespace(
+      this.normalizeUnicode(value)
+        .toLowerCase()
+        .replace(/&/g, " and ")
+        .replace(/[\u2010-\u2015]/g, " ")
+        .replace(/[^\p{L}\p{N}+]+/gu, " ")
+    );
+  }
+
+  extractOptionalSuffixTerms(value: string) {
+    const normalized = this.normalizeUnicode(value);
+    const terms: string[] = [];
+
+    for (const match of normalized.matchAll(/\bspf\s*([0-9]{2,3})\s*(\+)?/gi)) {
+      terms.push(`SPF${match[1]}${match[2] || ""}`);
+    }
+    for (const match of normalized.matchAll(/(?:^|\s)pa\s*(\+{2,4})(?=\s|$)/gi)) {
+      terms.push(`PA${match[1]}`);
+    }
+    for (const match of normalized.matchAll(/\b(\d+(?:\.\d+)?)\s*(ml|g|oz)\b/gi)) {
+      terms.push(`${match[1]}${match[2].toLowerCase()}`);
+    }
+    for (const match of normalized.matchAll(/\b(pack of \d+|\d+\s*pack|value pack|duo|trio|set)\b/gi)) {
+      terms.push(compactWhitespace(match[1]).replace(/\s+/g, " "));
+    }
+    for (const match of normalized.matchAll(/\b(limited edition|special edition|mini edition|travel size|refill)\b/gi)) {
+      terms.push(compactWhitespace(match[1]).toLowerCase());
+    }
+
+    return unique(terms);
+  }
+
+  stripOptionalSuffixTerms(value: string) {
+    return compactWhitespace(
+      this.normalizeForCompare(value)
+        .replace(/\bspf\s*\d{2,3}\s*\+?/g, " ")
+        .replace(/(^|\s)pa\s*\+{2,4}(?=\s|$)/g, " ")
+        .replace(/\b\d+(?:\.\d+)?\s*(ml|g|oz)\b/g, " ")
+        .replace(/\b(pack of \d+|\d+\s*pack|value pack|duo|trio|set)\b/g, " ")
+        .replace(/\b(limited edition|special edition|mini edition|travel size|refill)\b/g, " ")
+    );
+  }
+
+  stripBrandAliases(value: string, aliases: string[]) {
+    let stripped = this.normalizeForCompare(value);
+    for (const alias of aliases
+      .map((item) => this.normalizeForCompare(item))
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length)) {
+      stripped = stripped.replace(
+        new RegExp(`(^|\\s)${escapeRegExp(alias)}(?=\\s|$)`, "g"),
+        " "
+      );
+    }
+    return compactWhitespace(stripped);
+  }
+
+  normalizedCoreName(value: string, brandAliases: string[] = []) {
+    return this.stripBrandAliases(this.stripOptionalSuffixTerms(value), brandAliases);
+  }
+
+  productProfile(product: ProductRecord, store?: MerchantStore): ProductNameProfile {
+    const brandAliases = unique(
+      [product.brand, store?.store_name].filter((item): item is string => Boolean(item))
+    );
+    const normalizedCanonicalName = this.normalizeForCompare(product.title);
+    const normalizedCoreName = this.normalizedCoreName(product.title, brandAliases);
+    const optionalSuffixTerms = this.extractOptionalSuffixTerms(product.title);
+    const productAliases = unique(
+      [
+        product.title,
+        `${product.brand} ${product.title}`,
+        product.sku,
+        product.product_entity_id,
+        normalizedCoreName,
+      ]
+        .filter(Boolean)
+        .map((item) => this.normalizeForCompare(String(item)))
+    );
+
+    return {
+      canonical_name: product.title,
+      normalized_canonical_name: normalizedCanonicalName,
+      normalized_core_name: normalizedCoreName,
+      optional_suffix_terms: optionalSuffixTerms,
+      brand_aliases: brandAliases,
+      product_aliases: productAliases,
+    };
+  }
+
+  missingSuffixTerms(canonicalTerms: string[], modelTerms: string[]) {
+    const modelSet = new Set(modelTerms.map((term) => term.toLowerCase()));
+    return canonicalTerms.filter((term) => !modelSet.has(term.toLowerCase()));
+  }
+}
+
 function formatFixTarget(target: FixTarget) {
   const labels: Record<FixTarget, string> = {
     merchant_pdp: "merchant PDP",
@@ -168,9 +411,9 @@ function merchantNarrative(input: {
   visibilityScore: number;
   competitorSubstitutionScore: number;
 }) {
-  const merchantMentions = input.parsed.filter(
-    (item) => item.merchant_product_mentioned
-  ).length;
+  const merchantMentions = input.matches.length
+    ? input.matches.filter((match) => match.counts_for_visibility).length
+    : input.parsed.filter((item) => item.merchant_product_mentioned).length;
   const competitorRecommendations = topCompetitorRecommendations(input.matches);
   const productLabel = input.product?.title || "the merchant product";
   const recommendedInstead = competitorRecommendations.length
@@ -761,34 +1004,220 @@ export class UsageMeteringService {
 }
 
 export class ProductMatchService {
-  match(parsed: ParsedRecommendation, store: MerchantStore, cluster: QueryCluster) {
-    const product = findProduct(store, cluster.product_id);
-    const joined = parsed.mentioned_products
-      .map((item) => `${item.brand} ${item.name}`)
-      .join(" | ")
-      .toLowerCase();
-    const brandMentioned =
-      parsed.merchant_brand_mentioned ||
-      Boolean(product?.brand && joined.includes(product.brand.toLowerCase()));
-    const productMentioned =
-      parsed.merchant_product_mentioned ||
-      Boolean(product?.title && joined.includes(product.title.toLowerCase()));
-    const skuMentioned =
-      parsed.merchant_sku_mentioned ||
-      Boolean(product?.sku && joined.includes(product.sku.toLowerCase()));
-    const entityMentioned =
-      parsed.pivota_product_entity_mentioned ||
-      Boolean(
-        product?.product_entity_id &&
-          joined.includes(product.product_entity_id.toLowerCase())
+  private normalizer = new ProductNameNormalizer();
+
+  private evaluateMention(
+    mentionedProduct: ParsedRecommendation["mentioned_products"][number],
+    product: ProductRecord,
+    store: MerchantStore
+  ): ProductMentionEvaluation {
+    const profile = this.normalizer.productProfile(product, store);
+    const rawModelProductName = displayModelProductName(mentionedProduct);
+    const normalizedModelName = this.normalizer.normalizeForCompare(rawModelProductName);
+    const normalizedModelCoreName = this.normalizer.normalizedCoreName(
+      rawModelProductName,
+      profile.brand_aliases
+    );
+    const modelSuffixTerms = this.normalizer.extractOptionalSuffixTerms(
+      rawModelProductName
+    );
+    const suffixTermsMissing = this.normalizer.missingSuffixTerms(
+      profile.optional_suffix_terms,
+      modelSuffixTerms
+    );
+    const normalizedMentionBrand = this.normalizer.normalizeForCompare(
+      mentionedProduct.brand
+    );
+    const brandAliases = profile.brand_aliases.map((alias) =>
+      this.normalizer.normalizeForCompare(alias)
+    );
+    const brandMatch =
+      brandAliases.some(
+        (alias) =>
+          normalizedMentionBrand === alias ||
+          normalizedModelName.startsWith(`${alias} `) ||
+          normalizedModelName === alias
+      ) ||
+      brandAliases.some((alias) =>
+        new RegExp(`(^|\\s)${escapeRegExp(alias)}(?=\\s|$)`).test(
+          normalizedModelName
+        )
+      );
+    const coreExact =
+      normalizedModelCoreName === profile.normalized_core_name &&
+      normalizedModelCoreName.length > 0;
+    const similarity = tokenSimilarity(
+      normalizedModelCoreName,
+      profile.normalized_core_name
+    );
+    const modelCoverage = tokenCoverage(
+      normalizedModelCoreName,
+      profile.normalized_core_name
+    );
+    const canonicalCoverage = tokenCoverage(
+      profile.normalized_core_name,
+      normalizedModelCoreName
+    );
+    const familyCompatible = productFamilyCompatible(
+      normalizedModelCoreName,
+      profile.normalized_core_name
+    );
+    const coreProductMatch =
+      brandMatch &&
+      familyCompatible &&
+      (coreExact ||
+        (similarity >= 0.82 && modelCoverage >= 0.86 && canonicalCoverage >= 0.86));
+    const productFamilyMatch =
+      brandMatch &&
+      !coreProductMatch &&
+      Boolean(primaryProductFamily(normalizedModelCoreName)) &&
+      primaryProductFamily(normalizedModelCoreName) ===
+        primaryProductFamily(profile.normalized_core_name);
+    const normalizedSku = this.normalizer.normalizeForCompare(product.sku);
+    const explicitSkuMatch =
+      Boolean(normalizedSku) &&
+      new RegExp(`(^|\\s)${escapeRegExp(normalizedSku)}(?=\\s|$)`).test(
+        normalizedModelName
+      );
+    const fullSuffixMatch =
+      coreProductMatch &&
+      profile.optional_suffix_terms.length > 0 &&
+      suffixTermsMissing.length === 0;
+    let matchLevel: ProductMatchLevel = "no_match";
+    if (brandMatch) matchLevel = "brand_match";
+    if (productFamilyMatch) matchLevel = "product_family_match";
+    if (coreProductMatch) matchLevel = "canonical_product_match";
+    if (explicitSkuMatch || fullSuffixMatch) matchLevel = "sku_match";
+
+    const confidenceScore =
+      matchLevel === "sku_match"
+        ? 0.97
+        : matchLevel === "canonical_product_match"
+          ? suffixTermsMissing.length > 0
+            ? 0.9
+            : 0.93
+          : matchLevel === "product_family_match"
+            ? 0.72
+            : matchLevel === "brand_match"
+              ? 0.58
+              : 0.18;
+    const missingSuffixLabel = suffixTermsMissing.length
+      ? ` Missing ${suffixFamilyLabel(suffixTermsMissing)} suffix terms: ${suffixTermsMissing.join(", ")}.`
+      : "";
+    const matchReason =
+      matchLevel === "sku_match"
+        ? "Matched brand, core product name, and SKU/variant suffix terms."
+        : matchLevel === "canonical_product_match"
+          ? `Matched brand and normalized core product name.${missingSuffixLabel}`
+          : matchLevel === "product_family_match"
+            ? "Matched the merchant brand and product family, but not the full core product name."
+            : matchLevel === "brand_match"
+              ? "Matched the merchant brand, but product-family evidence was insufficient."
+              : "No reliable merchant brand or product-name match was found.";
+
+    return {
+      product,
+      raw_model_product_name: rawModelProductName,
+      canonical_product_name: profile.canonical_name,
+      normalized_model_name: normalizedModelName,
+      normalized_model_core_name: normalizedModelCoreName,
+      normalized_canonical_name: profile.normalized_canonical_name,
+      normalized_core_name: profile.normalized_core_name,
+      optional_suffix_terms: profile.optional_suffix_terms,
+      brand_aliases: profile.brand_aliases,
+      product_aliases: profile.product_aliases,
+      brand_match: brandMatch,
+      core_product_match: coreProductMatch,
+      suffix_terms_missing: suffixTermsMissing,
+      match_level: matchLevel,
+      match_confidence_score: Number(confidenceScore.toFixed(2)),
+      counts_for_visibility: isVisibilityMatch({ match_level: matchLevel }),
+      counts_for_sku_exact_match: isSkuExactMatch({ match_level: matchLevel }),
+      ambiguous_match: false,
+      match_reason: matchReason,
+      matched_recommendation_rank: mentionedProduct.rank || null,
+    };
+  }
+
+  private applyAmbiguityGuard(
+    evaluation: ProductMentionEvaluation,
+    mentionedProduct: ParsedRecommendation["mentioned_products"][number],
+    store: MerchantStore
+  ) {
+    if (!["canonical_product_match", "sku_match"].includes(evaluation.match_level)) {
+      return evaluation;
+    }
+
+    const candidates = (store.products || [])
+      .filter((candidate) => candidate.id !== evaluation.product.id)
+      .map((candidate) => this.evaluateMention(mentionedProduct, candidate, store))
+      .filter(
+        (candidate) =>
+          candidate.brand_match &&
+          candidate.match_confidence_score >= 0.82 &&
+          Math.abs(candidate.match_confidence_score - evaluation.match_confidence_score) <=
+            0.04
       );
 
-    let matchedLevel: ProductMatchResult["matched_level"] = 0;
-    if (brandMentioned) matchedLevel = 1;
-    if (productMentioned) matchedLevel = 2;
-    if (productMentioned || entityMentioned) matchedLevel = 3;
-    if (skuMentioned) matchedLevel = 4;
+    if (!candidates.length || evaluation.match_level === "sku_match") {
+      return evaluation;
+    }
 
+    return {
+      ...evaluation,
+      ambiguous_match: true,
+      match_level: "product_family_match" as const,
+      match_confidence_score: 0.7,
+      counts_for_visibility: false,
+      counts_for_sku_exact_match: false,
+      match_reason:
+        "Brand and core product name matched, but multiple same-brand products had similar confidence and the model omitted SKU/variant suffix terms.",
+    };
+  }
+
+  match(parsed: ParsedRecommendation, store: MerchantStore, cluster: QueryCluster) {
+    const product = findProduct(store, cluster.product_id);
+    const evaluations = product
+      ? parsed.mentioned_products
+          .map((item) =>
+            this.applyAmbiguityGuard(
+              this.evaluateMention(item, product, store),
+              item,
+              store
+            )
+          )
+          .sort((left, right) => right.match_confidence_score - left.match_confidence_score)
+      : [];
+    const bestEvaluation = evaluations[0];
+    const fallbackProfile =
+      product && this.normalizer.productProfile(product, store);
+    const brandMentioned =
+      bestEvaluation?.brand_match ||
+      parsed.merchant_brand_mentioned ||
+      Boolean(
+        product?.brand &&
+          parsed.mentioned_brands.some(
+            (brand) =>
+              this.normalizer.normalizeForCompare(brand) ===
+              this.normalizer.normalizeForCompare(product.brand)
+          )
+      );
+    const parserExactProductMention =
+      parsed.merchant_product_mentioned || parsed.pivota_product_entity_mentioned;
+    const parserSkuMention = parsed.merchant_sku_mentioned;
+    const parserFallbackLevel: ProductMatchLevel = parserSkuMention
+      ? "sku_match"
+      : parserExactProductMention
+        ? "canonical_product_match"
+        : brandMentioned
+          ? "brand_match"
+          : "no_match";
+    const matchLevel =
+      bestEvaluation && numericMatchLevel(bestEvaluation.match_level) >= numericMatchLevel(parserFallbackLevel)
+        ? bestEvaluation.match_level
+        : parserFallbackLevel;
+    const countsForVisibility = isVisibilityMatch({ match_level: matchLevel });
+    const countsForSkuExactMatch = isSkuExactMatch({ match_level: matchLevel });
     const competitorMatches = parsed.mentioned_products
       .filter((item) =>
         store.competitor_brands?.some(
@@ -800,9 +1229,19 @@ export class ProductMatchService {
         product_name: item.name,
         confidence: 0.91,
       }));
+    let matchConfidenceScore =
+      bestEvaluation?.match_confidence_score ||
+      (matchLevel === "canonical_product_match"
+        ? 0.9
+        : matchLevel === "sku_match"
+          ? 0.97
+          : brandMentioned
+            ? 0.58
+            : 0.18);
+    if (!countsForVisibility && competitorMatches.length) {
+      matchConfidenceScore = Math.max(matchConfidenceScore, 0.88);
+    }
 
-    const matchConfidence =
-      matchedLevel >= 3 ? 0.92 : competitorMatches.length ? 0.88 : 0.64;
     const now = nowIso();
     const result: ProductMatchResult = {
       id: nextId("match"),
@@ -810,14 +1249,51 @@ export class ProductMatchService {
       merchant_id: store.merchant_id,
       store_id: store.id,
       product_entity_id: product?.product_entity_id,
-      matched_level: matchedLevel,
-      matched_brand: brandMentioned,
-      matched_product_family: productMentioned,
-      matched_product_entity: matchedLevel >= 3,
-      matched_sku: skuMentioned,
-      matched_variant: false,
+      raw_model_product_name:
+        bestEvaluation?.raw_model_product_name ||
+        (parsed.mentioned_products[0]
+          ? displayModelProductName(parsed.mentioned_products[0])
+          : undefined),
+      canonical_product_name: bestEvaluation?.canonical_product_name || product?.title,
+      normalized_model_name: bestEvaluation?.normalized_model_name,
+      normalized_canonical_name:
+        bestEvaluation?.normalized_canonical_name ||
+        fallbackProfile?.normalized_canonical_name,
+      normalized_core_name:
+        bestEvaluation?.normalized_core_name || fallbackProfile?.normalized_core_name,
+      optional_suffix_terms:
+        bestEvaluation?.optional_suffix_terms || fallbackProfile?.optional_suffix_terms,
+      brand_aliases: bestEvaluation?.brand_aliases || fallbackProfile?.brand_aliases,
+      product_aliases: bestEvaluation?.product_aliases || fallbackProfile?.product_aliases,
+      brand_match: Boolean(brandMentioned),
+      core_product_match:
+        bestEvaluation?.core_product_match || parserExactProductMention || false,
+      suffix_terms_missing: bestEvaluation?.suffix_terms_missing || [],
+      match_level: matchLevel,
+      match_confidence: confidenceLabel(matchConfidenceScore),
+      match_confidence_score: Number(matchConfidenceScore.toFixed(2)),
+      counts_for_visibility: countsForVisibility,
+      counts_for_sku_exact_match: countsForSkuExactMatch,
+      ambiguous_match: bestEvaluation?.ambiguous_match || false,
+      match_reason:
+        bestEvaluation?.match_reason ||
+        (parserExactProductMention
+          ? "Parser detected the canonical merchant product or Pivota product entity."
+          : brandMentioned
+            ? "Matched the merchant brand, but product-name evidence was insufficient."
+            : "No reliable merchant product match was found."),
+      matched_recommendation_rank:
+        countsForVisibility && bestEvaluation
+          ? bestEvaluation.matched_recommendation_rank
+          : parsed.recommendation_rank,
+      matched_level: numericMatchLevel(matchLevel),
+      matched_brand: Boolean(brandMentioned),
+      matched_product_family:
+        matchLevel === "product_family_match" || numericMatchLevel(matchLevel) >= 3,
+      matched_product_entity: countsForVisibility,
+      matched_sku: countsForSkuExactMatch,
+      matched_variant: matchLevel === "variant_match",
       competitor_matches: competitorMatches,
-      match_confidence: Number(matchConfidence.toFixed(2)),
       created_at: now,
       updated_at: now,
     };
@@ -845,10 +1321,24 @@ export class ScoringService {
 
     const providerScores: DemandVisibilityScore["provider_scores"] = {};
     for (const [provider, providerParsed] of byProvider.entries()) {
-      providerScores[provider] = this.calculateScores(providerParsed, product, input.cluster);
+      const providerParsedIds = new Set(providerParsed.map((item) => item.id));
+      const providerMatches = input.matches.filter((match) =>
+        providerParsedIds.has(match.parsed_recommendation_id)
+      );
+      providerScores[provider] = this.calculateScores(
+        providerParsed,
+        product,
+        input.cluster,
+        providerMatches
+      );
     }
 
-    const aggregate = this.calculateScores(input.parsed, product, input.cluster);
+    const aggregate = this.calculateScores(
+      input.parsed,
+      product,
+      input.cluster,
+      input.matches
+    );
     const now = nowIso();
     const score: DemandVisibilityScore = {
       id: nextId("score"),
@@ -860,7 +1350,13 @@ export class ScoringService {
       product_entity_id: product?.product_entity_id,
       provider_scores: providerScores,
       aggregate_scores: aggregate,
-      score_explanations: this.explainScores(input.parsed, product, input.cluster, aggregate),
+      score_explanations: this.explainScores(
+        input.parsed,
+        product,
+        input.cluster,
+        aggregate,
+        input.matches
+      ),
       created_at: now,
       updated_at: now,
     };
@@ -872,23 +1368,38 @@ export class ScoringService {
   calculateScores(
     parsed: ParsedRecommendation[],
     product: ProductRecord | undefined,
-    cluster: QueryCluster
+    cluster: QueryCluster,
+    matches: ProductMatchResult[] = []
   ) {
     const total = Math.max(1, parsed.length);
-    const merchantMentions = parsed.filter(
-      (item) => item.merchant_product_mentioned
-    ).length;
+    const matchesByParsedId = new Map(
+      matches.map((match) => [match.parsed_recommendation_id, match])
+    );
+    const merchantMentions = parsed.filter((item) => {
+      const match = matchesByParsedId.get(item.id);
+      return match ? match.counts_for_visibility : item.merchant_product_mentioned;
+    }).length;
     const ranks = parsed
-      .map((item) => item.recommendation_rank)
+      .map((item) => {
+        const match = matchesByParsedId.get(item.id);
+        if (match?.counts_for_visibility) return match.matched_recommendation_rank;
+        return item.merchant_product_mentioned ? item.recommendation_rank : null;
+      })
       .filter((rank): rank is number => typeof rank === "number");
     const rankScore = ranks.length
       ? ranks.reduce((sum, rank) => sum + Math.max(0, 120 - rank * 20), 0) /
         ranks.length
       : 0;
-    const substitutions = parsed.filter(
-      (item) =>
-        item.competitor_substitution_detected && !item.merchant_product_mentioned
-    ).length;
+    const substitutions = parsed.filter((item) => {
+      const match = matchesByParsedId.get(item.id);
+      const merchantVisible = match
+        ? match.counts_for_visibility
+        : item.merchant_product_mentioned;
+      const competitorAppeared = match
+        ? match.competitor_matches.length > 0
+        : item.competitor_substitution_detected;
+      return competitorAppeared && !merchantVisible;
+    }).length;
     const missingAttributes = unique(
       parsed
         .flatMap((item) => item.missing_attributes_identified)
@@ -924,29 +1435,54 @@ export class ScoringService {
     parsed: ParsedRecommendation[],
     product: ProductRecord | undefined,
     cluster: QueryCluster,
-    scores: DemandVisibilityScore["aggregate_scores"]
+    scores: DemandVisibilityScore["aggregate_scores"],
+    matches: ProductMatchResult[] = []
   ): DemandVisibilityScore["score_explanations"] {
     const total = Math.max(1, parsed.length);
     const supportingRuns = parsed.map((item) => item.test_run_id).filter(Boolean);
-    const merchantMentions = parsed.filter(
-      (item) => item.merchant_product_mentioned
-    ).length;
-    const substitutions = parsed.filter(
-      (item) =>
-        item.competitor_substitution_detected && !item.merchant_product_mentioned
-    ).length;
+    const matchesByParsedId = new Map(
+      matches.map((match) => [match.parsed_recommendation_id, match])
+    );
+    const merchantMentions = parsed.filter((item) => {
+      const match = matchesByParsedId.get(item.id);
+      return match ? match.counts_for_visibility : item.merchant_product_mentioned;
+    }).length;
+    const substitutions = parsed.filter((item) => {
+      const match = matchesByParsedId.get(item.id);
+      const merchantVisible = match
+        ? match.counts_for_visibility
+        : item.merchant_product_mentioned;
+      const competitorAppeared = match
+        ? match.competitor_matches.length > 0
+        : item.competitor_substitution_detected;
+      return competitorAppeared && !merchantVisible;
+    }).length;
     const ranks = parsed
-      .map((item) => item.recommendation_rank)
+      .map((item) => {
+        const match = matchesByParsedId.get(item.id);
+        if (match?.counts_for_visibility) return match.matched_recommendation_rank;
+        return item.merchant_product_mentioned ? item.recommendation_rank : null;
+      })
       .filter((rank): rank is number => typeof rank === "number");
     const required = cluster.required_attributes;
     const merchantMissing = missingAttributesForLayer(product, cluster, "merchant");
     const pivotaMissing = missingAttributesForLayer(product, cluster, "pivota");
+    const normalizedCoreVisibilityMatches = matches.filter(
+      (match) =>
+        match.counts_for_visibility &&
+        !match.counts_for_sku_exact_match &&
+        match.match_level === "canonical_product_match" &&
+        match.suffix_terms_missing.length > 0
+    );
+    const normalizedCoreExplanation = normalizedCoreVisibilityMatches.length
+      ? " Counted as visibility match because brand and core product name matched. SPF/PA/size suffixes were missing from the model output, so this was not counted as an exact SKU match."
+      : "";
 
     return {
       visibility_score: scoreExplanation(
         scores.visibility_score,
-        "merchant_product_mentions / total_completed_runs * 100",
-        `visibility_score = ${scores.visibility_score} because merchant product was mentioned in ${merchantMentions} of ${parsed.length} completed Gemini runs.`,
+        "product_entity_visibility_matches / total_completed_runs * 100",
+        `visibility_score = ${scores.visibility_score} because merchant product/entity visibility matched in ${merchantMentions} of ${parsed.length} completed Gemini runs.${normalizedCoreExplanation}`,
         supportingRuns
       ),
       recommendation_rank_score: scoreExplanation(
@@ -1071,7 +1607,7 @@ export class IssueEngine {
       1
     );
     const matchConfidence = Math.min(
-      ...input.matches.map((item) => item.match_confidence),
+      ...input.matches.map((item) => item.match_confidence_score),
       1
     );
 
@@ -1192,9 +1728,9 @@ export class IssueEngine {
       parserConfidence: input.parserConfidence,
       matchConfidence: input.matchConfidence,
     });
-    const merchantMentions = input.input.parsed.filter(
-      (item) => item.merchant_product_mentioned
-    ).length;
+    const merchantMentions = input.input.matches.length
+      ? input.input.matches.filter((match) => match.counts_for_visibility).length
+      : input.input.parsed.filter((item) => item.merchant_product_mentioned).length;
     const competitorMentions = input.input.matches.reduce(
       (sum, match) => sum + match.competitor_matches.length,
       0
