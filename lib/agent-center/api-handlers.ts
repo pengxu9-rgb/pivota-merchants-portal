@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server.js";
-import { getAgentCenterState, DEMO_MERCHANT_ID } from "./repository.ts";
+import {
+  getAgentCenterState,
+  DEMO_MERCHANT_ID,
+  withAgentCenterRepositorySession,
+} from "./repository.ts";
 import {
   CheckoutVerificationService,
   DemoFixtureService,
@@ -126,6 +130,15 @@ export async function handleInternalDemoFixturesRequest(
   req: NextRequest,
   params?: { fixtureId?: string }
 ) {
+  return withAgentCenterRepositorySession(() =>
+    handleInternalDemoFixturesRequestInner(req, params)
+  );
+}
+
+async function handleInternalDemoFixturesRequestInner(
+  req: NextRequest,
+  params?: { fixtureId?: string }
+) {
   const gate = internalDemoFixtureGate(req);
   if (!gate.allowed) return json({ error: gate.error }, 403);
 
@@ -153,6 +166,15 @@ export async function handleInternalDemoFixturesRequest(
 }
 
 export async function handleInternalProductionValidationRunsRequest(
+  req: NextRequest,
+  params?: { runId?: string; action?: string }
+) {
+  return withAgentCenterRepositorySession(() =>
+    handleInternalProductionValidationRunsRequestInner(req, params)
+  );
+}
+
+async function handleInternalProductionValidationRunsRequestInner(
   req: NextRequest,
   params?: { runId?: string; action?: string }
 ) {
@@ -206,6 +228,15 @@ export async function handleMerchantStoresRequest(
   req: NextRequest,
   params?: { path?: string[] }
 ) {
+  return withAgentCenterRepositorySession(() =>
+    handleMerchantStoresRequestInner(req, params)
+  );
+}
+
+async function handleMerchantStoresRequestInner(
+  req: NextRequest,
+  params?: { path?: string[] }
+) {
   const segments = pathSegments(params);
   const merchantId = merchantIdFromRequest(req);
   const service = new MerchantStoreService();
@@ -238,6 +269,15 @@ export async function handleMerchantStoresRequest(
 }
 
 export async function handleAgentCenterRequest(
+  req: NextRequest,
+  params?: { path?: string[] }
+) {
+  return withAgentCenterRepositorySession(() =>
+    handleAgentCenterRequestInner(req, params)
+  );
+}
+
+async function handleAgentCenterRequestInner(
   req: NextRequest,
   params?: { path?: string[] }
 ) {

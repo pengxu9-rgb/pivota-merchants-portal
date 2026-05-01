@@ -10,9 +10,11 @@ import { dirname, join } from "node:path";
 
 import type {
   AgentCenterState,
+  DemoFixture,
   GMVAssuranceSnapshot,
   MerchantStore,
   ProductRecord,
+  ProductionValidationRun,
   ProviderRegistry,
   PromptTemplate,
   StorePlatformConnection,
@@ -340,6 +342,8 @@ type SnapshotFilters = {
   product_entity_id?: string;
 };
 
+type AgentCenterRepositoryKind = "memory" | "persistent" | "db";
+
 const ARRAY_COLLECTION_KEYS: AgentCenterCollectionKey[] = [
   "stores",
   "connections",
@@ -416,12 +420,14 @@ function mergeStateWithDefaults(state?: Partial<AgentCenterState>): AgentCenterS
 }
 
 export interface AgentCenterRepository {
-  readonly kind: "memory" | "persistent";
+  readonly kind: AgentCenterRepositoryKind;
   getState(): AgentCenterState;
   replaceState(state: AgentCenterState): AgentCenterState;
   reset(): AgentCenterState;
   persist(): void;
   reload?(): AgentCenterState;
+  hydrate?(): Promise<AgentCenterState>;
+  flush?(): Promise<void>;
   list<K extends AgentCenterCollectionKey>(
     collection: K
   ): Array<CollectionRecord<K>>;
@@ -463,7 +469,7 @@ export interface AgentCenterRepository {
 }
 
 abstract class BaseAgentCenterRepository implements AgentCenterRepository {
-  abstract readonly kind: "memory" | "persistent";
+  abstract readonly kind: AgentCenterRepositoryKind;
 
   protected state: AgentCenterState;
 
@@ -721,6 +727,411 @@ export class FileBackedAgentCenterRepository extends BaseAgentCenterRepository {
   }
 }
 
+type PersistedCollectionKey =
+  | "stores"
+  | "scanTargets"
+  | "issues"
+  | "productUnderstandingDiagnoses"
+  | "offerExecutionDiagnoses"
+  | "checkoutVerificationDiagnoses"
+  | "gmvAssuranceSnapshots"
+  | "issueResolutionPlans"
+  | "usageEvents"
+  | "productionValidationRuns"
+  | "demoFixtures";
+
+const DB_COLLECTION_TABLES: Record<PersistedCollectionKey, string> = {
+  stores: "agent_center_merchant_stores",
+  scanTargets: "agent_center_scan_targets",
+  issues: "agent_center_issues",
+  productUnderstandingDiagnoses:
+    "agent_center_product_understanding_diagnoses",
+  offerExecutionDiagnoses: "agent_center_offer_execution_diagnoses",
+  checkoutVerificationDiagnoses:
+    "agent_center_checkout_verification_diagnoses",
+  gmvAssuranceSnapshots: "agent_center_gmv_assurance_snapshots",
+  issueResolutionPlans: "agent_center_issue_resolution_plans",
+  usageEvents: "agent_center_usage_events",
+  productionValidationRuns: "agent_center_production_validation_runs",
+  demoFixtures: "agent_center_demo_fixtures",
+};
+
+const DB_COLLECTION_KEYS = Object.keys(
+  DB_COLLECTION_TABLES
+) as PersistedCollectionKey[];
+
+type PgPoolLike = {
+  query: (sql: string, values?: unknown[]) => Promise<{ rows: RecordLike[] }>;
+};
+
+let agentCenterDbPoolPromise: Promise<PgPoolLike> | null = null;
+
+function configuredDbSchema() {
+  const schema = (process.env.AGENT_CENTER_DB_SCHEMA || "agent_center").trim();
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(schema)) {
+    throw new Error("AGENT_CENTER_DB_SCHEMA must be a valid SQL identifier");
+  }
+  return schema;
+}
+
+function qualifiedTable(collection: PersistedCollectionKey) {
+  const schema = configuredDbSchema();
+  return `"${schema}"."${DB_COLLECTION_TABLES[collection]}"`;
+}
+
+async function getAgentCenterDbPool() {
+  if (!agentCenterDbPoolPromise) {
+    agentCenterDbPoolPromise = (async () => {
+      const connectionString = (
+        process.env.AGENT_CENTER_DATABASE_URL ||
+        process.env.DATABASE_URL ||
+        ""
+      ).trim();
+      if (!connectionString) {
+        throw new Error(
+          "AGENT_CENTER_STATE_BACKEND=db requires AGENT_CENTER_DATABASE_URL"
+        );
+      }
+      const { Pool } = await import("pg");
+      const sslEnabled =
+        process.env.AGENT_CENTER_DB_SSL === "true" ||
+        (process.env.AGENT_CENTER_DB_SSL !== "false" &&
+          /sslmode=require/i.test(connectionString));
+      return new Pool({
+        connectionString,
+        ssl: sslEnabled ? { rejectUnauthorized: false } : undefined,
+        max: Number(process.env.AGENT_CENTER_DB_POOL_MAX || 3),
+      }) as PgPoolLike;
+    })();
+  }
+
+  return agentCenterDbPoolPromise;
+}
+
+function recordValue(record: unknown, field: string) {
+  return record && typeof record === "object"
+    ? ((record as RecordLike)[field] as string | undefined)
+    : undefined;
+}
+
+function firstString(values: unknown) {
+  return Array.isArray(values) && typeof values[0] === "string"
+    ? values[0]
+    : undefined;
+}
+
+function statusForRecord(collection: PersistedCollectionKey, record: RecordLike) {
+  if (collection === "stores") return record.integration_status as string | undefined;
+  if (collection === "demoFixtures") return record.cleanup_status as string | undefined;
+  return record.status as string | undefined;
+}
+
+function productEntityForRecord(collection: PersistedCollectionKey, record: RecordLike) {
+  return (
+    (record.product_entity_id as string | undefined) ||
+    firstString(record.affected_product_entities) ||
+    (collection === "productionValidationRuns"
+      ? (record.pivota_product_entity_id as string | undefined)
+      : undefined)
+  );
+}
+
+function runIdForRecord(collection: PersistedCollectionKey, record: RecordLike) {
+  return (
+    (record.production_validation_run_id as string | undefined) ||
+    (collection === "productionValidationRuns"
+      ? (record.id as string | undefined)
+      : undefined)
+  );
+}
+
+function fixtureIdForRecord(record: RecordLike) {
+  return record.fixture_id as string | undefined;
+}
+
+function rowValuesForRecord(
+  collection: PersistedCollectionKey,
+  record: CollectionRecord<PersistedCollectionKey>
+) {
+  const value = record as RecordLike;
+  const createdAt = (value.created_at as string | undefined) || nowIso();
+  const updatedAt = (value.updated_at as string | undefined) || createdAt;
+  const deletedAt =
+    (value.deleted_at as string | undefined) ||
+    (collection === "productionValidationRuns" && value.status === "deleted"
+      ? (value.deleted_at as string | undefined) || updatedAt
+      : undefined);
+
+  return {
+    id: String(value.id || value.fixture_id),
+    merchant_id: recordValue(value, "merchant_id"),
+    store_id: recordValue(value, "store_id"),
+    scan_target_id: recordValue(value, "scan_target_id"),
+    issue_id: recordValue(value, "issue_id"),
+    fixture_id: fixtureIdForRecord(value),
+    production_validation_run_id: runIdForRecord(collection, value),
+    product_entity_id: productEntityForRecord(collection, value),
+    agent_type: recordValue(value, "agent_type") || recordValue(value, "source_agent"),
+    provider: recordValue(value, "provider"),
+    status: statusForRecord(collection, value),
+    idempotency_key: recordValue(value, "idempotency_key"),
+    workflow_type: recordValue(value, "workflow_type"),
+    event_type: recordValue(value, "event_type"),
+    billing_mode: recordValue(value, "billing_mode"),
+    billing_status: recordValue(value, "billing_status"),
+    quantity:
+      typeof value.quantity === "number" || typeof value.quantity === "string"
+        ? value.quantity
+        : undefined,
+    environment: recordValue(value, "environment"),
+    preset: recordValue(value, "preset"),
+    cleanup_status: recordValue(value, "cleanup_status"),
+    readiness_level: recordValue(value, "readiness_level"),
+    payload: value,
+    created_at: createdAt,
+    updated_at: updatedAt,
+    deleted_at: deletedAt || null,
+    completed_at: recordValue(value, "completed_at"),
+    expires_at: recordValue(value, "expires_at"),
+  };
+}
+
+function deriveCounters(state: AgentCenterState) {
+  const counters: Record<string, number> = { ...state.counters };
+  for (const key of ARRAY_COLLECTION_KEYS) {
+    for (const record of state[key] as Array<RecordLike>) {
+      for (const value of [record.id, record.fixture_id]) {
+        if (typeof value !== "string") continue;
+        const match = value.match(/^(.+)_([0-9]+)$/);
+        if (!match) continue;
+        counters[match[1]] = Math.max(counters[match[1]] || 0, Number(match[2]));
+      }
+    }
+  }
+  state.counters = counters;
+}
+
+export class DbAgentCenterRepository extends BaseAgentCenterRepository {
+  readonly kind = "db" as const;
+
+  private dirty = false;
+  private hydrated = false;
+  private persistSuspended = false;
+  private baselineIds = new Map<PersistedCollectionKey, Set<string>>();
+
+  constructor(state?: AgentCenterState) {
+    super(state);
+    this.state = this.wrapState(this.state);
+  }
+
+  replaceState(state: AgentCenterState) {
+    this.persistSuspended = true;
+    this.state = this.wrapState(mergeStateWithDefaults(state));
+    this.persistSuspended = false;
+    this.persist();
+    return this.state;
+  }
+
+  persist() {
+    if (!this.persistSuspended) this.dirty = true;
+  }
+
+  async hydrate() {
+    const pool = await getAgentCenterDbPool();
+    const hydratedState = createInitialAgentCenterState();
+    this.baselineIds = new Map();
+    for (const collection of DB_COLLECTION_KEYS) {
+      const includeDeleted =
+        collection === "productionValidationRuns" || collection === "demoFixtures";
+      const result = await pool.query(
+        `SELECT payload FROM ${qualifiedTable(collection)} ${
+          includeDeleted ? "" : "WHERE deleted_at IS NULL"
+        } ORDER BY created_at ASC`
+      );
+      (hydratedState as unknown as Record<PersistedCollectionKey, unknown[]>)[
+        collection
+      ] = result.rows.map((row) => row.payload);
+      this.baselineIds.set(
+        collection,
+        new Set(result.rows.map((row) => String((row.payload as RecordLike).id)))
+      );
+    }
+    deriveCounters(hydratedState);
+    this.persistSuspended = true;
+    this.state = this.wrapState(hydratedState);
+    this.persistSuspended = false;
+    this.dirty = false;
+    this.hydrated = true;
+    return this.state;
+  }
+
+  async flush() {
+    if (!this.hydrated || !this.dirty) return;
+    const pool = await getAgentCenterDbPool();
+    for (const collection of DB_COLLECTION_KEYS) {
+      await this.flushCollection(pool, collection);
+    }
+    this.dirty = false;
+  }
+
+  private async flushCollection(
+    pool: PgPoolLike,
+    collection: PersistedCollectionKey
+  ) {
+    const table = qualifiedTable(collection);
+    const records = this.state[collection] as Array<
+      CollectionRecord<PersistedCollectionKey>
+    >;
+    const activeIds = new Set<string>();
+    for (const record of records) {
+      const row = rowValuesForRecord(collection, record);
+      activeIds.add(row.id);
+      await pool.query(
+        `INSERT INTO ${table} (
+          id, merchant_id, store_id, scan_target_id, issue_id, fixture_id,
+          production_validation_run_id, product_entity_id, agent_type, provider,
+          status, idempotency_key, workflow_type, event_type, billing_mode,
+          billing_status, quantity, environment, preset, cleanup_status,
+          readiness_level, payload, created_at, updated_at, deleted_at,
+          completed_at, expires_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6,
+          $7, $8, $9, $10,
+          $11, $12, $13, $14, $15,
+          $16, $17, $18, $19, $20,
+          $21, $22::jsonb, $23, $24, $25,
+          $26, $27
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          merchant_id = EXCLUDED.merchant_id,
+          store_id = EXCLUDED.store_id,
+          scan_target_id = EXCLUDED.scan_target_id,
+          issue_id = EXCLUDED.issue_id,
+          fixture_id = EXCLUDED.fixture_id,
+          production_validation_run_id = EXCLUDED.production_validation_run_id,
+          product_entity_id = EXCLUDED.product_entity_id,
+          agent_type = EXCLUDED.agent_type,
+          provider = EXCLUDED.provider,
+          status = EXCLUDED.status,
+          idempotency_key = EXCLUDED.idempotency_key,
+          workflow_type = EXCLUDED.workflow_type,
+          event_type = EXCLUDED.event_type,
+          billing_mode = EXCLUDED.billing_mode,
+          billing_status = EXCLUDED.billing_status,
+          quantity = EXCLUDED.quantity,
+          environment = EXCLUDED.environment,
+          preset = EXCLUDED.preset,
+          cleanup_status = EXCLUDED.cleanup_status,
+          readiness_level = EXCLUDED.readiness_level,
+          payload = EXCLUDED.payload,
+          updated_at = EXCLUDED.updated_at,
+          deleted_at = EXCLUDED.deleted_at,
+          completed_at = EXCLUDED.completed_at,
+          expires_at = EXCLUDED.expires_at`,
+        [
+          row.id,
+          row.merchant_id || null,
+          row.store_id || null,
+          row.scan_target_id || null,
+          row.issue_id || null,
+          row.fixture_id || null,
+          row.production_validation_run_id || null,
+          row.product_entity_id || null,
+          row.agent_type || null,
+          row.provider || null,
+          row.status || null,
+          row.idempotency_key || null,
+          row.workflow_type || null,
+          row.event_type || null,
+          row.billing_mode || null,
+          row.billing_status || null,
+          row.quantity || null,
+          row.environment || null,
+          row.preset || null,
+          row.cleanup_status || null,
+          row.readiness_level || null,
+          JSON.stringify(row.payload),
+          row.created_at,
+          row.updated_at,
+          row.deleted_at,
+          row.completed_at || null,
+          row.expires_at || null,
+        ]
+      );
+    }
+
+    const baselineIds = this.baselineIds.get(collection) || new Set<string>();
+    const removedIds = [...baselineIds].filter((id) => !activeIds.has(id));
+    if (removedIds.length > 0) {
+      await pool.query(
+        `UPDATE ${table}
+         SET deleted_at = COALESCE(deleted_at, NOW()), updated_at = NOW()
+         WHERE id = ANY($1::text[])`,
+        [removedIds]
+      );
+    }
+  }
+
+  private persistAfterMutation() {
+    if (!this.persistSuspended) this.dirty = true;
+  }
+
+  private wrapArray<T>(records: T[]) {
+    const repository = this;
+    return new Proxy(records, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver);
+        if (
+          typeof property === "string" &&
+          MUTATING_ARRAY_METHODS.has(property) &&
+          typeof value === "function"
+        ) {
+          return (...args: unknown[]) => {
+            const result = (value as (...methodArgs: unknown[]) => unknown).apply(
+              target,
+              args
+            );
+            repository.persistAfterMutation();
+            return result;
+          };
+        }
+        return value;
+      },
+      set(target, property, value, receiver) {
+        const result = Reflect.set(target, property, value, receiver);
+        repository.persistAfterMutation();
+        return result;
+      },
+      deleteProperty(target, property) {
+        const result = Reflect.deleteProperty(target, property);
+        repository.persistAfterMutation();
+        return result;
+      },
+    });
+  }
+
+  private wrapState(state: AgentCenterState) {
+    const repository = this;
+    for (const key of ARRAY_COLLECTION_KEYS) {
+      (state as unknown as Record<AgentCenterCollectionKey, unknown[]>)[key] =
+        this.wrapArray(state[key] as unknown[]);
+    }
+
+    return new Proxy(state, {
+      set(target, property, value, receiver) {
+        const key = property as AgentCenterCollectionKey;
+        const nextValue =
+          ARRAY_COLLECTION_KEYS.includes(key) && Array.isArray(value)
+            ? repository.wrapArray(value)
+            : value;
+        const result = Reflect.set(target, property, nextValue, receiver);
+        repository.persistAfterMutation();
+        return result;
+      },
+    });
+  }
+}
+
 function defaultAgentCenterStateFile() {
   return (
     process.env.AGENT_CENTER_STATE_FILE ||
@@ -729,9 +1140,10 @@ function defaultAgentCenterStateFile() {
 }
 
 function configuredStateBackend() {
-  return process.env.AGENT_CENTER_STATE_BACKEND === "persistent"
-    ? "persistent"
-    : "memory";
+  const backend = process.env.AGENT_CENTER_STATE_BACKEND;
+  if (backend === "db") return "db";
+  if (backend === "persistent" || backend === "file") return "persistent";
+  return "memory";
 }
 
 declare global {
@@ -740,9 +1152,10 @@ declare global {
 }
 
 function createConfiguredRepository() {
-  return configuredStateBackend() === "persistent"
-    ? new FileBackedAgentCenterRepository()
-    : new InMemoryAgentCenterRepository();
+  const backend = configuredStateBackend();
+  if (backend === "db") return new DbAgentCenterRepository();
+  if (backend === "persistent") return new FileBackedAgentCenterRepository();
+  return new InMemoryAgentCenterRepository();
 }
 
 export function getAgentCenterRepository() {
@@ -771,6 +1184,31 @@ export function resetAgentCenterState() {
 
 export function persistAgentCenterState() {
   getAgentCenterRepository().persist();
+}
+
+let agentCenterRepositorySessionDepth = 0;
+
+export async function withAgentCenterRepositorySession<T>(
+  callback: () => T | Promise<T>
+): Promise<T> {
+  const repository = getAgentCenterRepository();
+  if (repository.kind !== "db") {
+    return callback();
+  }
+
+  const isRootSession = agentCenterRepositorySessionDepth === 0;
+  agentCenterRepositorySessionDepth += 1;
+  try {
+    if (isRootSession) {
+      await repository.hydrate?.();
+    }
+    return await callback();
+  } finally {
+    agentCenterRepositorySessionDepth -= 1;
+    if (isRootSession) {
+      await repository.flush?.();
+    }
+  }
 }
 
 export function nextId(prefix: string) {

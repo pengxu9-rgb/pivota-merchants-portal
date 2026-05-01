@@ -37,13 +37,22 @@ Current implementations:
   - enabled only with `AGENT_CENTER_STATE_BACKEND=persistent`
   - writes JSON state to `AGENT_CENTER_STATE_FILE`
   - intended as a bridge until the app has a durable database adapter
+- `DbAgentCenterRepository`
+  - enabled with `AGENT_CENTER_STATE_BACKEND=db`
+  - hydrates Agent Center state from Postgres at request start and flushes changed core records at request end
+  - requires the Agent Center schema migration in `pivota-backend`
 
 ## Environment Config
 
 ```bash
 AGENT_CENTER_STATE_BACKEND=memory
 AGENT_CENTER_STATE_BACKEND=persistent
+AGENT_CENTER_STATE_BACKEND=file
+AGENT_CENTER_STATE_BACKEND=db
 AGENT_CENTER_STATE_FILE=/tmp/pivota-agent-center-state.json
+AGENT_CENTER_DATABASE_URL=postgres://...
+AGENT_CENTER_DB_SSL=true
+AGENT_CENTER_DB_SCHEMA=agent_center
 ```
 
 Defaults:
@@ -51,7 +60,9 @@ Defaults:
 - local/test: `memory`
 - production: can use `persistent` when explicitly configured
 
-If `AGENT_CENTER_STATE_BACKEND=persistent` and `AGENT_CENTER_STATE_FILE` is unset, the file-backed repository uses `/tmp/pivota-agent-center-state.json`.
+If `AGENT_CENTER_STATE_BACKEND=persistent` or `file` and `AGENT_CENTER_STATE_FILE` is unset, the file-backed repository uses `/tmp/pivota-agent-center-state.json`.
+
+If `AGENT_CENTER_STATE_BACKEND=db`, the portal runtime must have `AGENT_CENTER_DATABASE_URL` and the `agent_center` schema must already be migrated by `pivota-backend`.
 
 ## Persisted Objects
 
@@ -104,7 +115,7 @@ Internal demo fixture create, fetch, cleanup, and delete also use the repository
 
 ## Database Migration Plan
 
-This repo does not currently include a configured database adapter such as Prisma, Drizzle, Postgres, SQLite, Neon, or Vercel KV. Before real merchant pilots, replace or extend `FileBackedAgentCenterRepository` with a durable DB implementation.
+This repo now includes a lightweight Postgres-backed repository adapter using `pg`. Before real merchant pilots, run the `pivota-backend` Agent Center schema migration and configure the merchant portal with a restricted Postgres URL scoped to the `agent_center` schema.
 
 Recommended table groups:
 

@@ -15,6 +15,8 @@ Durable DB persistence is required so:
 
 This spec defines the recommended DB-backed `AgentCenterRepository` implementation for merchant pilot readiness. It does not change merchant-facing semantics and does not introduce payment, PSP, order write-back, refunds, settlement, or real billing.
 
+Implementation status: the merchant portal now includes `DbAgentCenterRepository` behind `AGENT_CENTER_STATE_BACKEND=db`. The backend schema migration is expected to live in `pivota-backend` and must be applied before enabling DB mode in production.
+
 ## Current State
 
 Current repository implementations:
@@ -36,7 +38,12 @@ Current env config:
 ```bash
 AGENT_CENTER_STATE_BACKEND=memory
 AGENT_CENTER_STATE_BACKEND=persistent
+AGENT_CENTER_STATE_BACKEND=file
+AGENT_CENTER_STATE_BACKEND=db
 AGENT_CENTER_STATE_FILE=/tmp/pivota-agent-center-state.json
+AGENT_CENTER_DATABASE_URL=postgres://...
+AGENT_CENTER_DB_SSL=true
+AGENT_CENTER_DB_SCHEMA=agent_center
 ```
 
 File-backed limitations on Vercel:
@@ -441,9 +448,9 @@ Map helper methods directly to typed indexed columns:
 
 ### Phase 1: Schema And Adapter Behind Env Flag
 
-- Add DB schema migrations.
-- Add `DbAgentCenterRepository`.
-- Gate with `AGENT_CENTER_STATE_BACKEND=db`.
+- Add DB schema migrations. Completed as `067_agent_center_state.sql` in the backend migration tree.
+- Add `DbAgentCenterRepository`. Completed in merchant portal behind request-level hydrate/flush.
+- Gate with `AGENT_CENTER_STATE_BACKEND=db`. Completed.
 - Keep `memory` as default local/test backend.
 - Keep `file` available as fallback bridge.
 
@@ -570,14 +577,11 @@ AGENT_CENTER_STATE_BACKEND=db npm run test:agent-center
 Recommended next implementation tasks:
 
 1. Choose Postgres provider and provision staging/prod databases.
-2. Add DB dependency and connection helper.
-3. Add schema migration files for the tables above.
-4. Add `DbAgentCenterRepository`.
-5. Update backend config to support `memory | file | db`.
-6. Add repository contract test runner shared across memory, file, and DB backends.
-7. Add DB-specific tests for usage idempotency constraints.
-8. Add export/import script from file-backed JSON to DB.
-9. Enable DB backend in staging internal validation.
-10. Run production internal validation on DB before merchant pilot.
-
-No DB adapter is implemented in this milestone because the repo does not currently have a configured database client or database environment.
+2. Apply backend migration `067_agent_center_state.sql`.
+3. Create restricted runtime DB role scoped to `agent_center`.
+4. Configure merchant portal env with `AGENT_CENTER_STATE_BACKEND=db`.
+5. Add repository contract test runner shared across memory, file, and DB backends.
+6. Add DB-specific tests for usage idempotency constraints against a real test database.
+7. Add export/import script from file-backed JSON to DB.
+8. Enable DB backend in staging internal validation.
+9. Run production internal validation on DB before merchant pilot.
