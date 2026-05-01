@@ -34,6 +34,10 @@ import type {
   DemandVisibilityScore,
   EntityMappingFinding,
   FixTarget,
+  GMVAssuranceBlocker,
+  GMVAssuranceDimensionSummary,
+  GMVAssuranceSnapshot,
+  GMVAssuranceUsageSummary,
   InputReadinessSnapshot,
   LLMSurfaceResult,
   LLMSurfaceTestRun,
@@ -4735,6 +4739,79 @@ function payloadHasParam(payload: Record<string, unknown> | undefined, param?: s
   return value !== undefined && value !== null && value !== "";
 }
 
+function activeIssue(issue: AgenticGMVIssue) {
+  return !["resolved", "ignored"].includes(issue.status);
+}
+
+function latestByCreatedAt<T extends { created_at: string }>(items: T[]) {
+  return [...items].sort(
+    (left, right) =>
+      new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+  )[0];
+}
+
+function scoreStatus(score?: number | "not_tested", passAt = 80, blockBelow = 50) {
+  if (score === undefined || score === "not_tested") return "not_tested" as const;
+  if (score < blockBelow) return "blocked" as const;
+  return score >= passAt ? ("passed" as const) : ("needs_work" as const);
+}
+
+function actionableProductFindings(diagnosis?: ProductUnderstandingDiagnosis) {
+  if (!diagnosis) return [];
+  return [
+    ...diagnosis.merchant_layer_findings.flatMap((item) => item.findings || []),
+    ...diagnosis.pivota_layer_findings.flatMap((item) => item.findings || []),
+    ...diagnosis.entity_mapping_findings.filter((item) => item.finding_type !== "no_issue"),
+    ...diagnosis.query_mapping_findings.filter((item) => item.finding_type !== "no_issue"),
+    ...diagnosis.competitor_mapping_findings.filter(
+      (item) => item.finding_type !== "no_issue"
+    ),
+  ];
+}
+
+function actionableSkuFindings(diagnosis?: ProductUnderstandingDiagnosis) {
+  if (!diagnosis) return [];
+  return diagnosis.sku_variant_findings.filter(
+    (finding) => finding.finding_type !== "no_issue"
+  );
+}
+
+function actionableOfferFindings(diagnosis?: OfferExecutionDiagnosis) {
+  if (!diagnosis) return [];
+  return diagnosis.offer_layer_findings.flatMap((comparison) =>
+    comparison.findings.filter((finding) => finding.finding_type !== "clean_offer")
+  );
+}
+
+function actionableCheckoutFindings(diagnosis?: CheckoutVerificationDiagnosis) {
+  if (!diagnosis) return [];
+  return diagnosis.checkout_layer_findings.flatMap((comparison) =>
+    comparison.findings.filter(
+      (finding) => finding.finding_type !== "clean_checkout_path"
+    )
+  );
+}
+
+function usageSummaryForAssurance(events: UsageEvent[]): GMVAssuranceUsageSummary {
+  const byEvent = events.reduce<Record<string, number>>((acc, event) => {
+    acc[event.event_type] = (acc[event.event_type] || 0) + event.quantity;
+    return acc;
+  }, {});
+  const ai = byEvent.ai_test_credit || 0;
+  const product = byEvent.product_understanding_credit || 0;
+  const offer = byEvent.offer_verification_credit || 0;
+  const checkout = byEvent.checkout_verification_credit || 0;
+  return {
+    ai_test_credits: ai,
+    product_understanding_credits: product,
+    offer_verification_credits: offer,
+    checkout_verification_credits: checkout,
+    total_preview_credits: ai + product + offer + checkout,
+    billing_mode: "preview_only",
+    billing_status: "not_invoiced",
+  };
+}
+
 export class CheckoutVerificationService {
   latest(issueId: string) {
     return [...getAgentCenterState().checkoutVerificationDiagnoses]
@@ -5478,6 +5555,447 @@ export class CheckoutVerificationService {
   }
 }
 
+type CreateAssuranceSnapshotInput = {
+  merchant_id?: string;
+  store_id?: string;
+  scan_target_id?: string;
+  product_entity_id?: string;
+};
+
+function scoreFromDimension(summary: GMVAssuranceDimensionSummary) {
+  return typeof summary.score === "number" ? summary.score : undefined;
+}
+
+function issueForTypes(
+  issues: AgenticGMVIssue[],
+  types: AgenticGMVIssueType[]
+) {
+  return issues.find((issue) => types.includes(issue.issue_type));
+}
+
+export class GMVAssuranceService {
+  list(merchantId = DEMO_MERCHANT_ID) {
+    return getAgentCenterState().gmvAssuranceSnapshots.filter(
+      (snapshot) => snapshot.merchant_id === merchantId
+    );
+  }
+
+  get(snapshotId: string) {
+    const snapshot = getAgentCenterState().gmvAssuranceSnapshots.find(
+      (item) => item.id === snapshotId
+    );
+    if (!snapshot) throw new Error(`GMV assurance snapshot not found: ${snapshotId}`);
+    return snapshot;
+  }
+
+  latest(merchantId = DEMO_MERCHANT_ID) {
+    return latestByCreatedAt(this.list(merchantId)) || null;
+  }
+
+  overview(merchantId = DEMO_MERCHANT_ID) {
+    const latest = this.latest(merchantId);
+    return {
+      latest_snapshot: latest,
+      snapshots: this.list(merchantId).slice(-10).reverse(),
+    };
+  }
+
+  createSnapshot(input: CreateAssuranceSnapshotInput = {}) {
+    const state = getAgentCenterState();
+    const merchantId = getMerchantId(input.merchant_id);
+    const target =
+      input.scan_target_id
+        ? findScanTarget(input.scan_target_id)
+        : latestByCreatedAt(
+            state.scanTargets.filter(
+              (item) =>
+                item.merchant_id === merchantId &&
+                (!input.store_id || item.store_id === input.store_id)
+            )
+          );
+    if (!target) throw new Error("No scan target found for GMV assurance snapshot");
+    const store = findStore(target.store_id);
+    const productEntityId =
+      input.product_entity_id ||
+      latestByCreatedAt(
+        state.scores.filter((score) => score.scan_target_id === target.id)
+      )?.product_entity_id ||
+      store.products?.find((product) =>
+        target.selected_product_ids.includes(product.id)
+      )?.product_entity_id;
+
+    const scores = state.scores.filter(
+      (score) =>
+        score.scan_target_id === target.id &&
+        (!productEntityId || score.product_entity_id === productEntityId)
+    );
+    const latestScore = latestByCreatedAt(scores);
+    const issues = state.issues.filter(
+      (issue) =>
+        issue.merchant_id === merchantId &&
+        issue.store_id === target.store_id &&
+        issue.scan_target_id === target.id &&
+        (!productEntityId ||
+          issue.affected_product_entities.includes(productEntityId)) &&
+        activeIssue(issue)
+    );
+    const issueIds = issues.map((issue) => issue.id);
+    const productDiagnosis = latestByCreatedAt(
+      state.productUnderstandingDiagnoses.filter((diagnosis) =>
+        issueIds.includes(diagnosis.issue_id)
+      )
+    );
+    const offerDiagnosis = latestByCreatedAt(
+      state.offerExecutionDiagnoses.filter((diagnosis) =>
+        issueIds.includes(diagnosis.issue_id)
+      )
+    );
+    const checkoutDiagnosis = latestByCreatedAt(
+      state.checkoutVerificationDiagnoses.filter((diagnosis) =>
+        issueIds.includes(diagnosis.issue_id)
+      )
+    );
+
+    const productVisibilityScore =
+      latestScore?.aggregate_scores.product_entity_visibility_score;
+    const merchantAttributionScore =
+      latestScore?.aggregate_scores.merchant_store_visibility_score;
+    const pivotaAttributionScore =
+      latestScore?.aggregate_scores.pivota_pdp_visibility_score;
+    const productVisibilityIssue = issueForTypes(issues, [
+      "ai_visibility_loss",
+      "competitor_substitution",
+    ]);
+    const productVisibilityStatus: GMVAssuranceDimensionSummary = {
+      status: scoreStatus(productVisibilityScore, 80, 50),
+      score: productVisibilityScore ?? "not_tested",
+      issue_id: productVisibilityIssue?.id,
+      recommended_next_action:
+        productVisibilityScore === undefined
+          ? "Run an Open Product Visibility Test."
+          : productVisibilityScore < 50
+            ? "Improve product discoverability and rerun Demand Test."
+            : "Monitor product/entity visibility.",
+      evidence:
+        productVisibilityScore === undefined
+          ? "No Demand Test score is available for this scan target."
+          : `Product entity visibility score is ${productVisibilityScore}.`,
+    };
+
+    const merchantRequired = [
+      "merchant_store_attribution_test",
+      "agentic_execution_test",
+      "checkout_aware_gmv_scan",
+    ].includes(target.scan_mode);
+    const merchantAttributionIssue = issueForTypes(issues, [
+      "merchant_store_attribution_gap",
+    ]);
+    const merchantAttributionStatus: GMVAssuranceDimensionSummary = merchantRequired
+      ? {
+          status: scoreStatus(merchantAttributionScore, 80, -1),
+          score: merchantAttributionScore ?? "not_tested",
+          issue_id: merchantAttributionIssue?.id,
+          recommended_next_action:
+            (merchantAttributionScore || 0) > 0
+              ? "Monitor merchant store attribution."
+              : "Run or fix Merchant Store Attribution Test evidence.",
+          evidence:
+            merchantAttributionScore === undefined
+              ? "Merchant attribution has not been scored."
+              : `Merchant store attribution score is ${merchantAttributionScore}.`,
+        }
+      : {
+          status: "not_tested",
+          score: "not_tested",
+          recommended_next_action:
+            "Run Merchant Store Attribution Test when merchant buying-path proof is required.",
+          evidence: `${target.scan_mode} does not prove merchant store attribution.`,
+        };
+
+    const pivotaRequired = [
+      "pivota_pdp_attribution_test",
+      "agentic_execution_test",
+      "checkout_aware_gmv_scan",
+    ].includes(target.scan_mode);
+    const pivotaAttributionIssue = issueForTypes(issues, [
+      "pivota_pdp_attribution_gap",
+      "pivota_offer_attribution_gap",
+      "unverified_pivota_attribution",
+    ]);
+    const pivotaAttributionStatus: GMVAssuranceDimensionSummary = pivotaRequired
+      ? {
+          status: scoreStatus(pivotaAttributionScore, 80, -1),
+          score: pivotaAttributionScore ?? "not_tested",
+          issue_id: pivotaAttributionIssue?.id,
+          recommended_next_action:
+            (pivotaAttributionScore || 0) > 0
+              ? "Monitor verified Pivota channel attribution."
+              : "Publish or verify Pivota PDP / product object attribution.",
+          evidence:
+            pivotaAttributionScore === undefined
+              ? "Pivota attribution has not been scored."
+              : `Verified Pivota PDP attribution score is ${pivotaAttributionScore}.`,
+        }
+      : {
+          status: "not_tested",
+          score: "not_tested",
+          recommended_next_action:
+            "Run Pivota PDP Attribution Test when Pivota channel proof is required.",
+          evidence: `${target.scan_mode} does not prove Pivota channel attribution.`,
+        };
+
+    const productFindings = actionableProductFindings(productDiagnosis);
+    const skuFindings = actionableSkuFindings(productDiagnosis);
+    const productDataStatus: GMVAssuranceDimensionSummary = productDiagnosis
+      ? {
+          status: productFindings.length ? "needs_work" : "passed",
+          score: productFindings.length ? 70 : 100,
+          diagnosis_id: productDiagnosis.id,
+          issue_id: productDiagnosis.issue_id,
+          recommended_next_action: productFindings.length
+            ? "Apply Product Understanding patches."
+            : "Product data is ready; monitor for new query clusters.",
+          evidence: productFindings.length
+            ? `${productFindings.length} product data finding(s) require attention.`
+            : "No merchant/Pivota product data findings were detected.",
+        }
+      : {
+          status: "not_tested",
+          score: "not_tested",
+          recommended_next_action: "Run Product Diagnosis.",
+          evidence: "No Product Understanding diagnosis has been run.",
+        };
+
+    const skuStatus: GMVAssuranceDimensionSummary = productDiagnosis
+      ? {
+          status: skuFindings.length ? "needs_work" : "passed",
+          score: skuFindings.length ? 65 : 100,
+          diagnosis_id: productDiagnosis.id,
+          issue_id: productDiagnosis.issue_id,
+          recommended_next_action: skuFindings.length
+            ? "Clarify SKU / variant mapping."
+            : "SKU / variant mapping is ready.",
+          evidence: skuFindings.length
+            ? `${skuFindings.length} SKU / variant finding(s) require attention.`
+            : "No SKU / variant finding was detected.",
+        }
+      : {
+          status: "not_tested",
+          score: "not_tested",
+          recommended_next_action: "Run Product Diagnosis.",
+          evidence: "No Product Understanding diagnosis has been run.",
+        };
+
+    const offerFindings = actionableOfferFindings(offerDiagnosis);
+    const offerStatus: GMVAssuranceDimensionSummary = offerDiagnosis
+      ? {
+          status: offerFindings.length ? "needs_work" : "passed",
+          score: offerDiagnosis.offer_readiness_score,
+          diagnosis_id: offerDiagnosis.id,
+          issue_id: offerDiagnosis.issue_id,
+          recommended_next_action: offerFindings.length
+            ? "Apply Offer Execution patches and rerun offer diagnosis."
+            : "Offer readiness is ready.",
+          evidence: offerFindings.length
+            ? `${offerFindings.length} offer readiness finding(s) require attention.`
+            : "Offer source and Pivota offer state are consistent.",
+        }
+      : {
+          status: "not_tested",
+          score: "not_tested",
+          recommended_next_action: "Run Offer Diagnosis.",
+          evidence: "No Offer Execution diagnosis has been run.",
+        };
+
+    const checkoutFindings = actionableCheckoutFindings(checkoutDiagnosis);
+    const checkoutStatus: GMVAssuranceDimensionSummary = checkoutDiagnosis
+      ? {
+          status: checkoutFindings.length ? "needs_work" : "passed",
+          score: checkoutDiagnosis.checkout_readiness_score,
+          diagnosis_id: checkoutDiagnosis.id,
+          issue_id: checkoutDiagnosis.issue_id,
+          recommended_next_action: checkoutFindings.length
+            ? "Apply Checkout Verification patches and rerun checkout diagnosis."
+            : "Checkout readiness is ready for pre-payment handoff.",
+          evidence: checkoutFindings.length
+            ? `${checkoutFindings.length} checkout readiness finding(s) require attention.`
+            : "Checkout path preflight and handoff metadata are ready.",
+        }
+      : {
+          status: "not_tested",
+          score: "not_tested",
+          recommended_next_action: "Run Checkout Diagnosis.",
+          evidence: "No Checkout Verification diagnosis has been run.",
+        };
+
+    const topBlockers: GMVAssuranceBlocker[] = [];
+    if (productVisibilityStatus.status === "blocked") {
+      topBlockers.push({
+        blocker_type: "low_product_visibility",
+        severity: "critical",
+        affected_layer: "demand_test",
+        fix_target: productVisibilityIssue?.fix_targets[0],
+        issue_id: productVisibilityIssue?.id,
+        recommended_action: "Improve product visibility and rerun Demand Test.",
+      });
+    }
+    if (merchantRequired && merchantAttributionStatus.status !== "passed") {
+      topBlockers.push({
+        blocker_type: "merchant_store_attribution_gap",
+        severity: "high",
+        affected_layer: "merchant_attribution",
+        fix_target: "merchant_pdp",
+        issue_id: merchantAttributionIssue?.id,
+        recommended_action: "Return a verified merchant store/PDP buying path.",
+      });
+    }
+    if (pivotaRequired && pivotaAttributionStatus.status !== "passed") {
+      topBlockers.push({
+        blocker_type: "pivota_attribution_gap",
+        severity: "high",
+        affected_layer: "pivota_channel",
+        fix_target: "pivota_unified_pdp",
+        issue_id: pivotaAttributionIssue?.id,
+        recommended_action: "Publish or verify Pivota PDP / offer attribution.",
+      });
+    }
+    for (const finding of productFindings.slice(0, 1)) {
+      topBlockers.push({
+        blocker_type:
+          "attribute" in finding
+            ? `missing_${finding.attribute}`
+            : finding.finding_type,
+        severity: "severity" in finding ? finding.severity : "medium",
+        affected_layer: "product_understanding",
+        fix_target: finding.fix_target,
+        issue_id: productDiagnosis?.issue_id,
+        diagnosis_id: productDiagnosis?.id,
+        recommended_action: productDataStatus.recommended_next_action,
+      });
+    }
+    for (const finding of offerFindings.filter((item) => item.severity === "high" || item.severity === "critical").slice(0, 2)) {
+      topBlockers.push({
+        blocker_type: finding.finding_type,
+        severity: finding.severity,
+        affected_layer: "offer_execution",
+        fix_target: finding.fix_target,
+        issue_id: offerDiagnosis?.issue_id,
+        diagnosis_id: offerDiagnosis?.id,
+        recommended_action: offerStatus.recommended_next_action,
+      });
+    }
+    for (const finding of checkoutFindings.filter((item) => item.severity === "high" || item.severity === "critical").slice(0, 2)) {
+      topBlockers.push({
+        blocker_type: finding.finding_type,
+        severity: finding.severity,
+        affected_layer: "checkout_verification",
+        fix_target: finding.fix_target,
+        issue_id: checkoutDiagnosis?.issue_id,
+        diagnosis_id: checkoutDiagnosis?.id,
+        recommended_action: checkoutStatus.recommended_next_action,
+      });
+    }
+
+    const dimensions = [
+      productVisibilityStatus,
+      merchantAttributionStatus,
+      pivotaAttributionStatus,
+      productDataStatus,
+      skuStatus,
+      offerStatus,
+      checkoutStatus,
+    ];
+    let readinessLevel: GMVAssuranceSnapshot["readiness_level"] = "monitoring";
+    if (productVisibilityStatus.status === "blocked") {
+      readinessLevel = "blocked";
+    } else if (
+      topBlockers.length ||
+      dimensions.some((dimension) => dimension.status === "needs_work")
+    ) {
+      readinessLevel = "needs_work";
+    } else if (dimensions.every((dimension) => dimension.status === "passed")) {
+      readinessLevel = "ready_for_agentic_checkout";
+    }
+
+    const numericScores = dimensions
+      .map(scoreFromDimension)
+      .filter((score): score is number => score !== undefined);
+    const averageScore = numericScores.length
+      ? Math.round(numericScores.reduce((sum, score) => sum + score, 0) / numericScores.length)
+      : 0;
+    const cap =
+      readinessLevel === "blocked"
+        ? 35
+        : readinessLevel === "needs_work"
+          ? 79
+          : readinessLevel === "monitoring"
+            ? 89
+            : 100;
+    const overallScore =
+      readinessLevel === "ready_for_agentic_checkout"
+        ? Math.max(90, averageScore)
+        : Math.min(cap, averageScore);
+
+    const recommendedNextActions = unique(
+      [
+        ...topBlockers.map((blocker) => blocker.recommended_action),
+        ...dimensions
+          .filter((dimension) => dimension.status === "not_tested")
+          .map((dimension) => dimension.recommended_next_action),
+        readinessLevel === "ready_for_agentic_checkout" ? "Monitor only." : "",
+      ].filter(Boolean)
+    );
+
+    const usageEvents = state.usageEvents.filter(
+      (event) =>
+        event.merchant_id === merchantId &&
+        event.store_id === target.store_id &&
+        (event.scan_target_id === target.id ||
+          issueIds.some((issueId) => event.idempotency_key.includes(issueId)))
+    );
+    const now = nowIso();
+    const snapshot: GMVAssuranceSnapshot = {
+      id: nextId("gmv_assurance"),
+      merchant_id: merchantId,
+      store_id: target.store_id,
+      scan_target_id: target.id,
+      product_entity_id: productEntityId,
+      issue_ids: issueIds,
+      demand_test_summary: {
+        scan_mode: target.scan_mode,
+        product_visibility_status: productVisibilityStatus,
+        merchant_attribution_status: merchantAttributionStatus,
+        pivota_attribution_status: pivotaAttributionStatus,
+        latest_score_id: latestScore?.id,
+      },
+      product_understanding_summary: {
+        product_data_readiness_status: productDataStatus,
+        sku_variant_readiness_status: skuStatus,
+        latest_diagnosis_id: productDiagnosis?.id,
+      },
+      offer_execution_summary: {
+        offer_readiness_status: offerStatus,
+        latest_diagnosis_id: offerDiagnosis?.id,
+      },
+      checkout_verification_summary: {
+        checkout_readiness_status: checkoutStatus,
+        latest_diagnosis_id: checkoutDiagnosis?.id,
+      },
+      overall_readiness_score: overallScore,
+      readiness_level: readinessLevel,
+      top_blockers: topBlockers,
+      recommended_next_actions: recommendedNextActions.length
+        ? recommendedNextActions
+        : ["Monitor only."],
+      usage_summary: usageSummaryForAssurance(usageEvents),
+      created_at: now,
+      updated_at: now,
+    };
+    state.gmvAssuranceSnapshots.push(snapshot);
+    return snapshot;
+  }
+}
+
 function demoFixtureMetadata(input: {
   fixtureId: string;
   createdAt: string;
@@ -5528,6 +6046,12 @@ function isCheckoutFixturePreset(preset: DemoFixturePreset) {
     "checkout_domain_mismatch",
     "checkout_not_attached_to_offer",
   ].includes(preset);
+}
+
+function isAssuranceChainFixturePreset(preset: DemoFixturePreset) {
+  return ["full_ready_pre_payment_chain", "offer_price_blocker_chain"].includes(
+    preset
+  );
 }
 
 function hasFixtureId(record: unknown, fixtureId: string) {
@@ -5664,6 +6188,76 @@ function offerIssueForFixture(input: {
   return issue;
 }
 
+function assuranceFixtureScore(input: {
+  metadata: Required<DemoFixtureMetadata>;
+  target: ScanTarget;
+  cluster: QueryCluster;
+  product: ProductRecord;
+}) {
+  const aggregate: DemandVisibilityScore["aggregate_scores"] = {
+    product_entity_visibility_score: 100,
+    merchant_store_visibility_score: 100,
+    pivota_pdp_visibility_score: 100,
+    pivota_offer_visibility_score: 100,
+    pivota_attribution_echo_rate: 0,
+    executable_offer_visibility_score: "not_tested",
+    visibility_score: 100,
+    recommendation_rank_score: 100,
+    competitor_substitution_score: 0,
+    attribute_readiness_score: 100,
+    pivota_pdp_readiness_score: 100,
+  };
+  const explanation = (
+    key: keyof DemandVisibilityScore["aggregate_scores"]
+  ) => ({
+    score: aggregate[key],
+    formula:
+      key === "executable_offer_visibility_score"
+        ? "not_tested in V1 assurance fixture"
+        : "controlled internal fixture score",
+    explanation:
+      key === "executable_offer_visibility_score"
+        ? "Offer execution and checkout readiness are verified by deterministic downstream agents, not Demand Test executable-offer scoring."
+        : "Controlled internal fixture marks this dimension as passing for the full pre-payment chain.",
+    supporting_runs: [],
+  });
+  const score: DemandVisibilityScore = {
+    ...input.metadata,
+    id: nextId("score"),
+    merchant_id: input.target.merchant_id,
+    store_id: input.target.store_id,
+    scan_target_id: input.target.id,
+    query_cluster_id: input.cluster.id,
+    product_entity_id: input.product.product_entity_id,
+    provider_scores: {
+      internal: {
+        ...aggregate,
+        executable_offer_visibility_score: "not_tested",
+      },
+    },
+    aggregate_scores: aggregate,
+    score_explanations: {
+      product_entity_visibility_score: explanation("product_entity_visibility_score"),
+      merchant_store_visibility_score: explanation("merchant_store_visibility_score"),
+      pivota_pdp_visibility_score: explanation("pivota_pdp_visibility_score"),
+      pivota_offer_visibility_score: explanation("pivota_offer_visibility_score"),
+      pivota_attribution_echo_rate: explanation("pivota_attribution_echo_rate"),
+      executable_offer_visibility_score: explanation(
+        "executable_offer_visibility_score"
+      ),
+      visibility_score: explanation("visibility_score"),
+      recommendation_rank_score: explanation("recommendation_rank_score"),
+      competitor_substitution_score: explanation("competitor_substitution_score"),
+      attribute_readiness_score: explanation("attribute_readiness_score"),
+      pivota_pdp_readiness_score: explanation("pivota_pdp_readiness_score"),
+    },
+    created_at: input.metadata.created_at,
+    updated_at: input.metadata.created_at,
+  };
+  getAgentCenterState().scores.push(score);
+  return score;
+}
+
 export class DemoFixtureService {
   create(input?: {
     preset?: DemoFixturePreset;
@@ -5685,7 +6279,8 @@ export class DemoFixtureService {
       ttlMinutes,
       environment,
     });
-    const checkoutPreset = isCheckoutFixturePreset(preset);
+    const assuranceChainPreset = isAssuranceChainFixturePreset(preset);
+    const checkoutPreset = isCheckoutFixturePreset(preset) || assuranceChainPreset;
     const product = offerSmokeFixtureProduct(metadata);
 
     const store = new MerchantStoreService().create(
@@ -5727,7 +6322,9 @@ export class DemoFixtureService {
       merchant_id: DEMO_MERCHANT_ID,
       store_id: store.id,
       selected_product_ids: [product.id],
-      scan_mode: "pivota_pdp_attribution_test",
+      scan_mode: assuranceChainPreset
+        ? "agentic_execution_test"
+        : "pivota_pdp_attribution_test",
     });
     Object.assign(target, metadata);
 
@@ -5787,14 +6384,20 @@ export class DemoFixtureService {
         merchant_id: store.merchant_id,
         store_id: store.id,
         sku_id: product.sku,
-        price: preset === "price_mismatch" ? 21.99 : 18.99,
+        price:
+          preset === "price_mismatch" || preset === "offer_price_blocker_chain"
+            ? 21.99
+            : 18.99,
         currency: "USD",
         promo_price: preset === "expired_coupon" ? 16.99 : null,
         coupon_code: preset === "expired_coupon" ? "SUN10" : null,
         coupon_status: preset === "expired_coupon" ? "active" : "none",
         inventory_status:
           preset === "inventory_mismatch" ? "in_stock" : merchantOffer.inventory_status,
-        execution_status: preset === "clean_offer" ? "ready" : "needs_sync",
+        execution_status:
+          preset === "clean_offer" || preset === "full_ready_pre_payment_chain"
+            ? "ready"
+            : "needs_sync",
         attached_to_pivota_pdp: true,
         last_verified_at: createdAt,
         created_at: createdAt,
@@ -5869,7 +6472,11 @@ export class DemoFixtureService {
         quantity: 1,
         variant_id: preset === "missing_variant_param" ? null : product.sku,
         execution_status:
-          preset === "clean_checkout_path" ? "ready" : "needs_sync",
+          preset === "clean_checkout_path" ||
+          preset === "full_ready_pre_payment_chain" ||
+          preset === "offer_price_blocker_chain"
+            ? "ready"
+            : "needs_sync",
         attached_to_pivota_offer: preset !== "checkout_not_attached_to_offer",
         last_verified_at: createdAt,
         created_at: createdAt,
@@ -5887,6 +6494,27 @@ export class DemoFixtureService {
       preset,
     });
     state.issues.push(issue);
+
+    const assuranceScore = assuranceChainPreset
+      ? assuranceFixtureScore({ metadata, target, cluster, product })
+      : null;
+    const productDiagnosis = assuranceChainPreset
+      ? new ProductUnderstandingService().runDiagnosis(issue.id)
+      : null;
+    const offerDiagnosis = assuranceChainPreset
+      ? new OfferExecutionService().runDiagnosis(issue.id)
+      : null;
+    const checkoutDiagnosis = assuranceChainPreset
+      ? new CheckoutVerificationService().runDiagnosis(issue.id)
+      : null;
+    const assuranceSnapshot = assuranceChainPreset
+      ? new GMVAssuranceService().createSnapshot({
+          merchant_id: store.merchant_id,
+          store_id: store.id,
+          scan_target_id: target.id,
+          product_entity_id: product.product_entity_id,
+        })
+      : null;
 
     const records: DemoFixture["records"] = [
       fixtureRecord("merchant_store", store.id),
@@ -5938,6 +6566,11 @@ export class DemoFixtureService {
       pivota_offer: pivotaOffer,
       merchant_checkout_path: merchantCheckoutPath,
       pivota_checkout_path: pivotaCheckoutPath,
+      demand_visibility_score: assuranceScore,
+      product_understanding_diagnosis: productDiagnosis,
+      offer_execution_diagnosis: offerDiagnosis,
+      checkout_verification_diagnosis: checkoutDiagnosis,
+      gmv_assurance_snapshot: assuranceSnapshot,
       issue,
     };
   }
@@ -5990,6 +6623,13 @@ export class DemoFixtureService {
       ),
       checkout_diagnoses: state.checkoutVerificationDiagnoses.filter((item) =>
         this.fixtureIssueIds(fixtureId).includes(item.issue_id)
+      ),
+      gmv_assurance_snapshots: state.gmvAssuranceSnapshots.filter(
+        (item) =>
+          item.issue_ids.some((issueId) => this.fixtureIssueIds(fixtureId).includes(issueId)) ||
+          state.scanTargets
+            .filter((target) => hasFixtureId(target, fixtureId))
+            .some((target) => target.id === item.scan_target_id)
       ),
       usage_events: state.usageEvents.filter((item) =>
         this.fixtureUsageEvent(item, fixtureId)
@@ -6060,6 +6700,11 @@ export class DemoFixtureService {
     );
     state.checkoutVerificationDiagnoses = state.checkoutVerificationDiagnoses.filter(
       (item) => !issueIds.includes(item.issue_id)
+    );
+    state.gmvAssuranceSnapshots = state.gmvAssuranceSnapshots.filter(
+      (item) =>
+        !item.issue_ids.some((issueId) => issueIds.includes(issueId)) &&
+        !targetIds.includes(item.scan_target_id)
     );
     state.productUnderstandingDiagnoses = state.productUnderstandingDiagnoses.filter(
       (item) => !issueIds.includes(item.issue_id)
@@ -6433,10 +7078,12 @@ export function getAgentCenterOverview(merchantId = DEMO_MERCHANT_ID) {
       !["resolved", "ignored"].includes(issue.status)
   );
   const usage = getUsageSummary(merchantId);
+  const latestAssuranceSnapshot = new GMVAssuranceService().latest(merchantId);
 
   return {
     latest_job: latestJob,
     latest_result: latestResults,
+    latest_assurance_snapshot: latestAssuranceSnapshot,
     ai_visibility_score:
       latestResults?.aggregate_scores.product_entity_visibility_score || 0,
     product_entity_visibility_score:

@@ -28,6 +28,7 @@ const {
   DemoFixtureService,
   DemandTestJobService,
   FixTargetRouter,
+  GMVAssuranceService,
   getIssueDebugView,
   InputReadinessService,
   IssueEngine,
@@ -3004,6 +3005,220 @@ test("internal demo fixture cleanup removes checkout fixture records", async () 
   });
 });
 
+test("GMV assurance snapshot creation aggregates demand and agent readiness", () => {
+  resetAgentCenterState();
+  const fixture = new DemoFixtureService().create({
+    preset: "full_ready_pre_payment_chain",
+    environment: "test",
+  });
+
+  const snapshot = new GMVAssuranceService().createSnapshot({
+    scan_target_id: fixture.scan_target.id,
+    product_entity_id: fixture.product.product_entity_id,
+  });
+
+  assert.equal(snapshot.scan_target_id, fixture.scan_target.id);
+  assert.equal(
+    snapshot.demand_test_summary.product_visibility_status.status,
+    "passed"
+  );
+  assert.equal(
+    snapshot.product_understanding_summary.product_data_readiness_status.status,
+    "passed"
+  );
+  assert.equal(
+    snapshot.offer_execution_summary.offer_readiness_status.status,
+    "passed"
+  );
+  assert.equal(
+    snapshot.checkout_verification_summary.checkout_readiness_status.status,
+    "passed"
+  );
+});
+
+test("GMV assurance blocker logic blocks low product visibility", () => {
+  const result = runControlledSunscreenCase({
+    attributes: {},
+    pivotaAttributes: {},
+    outputs: [competitorOnlyRecommendation(), competitorOnlyRecommendation()],
+  });
+  result.score.aggregate_scores.product_entity_visibility_score = 0;
+  result.score.aggregate_scores.visibility_score = 0;
+
+  const snapshot = new GMVAssuranceService().createSnapshot({
+    scan_target_id: result.target.id,
+    product_entity_id: result.product.product_entity_id,
+  });
+
+  assert.equal(snapshot.readiness_level, "blocked");
+  assert.equal(
+    snapshot.demand_test_summary.product_visibility_status.status,
+    "blocked"
+  );
+  assert.equal(snapshot.top_blockers[0].blocker_type, "low_product_visibility");
+});
+
+test("GMV assurance marks untested dimensions as not_tested instead of failed", () => {
+  const result = runIsntreeProductUnderstandingCase({
+    merchantAttributes: isntreeStrongMerchantAttributes,
+    pivotaAttributes: isntreeStrongMerchantAttributes,
+    issueType: "pivota_pdp_readiness_gap",
+  });
+
+  const snapshot = new GMVAssuranceService().createSnapshot({
+    scan_target_id: result.target.id,
+    product_entity_id: result.product.product_entity_id,
+  });
+
+  assert.equal(snapshot.readiness_level, "monitoring");
+  assert.equal(
+    snapshot.demand_test_summary.merchant_attribution_status.status,
+    "not_tested"
+  );
+  assert.equal(
+    snapshot.offer_execution_summary.offer_readiness_status.status,
+    "not_tested"
+  );
+  assert.equal(
+    snapshot.checkout_verification_summary.checkout_readiness_status.status,
+    "not_tested"
+  );
+});
+
+test("full ready pre-payment chain fixture produces ready assurance snapshot", () => {
+  resetAgentCenterState();
+  const fixture = new DemoFixtureService().create({
+    preset: "full_ready_pre_payment_chain",
+    environment: "test",
+  });
+  const snapshot = fixture.gmv_assurance_snapshot;
+
+  assert.equal(snapshot.readiness_level, "ready_for_agentic_checkout");
+  assert.equal(snapshot.overall_readiness_score, 100);
+  assert.equal(snapshot.top_blockers.length, 0);
+  assert.equal(
+    snapshot.demand_test_summary.product_visibility_status.status,
+    "passed"
+  );
+  assert.equal(
+    snapshot.demand_test_summary.merchant_attribution_status.status,
+    "passed"
+  );
+  assert.equal(
+    snapshot.demand_test_summary.pivota_attribution_status.status,
+    "passed"
+  );
+  assert.equal(
+    snapshot.checkout_verification_summary.checkout_readiness_status.status,
+    "passed"
+  );
+});
+
+test("offer price blocker chain fixture surfaces price mismatch as top blocker", () => {
+  resetAgentCenterState();
+  const fixture = new DemoFixtureService().create({
+    preset: "offer_price_blocker_chain",
+    environment: "test",
+  });
+  const snapshot = fixture.gmv_assurance_snapshot;
+
+  assert.equal(snapshot.readiness_level, "needs_work");
+  assert.equal(
+    snapshot.offer_execution_summary.offer_readiness_status.status,
+    "needs_work"
+  );
+  assert.equal(snapshot.top_blockers[0].blocker_type, "price_mismatch");
+  assert.ok(
+    snapshot.offer_execution_summary.offer_readiness_status.recommended_next_action.includes(
+      "Offer Execution"
+    )
+  );
+});
+
+test("GMV assurance checkout blocker chain surfaces checkout finding", () => {
+  const fixture = createCheckoutVerificationFixture({
+    pivotaCheckoutPatch: {
+      checkout_url: "https://checkout.isntree.example/unreachable/session",
+    },
+  });
+  new ProductUnderstandingService().runDiagnosis(fixture.issue.id);
+  new OfferExecutionService().runDiagnosis(fixture.issue.id);
+  new CheckoutVerificationService().runDiagnosis(fixture.issue.id);
+
+  const snapshot = new GMVAssuranceService().createSnapshot({
+    scan_target_id: fixture.target.id,
+    product_entity_id: fixture.product.product_entity_id,
+  });
+
+  assert.equal(snapshot.readiness_level, "needs_work");
+  assert.equal(
+    snapshot.checkout_verification_summary.checkout_readiness_status.status,
+    "needs_work"
+  );
+  assert.ok(
+    snapshot.top_blockers.some(
+      (blocker) => blocker.blocker_type === "checkout_url_unreachable"
+    )
+  );
+});
+
+test("GMV assurance usage summary aggregates preview credit categories", () => {
+  const fixture = createCheckoutVerificationFixture();
+  new ProductUnderstandingService().runDiagnosis(fixture.issue.id);
+  new OfferExecutionService().runDiagnosis(fixture.issue.id);
+  new CheckoutVerificationService().runDiagnosis(fixture.issue.id);
+
+  const snapshot = new GMVAssuranceService().createSnapshot({
+    scan_target_id: fixture.target.id,
+    product_entity_id: fixture.product.product_entity_id,
+  });
+
+  assert.equal(snapshot.usage_summary.ai_test_credits, 3);
+  assert.equal(snapshot.usage_summary.product_understanding_credits, 1);
+  assert.equal(snapshot.usage_summary.offer_verification_credits, 1);
+  assert.equal(snapshot.usage_summary.checkout_verification_credits, 1);
+  assert.equal(snapshot.usage_summary.billing_mode, "preview_only");
+  assert.equal(snapshot.usage_summary.billing_status, "not_invoiced");
+});
+
+test("GMV assurance API creates and fetches snapshots", async () => {
+  const fixture = createCheckoutVerificationFixture();
+  new ProductUnderstandingService().runDiagnosis(fixture.issue.id);
+  new OfferExecutionService().runDiagnosis(fixture.issue.id);
+  new CheckoutVerificationService().runDiagnosis(fixture.issue.id);
+
+  const created = await handleAgentCenterRequest(
+    new NextRequest("https://example.test/api/agent-center/gmv-assurance/snapshots", {
+      method: "POST",
+      body: JSON.stringify({
+        scan_target_id: fixture.target.id,
+        product_entity_id: fixture.product.product_entity_id,
+      }),
+    }),
+    { path: ["gmv-assurance", "snapshots"] }
+  );
+  const createdPayload = await created.json();
+  const fetched = await handleAgentCenterRequest(
+    new NextRequest(
+      `https://example.test/api/agent-center/gmv-assurance/snapshots/${createdPayload.snapshot.id}`
+    ),
+    { path: ["gmv-assurance", "snapshots", createdPayload.snapshot.id] }
+  );
+  const overview = await handleAgentCenterRequest(
+    new NextRequest("https://example.test/api/agent-center/gmv-assurance/overview"),
+    { path: ["gmv-assurance", "overview"] }
+  );
+  const fetchedPayload = await fetched.json();
+  const overviewPayload = await overview.json();
+
+  assert.equal(created.status, 201);
+  assert.equal(fetchedPayload.snapshot.id, createdPayload.snapshot.id);
+  assert.equal(
+    overviewPayload.latest_snapshot.id,
+    createdPayload.snapshot.id
+  );
+});
+
 test("cleanupExpiredDemoFixtures expires stale internal fixtures", () => {
   resetAgentCenterState();
   const created = new DemoFixtureService().create({
@@ -3063,6 +3278,20 @@ test("Issue Detail renders Checkout Verification Diagnosis controls", async () =
   assert.match(source, /checkout-diagnosis/);
   assert.match(source, /regenerate-checkout-patch/);
   assert.match(source, /attach-checkout-diagnosis-to-retest/);
+});
+
+test("Agent Center overview renders GMV Assurance summary", async () => {
+  const source = await readFile(
+    new URL("../../app/agent-center/page.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(source, /Agentic GMV Assurance Summary/);
+  assert.match(source, /Readiness Dimensions/);
+  assert.match(source, /Top Blockers/);
+  assert.match(source, /Assurance Usage Preview/);
+  assert.match(source, /ready_for_agentic_checkout/);
+  assert.ok(source.includes("gmv-assurance/snapshots"));
 });
 
 test("issue debug view and retest preparation expose internal validation evidence", () => {

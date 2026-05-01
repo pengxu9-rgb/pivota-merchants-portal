@@ -5,6 +5,7 @@ import {
   DemoFixtureService,
   DemoScenarioService,
   DemandTestJobService,
+  GMVAssuranceService,
   getAgentCenterOverview,
   getIssueDebugView,
   getPublicState,
@@ -270,6 +271,28 @@ export async function handleAgentCenterRequest(
             (cluster) => !scanTargetId || cluster.scan_target_id === scanTargetId
           ),
         });
+      }
+    }
+
+    if (resource === "gmv-assurance") {
+      const service = new GMVAssuranceService();
+      if (id === "overview" && req.method === "GET") {
+        return json(service.overview(merchantId));
+      }
+      if (id === "snapshots" && req.method === "POST") {
+        const body = await requestBody(req);
+        return json(
+          {
+            snapshot: service.createSnapshot({
+              ...body,
+              merchant_id: body.merchant_id || merchantId,
+            }),
+          },
+          201
+        );
+      }
+      if (id === "snapshots" && action && req.method === "GET") {
+        return json({ snapshot: service.get(action) });
       }
     }
 

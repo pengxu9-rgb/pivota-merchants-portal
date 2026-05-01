@@ -150,7 +150,9 @@ export type DemoFixturePreset =
   | "missing_coupon_param"
   | "stale_checkout_session"
   | "checkout_domain_mismatch"
-  | "checkout_not_attached_to_offer";
+  | "checkout_not_attached_to_offer"
+  | "full_ready_pre_payment_chain"
+  | "offer_price_blocker_chain";
 
 export type DemoFixtureCleanupStatus = "active" | "deleted" | "expired";
 
@@ -994,6 +996,81 @@ export type CheckoutVerificationDiagnosis = Timestamped & {
   usage_event_ids: string[];
 };
 
+export type GMVAssuranceDimensionStatus =
+  | "passed"
+  | "needs_work"
+  | "blocked"
+  | "not_tested";
+
+export type GMVAssuranceReadinessLevel =
+  | "blocked"
+  | "needs_work"
+  | "ready_for_agentic_checkout"
+  | "monitoring";
+
+export type GMVAssuranceDimensionSummary = {
+  status: GMVAssuranceDimensionStatus;
+  score?: number | "not_tested";
+  issue_id?: string;
+  diagnosis_id?: string;
+  recommended_next_action: string;
+  evidence: string;
+};
+
+export type GMVAssuranceBlocker = {
+  blocker_type: string;
+  severity: Severity;
+  affected_layer: string;
+  fix_target?: FixTarget;
+  issue_id?: string;
+  diagnosis_id?: string;
+  recommended_action: string;
+};
+
+export type GMVAssuranceUsageSummary = {
+  ai_test_credits: number;
+  product_understanding_credits: number;
+  offer_verification_credits: number;
+  checkout_verification_credits: number;
+  total_preview_credits: number;
+  billing_mode: "preview_only";
+  billing_status: "not_invoiced";
+};
+
+export type GMVAssuranceSnapshot = Timestamped & {
+  id: string;
+  merchant_id: string;
+  store_id: string;
+  scan_target_id: string;
+  product_entity_id?: string;
+  issue_ids: string[];
+  demand_test_summary: {
+    scan_mode: ScanMode;
+    product_visibility_status: GMVAssuranceDimensionSummary;
+    merchant_attribution_status: GMVAssuranceDimensionSummary;
+    pivota_attribution_status: GMVAssuranceDimensionSummary;
+    latest_score_id?: string;
+  };
+  product_understanding_summary: {
+    product_data_readiness_status: GMVAssuranceDimensionSummary;
+    sku_variant_readiness_status: GMVAssuranceDimensionSummary;
+    latest_diagnosis_id?: string;
+  };
+  offer_execution_summary: {
+    offer_readiness_status: GMVAssuranceDimensionSummary;
+    latest_diagnosis_id?: string;
+  };
+  checkout_verification_summary: {
+    checkout_readiness_status: GMVAssuranceDimensionSummary;
+    latest_diagnosis_id?: string;
+  };
+  overall_readiness_score: number;
+  readiness_level: GMVAssuranceReadinessLevel;
+  top_blockers: GMVAssuranceBlocker[];
+  recommended_next_actions: string[];
+  usage_summary: GMVAssuranceUsageSummary;
+};
+
 export type RetestPreparation = Timestamped & {
   id: string;
   merchant_id: string;
@@ -1155,6 +1232,7 @@ export type AgentCenterState = {
   productUnderstandingDiagnoses: ProductUnderstandingDiagnosis[];
   offerExecutionDiagnoses: OfferExecutionDiagnosis[];
   checkoutVerificationDiagnoses: CheckoutVerificationDiagnosis[];
+  gmvAssuranceSnapshots: GMVAssuranceSnapshot[];
   demoFixtures: DemoFixture[];
   usageEvents: UsageEvent[];
   usagePlan: {

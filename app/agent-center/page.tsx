@@ -14,11 +14,13 @@ import {
 import {
   MerchantLinkButton,
   PageHeader,
+  StatusBadge,
   SurfaceCard,
 } from "@/components/ui/merchant-primitives";
 import {
   agentFetch,
   EmptyAgentState,
+  FixTargetBadge,
   MetricTile,
   ScoreBar,
 } from "@/components/agent-center/agent-center-ui";
@@ -26,6 +28,7 @@ import {
 type OverviewPayload = {
   latest_job: any | null;
   latest_result: any | null;
+  latest_assurance_snapshot: any | null;
   ai_visibility_score: number;
   product_entity_visibility_score: number;
   merchant_store_visibility_score: number;
@@ -43,15 +46,78 @@ type OverviewPayload = {
   };
 };
 
+const dimensionLabels: Record<string, string> = {
+  product_visibility_status: "Product Visibility",
+  merchant_attribution_status: "Merchant Store Attribution",
+  pivota_attribution_status: "Pivota Channel Attribution",
+  product_data_readiness_status: "Product Data Readiness",
+  sku_variant_readiness_status: "SKU / Variant Readiness",
+  offer_readiness_status: "Offer Readiness",
+  checkout_readiness_status: "Checkout Readiness",
+};
+
+function label(value: string) {
+  return value.replace(/_/g, " ");
+}
+
+function badgeTone(status: string) {
+  if (status === "passed" || status === "ready_for_agentic_checkout") return "success";
+  if (status === "blocked") return "critical";
+  if (status === "needs_work") return "warning";
+  return "neutral";
+}
+
+function readinessDimensions(snapshot: any) {
+  if (!snapshot) return [];
+  return [
+    ["product_visibility_status", snapshot.demand_test_summary?.product_visibility_status],
+    ["merchant_attribution_status", snapshot.demand_test_summary?.merchant_attribution_status],
+    ["pivota_attribution_status", snapshot.demand_test_summary?.pivota_attribution_status],
+    [
+      "product_data_readiness_status",
+      snapshot.product_understanding_summary?.product_data_readiness_status,
+    ],
+    [
+      "sku_variant_readiness_status",
+      snapshot.product_understanding_summary?.sku_variant_readiness_status,
+    ],
+    ["offer_readiness_status", snapshot.offer_execution_summary?.offer_readiness_status],
+    [
+      "checkout_readiness_status",
+      snapshot.checkout_verification_summary?.checkout_readiness_status,
+    ],
+  ].filter(([, value]) => Boolean(value));
+}
+
 export default function AgentCenterPage() {
   const [overview, setOverview] = useState<OverviewPayload | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    void agentFetch<OverviewPayload>("/api/agent-center/overview")
-      .then(setOverview)
+    async function loadOverview() {
+      const payload = await agentFetch<OverviewPayload>("/api/agent-center/overview");
+      if (!payload.latest_assurance_snapshot && payload.latest_job?.scan_target_id) {
+        const created = await agentFetch<{ snapshot: any }>(
+          "/api/agent-center/gmv-assurance/snapshots",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              scan_target_id: payload.latest_job.scan_target_id,
+            }),
+          }
+        );
+        payload.latest_assurance_snapshot = created.snapshot;
+      }
+      setOverview(payload);
+    }
+
+    void loadOverview()
       .finally(() => setLoading(false));
   }, []);
+
+  const snapshot = overview?.latest_assurance_snapshot;
+  const topBlocker = snapshot?.top_blockers?.[0];
+  const nextAction = snapshot?.recommended_next_actions?.[0];
 
   return (
     <main className="merchant-page space-y-6 py-6">
@@ -70,6 +136,41 @@ export default function AgentCenterPage() {
           </>
         }
       />
+
+      <SurfaceCard title="Agentic GMV Assurance Summary" strong>
+        <div className="grid gap-0 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricTile
+            label="Readiness level"
+            value={
+              loading
+                ? "..."
+                : snapshot?.readiness_level
+                  ? label(snapshot.readiness_level)
+                  : "not ready"
+            }
+            helper="Pre-payment assurance chain"
+            tone={badgeTone(snapshot?.readiness_level || "not_tested") as any}
+          />
+          <MetricTile
+            label="Readiness score"
+            value={loading ? "..." : `${snapshot?.overall_readiness_score || 0}%`}
+            helper="Blocker-capped, not a simple average"
+            tone={(snapshot?.overall_readiness_score || 0) >= 80 ? "success" : "warning"}
+          />
+          <MetricTile
+            label="Top blocker"
+            value={loading ? "..." : topBlocker ? label(topBlocker.blocker_type) : "none"}
+            helper={topBlocker?.affected_layer ? label(topBlocker.affected_layer) : "No active blocker"}
+            tone={topBlocker ? "critical" : "success"}
+          />
+          <MetricTile
+            label="Next best action"
+            value={loading ? "..." : nextAction || "Run Agent Scan"}
+            helper="Merchant-facing workflow step"
+            tone="brand"
+          />
+        </div>
+      </SurfaceCard>
 
       <SurfaceCard strong>
         <div className="grid sm:grid-cols-2 xl:grid-cols-5">
@@ -110,6 +211,127 @@ export default function AgentCenterPage() {
             tone={(overview?.open_issues || 0) > 0 ? "critical" : "success"}
           />
         </div>
+      </SurfaceCard>
+
+      <SurfaceCard title="Readiness Dimensions">
+        {snapshot ? (
+          <div className="divide-y divide-[color:var(--merchant-line)]">
+            {readinessDimensions(snapshot).map(([key, dimension]: any) => (
+              <div
+                key={key}
+                className="grid gap-3 px-5 py-4 text-sm lg:grid-cols-[220px_130px_150px_1fr]"
+              >
+                <div>
+                  <p className="font-medium text-[color:var(--merchant-ink)]">
+                    {dimensionLabels[key] || label(key)}
+                  </p>
+                  <p className="mt-1 text-[color:var(--merchant-muted)]">
+                    {dimension.evidence}
+                  </p>
+                </div>
+                <div>
+                  <p className="merchant-overline mb-1">Status</p>
+                  <StatusBadge tone={badgeTone(dimension.status) as any}>
+                    {label(dimension.status)}
+                  </StatusBadge>
+                </div>
+                <div>
+                  <p className="merchant-overline mb-1">Score</p>
+                  <p className="font-semibold text-[color:var(--merchant-ink)]">
+                    {dimension.score === "not_tested" || dimension.score === undefined
+                      ? "Not tested"
+                      : `${dimension.score}%`}
+                  </p>
+                  {dimension.issue_id || dimension.diagnosis_id ? (
+                    <p className="mt-1 truncate font-mono text-xs text-[color:var(--merchant-muted)]">
+                      {dimension.issue_id || dimension.diagnosis_id}
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <p className="merchant-overline mb-1">Recommended next action</p>
+                  <p className="text-[color:var(--merchant-muted-strong)]">
+                    {dimension.recommended_next_action}
+                  </p>
+                  {dimension.issue_id ? (
+                    <Link
+                      href={`/agent-center/issues/${dimension.issue_id}`}
+                      className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-[color:var(--merchant-brand)]"
+                    >
+                      <span>Open linked issue</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyAgentState
+            title="No assurance snapshot yet"
+            description="Run a scan or create a GMV Assurance snapshot to summarize the pre-payment chain."
+            href="/agent-center/run"
+            cta="Run Agent Scan"
+          />
+        )}
+      </SurfaceCard>
+
+      <SurfaceCard title="Top Blockers">
+        {snapshot?.top_blockers?.length ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-[color:var(--merchant-line)] text-[color:var(--merchant-muted)]">
+                <tr>
+                  <th className="px-5 py-3 font-medium">Blocker type</th>
+                  <th className="px-5 py-3 font-medium">Severity</th>
+                  <th className="px-5 py-3 font-medium">Affected layer</th>
+                  <th className="px-5 py-3 font-medium">Fix target</th>
+                  <th className="px-5 py-3 font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[color:var(--merchant-line)]">
+                {snapshot.top_blockers.map((blocker: any, index: number) => (
+                  <tr key={`${blocker.blocker_type}-${index}`}>
+                    <td className="px-5 py-3 font-medium text-[color:var(--merchant-ink)]">
+                      {label(blocker.blocker_type)}
+                    </td>
+                    <td className="px-5 py-3">
+                      <StatusBadge tone={badgeTone(blocker.severity === "critical" ? "blocked" : "needs_work") as any}>
+                        {blocker.severity}
+                      </StatusBadge>
+                    </td>
+                    <td className="px-5 py-3 text-[color:var(--merchant-muted)]">
+                      {label(blocker.affected_layer)}
+                    </td>
+                    <td className="px-5 py-3">
+                      {blocker.fix_target ? (
+                        <FixTargetBadge target={blocker.fix_target} />
+                      ) : (
+                        <span className="text-[color:var(--merchant-muted)]">none</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3 text-[color:var(--merchant-muted-strong)]">
+                      {blocker.issue_id ? (
+                        <Link
+                          href={`/agent-center/issues/${blocker.issue_id}`}
+                          className="font-medium text-[color:var(--merchant-brand)]"
+                        >
+                          {blocker.recommended_action}
+                        </Link>
+                      ) : (
+                        blocker.recommended_action
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="px-5 py-5 text-sm text-[color:var(--merchant-muted)]">
+            No active pre-payment blockers in the latest GMV Assurance snapshot.
+          </p>
+        )}
       </SurfaceCard>
 
       <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
@@ -230,6 +452,40 @@ export default function AgentCenterPage() {
                     {overview?.usage.remaining_credits || 0}
                   </p>
                 </div>
+              </div>
+            </div>
+          </SurfaceCard>
+
+          <SurfaceCard title="Assurance Usage Preview">
+            <div className="divide-y divide-[color:var(--merchant-line)] text-sm">
+              {[
+                ["AI Test Credits", snapshot?.usage_summary?.ai_test_credits || 0],
+                [
+                  "Product Understanding Credits",
+                  snapshot?.usage_summary?.product_understanding_credits || 0,
+                ],
+                [
+                  "Offer Verification Credits",
+                  snapshot?.usage_summary?.offer_verification_credits || 0,
+                ],
+                [
+                  "Checkout Verification Credits",
+                  snapshot?.usage_summary?.checkout_verification_credits || 0,
+                ],
+              ].map(([name, value]) => (
+                <div key={name} className="flex items-center justify-between px-5 py-3">
+                  <span className="text-[color:var(--merchant-muted-strong)]">
+                    {name}
+                  </span>
+                  <span className="font-semibold text-[color:var(--merchant-ink)]">
+                    {value}
+                  </span>
+                </div>
+              ))}
+              <div className="px-5 py-4 text-[color:var(--merchant-muted)]">
+                Billing mode: {snapshot?.usage_summary?.billing_mode || "preview_only"} ·
+                Billing status:{" "}
+                {snapshot?.usage_summary?.billing_status || "not_invoiced"}
               </div>
             </div>
           </SurfaceCard>
