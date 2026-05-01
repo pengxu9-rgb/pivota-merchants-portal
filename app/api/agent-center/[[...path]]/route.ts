@@ -23,3 +23,10 @@ export async function PATCH(
 ) {
   return handleAgentCenterRequest(req, await context.params);
 }
+
+export async function DELETE(
+  req: NextRequest,
+  context: { params: Promise<{ path?: string[] }> }
+) {
+  return handleAgentCenterRequest(req, await context.params);
+}
