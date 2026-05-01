@@ -54,8 +54,8 @@ export default function ScanResultsPage() {
             value={results?.test_runs?.length || 0}
           />
           <MetricTile
-            label="Visibility"
-            value={`${results?.aggregate_scores?.visibility_score || 0}%`}
+            label="Product visibility"
+            value={`${results?.aggregate_scores?.product_entity_visibility_score ?? results?.aggregate_scores?.visibility_score ?? 0}%`}
             tone="warning"
           />
           <MetricTile
@@ -75,8 +75,20 @@ export default function ScanResultsPage() {
         <SurfaceCard title="Aggregate Scores">
           <div className="space-y-5 px-5 py-5">
             <ScoreBar
-              label="AI visibility"
-              value={results?.aggregate_scores?.visibility_score || 0}
+              label="Product Visibility"
+              value={results?.aggregate_scores?.product_entity_visibility_score ?? results?.aggregate_scores?.visibility_score ?? 0}
+            />
+            <ScoreBar
+              label="Merchant Store Visibility"
+              value={results?.aggregate_scores?.merchant_store_visibility_score ?? 0}
+            />
+            <ScoreBar
+              label="Pivota Channel Visibility"
+              value={results?.aggregate_scores?.pivota_pdp_visibility_score ?? 0}
+            />
+            <ScoreBar
+              label="Executable Offer Visibility"
+              value={results?.aggregate_scores?.executable_offer_visibility_score ?? "not_tested"}
             />
             <ScoreBar
               label="Recommendation rank"

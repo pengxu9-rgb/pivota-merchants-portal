@@ -27,6 +27,10 @@ type OverviewPayload = {
   latest_job: any | null;
   latest_result: any | null;
   ai_visibility_score: number;
+  product_entity_visibility_score: number;
+  merchant_store_visibility_score: number;
+  pivota_pdp_visibility_score: number;
+  executable_offer_visibility_score: number | "not_tested";
   competitor_substitution_rate: number;
   pivota_pdp_readiness_score: number;
   estimated_gmv_at_risk: number;
@@ -68,24 +72,36 @@ export default function AgentCenterPage() {
       />
 
       <SurfaceCard strong>
-        <div className="grid sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid sm:grid-cols-2 xl:grid-cols-5">
           <MetricTile
-            label="AI visibility"
-            value={loading ? "..." : `${overview?.ai_visibility_score || 0}%`}
-            helper="Merchant product mentions"
-            tone={(overview?.ai_visibility_score || 0) >= 50 ? "success" : "warning"}
+            label="Product visibility"
+            value={loading ? "..." : `${overview?.product_entity_visibility_score || 0}%`}
+            helper="Product/entity recommendations"
+            tone={(overview?.product_entity_visibility_score || 0) >= 50 ? "success" : "warning"}
           />
           <MetricTile
-            label="Substitution"
-            value={loading ? "..." : `${overview?.competitor_substitution_rate || 0}%`}
-            helper="Higher means leakage"
-            tone={(overview?.competitor_substitution_rate || 0) >= 60 ? "critical" : "neutral"}
+            label="Merchant attribution"
+            value={loading ? "..." : `${overview?.merchant_store_visibility_score || 0}%`}
+            helper="Store or merchant PDP proven"
+            tone={(overview?.merchant_store_visibility_score || 0) > 0 ? "success" : "neutral"}
           />
           <MetricTile
-            label="Pivota PDP readiness"
-            value={loading ? "..." : `${overview?.pivota_pdp_readiness_score || 0}%`}
-            helper="Agent-facing product object"
-            tone={(overview?.pivota_pdp_readiness_score || 0) >= 70 ? "success" : "warning"}
+            label="Pivota channel"
+            value={loading ? "..." : `${overview?.pivota_pdp_visibility_score || 0}%`}
+            helper="Unified PDP attribution"
+            tone={(overview?.pivota_pdp_visibility_score || 0) > 0 ? "success" : "neutral"}
+          />
+          <MetricTile
+            label="Executable offer"
+            value={
+              loading
+                ? "..."
+                : overview?.executable_offer_visibility_score === "not_tested"
+                  ? "Not tested"
+                  : `${overview?.executable_offer_visibility_score || 0}%`
+            }
+            helper="Offer or checkout path"
+            tone="neutral"
           />
           <MetricTile
             label="Open issues"
@@ -116,8 +132,20 @@ export default function AgentCenterPage() {
             <div className="grid gap-5 px-5 py-5 lg:grid-cols-2">
               <div className="space-y-4">
                 <ScoreBar
-                  label="Visibility score"
-                  value={overview.latest_result.aggregate_scores.visibility_score}
+                  label="Product Visibility"
+                  value={overview.latest_result.aggregate_scores.product_entity_visibility_score ?? overview.latest_result.aggregate_scores.visibility_score}
+                />
+                <ScoreBar
+                  label="Merchant Store Visibility"
+                  value={overview.latest_result.aggregate_scores.merchant_store_visibility_score ?? 0}
+                />
+                <ScoreBar
+                  label="Pivota Channel Visibility"
+                  value={overview.latest_result.aggregate_scores.pivota_pdp_visibility_score ?? 0}
+                />
+                <ScoreBar
+                  label="Executable Offer Visibility"
+                  value={overview.latest_result.aggregate_scores.executable_offer_visibility_score ?? "not_tested"}
                 />
                 <ScoreBar
                   label="Competitor substitution"

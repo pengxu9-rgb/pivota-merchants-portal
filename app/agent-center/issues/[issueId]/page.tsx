@@ -406,9 +406,9 @@ export default function IssueDetailPage() {
           <div className="space-y-6 px-5 py-5">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <MetricTile
-                label="Visibility delta"
-                value={deltaLabel(scoreDelta.visibility_score)}
-                tone={(scoreDelta.visibility_score || 0) > 0 ? "success" : "neutral"}
+                label="Product visibility delta"
+                value={deltaLabel(scoreDelta.product_entity_visibility_score ?? scoreDelta.visibility_score)}
+                tone={((scoreDelta.product_entity_visibility_score ?? scoreDelta.visibility_score) || 0) > 0 ? "success" : "neutral"}
               />
               <MetricTile
                 label="Substitution delta"
@@ -428,10 +428,22 @@ export default function IssueDetailPage() {
             </div>
             <div className="grid gap-6 lg:grid-cols-2">
               <ComparisonRow
-                labelText="Visibility score"
-                before={beforeScores?.visibility_score || 0}
-                after={afterScores?.visibility_score || 0}
-                delta={scoreDelta.visibility_score || 0}
+                labelText="Product Visibility"
+                before={beforeScores?.product_entity_visibility_score ?? beforeScores?.visibility_score ?? 0}
+                after={afterScores?.product_entity_visibility_score ?? afterScores?.visibility_score ?? 0}
+                delta={scoreDelta.product_entity_visibility_score ?? scoreDelta.visibility_score ?? 0}
+              />
+              <ComparisonRow
+                labelText="Merchant Store Visibility"
+                before={beforeScores?.merchant_store_visibility_score || 0}
+                after={afterScores?.merchant_store_visibility_score || 0}
+                delta={scoreDelta.merchant_store_visibility_score || 0}
+              />
+              <ComparisonRow
+                labelText="Pivota Channel Visibility"
+                before={beforeScores?.pivota_pdp_visibility_score || 0}
+                after={afterScores?.pivota_pdp_visibility_score || 0}
+                delta={scoreDelta.pivota_pdp_visibility_score || 0}
               />
               <ComparisonRow
                 labelText="Competitor substitution"

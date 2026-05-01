@@ -298,7 +298,7 @@ function runControlledSunscreenCase({ attributes, pivotaAttributes, outputs }) {
 test("scan target creation requires a store and preserves scan scope", () => {
   const { store, target } = createConnectedTarget();
   assert.equal(target.store_id, store.id);
-  assert.equal(target.scan_mode, "catalog_integrated_demand_scan");
+  assert.equal(target.scan_mode, "open_product_visibility_test");
   assert.equal(target.selected_product_ids.length, 3);
   assert.equal(target.market, "US");
 });
@@ -307,8 +307,9 @@ test("input readiness reports available modes, missing inputs, and V1 limitation
   const { target } = createConnectedTarget();
   const readiness = new InputReadinessService().createSnapshot(target.id);
   assert.ok(readiness.input_completeness_score >= 50);
-  assert.ok(readiness.available_scan_modes.includes("url_only_demand_scan"));
-  assert.ok(readiness.available_scan_modes.includes("catalog_integrated_demand_scan"));
+  assert.ok(readiness.available_scan_modes.includes("open_product_visibility_test"));
+  assert.ok(readiness.available_scan_modes.includes("merchant_store_attribution_test"));
+  assert.ok(readiness.available_scan_modes.includes("pivota_pdp_attribution_test"));
   assert.ok(
     readiness.scan_limitations.some((item) => item.includes("Checkout verification"))
   );
@@ -522,13 +523,21 @@ test("partial Isntree product name counts as product visibility but not exact SK
   assert.equal(match.ambiguous_match, false);
   assert.deepEqual(match.suffix_terms_missing, ["SPF50+", "PA++++", "50ml"]);
   assert.equal(score.aggregate_scores.visibility_score, 100);
+  assert.equal(score.aggregate_scores.product_entity_visibility_score, 100);
+  assert.equal(score.aggregate_scores.merchant_store_visibility_score, 0);
+  assert.equal(score.aggregate_scores.pivota_pdp_visibility_score, 0);
+  assert.equal(score.aggregate_scores.executable_offer_visibility_score, "not_tested");
   assert.match(
-    score.score_explanations.visibility_score.explanation,
+    score.score_explanations.product_entity_visibility_score.explanation,
     /Counted as visibility match because brand and core product name matched/
   );
   assert.match(
-    score.score_explanations.visibility_score.explanation,
+    score.score_explanations.product_entity_visibility_score.explanation,
     /not counted as an exact SKU match/
+  );
+  assert.match(
+    score.score_explanations.product_entity_visibility_score.explanation,
+    /Product entity was visible, but merchant store \/ Pivota channel attribution was not proven/
   );
 });
 
@@ -642,6 +651,83 @@ test("partial Isntree product name is guarded when same-brand SKU variants are a
   assert.equal(match.counts_for_visibility, false);
   assert.equal(match.counts_for_sku_exact_match, false);
   assert.match(match.match_reason, /multiple same-brand products/);
+});
+
+test("open product visibility test does not claim merchant or Pivota channel attribution", () => {
+  const { store, target, product, cluster } = createIsntreeSunscreenTarget();
+  const outputs = [
+    "Isntree Hyaluronic Acid Watery Sun Gel",
+    "Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml",
+    "Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml",
+  ].map((name, index) => {
+    const output = {
+      mentioned_brands: ["Isntree"],
+      mentioned_products: [
+        {
+          name,
+          brand: "Isntree",
+          rank: index === 2 ? 2 : 1,
+          reason: "Recommended as a hydrating sunscreen product.",
+          purchase_path_present: true,
+        },
+      ],
+      missing_attributes_identified: [],
+      reasoning_summary:
+        "Gemini recommended the Isntree product entity without merchant store or Pivota PDP attribution.",
+    };
+    const input = {
+      ...demandInput(store, target, cluster, product),
+      query: cluster.queries[index],
+      repetitionIndex: index + 1,
+    };
+    const parsed = parseProviderOutput(
+      {
+        provider: "gemini",
+        model: DEFAULT_GEMINI_MODEL,
+        raw_output: output,
+        normalized_output: output,
+        input_tokens: 100,
+        output_tokens: 150,
+        tool_calls: 0,
+        provider_request_id: `isntree_open_${index}`,
+      },
+      input
+    );
+    parsed.test_run_id = `run_isntree_open_${index}`;
+    parsed.query_cluster_id = cluster.id;
+    return parsed;
+  });
+  const matches = outputs.map((parsed) =>
+    new ProductMatchService().match(parsed, store, cluster)
+  );
+  const score = new ScoringService().scoreCluster({
+    scanTarget: target,
+    cluster,
+    parsed: outputs,
+    matches,
+  });
+  const issues = new IssueEngine().generateForScore({
+    scanTarget: target,
+    score,
+    cluster,
+    parsed: outputs,
+    matches,
+  });
+
+  assert.equal(target.scan_mode, "open_product_visibility_test");
+  assert.equal(score.aggregate_scores.product_entity_visibility_score, 100);
+  assert.equal(score.aggregate_scores.merchant_store_visibility_score, 0);
+  assert.equal(score.aggregate_scores.pivota_pdp_visibility_score, 0);
+  assert.equal(score.aggregate_scores.executable_offer_visibility_score, "not_tested");
+  assert.equal(issues.some((issue) => issue.severity === "high"), false);
+  assert.match(
+    score.score_explanations.merchant_store_visibility_score.explanation,
+    /open product recommendation does not prove merchant store attribution/
+  );
+  assert.match(
+    score.score_explanations.pivota_pdp_visibility_score.explanation,
+    /open product recommendation does not prove Pivota PDP attribution/
+  );
 });
 
 test("product and competitor matching drives scoring and issue generation", async () => {
@@ -1012,7 +1098,7 @@ test("URL-only store can create a demand scan target with limitations", () => {
   const target = new ScanTargetService().create({ store_id: store.id });
   const readiness = new InputReadinessService().createSnapshot(target.id);
 
-  assert.equal(target.scan_mode, "url_only_demand_scan");
+  assert.equal(target.scan_mode, "open_product_visibility_test");
   assert.ok(
     readiness.scan_limitations.some((item) =>
       item.includes("URL-only mode uses merchant-provided public URLs")

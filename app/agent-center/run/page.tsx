@@ -131,10 +131,7 @@ export default function RunAgentScanPage() {
         body: JSON.stringify({
           store_id: selectedStoreId,
           selected_product_ids: selectedIds,
-          scan_mode:
-            selectedStore?.integration_status === "connected"
-              ? "catalog_integrated_demand_scan"
-              : "url_only_demand_scan",
+          scan_mode: "open_product_visibility_test",
         }),
       }
     );
@@ -393,13 +390,13 @@ export default function RunAgentScanPage() {
             <div className="grid gap-5 px-5 py-5 lg:grid-cols-2">
               <div className="space-y-3">
                 {[
-                  "url_only_demand_scan",
-                  "catalog_integrated_demand_scan",
-                  "offer_aware_demand_scan",
-                  "checkout_aware_gmv_scan",
+                  "open_product_visibility_test",
+                  "merchant_store_attribution_test",
+                  "pivota_pdp_attribution_test",
+                  "agentic_execution_test",
                 ].map((mode) => {
                   const available = readiness?.available_scan_modes?.includes(mode);
-                  const v1 = mode.includes("demand_scan");
+                  const v1 = mode !== "agentic_execution_test";
                   return (
                     <div key={mode} className="flex items-center gap-2 text-sm">
                       {available && v1 ? (

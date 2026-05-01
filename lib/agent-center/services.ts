@@ -33,6 +33,7 @@ import type {
   ScanTarget,
   UsageEstimate,
   UsageEvent,
+  VisibilityScoreValue,
   VerificationRun,
 } from "./types";
 
@@ -100,7 +101,7 @@ function missingAttributesForLayer(
 }
 
 function scoreExplanation(
-  score: number,
+  score: VisibilityScoreValue,
   formula: string,
   explanation: string,
   supportingRuns: string[]
@@ -111,6 +112,36 @@ function scoreExplanation(
     explanation,
     supporting_runs: supportingRuns,
   };
+}
+
+function numericScore(value: VisibilityScoreValue | undefined) {
+  return typeof value === "number" ? value : 0;
+}
+
+function executableOfferTestEnabled(scanMode?: ScanMode) {
+  return [
+    "agentic_execution_test",
+    "offer_aware_demand_scan",
+    "checkout_aware_gmv_scan",
+  ].includes(scanMode || "");
+}
+
+function merchantAttributionTestEnabled(scanMode?: ScanMode) {
+  return [
+    "merchant_store_attribution_test",
+    "agentic_execution_test",
+    "offer_aware_demand_scan",
+    "checkout_aware_gmv_scan",
+  ].includes(scanMode || "");
+}
+
+function pivotaAttributionTestEnabled(scanMode?: ScanMode) {
+  return [
+    "pivota_pdp_attribution_test",
+    "agentic_execution_test",
+    "offer_aware_demand_scan",
+    "checkout_aware_gmv_scan",
+  ].includes(scanMode || "");
 }
 
 function cloneJson<T>(value: T): T {
@@ -574,10 +605,7 @@ export class ScanTargetService {
     }
 
     const scanMode =
-      input.scan_mode ||
-      (store.integration_status === "connected"
-        ? "catalog_integrated_demand_scan"
-        : "url_only_demand_scan");
+      input.scan_mode || "open_product_visibility_test";
     const now = nowIso();
     const scanTarget: ScanTarget = {
       id: nextId("scan_target"),
@@ -618,7 +646,7 @@ export class InputReadinessService {
     );
     const missingInputs: InputReadinessSnapshot["missing_inputs"] = [];
     const limitations: string[] = [];
-    const modes: ScanMode[] = ["url_only_demand_scan"];
+    const modes: ScanMode[] = ["open_product_visibility_test"];
 
     let score = 24;
     if (store.store_url) score += 10;
@@ -627,7 +655,8 @@ export class InputReadinessService {
     if (store.competitor_brands?.length) score += 10;
 
     if (connection?.capabilities.catalog || store.products?.length) {
-      modes.push("catalog_integrated_demand_scan");
+      modes.push("merchant_store_attribution_test");
+      modes.push("pivota_pdp_attribution_test");
       score += 20;
     } else {
       missingInputs.push({
@@ -652,6 +681,10 @@ export class InputReadinessService {
         impact: "high",
         reason: "Needed to detect competitor substitution.",
       });
+    }
+
+    if (connection?.capabilities.offers && connection.capabilities.checkout) {
+      modes.push("agentic_execution_test");
     }
 
     if (!connection?.capabilities.offers) {
@@ -1329,7 +1362,8 @@ export class ScoringService {
         providerParsed,
         product,
         input.cluster,
-        providerMatches
+        providerMatches,
+        input.scanTarget
       );
     }
 
@@ -1337,7 +1371,8 @@ export class ScoringService {
       input.parsed,
       product,
       input.cluster,
-      input.matches
+      input.matches,
+      input.scanTarget
     );
     const now = nowIso();
     const score: DemandVisibilityScore = {
@@ -1355,7 +1390,8 @@ export class ScoringService {
         product,
         input.cluster,
         aggregate,
-        input.matches
+        input.matches,
+        input.scanTarget
       ),
       created_at: now,
       updated_at: now,
@@ -1369,21 +1405,65 @@ export class ScoringService {
     parsed: ParsedRecommendation[],
     product: ProductRecord | undefined,
     cluster: QueryCluster,
-    matches: ProductMatchResult[] = []
+    matches: ProductMatchResult[] = [],
+    scanTarget?: ScanTarget
   ) {
     const total = Math.max(1, parsed.length);
+    const scanMode = scanTarget?.scan_mode || "open_product_visibility_test";
+    const scoreMerchantAttribution = merchantAttributionTestEnabled(scanMode);
+    const scorePivotaAttribution = pivotaAttributionTestEnabled(scanMode);
+    const scoreExecutableOffer = executableOfferTestEnabled(scanMode);
     const matchesByParsedId = new Map(
       matches.map((match) => [match.parsed_recommendation_id, match])
     );
-    const merchantMentions = parsed.filter((item) => {
+    const productEntityMentions = parsed.filter((item) => {
       const match = matchesByParsedId.get(item.id);
-      return match ? match.counts_for_visibility : item.merchant_product_mentioned;
+      return match
+        ? match.counts_for_visibility
+        : item.product_entity_mentioned || item.merchant_product_mentioned;
     }).length;
+    const merchantStoreMentions = scoreMerchantAttribution
+      ? parsed.filter(
+          (item) =>
+            item.merchant_store_mentioned ||
+            item.merchant_pdp_url_present ||
+            item.merchant_offer_present ||
+            item.channel_attribution === "merchant_store_attributed" ||
+            item.channel_attribution === "executable_offer_attributed"
+        ).length
+      : 0;
+    const pivotaPdpMentions = scorePivotaAttribution
+      ? parsed.filter(
+          (item) =>
+            item.pivota_pdp_mentioned ||
+            item.pivota_pdp_url_present ||
+            item.channel_attribution === "pivota_pdp_attributed" ||
+            item.channel_attribution === "pivota_offer_attributed" ||
+            item.channel_attribution === "executable_offer_attributed"
+        ).length
+      : 0;
+    const pivotaOfferMentions = scorePivotaAttribution
+      ? parsed.filter(
+          (item) =>
+            item.pivota_offer_present ||
+            item.channel_attribution === "pivota_offer_attributed" ||
+            item.channel_attribution === "executable_offer_attributed"
+        ).length
+      : 0;
+    const executableOfferMentions = scoreExecutableOffer
+      ? parsed.filter(
+          (item) =>
+            item.purchase_path_type === "executable_offer" ||
+            item.channel_attribution === "executable_offer_attributed"
+        ).length
+      : 0;
     const ranks = parsed
       .map((item) => {
         const match = matchesByParsedId.get(item.id);
         if (match?.counts_for_visibility) return match.matched_recommendation_rank;
-        return item.merchant_product_mentioned ? item.recommendation_rank : null;
+        return item.product_entity_mentioned || item.merchant_product_mentioned
+          ? item.recommendation_rank
+          : null;
       })
       .filter((rank): rank is number => typeof rank === "number");
     const rankScore = ranks.length
@@ -1423,7 +1503,20 @@ export class ScoringService {
         : 42;
 
     return {
-      visibility_score: clampScore((merchantMentions / total) * 100),
+      product_entity_visibility_score: clampScore(
+        (productEntityMentions / total) * 100
+      ),
+      merchant_store_visibility_score: clampScore(
+        (merchantStoreMentions / total) * 100
+      ),
+      pivota_pdp_visibility_score: clampScore((pivotaPdpMentions / total) * 100),
+      pivota_offer_visibility_score: clampScore(
+        (pivotaOfferMentions / total) * 100
+      ),
+      executable_offer_visibility_score: scoreExecutableOffer
+        ? clampScore((executableOfferMentions / total) * 100)
+        : ("not_tested" as const),
+      visibility_score: clampScore((productEntityMentions / total) * 100),
       recommendation_rank_score: clampScore(rankScore),
       competitor_substitution_score: clampScore((substitutions / total) * 100),
       attribute_readiness_score: clampScore(attributeReadiness),
@@ -1436,17 +1529,59 @@ export class ScoringService {
     product: ProductRecord | undefined,
     cluster: QueryCluster,
     scores: DemandVisibilityScore["aggregate_scores"],
-    matches: ProductMatchResult[] = []
+    matches: ProductMatchResult[] = [],
+    scanTarget?: ScanTarget
   ): DemandVisibilityScore["score_explanations"] {
     const total = Math.max(1, parsed.length);
+    const scanMode = scanTarget?.scan_mode || "open_product_visibility_test";
+    const scoreMerchantAttribution = merchantAttributionTestEnabled(scanMode);
+    const scorePivotaAttribution = pivotaAttributionTestEnabled(scanMode);
+    const scoreExecutableOffer = executableOfferTestEnabled(scanMode);
     const supportingRuns = parsed.map((item) => item.test_run_id).filter(Boolean);
     const matchesByParsedId = new Map(
       matches.map((match) => [match.parsed_recommendation_id, match])
     );
-    const merchantMentions = parsed.filter((item) => {
+    const productEntityMentions = parsed.filter((item) => {
       const match = matchesByParsedId.get(item.id);
-      return match ? match.counts_for_visibility : item.merchant_product_mentioned;
+      return match
+        ? match.counts_for_visibility
+        : item.product_entity_mentioned || item.merchant_product_mentioned;
     }).length;
+    const merchantStoreMentions = scoreMerchantAttribution
+      ? parsed.filter(
+          (item) =>
+            item.merchant_store_mentioned ||
+            item.merchant_pdp_url_present ||
+            item.merchant_offer_present ||
+            item.channel_attribution === "merchant_store_attributed" ||
+            item.channel_attribution === "executable_offer_attributed"
+        ).length
+      : 0;
+    const pivotaPdpMentions = scorePivotaAttribution
+      ? parsed.filter(
+          (item) =>
+            item.pivota_pdp_mentioned ||
+            item.pivota_pdp_url_present ||
+            item.channel_attribution === "pivota_pdp_attributed" ||
+            item.channel_attribution === "pivota_offer_attributed" ||
+            item.channel_attribution === "executable_offer_attributed"
+        ).length
+      : 0;
+    const pivotaOfferMentions = scorePivotaAttribution
+      ? parsed.filter(
+          (item) =>
+            item.pivota_offer_present ||
+            item.channel_attribution === "pivota_offer_attributed" ||
+            item.channel_attribution === "executable_offer_attributed"
+        ).length
+      : 0;
+    const executableOfferMentions = scoreExecutableOffer
+      ? parsed.filter(
+          (item) =>
+            item.purchase_path_type === "executable_offer" ||
+            item.channel_attribution === "executable_offer_attributed"
+        ).length
+      : 0;
     const substitutions = parsed.filter((item) => {
       const match = matchesByParsedId.get(item.id);
       const merchantVisible = match
@@ -1474,15 +1609,60 @@ export class ScoringService {
         match.match_level === "canonical_product_match" &&
         match.suffix_terms_missing.length > 0
     );
+    const channelAttributionMissing =
+      productEntityMentions > 0 &&
+      merchantStoreMentions === 0 &&
+      pivotaPdpMentions === 0;
     const normalizedCoreExplanation = normalizedCoreVisibilityMatches.length
       ? " Counted as visibility match because brand and core product name matched. SPF/PA/size suffixes were missing from the model output, so this was not counted as an exact SKU match."
       : "";
+    const channelAttributionExplanation = channelAttributionMissing
+      ? " Product entity was visible, but merchant store / Pivota channel attribution was not proven."
+      : "";
 
     return {
+      product_entity_visibility_score: scoreExplanation(
+        scores.product_entity_visibility_score,
+        "product_entity_visibility_matches / total_completed_runs * 100",
+        `product_entity_visibility_score = ${scores.product_entity_visibility_score} because the product entity matched in ${productEntityMentions} of ${parsed.length} completed Gemini runs.${normalizedCoreExplanation}${channelAttributionExplanation}`,
+        supportingRuns
+      ),
+      merchant_store_visibility_score: scoreExplanation(
+        scores.merchant_store_visibility_score,
+        "merchant_store_or_pdp_or_offer_attributed_runs / total_completed_runs * 100",
+        scoreMerchantAttribution
+          ? `merchant_store_visibility_score = ${scores.merchant_store_visibility_score} because merchant store, merchant PDP URL, or merchant offer attribution appeared in ${merchantStoreMentions} of ${parsed.length} completed Gemini runs.`
+          : "merchant_store_visibility_score = 0 because this scan mode is open_product_visibility_test; open product recommendation does not prove merchant store attribution.",
+        supportingRuns
+      ),
+      pivota_pdp_visibility_score: scoreExplanation(
+        scores.pivota_pdp_visibility_score,
+        "pivota_pdp_or_product_object_attributed_runs / total_completed_runs * 100",
+        scorePivotaAttribution
+          ? `pivota_pdp_visibility_score = ${scores.pivota_pdp_visibility_score} because Pivota unified PDP, product object, or URL attribution appeared in ${pivotaPdpMentions} of ${parsed.length} completed Gemini runs.`
+          : "pivota_pdp_visibility_score = 0 because this scan mode is open_product_visibility_test; open product recommendation does not prove Pivota PDP attribution.",
+        supportingRuns
+      ),
+      pivota_offer_visibility_score: scoreExplanation(
+        scores.pivota_offer_visibility_score,
+        "pivota_offer_attributed_runs / total_completed_runs * 100",
+        scorePivotaAttribution
+          ? `pivota_offer_visibility_score = ${scores.pivota_offer_visibility_score} because Pivota-managed offers appeared in ${pivotaOfferMentions} of ${parsed.length} completed Gemini runs.`
+          : "pivota_offer_visibility_score = 0 because this scan mode does not test Pivota-managed offers.",
+        supportingRuns
+      ),
+      executable_offer_visibility_score: scoreExplanation(
+        scores.executable_offer_visibility_score,
+        "executable_offer_or_checkout_path_runs / total_completed_runs * 100",
+        scoreExecutableOffer
+          ? `executable_offer_visibility_score = ${scores.executable_offer_visibility_score} because executable offers or checkout paths appeared in ${executableOfferMentions} of ${parsed.length} completed Gemini runs.`
+          : "executable_offer_visibility_score = not_tested because V1 open product visibility scans do not include offer or checkout execution data.",
+        supportingRuns
+      ),
       visibility_score: scoreExplanation(
         scores.visibility_score,
         "product_entity_visibility_matches / total_completed_runs * 100",
-        `visibility_score = ${scores.visibility_score} because merchant product/entity visibility matched in ${merchantMentions} of ${parsed.length} completed Gemini runs.${normalizedCoreExplanation}`,
+        `visibility_score is a deprecated alias for product_entity_visibility_score. Product entity matched in ${productEntityMentions} of ${parsed.length} completed Gemini runs.${normalizedCoreExplanation}${channelAttributionExplanation}`,
         supportingRuns
       ),
       recommendation_rank_score: scoreExplanation(
@@ -1612,7 +1792,7 @@ export class IssueEngine {
     );
 
     if (
-      aggregate.visibility_score < 20 &&
+      aggregate.product_entity_visibility_score < 20 &&
       input.cluster.estimated_demand_value >= 8000
     ) {
       issues.push(
@@ -1761,7 +1941,8 @@ export class IssueEngine {
       matches: input.input.matches,
       fixTargets,
       missingAttributes: input.missingAttributes,
-      visibilityScore: input.input.score.aggregate_scores.visibility_score,
+      visibilityScore:
+        input.input.score.aggregate_scores.product_entity_visibility_score,
       competitorSubstitutionScore:
         input.input.score.aggregate_scores.competitor_substitution_score,
     });
@@ -1790,7 +1971,13 @@ export class IssueEngine {
         sku: input.product?.sku,
         total_test_runs: input.input.parsed.length,
         merchant_product_mentions: merchantMentions,
-        visibility_rate: input.input.score.aggregate_scores.visibility_score / 100,
+        product_entity_visibility_rate:
+          input.input.score.aggregate_scores.product_entity_visibility_score / 100,
+        visibility_rate: input.input.score.aggregate_scores.product_entity_visibility_score / 100,
+        merchant_store_visibility_rate:
+          input.input.score.aggregate_scores.merchant_store_visibility_score / 100,
+        pivota_pdp_visibility_rate:
+          input.input.score.aggregate_scores.pivota_pdp_visibility_score / 100,
         competitor_mentions: competitorMentions,
         top_competitors: unique(
           input.input.matches.flatMap((match) =>
@@ -1831,7 +2018,7 @@ export class IssueEngine {
         providers: ["gemini" as const],
         prompt_templates: activePromptTemplateIds(),
         success_metric: "visibility_rate" as const,
-        target_improvement: `increase from ${input.input.score.aggregate_scores.visibility_score}% to 20%+`,
+        target_improvement: `increase product entity visibility from ${input.input.score.aggregate_scores.product_entity_visibility_score}% to 20%+`,
       },
       created_at: now,
       updated_at: now,
@@ -2132,6 +2319,11 @@ export class DemandTestJobService {
 function aggregateScores(scores: DemandVisibilityScore[]) {
   if (!scores.length) {
     return {
+      product_entity_visibility_score: 0,
+      merchant_store_visibility_score: 0,
+      pivota_pdp_visibility_score: 0,
+      pivota_offer_visibility_score: 0,
+      executable_offer_visibility_score: "not_tested" as const,
       visibility_score: 0,
       recommendation_rank_score: 0,
       competitor_substitution_score: 0,
@@ -2147,6 +2339,20 @@ function aggregateScores(scores: DemandVisibilityScore[]) {
   const sum = scores.reduce(
     (acc, score) => {
       acc.visibility_score += score.aggregate_scores.visibility_score;
+      acc.product_entity_visibility_score +=
+        score.aggregate_scores.product_entity_visibility_score ??
+        score.aggregate_scores.visibility_score;
+      acc.merchant_store_visibility_score +=
+        score.aggregate_scores.merchant_store_visibility_score || 0;
+      acc.pivota_pdp_visibility_score +=
+        score.aggregate_scores.pivota_pdp_visibility_score || 0;
+      acc.pivota_offer_visibility_score +=
+        score.aggregate_scores.pivota_offer_visibility_score || 0;
+      const executable = score.aggregate_scores.executable_offer_visibility_score;
+      if (typeof executable === "number") {
+        acc.executable_offer_visibility_score += executable;
+        acc.executable_offer_tested_count += 1;
+      }
       acc.recommendation_rank_score += score.aggregate_scores.recommendation_rank_score;
       acc.competitor_substitution_score +=
         score.aggregate_scores.competitor_substitution_score;
@@ -2155,6 +2361,12 @@ function aggregateScores(scores: DemandVisibilityScore[]) {
       return acc;
     },
     {
+      product_entity_visibility_score: 0,
+      merchant_store_visibility_score: 0,
+      pivota_pdp_visibility_score: 0,
+      pivota_offer_visibility_score: 0,
+      executable_offer_visibility_score: 0,
+      executable_offer_tested_count: 0,
       visibility_score: 0,
       recommendation_rank_score: 0,
       competitor_substitution_score: 0,
@@ -2163,8 +2375,24 @@ function aggregateScores(scores: DemandVisibilityScore[]) {
     }
   );
   const count = scores.length;
+  const productEntityVisibility = clampScore(
+    sum.product_entity_visibility_score / count
+  );
   return {
-    visibility_score: clampScore(sum.visibility_score / count),
+    product_entity_visibility_score: productEntityVisibility,
+    merchant_store_visibility_score: clampScore(
+      sum.merchant_store_visibility_score / count
+    ),
+    pivota_pdp_visibility_score: clampScore(sum.pivota_pdp_visibility_score / count),
+    pivota_offer_visibility_score: clampScore(
+      sum.pivota_offer_visibility_score / count
+    ),
+    executable_offer_visibility_score: sum.executable_offer_tested_count
+      ? clampScore(
+          sum.executable_offer_visibility_score / sum.executable_offer_tested_count
+        )
+      : ("not_tested" as const),
+    visibility_score: productEntityVisibility,
     recommendation_rank_score: clampScore(sum.recommendation_rank_score / count),
     competitor_substitution_score: clampScore(
       sum.competitor_substitution_score / count
@@ -2209,6 +2437,11 @@ function scoreSnapshot(input: {
   return {
     score_ids: input.scores.map((score) => score.id),
     aggregate_scores: {
+      product_entity_visibility_score: aggregate.product_entity_visibility_score,
+      merchant_store_visibility_score: aggregate.merchant_store_visibility_score,
+      pivota_pdp_visibility_score: aggregate.pivota_pdp_visibility_score,
+      pivota_offer_visibility_score: aggregate.pivota_offer_visibility_score,
+      executable_offer_visibility_score: aggregate.executable_offer_visibility_score,
       visibility_score: aggregate.visibility_score,
       recommendation_rank_score: aggregate.recommendation_rank_score,
       competitor_substitution_score: aggregate.competitor_substitution_score,
@@ -2227,9 +2460,27 @@ function scoreDelta(
   after: ReturnType<typeof scoreSnapshot>
 ) {
   return {
+    product_entity_visibility_score:
+      after.aggregate_scores.product_entity_visibility_score -
+      before.aggregate_scores.product_entity_visibility_score,
+    merchant_store_visibility_score:
+      after.aggregate_scores.merchant_store_visibility_score -
+      before.aggregate_scores.merchant_store_visibility_score,
+    pivota_pdp_visibility_score:
+      after.aggregate_scores.pivota_pdp_visibility_score -
+      before.aggregate_scores.pivota_pdp_visibility_score,
+    pivota_offer_visibility_score:
+      after.aggregate_scores.pivota_offer_visibility_score -
+      before.aggregate_scores.pivota_offer_visibility_score,
+    executable_offer_visibility_score:
+      typeof after.aggregate_scores.executable_offer_visibility_score === "number" &&
+      typeof before.aggregate_scores.executable_offer_visibility_score === "number"
+        ? after.aggregate_scores.executable_offer_visibility_score -
+          before.aggregate_scores.executable_offer_visibility_score
+        : 0,
     visibility_score:
-      after.aggregate_scores.visibility_score -
-      before.aggregate_scores.visibility_score,
+      after.aggregate_scores.product_entity_visibility_score -
+      before.aggregate_scores.product_entity_visibility_score,
     recommendation_rank_score:
       after.aggregate_scores.recommendation_rank_score -
       before.aggregate_scores.recommendation_rank_score,
@@ -2252,7 +2503,8 @@ function estimatedAfterGmvAtRisk(
   scores: DemandVisibilityScore["aggregate_scores"]
 ) {
   const resolvedByIssueType =
-    (issue.issue_type === "ai_visibility_loss" && scores.visibility_score >= 20) ||
+    (issue.issue_type === "ai_visibility_loss" &&
+      scores.product_entity_visibility_score >= 20) ||
     (issue.issue_type === "competitor_substitution" &&
       scores.competitor_substitution_score < 60) ||
     (issue.issue_type === "missing_attribute" &&
@@ -2364,14 +2616,7 @@ export class VerificationService {
     const afterSnapshot = scoreSnapshot({
       issue,
       scores: afterScores,
-      estimatedGmvAtRisk: estimatedAfterGmvAtRisk(issue, {
-        visibility_score: afterAggregate.visibility_score,
-        recommendation_rank_score: afterAggregate.recommendation_rank_score,
-        competitor_substitution_score:
-          afterAggregate.competitor_substitution_score,
-        attribute_readiness_score: afterAggregate.attribute_readiness_score,
-        pivota_pdp_readiness_score: afterAggregate.pivota_pdp_readiness_score,
-      }),
+      estimatedGmvAtRisk: estimatedAfterGmvAtRisk(issue, afterAggregate),
     });
 
     const now = nowIso();
@@ -2408,8 +2653,10 @@ export class VerificationService {
       before_score_id: beforeSnapshot.score_ids[0],
       after_score_id: afterSnapshot.score_ids[0],
       result: {
-        before_visibility_score: beforeSnapshot.aggregate_scores.visibility_score,
-        after_visibility_score: afterSnapshot.aggregate_scores.visibility_score,
+        before_visibility_score:
+          beforeSnapshot.aggregate_scores.product_entity_visibility_score,
+        after_visibility_score:
+          afterSnapshot.aggregate_scores.product_entity_visibility_score,
         before_competitor_substitution_score:
           beforeSnapshot.aggregate_scores.competitor_substitution_score,
         after_competitor_substitution_score:
@@ -2421,8 +2668,8 @@ export class VerificationService {
 
     state.verificationRuns.push(verification);
     issue.status =
-      verification.after_scores.aggregate_scores.visibility_score >
-        verification.before_scores.aggregate_scores.visibility_score ||
+      verification.after_scores.aggregate_scores.product_entity_visibility_score >
+        verification.before_scores.aggregate_scores.product_entity_visibility_score ||
       verification.after_scores.estimated_gmv_at_risk <
         verification.before_scores.estimated_gmv_at_risk
         ? "resolved"
@@ -2747,7 +2994,17 @@ export function getAgentCenterOverview(merchantId = DEMO_MERCHANT_ID) {
   return {
     latest_job: latestJob,
     latest_result: latestResults,
-    ai_visibility_score: latestResults?.aggregate_scores.visibility_score || 0,
+    ai_visibility_score:
+      latestResults?.aggregate_scores.product_entity_visibility_score || 0,
+    product_entity_visibility_score:
+      latestResults?.aggregate_scores.product_entity_visibility_score || 0,
+    merchant_store_visibility_score:
+      latestResults?.aggregate_scores.merchant_store_visibility_score || 0,
+    pivota_pdp_visibility_score:
+      latestResults?.aggregate_scores.pivota_pdp_visibility_score || 0,
+    executable_offer_visibility_score:
+      latestResults?.aggregate_scores.executable_offer_visibility_score ||
+      "not_tested",
     competitor_substitution_rate:
       latestResults?.aggregate_scores.competitor_substitution_score || 0,
     pivota_pdp_readiness_score:

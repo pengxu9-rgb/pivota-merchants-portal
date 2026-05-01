@@ -70,16 +70,19 @@ export function ScoreBar({
   label,
   inverse = false,
 }: {
-  value: number;
+  value: number | "not_tested";
   label: string;
   inverse?: boolean;
 }) {
+  const numericValue = typeof value === "number" ? value : 0;
   const tone =
-    inverse && value >= 60
+    value === "not_tested"
+      ? "bg-[color:var(--merchant-muted)]"
+      : inverse && numericValue >= 60
       ? "bg-[color:var(--merchant-critical)]"
-      : value >= 70
+      : numericValue >= 70
         ? "bg-[color:var(--merchant-success)]"
-        : value >= 40
+        : numericValue >= 40
           ? "bg-[color:var(--merchant-warning)]"
           : "bg-[color:var(--merchant-critical)]";
 
@@ -87,10 +90,12 @@ export function ScoreBar({
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3 text-sm">
         <span className="font-medium text-[color:var(--merchant-ink)]">{label}</span>
-        <span className="text-[color:var(--merchant-muted)]">{Math.round(value)}%</span>
+        <span className="text-[color:var(--merchant-muted)]">
+          {value === "not_tested" ? "Not tested" : `${Math.round(numericValue)}%`}
+        </span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-[color:var(--merchant-surface-muted)]">
-        <div className={cx("h-full rounded-full", tone)} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+        <div className={cx("h-full rounded-full", tone)} style={{ width: `${Math.max(0, Math.min(100, numericValue))}%` }} />
       </div>
     </div>
   );

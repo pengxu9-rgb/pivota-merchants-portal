@@ -77,8 +77,20 @@ export default function AgentScanJobPage() {
         >
           <div className="space-y-5 px-5 py-5">
             <ScoreBar
-              label="Visibility score"
-              value={results?.aggregate_scores?.visibility_score || 0}
+              label="Product Visibility"
+              value={results?.aggregate_scores?.product_entity_visibility_score ?? results?.aggregate_scores?.visibility_score ?? 0}
+            />
+            <ScoreBar
+              label="Merchant Store Visibility"
+              value={results?.aggregate_scores?.merchant_store_visibility_score ?? 0}
+            />
+            <ScoreBar
+              label="Pivota Channel Visibility"
+              value={results?.aggregate_scores?.pivota_pdp_visibility_score ?? 0}
+            />
+            <ScoreBar
+              label="Executable Offer Visibility"
+              value={results?.aggregate_scores?.executable_offer_visibility_score ?? "not_tested"}
             />
             <ScoreBar
               label="Competitor substitution"

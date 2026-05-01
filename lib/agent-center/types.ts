@@ -10,6 +10,10 @@ export type StorePlatform =
 export type IntegrationStatus = "connected" | "url_only" | "disconnected";
 
 export type ScanMode =
+  | "open_product_visibility_test"
+  | "merchant_store_attribution_test"
+  | "pivota_pdp_attribution_test"
+  | "agentic_execution_test"
   | "url_only_demand_scan"
   | "catalog_integrated_demand_scan"
   | "offer_aware_demand_scan"
@@ -103,6 +107,25 @@ export type Timestamped = {
   created_at: string;
   updated_at?: string;
 };
+
+export type ChannelAttribution =
+  | "unattributed_product_recommendation"
+  | "merchant_store_attributed"
+  | "pivota_pdp_attributed"
+  | "pivota_offer_attributed"
+  | "executable_offer_attributed"
+  | "unknown";
+
+export type PurchasePathType =
+  | "none"
+  | "merchant_pdp"
+  | "merchant_offer"
+  | "pivota_pdp"
+  | "pivota_offer"
+  | "executable_offer"
+  | "unknown";
+
+export type VisibilityScoreValue = number | "not_tested";
 
 export type ProductRecord = {
   id: string;
@@ -333,6 +356,8 @@ export type MentionedProduct = {
   reason: string;
   likely_price_range?: string;
   purchase_path_present?: boolean;
+  purchase_path_type?: PurchasePathType;
+  product_url?: string;
 };
 
 export type ParsedRecommendation = Timestamped & {
@@ -343,12 +368,21 @@ export type ParsedRecommendation = Timestamped & {
   model: string;
   mentioned_brands: string[];
   mentioned_products: MentionedProduct[];
+  product_entity_mentioned: boolean;
   merchant_brand_mentioned: boolean;
   merchant_product_mentioned: boolean;
   merchant_sku_mentioned: boolean;
   pivota_product_entity_mentioned: boolean;
+  merchant_store_mentioned: boolean;
+  merchant_pdp_url_present: boolean;
+  merchant_offer_present: boolean;
+  pivota_pdp_mentioned: boolean;
+  pivota_pdp_url_present: boolean;
+  pivota_offer_present: boolean;
   competitor_substitution_detected: boolean;
   purchase_path_present: boolean;
+  purchase_path_type: PurchasePathType;
+  channel_attribution: ChannelAttribution;
   missing_attributes_identified: string[];
   recommendation_rank: number | null;
   reasoning_summary: string;
@@ -416,6 +450,11 @@ export type DemandVisibilityScore = Timestamped & {
   provider_scores: Record<
     string,
     {
+      product_entity_visibility_score: number;
+      merchant_store_visibility_score: number;
+      pivota_pdp_visibility_score: number;
+      pivota_offer_visibility_score: number;
+      executable_offer_visibility_score: VisibilityScoreValue;
       visibility_score: number;
       recommendation_rank_score: number;
       competitor_substitution_score: number;
@@ -424,6 +463,11 @@ export type DemandVisibilityScore = Timestamped & {
     }
   >;
   aggregate_scores: {
+    product_entity_visibility_score: number;
+    merchant_store_visibility_score: number;
+    pivota_pdp_visibility_score: number;
+    pivota_offer_visibility_score: number;
+    executable_offer_visibility_score: VisibilityScoreValue;
     visibility_score: number;
     recommendation_rank_score: number;
     competitor_substitution_score: number;
@@ -433,7 +477,7 @@ export type DemandVisibilityScore = Timestamped & {
   score_explanations: Record<
     keyof DemandVisibilityScore["aggregate_scores"],
     {
-      score: number;
+      score: VisibilityScoreValue;
       formula: string;
       explanation: string;
       supporting_runs: string[];

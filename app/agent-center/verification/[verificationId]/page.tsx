@@ -55,9 +55,9 @@ export default function VerificationPage() {
         <div className="grid sm:grid-cols-2 xl:grid-cols-4">
           <MetricTile label="Status" value={verification?.status || "..."} tone="success" />
           <MetricTile
-            label="Visibility delta"
-            value={deltaLabel(delta.visibility_score)}
-            tone={(delta.visibility_score || 0) > 0 ? "success" : "neutral"}
+            label="Product visibility delta"
+            value={deltaLabel(delta.product_entity_visibility_score ?? delta.visibility_score)}
+            tone={((delta.product_entity_visibility_score ?? delta.visibility_score) || 0) > 0 ? "success" : "neutral"}
           />
           <MetricTile
             label="Substitution delta"
@@ -74,7 +74,22 @@ export default function VerificationPage() {
       <div className="grid gap-5 xl:grid-cols-2">
         <SurfaceCard title="Before">
           <div className="space-y-5 px-5 py-5">
-            <ScoreBar label="Visibility score" value={before.visibility_score || 0} />
+            <ScoreBar
+              label="Product Visibility"
+              value={before.product_entity_visibility_score ?? before.visibility_score ?? 0}
+            />
+            <ScoreBar
+              label="Merchant Store Visibility"
+              value={before.merchant_store_visibility_score || 0}
+            />
+            <ScoreBar
+              label="Pivota Channel Visibility"
+              value={before.pivota_pdp_visibility_score || 0}
+            />
+            <ScoreBar
+              label="Executable Offer Visibility"
+              value={before.executable_offer_visibility_score ?? "not_tested"}
+            />
             <ScoreBar
               label="Competitor substitution"
               value={before.competitor_substitution_score || 0}
@@ -95,7 +110,22 @@ export default function VerificationPage() {
         </SurfaceCard>
         <SurfaceCard title="After">
           <div className="space-y-5 px-5 py-5">
-            <ScoreBar label="Visibility score" value={after.visibility_score || 0} />
+            <ScoreBar
+              label="Product Visibility"
+              value={after.product_entity_visibility_score ?? after.visibility_score ?? 0}
+            />
+            <ScoreBar
+              label="Merchant Store Visibility"
+              value={after.merchant_store_visibility_score || 0}
+            />
+            <ScoreBar
+              label="Pivota Channel Visibility"
+              value={after.pivota_pdp_visibility_score || 0}
+            />
+            <ScoreBar
+              label="Executable Offer Visibility"
+              value={after.executable_offer_visibility_score ?? "not_tested"}
+            />
             <ScoreBar
               label="Competitor substitution"
               value={after.competitor_substitution_score || 0}
