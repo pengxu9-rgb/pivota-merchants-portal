@@ -3661,6 +3661,47 @@ test("internal production validation rewrite target uses shared Agent Center han
   });
 });
 
+test("production validation run route can clean up in the same invocation", async () => {
+  resetAgentCenterState();
+  await withInternalProductionValidationEnv(async () => {
+    await withMockProductionValidationFetch(async () => {
+      const created = await handleAgentCenterRequest(
+        internalProductionValidationRequest(
+          "https://example.test/api/agent-center/internal-production-validation-runs",
+          {
+            method: "POST",
+            body: JSON.stringify(productionValidationPayload()),
+          }
+        ),
+        { path: ["internal-production-validation-runs"] }
+      );
+      const createdPayload = await created.json();
+      const runId = createdPayload.production_validation_run.id;
+      const ran = await handleAgentCenterRequest(
+        internalProductionValidationRequest(
+          `https://example.test/api/agent-center/internal-production-validation-runs/${runId}/run`,
+          {
+            method: "POST",
+            body: JSON.stringify({ cleanup_after_run: true }),
+          }
+        ),
+        { path: ["internal-production-validation-runs", runId, "run"] }
+      );
+      const ranPayload = await ran.json();
+
+      assert.equal(ranPayload.production_validation_run.status, "completed");
+      assert.equal(ranPayload.cleanup.status, "deleted");
+      assert.equal(
+        getAgentCenterState().scanTargets.some(
+          (target) =>
+            target.id === ranPayload.production_validation_run.scan_target_id
+        ),
+        false
+      );
+    });
+  });
+});
+
 test("cleanupExpiredDemoFixtures expires stale internal fixtures", () => {
   resetAgentCenterState();
   const created = new DemoFixtureService().create({

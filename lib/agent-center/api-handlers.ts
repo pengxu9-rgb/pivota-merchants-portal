@@ -172,8 +172,22 @@ export async function handleInternalProductionValidationRunsRequest(
     }
 
     if (req.method === "POST" && runId && params?.action === "run") {
+      const body = await requestBody(req);
+      const completed = await service.run(runId);
+      if (body.cleanup_after_run === true) {
+        const completedSnapshot = JSON.parse(JSON.stringify(completed));
+        const cleaned = service.delete(runId);
+        return json({
+          production_validation_run: completedSnapshot,
+          cleanup: {
+            id: cleaned.id,
+            status: cleaned.status,
+            deleted_at: cleaned.deleted_at,
+          },
+        });
+      }
       return json({
-        production_validation_run: await service.run(runId),
+        production_validation_run: completed,
       });
     }
 

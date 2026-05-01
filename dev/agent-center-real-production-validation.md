@@ -326,10 +326,22 @@ curl -X DELETE "$BASE_URL/api/internal/agent-center/production-validation-runs/$
   -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET"
 ```
 
+For production smoke in the current serverless in-memory baseline, prefer cleanup in the same run invocation:
+
+```bash
+curl -X POST "$BASE_URL/api/internal/agent-center/production-validation-runs/$RUN_ID/run" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET" \
+  -H "content-type: application/json" \
+  --data '{"cleanup_after_run":true}'
+```
+
+This returns the completed validation run plus a `cleanup` object with `status = deleted`. It avoids relying on a later request landing on the same warm serverless instance.
+
 ## Known Limitations
 
 - The harness is backed by current in-memory Agent Center state in the deployed serverless environment.
 - Validation runs should be short-lived and cleaned up with `DELETE`.
+- In production serverless smoke, `cleanup_after_run = true` is recommended because later `GET` or `DELETE` requests can land on a different instance until a persistent validation store is added.
 - Demand Test execution uses the current Gemini baseline only.
 - The default run scope is intentionally small for production safety: one purchase-ready query cluster, one prompt template, and one repetition unless explicitly overridden.
 - A passed checkout readiness result means pre-payment path readiness only.
