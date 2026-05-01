@@ -116,9 +116,9 @@ export function FixTargetBadge({ target }: { target: string }) {
 
 export function IssueTypeBadge({ type }: { type: string }) {
   const tone =
-    type === "ai_visibility_loss" || type === "competitor_substitution"
+    type === "ai_visibility_loss" || type === "competitor_substitution" || type.includes("attribution_gap")
       ? "critical"
-      : type === "missing_attribute"
+      : type === "missing_attribute" || type === "unverified_pivota_attribution"
         ? "warning"
         : "brand";
   return <StatusBadge tone={tone as any}>{type.replace(/_/g, " ")}</StatusBadge>;

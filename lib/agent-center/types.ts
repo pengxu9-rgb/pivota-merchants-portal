@@ -86,6 +86,7 @@ export type AgenticGMVIssueType =
   | "merchant_store_attribution_gap"
   | "pivota_pdp_attribution_gap"
   | "pivota_offer_attribution_gap"
+  | "unverified_pivota_attribution"
   | "missing_attribute"
   | "weak_recommendation_evidence"
   | "pivota_pdp_readiness_gap"
@@ -116,7 +117,12 @@ export type ChannelAttribution =
   | "unattributed_product_recommendation"
   | "merchant_store_attributed"
   | "pivota_pdp_attributed"
+  | "pivota_pdp_attributed_unverified"
+  | "pivota_pdp_attributed_verified"
   | "pivota_offer_attributed"
+  | "pivota_offer_attributed_unverified"
+  | "pivota_offer_attributed_verified"
+  | "unverified_pivota_echo"
   | "executable_offer_attributed"
   | "unknown";
 
@@ -310,6 +316,21 @@ export type DemandTestInput = {
   outputSchema: Record<string, unknown>;
   repetitionIndex: number;
   retestBoost?: boolean;
+  pivotaAttributionPreflight?: PivotaAttributionPreflight;
+};
+
+export type PivotaAttributionPreflight = {
+  status: "not_applicable" | "verified" | "failed" | "negative_control";
+  candidate_url?: string;
+  status_code?: number | null;
+  final_url?: string;
+  verified_url?: string;
+  expected_product_entity_id?: string;
+  expected_product_object_id?: string;
+  verified_product_object_ids: string[];
+  expected_offer_ids: string[];
+  verified_offer_ids: string[];
+  failure_reason?: string;
 };
 
 export type LLMRawResult = {
@@ -386,8 +407,18 @@ export type ParsedRecommendation = Timestamped & {
   pivota_pdp_mentioned: boolean;
   pivota_pdp_url_present: boolean;
   pivota_pdp_url?: string;
+  pivota_pdp_url_verified: boolean;
+  pivota_product_object_id?: string;
+  pivota_product_object_id_present: boolean;
+  pivota_product_object_id_verified: boolean;
   pivota_offer_present: boolean;
   pivota_offer_ids: string[];
+  pivota_offer_ids_present: boolean;
+  pivota_offer_ids_verified: boolean;
+  pivota_attribution_verified: boolean;
+  pivota_attribution_failure_reason?: string;
+  pivota_pdp_preflight_status?: PivotaAttributionPreflight["status"];
+  pivota_pdp_preflight_status_code?: number | null;
   competitor_substitution_detected: boolean;
   purchase_path_present: boolean;
   purchase_path_type: PurchasePathType;
@@ -463,6 +494,7 @@ export type DemandVisibilityScore = Timestamped & {
       merchant_store_visibility_score: number;
       pivota_pdp_visibility_score: number;
       pivota_offer_visibility_score: number;
+      pivota_attribution_echo_rate: number;
       executable_offer_visibility_score: VisibilityScoreValue;
       visibility_score: number;
       recommendation_rank_score: number;
@@ -476,6 +508,7 @@ export type DemandVisibilityScore = Timestamped & {
     merchant_store_visibility_score: number;
     pivota_pdp_visibility_score: number;
     pivota_offer_visibility_score: number;
+    pivota_attribution_echo_rate: number;
     executable_offer_visibility_score: VisibilityScoreValue;
     visibility_score: number;
     recommendation_rank_score: number;

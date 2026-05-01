@@ -24,6 +24,15 @@ export default function ScanResultsPage() {
     (results?.aggregate_scores?.product_entity_visibility_score ??
       results?.aggregate_scores?.visibility_score ??
       0) >= 70;
+  const firstParsed = results?.parsed_recommendations?.[0];
+  const pivotaPreflightStatus =
+    firstParsed?.pivota_pdp_preflight_status ||
+    (scanMode === "pivota_pdp_attribution_test" ? "not_checked" : "not_applicable");
+  const pivotaPreflightCode =
+    firstParsed?.pivota_pdp_preflight_status_code === undefined ||
+    firstParsed?.pivota_pdp_preflight_status_code === null
+      ? null
+      : firstParsed.pivota_pdp_preflight_status_code;
 
   useEffect(() => {
     if (!params.scanId) return;
@@ -93,9 +102,33 @@ export default function ScanResultsPage() {
               </p>
             ) : null}
             <ScoreBar
-              label="Pivota Channel Visibility"
+              label={scanMode === "pivota_pdp_attribution_test" ? "Verified Pivota PDP Visibility" : "Pivota Channel Visibility"}
               value={results?.aggregate_scores?.pivota_pdp_visibility_score ?? 0}
             />
+            {scanMode === "pivota_pdp_attribution_test" ? (
+              <>
+                <ScoreBar
+                  label="Verified Pivota Offer Visibility"
+                  value={results?.aggregate_scores?.pivota_offer_visibility_score ?? 0}
+                />
+                <ScoreBar
+                  label="Pivota Attribution Echo Rate"
+                  value={results?.aggregate_scores?.pivota_attribution_echo_rate ?? 0}
+                  inverse
+                />
+                <div className="rounded-xl border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] p-3 text-sm">
+                  <p className="font-medium text-[color:var(--merchant-ink)]">
+                    Pivota PDP Preflight Status: {String(pivotaPreflightStatus).replace(/_/g, " ")}
+                    {pivotaPreflightCode ? ` (${pivotaPreflightCode})` : ""}
+                  </p>
+                  {pivotaPreflightStatus !== "verified" ? (
+                    <p className="mt-1 text-[color:var(--merchant-muted)]">
+                      Pivota PDP is not publicly accessible yet. Pivota channel attribution cannot be verified.
+                    </p>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
             {scanMode === "open_product_visibility_test" ? (
               <p className="text-sm text-[color:var(--merchant-muted)]">
                 Pivota channel visibility is not proven in this scan.

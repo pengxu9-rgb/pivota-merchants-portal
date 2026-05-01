@@ -5,6 +5,7 @@ import type {
   LLMRawResult,
   MentionedProduct,
   ParsedRecommendation,
+  PivotaAttributionPreflight,
   PurchasePathType,
 } from "./types";
 import { nextId, nowIso } from "./repository.ts";
@@ -39,8 +40,16 @@ export const PARSED_RECOMMENDATION_SCHEMA = {
     pivota_pdp_mentioned: { type: "boolean" },
     pivota_pdp_url_present: { type: "boolean" },
     pivota_pdp_url: { type: "string" },
+    pivota_pdp_url_verified: { type: "boolean" },
+    pivota_product_object_id: { type: "string" },
+    pivota_product_object_id_present: { type: "boolean" },
+    pivota_product_object_id_verified: { type: "boolean" },
     pivota_offer_present: { type: "boolean" },
     pivota_offer_ids: { type: "array", items: { type: "string" } },
+    pivota_offer_ids_present: { type: "boolean" },
+    pivota_offer_ids_verified: { type: "boolean" },
+    pivota_attribution_verified: { type: "boolean" },
+    pivota_attribution_failure_reason: { type: "string" },
     purchase_path_present: { type: "boolean" },
     purchase_path_type: { type: "string" },
     channel_attribution: { type: "string" },
@@ -76,6 +85,136 @@ function domainOf(url?: string | null) {
   }
 }
 
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function arrayOfStrings(value: unknown) {
+  return Array.isArray(value) ? value.map(String).map((item) => item.trim()).filter(Boolean) : [];
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function normalizeUrlKey(url?: string | null) {
+  if (!url) return "";
+  try {
+    const parsed = new URL(url);
+    return `${parsed.hostname.replace(/^www\./, "").toLowerCase()}${parsed.pathname.replace(/\/$/, "")}`;
+  } catch {
+    return String(url).trim().toLowerCase();
+  }
+}
+
+function sameUrlPath(a?: string | null, b?: string | null) {
+  const left = normalizeUrlKey(a);
+  const right = normalizeUrlKey(b);
+  return Boolean(left && right && left === right);
+}
+
+function candidatePivotaPdpUrl(input: DemandTestInput) {
+  const attrs = input.merchantContext?.product?.pivota_attributes || {};
+  const explicitUrl = stringValue(attrs.pivota_pdp_url);
+  if (explicitUrl) return explicitUrl;
+  const objectId = stringValue(attrs.pivota_product_object_id);
+  if (/^ext_[a-z0-9_]+$/i.test(objectId)) {
+    return `https://agent.pivota.cc/products/${objectId}`;
+  }
+  return "";
+}
+
+function expectedPivotaOfferIds(input: DemandTestInput) {
+  const attrs = input.merchantContext?.product?.pivota_attributes || {};
+  return arrayOfStrings(attrs.offer_ids).concat(arrayOfStrings(attrs.pivota_offer_ids));
+}
+
+function expectedPivotaProductObjectId(input: DemandTestInput) {
+  const attrs = input.merchantContext?.product?.pivota_attributes || {};
+  return stringValue(attrs.pivota_product_object_id);
+}
+
+function matchesExpectedPivotaProduct(input: DemandTestInput, url?: string, finalUrl?: string) {
+  const product = input.merchantContext?.product;
+  const explicitUrl = stringValue(product?.pivota_attributes?.pivota_pdp_url);
+  const objectId = expectedPivotaProductObjectId(input);
+  const entityId = product?.product_entity_id || "";
+  const urlText = `${url || ""} ${finalUrl || ""}`.toLowerCase();
+
+  if (explicitUrl && (sameUrlPath(url, explicitUrl) || sameUrlPath(finalUrl, explicitUrl))) {
+    return true;
+  }
+  if (objectId && urlText.includes(objectId.toLowerCase())) return true;
+  if (entityId && urlText.includes(entityId.toLowerCase())) return true;
+  return false;
+}
+
+export async function buildPivotaAttributionPreflight(
+  input: DemandTestInput
+): Promise<PivotaAttributionPreflight> {
+  const expectedProductObjectId = expectedPivotaProductObjectId(input);
+  const expectedOfferIds = expectedPivotaOfferIds(input);
+  const base: PivotaAttributionPreflight = {
+    status: "not_applicable",
+    expected_product_entity_id: input.merchantContext?.product?.product_entity_id,
+    expected_product_object_id: expectedProductObjectId || undefined,
+    verified_product_object_ids: [],
+    expected_offer_ids: expectedOfferIds,
+    verified_offer_ids: [],
+  };
+
+  if (input.scanMode !== "pivota_pdp_attribution_test") return base;
+
+  const candidateUrl = candidatePivotaPdpUrl(input);
+  if (!candidateUrl) {
+    return {
+      ...base,
+      status: "negative_control",
+      candidate_url: undefined,
+      status_code: null,
+      failure_reason: "no_public_pivota_pdp_url_available",
+    };
+  }
+
+  let statusCode: number | null = null;
+  let finalUrl = candidateUrl;
+  try {
+    let response = await fetch(candidateUrl, { method: "HEAD", redirect: "follow" });
+    if (response.status === 405 || response.status === 403) {
+      response = await fetch(candidateUrl, { method: "GET", redirect: "follow" });
+    }
+    statusCode = response.status;
+    finalUrl = response.url || candidateUrl;
+  } catch {
+    return {
+      ...base,
+      status: "failed",
+      candidate_url: candidateUrl,
+      status_code: statusCode,
+      final_url: finalUrl,
+      failure_reason: "pivota_pdp_preflight_request_failed",
+    };
+  }
+
+  const verified =
+    statusCode >= 200 &&
+    statusCode < 300 &&
+    matchesExpectedPivotaProduct(input, candidateUrl, finalUrl);
+
+  return {
+    ...base,
+    status: verified ? "verified" : "failed",
+    candidate_url: candidateUrl,
+    status_code: statusCode,
+    final_url: finalUrl,
+    verified_url: verified ? finalUrl : undefined,
+    verified_product_object_ids:
+      verified && expectedProductObjectId ? [expectedProductObjectId] : [],
+    verified_offer_ids: verified ? expectedOfferIds : [],
+    failure_reason: verified ? undefined : "pivota_pdp_url_not_public_or_product_mismatch",
+  };
+}
+
 const purchasePathTypes = new Set<PurchasePathType>([
   "none",
   "merchant_pdp",
@@ -90,7 +229,12 @@ const channelAttributions = new Set<ChannelAttribution>([
   "unattributed_product_recommendation",
   "merchant_store_attributed",
   "pivota_pdp_attributed",
+  "pivota_pdp_attributed_unverified",
+  "pivota_pdp_attributed_verified",
   "pivota_offer_attributed",
+  "pivota_offer_attributed_unverified",
+  "pivota_offer_attributed_verified",
+  "unverified_pivota_echo",
   "executable_offer_attributed",
   "unknown",
 ]);
@@ -233,6 +377,7 @@ function mockGeminiOutput(input: DemandTestInput) {
     typeof input.merchantContext?.product?.pivota_attributes?.pivota_pdp_url === "string"
       ? input.merchantContext.product.pivota_attributes.pivota_pdp_url
       : "";
+  const pivotaProductObjectId = expectedPivotaProductObjectId(input);
   const pivotaOfferIds = Array.isArray(
     input.merchantContext?.product?.pivota_attributes?.offer_ids
   )
@@ -251,8 +396,18 @@ function mockGeminiOutput(input: DemandTestInput) {
     pivota_pdp_mentioned: pivotaAttributed,
     pivota_pdp_url_present: pivotaAttributed && Boolean(pivotaPdpUrl),
     pivota_pdp_url: pivotaAttributed ? pivotaPdpUrl : "",
+    pivota_pdp_url_verified: false,
+    pivota_product_object_id: pivotaAttributed ? pivotaProductObjectId : "",
+    pivota_product_object_id_present: pivotaAttributed && Boolean(pivotaProductObjectId),
+    pivota_product_object_id_verified: false,
     pivota_offer_present: pivotaAttributed && pivotaOfferIds.length > 0,
     pivota_offer_ids: pivotaAttributed ? pivotaOfferIds : [],
+    pivota_offer_ids_present: pivotaAttributed && pivotaOfferIds.length > 0,
+    pivota_offer_ids_verified: false,
+    pivota_attribution_verified: false,
+    pivota_attribution_failure_reason: pivotaAttributed
+      ? "mock_provider_output_requires_preflight_verification"
+      : "",
     purchase_path_present: merchantAttributed || pivotaAttributed,
     purchase_path_type: merchantAttributed
       ? "merchant_pdp"
@@ -264,9 +419,9 @@ function mockGeminiOutput(input: DemandTestInput) {
     channel_attribution: merchantAttributed
       ? "merchant_store_attributed"
       : pivotaAttributed && pivotaOfferIds.length
-        ? "pivota_offer_attributed"
+        ? "pivota_offer_attributed_unverified"
         : pivotaAttributed
-          ? "pivota_pdp_attributed"
+          ? "pivota_pdp_attributed_unverified"
           : shouldMentionMerchant
             ? "unattributed_product_recommendation"
             : "unknown",
@@ -491,6 +646,11 @@ export function parseProviderOutput(
       ? merchantProduct.pivota_attributes.pivota_pdp_url
       : "";
   const pivotaPdpDomain = domainOf(pivotaPdpUrl);
+  const expectedProductObjectId = expectedPivotaProductObjectId(input);
+  const preflight = input.pivotaAttributionPreflight;
+  const verifiedPivotaUrl = preflight?.verified_url;
+  const verifiedObjectIds = new Set(preflight?.verified_product_object_ids || []);
+  const verifiedOfferIds = new Set(preflight?.verified_offer_ids || []);
   const explicitPurchasePathType = normalizePurchasePathType(output.purchase_path_type);
   const productPurchasePathType =
     mentionedProducts.find((product) => product.purchase_path_present)
@@ -534,22 +694,75 @@ export function parseProviderOutput(
   const pivotaPdpMentioned =
     Boolean(output.pivota_pdp_mentioned) ||
     includesLoose(allText, "pivota unified pdp") ||
-    includesLoose(allText, "pivota product");
-  const pivotaPdpUrlPresent =
-    Boolean(output.pivota_pdp_url_present) ||
-    Boolean(pivotaPdpUrl && includesLoose(allText, pivotaPdpUrl)) ||
-    Boolean(pivotaPdpDomain && productUrls.includes(pivotaPdpDomain));
+    includesLoose(allText, "pivota product") ||
+    includesLoose(allText, "agent.pivota.cc") ||
+    includesLoose(allText, "pivota.cc");
+  const modelPivotaUrl = mentionedProducts.find((product) => {
+    const domain = domainOf(product.product_url);
+    return domain === "agent.pivota.cc" || domain === "pivota.cc";
+  })?.product_url;
   const parsedPivotaPdpUrl =
-    typeof output.pivota_pdp_url === "string"
-      ? output.pivota_pdp_url
-      : pivotaPdpUrlPresent
-        ? pivotaPdpUrl
-        : undefined;
+    stringValue(output.pivota_pdp_url) ||
+    (pivotaPdpUrl && includesLoose(allText, pivotaPdpUrl) ? pivotaPdpUrl : "") ||
+    (verifiedPivotaUrl && includesLoose(allText, verifiedPivotaUrl)
+      ? verifiedPivotaUrl
+      : "") ||
+    modelPivotaUrl;
+  const pivotaPdpUrlPresent =
+    Boolean(parsedPivotaPdpUrl) ||
+    Boolean(pivotaPdpUrl && includesLoose(allText, pivotaPdpUrl)) ||
+    Boolean(verifiedPivotaUrl && includesLoose(allText, verifiedPivotaUrl)) ||
+    Boolean(pivotaPdpDomain && productUrls.includes(pivotaPdpDomain));
+  const pivotaPdpUrlVerified =
+    Boolean(parsedPivotaPdpUrl) &&
+    Boolean(
+      (verifiedPivotaUrl && sameUrlPath(parsedPivotaPdpUrl, verifiedPivotaUrl)) ||
+        (preflight?.status === "verified" &&
+          matchesExpectedPivotaProduct(input, parsedPivotaPdpUrl, parsedPivotaPdpUrl))
+    );
+  const outputProductObjectId = stringValue(output.pivota_product_object_id);
+  const parsedProductObjectId =
+    outputProductObjectId ||
+    (expectedProductObjectId && includesLoose(allText, expectedProductObjectId)
+      ? expectedProductObjectId
+      : "");
+  const pivotaProductObjectIdPresent = Boolean(parsedProductObjectId);
+  const pivotaProductObjectIdVerified =
+    Boolean(parsedProductObjectId) && verifiedObjectIds.has(parsedProductObjectId);
+  const outputOfferIds = arrayOfStrings(output.pivota_offer_ids);
+  const inferredOfferIds = (preflight?.expected_offer_ids || []).filter((offerId) =>
+    includesLoose(allText, offerId)
+  );
+  const pivotaOfferIds = uniqueStrings(outputOfferIds.concat(inferredOfferIds));
+  const pivotaOfferIdsPresent = pivotaOfferIds.length > 0;
+  const pivotaOfferIdsVerified =
+    pivotaOfferIds.length > 0 && pivotaOfferIds.some((offerId) => verifiedOfferIds.has(offerId));
+  const pivotaAttributionVerified =
+    pivotaPdpUrlVerified || pivotaProductObjectIdVerified || pivotaOfferIdsVerified;
   const pivotaOfferPresent =
-    Boolean(output.pivota_offer_present) || purchasePathType === "pivota_offer";
-  const pivotaOfferIds = Array.isArray(output.pivota_offer_ids)
-    ? output.pivota_offer_ids.map(String).filter(Boolean)
-    : [];
+    pivotaOfferIdsPresent ||
+    Boolean(output.pivota_offer_present) ||
+    purchasePathType === "pivota_offer";
+  const pivotaAttributionEcho =
+    !pivotaAttributionVerified &&
+    (pivotaPdpMentioned ||
+      pivotaPdpUrlPresent ||
+      pivotaProductObjectIdPresent ||
+      pivotaOfferPresent ||
+      String(output.channel_attribution || "").toLowerCase().includes("pivota"));
+  const pivotaAttributionFailureReason = pivotaAttributionVerified
+    ? undefined
+    : preflight?.status === "negative_control"
+      ? "pivota_pdp_preflight_negative_control_no_public_url"
+      : pivotaPdpUrlPresent
+        ? "pivota_pdp_url_not_verified"
+        : pivotaProductObjectIdPresent
+          ? "pivota_product_object_id_not_verified"
+          : pivotaOfferIdsPresent
+            ? "pivota_offer_ids_not_verified"
+            : pivotaAttributionEcho
+              ? "unverified_pivota_echo"
+              : preflight?.failure_reason;
   const competitorBrands = input.competitorContext?.brands || [];
   const competitorSubstitutionDetected =
     !merchantProductMentioned &&
@@ -560,18 +773,27 @@ export function parseProviderOutput(
     output.channel_attribution
   );
   const channelAttribution: ChannelAttribution =
-    outputChannelAttribution ||
-    (purchasePathType === "executable_offer"
+    purchasePathType === "executable_offer"
       ? "executable_offer_attributed"
-      : pivotaOfferPresent
-        ? "pivota_offer_attributed"
-        : pivotaPdpMentioned || pivotaPdpUrlPresent
-          ? "pivota_pdp_attributed"
-          : merchantStoreMentioned || merchantPdpUrlPresent || merchantOfferPresent
-            ? "merchant_store_attributed"
-            : productEntityMentioned
-              ? "unattributed_product_recommendation"
-              : "unknown");
+      : pivotaOfferPresent && pivotaOfferIdsVerified
+        ? "pivota_offer_attributed_verified"
+        : pivotaOfferPresent
+          ? "pivota_offer_attributed_unverified"
+          : (pivotaPdpUrlPresent || pivotaProductObjectIdPresent) &&
+              (pivotaPdpUrlVerified || pivotaProductObjectIdVerified)
+            ? "pivota_pdp_attributed_verified"
+            : pivotaPdpUrlPresent || pivotaProductObjectIdPresent
+              ? "pivota_pdp_attributed_unverified"
+              : pivotaAttributionEcho ||
+                  outputChannelAttribution === "pivota_pdp_attributed" ||
+                  outputChannelAttribution === "pivota_offer_attributed"
+                ? "unverified_pivota_echo"
+                : outputChannelAttribution ||
+                    (merchantStoreMentioned || merchantPdpUrlPresent || merchantOfferPresent
+                      ? "merchant_store_attributed"
+                      : productEntityMentioned
+                        ? "unattributed_product_recommendation"
+                        : "unknown");
 
   const schemaValid = validationErrors.length === 0;
   const parserConfidence = schemaValid
@@ -602,8 +824,18 @@ export function parseProviderOutput(
     pivota_pdp_mentioned: pivotaPdpMentioned,
     pivota_pdp_url_present: pivotaPdpUrlPresent,
     pivota_pdp_url: parsedPivotaPdpUrl,
+    pivota_pdp_url_verified: pivotaPdpUrlVerified,
+    pivota_product_object_id: parsedProductObjectId || undefined,
+    pivota_product_object_id_present: pivotaProductObjectIdPresent,
+    pivota_product_object_id_verified: pivotaProductObjectIdVerified,
     pivota_offer_present: pivotaOfferPresent,
     pivota_offer_ids: pivotaOfferIds,
+    pivota_offer_ids_present: pivotaOfferIdsPresent,
+    pivota_offer_ids_verified: pivotaOfferIdsVerified,
+    pivota_attribution_verified: pivotaAttributionVerified,
+    pivota_attribution_failure_reason: pivotaAttributionFailureReason,
+    pivota_pdp_preflight_status: preflight?.status,
+    pivota_pdp_preflight_status_code: preflight?.status_code,
     competitor_substitution_detected: competitorSubstitutionDetected,
     purchase_path_present:
       Boolean(output.purchase_path_present) ||

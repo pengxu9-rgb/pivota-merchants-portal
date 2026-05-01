@@ -15,6 +15,7 @@ const {
   resetAgentCenterState,
 } = repository;
 const {
+  buildPivotaAttributionPreflight,
   GeminiProviderAdapter,
   PARSED_RECOMMENDATION_SCHEMA,
   parseProviderOutput,
@@ -36,6 +37,27 @@ const {
   VerificationService,
 } = services;
 const { handleAgentCenterRequest } = apiHandlers;
+
+const verifiedPivotaPdpUrl =
+  "https://agent.pivota.cc/products/ext_d7c74bcb380cbc2bdd5d5d90?return=%2Fproducts%2Fext_0281be2868f91dcf200fa248%3Freturn%3D%252F";
+const verifiedPivotaObjectId = "ext_d7c74bcb380cbc2bdd5d5d90";
+const verifiedPivotaOfferId = "offer_isntree_direct_50ml";
+
+function pivotaPreflight(overrides = {}) {
+  return {
+    status: "verified",
+    candidate_url: verifiedPivotaPdpUrl,
+    status_code: 200,
+    final_url: verifiedPivotaPdpUrl,
+    verified_url: verifiedPivotaPdpUrl,
+    expected_product_entity_id: "pe_isntree_watery_sun_gel",
+    expected_product_object_id: verifiedPivotaObjectId,
+    verified_product_object_ids: [verifiedPivotaObjectId],
+    expected_offer_ids: [verifiedPivotaOfferId],
+    verified_offer_ids: [verifiedPivotaOfferId],
+    ...overrides,
+  };
+}
 
 function createConnectedTarget() {
   resetAgentCenterState();
@@ -151,10 +173,9 @@ function createIsntreeSunscreenTarget(extraProducts = [], scanMode = "open_produ
       finish: "fresh finish",
       active_ingredients: "chemical UV filters",
       agent_summary: "A hydrating Korean sun gel with SPF50+ PA++++.",
-      pivota_pdp_url:
-        "https://pivota.cc/pdp/pe_isntree_watery_sun_gel",
-      pivota_product_object_id: "pivota_product_isntree_watery_sun_gel",
-      offer_ids: ["offer_isntree_direct_50ml"],
+      pivota_pdp_url: verifiedPivotaPdpUrl,
+      pivota_product_object_id: verifiedPivotaObjectId,
+      offer_ids: [verifiedPivotaOfferId],
     },
     agent_summary: "A hydrating Korean sun gel with SPF50+ PA++++.",
     priority: "high",
@@ -736,13 +757,14 @@ test("open product visibility test does not claim merchant or Pivota channel att
   );
 });
 
-function scoreAttributionFixture({ scanMode, output }) {
+function scoreAttributionFixture({ scanMode, output, preflight }) {
   const { store, target, product, cluster } = createIsntreeSunscreenTarget([], scanMode);
   const parsed = [0, 1, 2].map((_, index) => {
     const input = {
       ...demandInput(store, target, cluster, product),
       query: cluster.queries[index],
       repetitionIndex: index + 1,
+      pivotaAttributionPreflight: preflight,
     };
     const item = parseProviderOutput(
       {
@@ -865,30 +887,36 @@ test("Pivota attribution scan passes when Pivota PDP and offer are returned", ()
         reason: "Pivota product object supports this recommendation.",
         purchase_path_present: true,
         purchase_path_type: "pivota_offer",
-        product_url: "https://pivota.cc/pdp/pe_isntree_watery_sun_gel",
+        product_url: verifiedPivotaPdpUrl,
       },
     ],
     pivota_pdp_mentioned: true,
     pivota_pdp_url_present: true,
-    pivota_pdp_url: "https://pivota.cc/pdp/pe_isntree_watery_sun_gel",
+    pivota_pdp_url: verifiedPivotaPdpUrl,
+    pivota_product_object_id: verifiedPivotaObjectId,
     pivota_offer_present: true,
-    pivota_offer_ids: ["offer_isntree_direct_50ml"],
+    pivota_offer_ids: [verifiedPivotaOfferId],
     purchase_path_present: true,
     purchase_path_type: "pivota_offer",
-    channel_attribution: "pivota_offer_attributed",
+    channel_attribution: "pivota_offer_attributed_verified",
     missing_attributes_identified: [],
     reasoning_summary: "The Pivota PDP and offer were returned.",
   };
   const result = scoreAttributionFixture({
     scanMode: "pivota_pdp_attribution_test",
     output,
+    preflight: pivotaPreflight(),
   });
 
   assert.equal(result.score.aggregate_scores.product_entity_visibility_score, 100);
   assert.equal(result.score.aggregate_scores.pivota_pdp_visibility_score, 100);
   assert.equal(result.score.aggregate_scores.pivota_offer_visibility_score, 100);
+  assert.equal(result.score.aggregate_scores.pivota_attribution_echo_rate, 0);
   assert.equal(result.parsed[0].pivota_pdp_url_present, true);
-  assert.deepEqual(result.parsed[0].pivota_offer_ids, ["offer_isntree_direct_50ml"]);
+  assert.equal(result.parsed[0].pivota_pdp_url_verified, true);
+  assert.equal(result.parsed[0].pivota_product_object_id_verified, true);
+  assert.deepEqual(result.parsed[0].pivota_offer_ids, [verifiedPivotaOfferId]);
+  assert.equal(result.parsed[0].pivota_offer_ids_verified, true);
   assert.equal(result.issues.some((issue) => issue.issue_type === "pivota_pdp_attribution_gap"), false);
 });
 
@@ -926,29 +954,244 @@ test("Pivota attribution scan creates PDP and offer attribution gaps", () => {
         reason: "Pivota PDP supports this recommendation.",
         purchase_path_present: true,
         purchase_path_type: "pivota_pdp",
-        product_url: "https://pivota.cc/pdp/pe_isntree_watery_sun_gel",
+        product_url: verifiedPivotaPdpUrl,
       },
     ],
     pivota_pdp_mentioned: true,
     pivota_pdp_url_present: true,
-    pivota_pdp_url: "https://pivota.cc/pdp/pe_isntree_watery_sun_gel",
+    pivota_pdp_url: verifiedPivotaPdpUrl,
+    pivota_product_object_id: verifiedPivotaObjectId,
     pivota_offer_present: false,
     pivota_offer_ids: [],
     purchase_path_present: true,
     purchase_path_type: "pivota_pdp",
-    channel_attribution: "pivota_pdp_attributed",
+    channel_attribution: "pivota_pdp_attributed_verified",
     missing_attributes_identified: [],
     reasoning_summary: "The Pivota PDP was returned without merchant offer IDs.",
   };
   const missingOffer = scoreAttributionFixture({
     scanMode: "pivota_pdp_attribution_test",
     output: pdpOnlyOutput,
+    preflight: pivotaPreflight(),
   });
   assert.equal(missingOffer.score.aggregate_scores.pivota_pdp_visibility_score, 100);
   assert.equal(missingOffer.score.aggregate_scores.pivota_offer_visibility_score, 0);
   assert.ok(
     missingOffer.issues.some((issue) => issue.issue_type === "pivota_offer_attribution_gap")
   );
+});
+
+test("Pivota negative control treats model-only Pivota mention as unverified echo", () => {
+  const output = {
+    mentioned_brands: ["Isntree"],
+    mentioned_products: [
+      {
+        name: "Isntree Hyaluronic Acid Watery Sun Gel",
+        brand: "Isntree",
+        rank: 1,
+        reason: "Pivota product object appears relevant, but no public PDP URL is returned.",
+        purchase_path_present: false,
+      },
+    ],
+    pivota_pdp_mentioned: true,
+    purchase_path_present: false,
+    channel_attribution: "pivota_pdp_attributed",
+    missing_attributes_identified: [],
+    reasoning_summary: "Pivota was referenced without a public URL or offer.",
+  };
+  const result = scoreAttributionFixture({
+    scanMode: "pivota_pdp_attribution_test",
+    output,
+    preflight: pivotaPreflight({
+      status: "negative_control",
+      candidate_url: undefined,
+      status_code: null,
+      final_url: undefined,
+      verified_url: undefined,
+      verified_product_object_ids: [],
+      verified_offer_ids: [],
+      failure_reason: "no_public_pivota_pdp_url_available",
+    }),
+  });
+  const issueTypes = new Set(result.issues.map((issue) => issue.issue_type));
+
+  assert.equal(result.score.aggregate_scores.pivota_pdp_visibility_score, 0);
+  assert.equal(result.score.aggregate_scores.pivota_offer_visibility_score, 0);
+  assert.ok(result.score.aggregate_scores.pivota_attribution_echo_rate > 0);
+  assert.equal(result.parsed[0].pivota_pdp_url_present, false);
+  assert.equal(result.parsed[0].pivota_attribution_verified, false);
+  assert.equal(result.parsed[0].channel_attribution, "unverified_pivota_echo");
+  assert.ok(
+    issueTypes.has("pivota_pdp_attribution_gap") ||
+      issueTypes.has("unverified_pivota_attribution")
+  );
+  assert.ok(issueTypes.has("unverified_pivota_attribution"));
+});
+
+test("Pivota PDP URL returning 404 does not count as channel visibility", () => {
+  const output = {
+    mentioned_brands: ["Isntree"],
+    mentioned_products: [
+      {
+        name: "Isntree Hyaluronic Acid Watery Sun Gel",
+        brand: "Isntree",
+        rank: 1,
+        reason: "The Pivota PDP was returned but is not verified.",
+        purchase_path_present: true,
+        purchase_path_type: "pivota_pdp",
+        product_url: verifiedPivotaPdpUrl,
+      },
+    ],
+    pivota_pdp_mentioned: true,
+    pivota_pdp_url_present: true,
+    pivota_pdp_url: verifiedPivotaPdpUrl,
+    purchase_path_present: true,
+    purchase_path_type: "pivota_pdp",
+    channel_attribution: "pivota_pdp_attributed",
+    missing_attributes_identified: [],
+    reasoning_summary: "The model returned a Pivota URL that failed preflight.",
+  };
+  const result = scoreAttributionFixture({
+    scanMode: "pivota_pdp_attribution_test",
+    output,
+    preflight: pivotaPreflight({
+      status: "failed",
+      status_code: 404,
+      verified_url: undefined,
+      verified_product_object_ids: [],
+      verified_offer_ids: [],
+      failure_reason: "pivota_pdp_url_not_public_or_product_mismatch",
+    }),
+  });
+
+  assert.equal(result.parsed[0].pivota_pdp_url_present, true);
+  assert.equal(result.parsed[0].pivota_pdp_url_verified, false);
+  assert.equal(result.parsed[0].pivota_attribution_failure_reason, "pivota_pdp_url_not_verified");
+  assert.equal(result.score.aggregate_scores.pivota_pdp_visibility_score, 0);
+  assert.ok(result.score.aggregate_scores.pivota_attribution_echo_rate > 0);
+});
+
+test("Pivota mentioned without URL remains unverified", () => {
+  const output = {
+    mentioned_brands: ["Isntree"],
+    mentioned_products: [
+      {
+        name: "Isntree Hyaluronic Acid Watery Sun Gel",
+        brand: "Isntree",
+        rank: 1,
+        reason: "Pivota may have a product page.",
+        purchase_path_present: false,
+      },
+    ],
+    pivota_pdp_mentioned: true,
+    channel_attribution: "pivota_pdp_attributed_unverified",
+    missing_attributes_identified: [],
+    reasoning_summary: "Pivota is mentioned but no URL or object ID was returned.",
+  };
+  const result = scoreAttributionFixture({
+    scanMode: "pivota_pdp_attribution_test",
+    output,
+    preflight: pivotaPreflight({ status: "verified" }),
+  });
+
+  assert.equal(result.parsed[0].pivota_pdp_url_present, false);
+  assert.equal(result.parsed[0].pivota_product_object_id_present, false);
+  assert.equal(result.score.aggregate_scores.pivota_pdp_visibility_score, 0);
+  assert.equal(result.score.aggregate_scores.pivota_attribution_echo_rate, 100);
+});
+
+test("Pivota offer mention without verified offer ID does not count as offer visibility", () => {
+  const output = {
+    mentioned_brands: ["Isntree"],
+    mentioned_products: [
+      {
+        name: "Isntree Hyaluronic Acid Watery Sun Gel",
+        brand: "Isntree",
+        rank: 1,
+        reason: "Pivota PDP is returned, but offer ID is unverified.",
+        purchase_path_present: true,
+        purchase_path_type: "pivota_offer",
+        product_url: verifiedPivotaPdpUrl,
+      },
+    ],
+    pivota_pdp_mentioned: true,
+    pivota_pdp_url_present: true,
+    pivota_pdp_url: verifiedPivotaPdpUrl,
+    pivota_product_object_id: verifiedPivotaObjectId,
+    pivota_offer_present: true,
+    pivota_offer_ids: ["offer_unverified"],
+    purchase_path_present: true,
+    purchase_path_type: "pivota_offer",
+    channel_attribution: "pivota_offer_attributed",
+    missing_attributes_identified: [],
+    reasoning_summary: "The model returned an unverified Pivota offer ID.",
+  };
+  const result = scoreAttributionFixture({
+    scanMode: "pivota_pdp_attribution_test",
+    output,
+    preflight: pivotaPreflight({
+      verified_offer_ids: [],
+      expected_offer_ids: [verifiedPivotaOfferId],
+    }),
+  });
+
+  assert.equal(result.score.aggregate_scores.pivota_pdp_visibility_score, 100);
+  assert.equal(result.score.aggregate_scores.pivota_offer_visibility_score, 0);
+  assert.equal(result.parsed[0].pivota_offer_ids_present, true);
+  assert.equal(result.parsed[0].pivota_offer_ids_verified, false);
+});
+
+test("Pivota preflight verifies agent.pivota.cc PDP URL with 200 response", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => ({
+    status: 200,
+    url: String(url),
+  });
+  try {
+    const { store, target, product, cluster } = createIsntreeSunscreenTarget(
+      [],
+      "pivota_pdp_attribution_test"
+    );
+    const preflight = await buildPivotaAttributionPreflight(
+      demandInput(store, target, cluster, product)
+    );
+
+    assert.equal(preflight.status, "verified");
+    assert.equal(preflight.status_code, 200);
+    assert.equal(preflight.verified_url, verifiedPivotaPdpUrl);
+    assert.deepEqual(preflight.verified_product_object_ids, [verifiedPivotaObjectId]);
+    assert.deepEqual(preflight.verified_offer_ids, [verifiedPivotaOfferId]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Pivota preflight records failed 404 PDP URL", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => ({
+    status: 404,
+    url: String(url),
+  });
+  try {
+    const { store, target, product, cluster } = createIsntreeSunscreenTarget(
+      [],
+      "pivota_pdp_attribution_test"
+    );
+    const preflight = await buildPivotaAttributionPreflight(
+      demandInput(store, target, cluster, product)
+    );
+
+    assert.equal(preflight.status, "failed");
+    assert.equal(preflight.status_code, 404);
+    assert.equal(preflight.verified_url, undefined);
+    assert.deepEqual(preflight.verified_product_object_ids, []);
+    assert.equal(
+      preflight.failure_reason,
+      "pivota_pdp_url_not_public_or_product_mismatch"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("product and competitor matching drives scoring and issue generation", async () => {

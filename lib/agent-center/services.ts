@@ -1,5 +1,10 @@
 import crypto from "node:crypto";
-import { GeminiProviderAdapter, PARSED_RECOMMENDATION_SCHEMA, parseProviderOutput } from "./provider.ts";
+import {
+  buildPivotaAttributionPreflight,
+  GeminiProviderAdapter,
+  PARSED_RECOMMENDATION_SCHEMA,
+  parseProviderOutput,
+} from "./provider.ts";
 import {
   DEFAULT_GEMINI_MODEL,
   DEMO_MERCHANT_ID,
@@ -459,9 +464,10 @@ function scanModePromptInstructions(input: {
       `Pivota product object ID: ${pivotaProductObjectId || "unknown"}.`,
       `Pivota PDP URL: ${pivotaPdpUrl || "not available"}.`,
       `Pivota offer IDs: ${pivotaOfferIds.join(", ") || "none"}.`,
+      "Pivota public PDP URLs use the agent.pivota.cc/products/{object_id} structure. Do not claim verified Pivota attribution unless that URL or product object ID is explicitly returned.",
       "If a recommended product is supported by the Pivota unified PDP or Pivota product object, include the Pivota PDP URL or product object as the agent-facing path.",
       "Set pivota_pdp_mentioned, pivota_pdp_url_present, pivota_pdp_url, pivota_offer_present, pivota_offer_ids, purchase_path_type, and channel_attribution accurately.",
-      "Use channel_attribution = pivota_pdp_attributed only when the Pivota PDP/object is returned. Use pivota_offer_attributed only when a Pivota-managed offer is returned.",
+      "Use verified Pivota channel_attribution values only when the PDP URL, product object ID, or offer ID is actually returned. Otherwise use an unverified Pivota attribution value.",
     ].join("\n");
   }
 
@@ -1499,19 +1505,33 @@ export class ScoringService {
     const pivotaPdpMentions = scorePivotaAttribution
       ? parsed.filter(
           (item) =>
-            item.pivota_pdp_mentioned ||
-            item.pivota_pdp_url_present ||
-            item.channel_attribution === "pivota_pdp_attributed" ||
-            item.channel_attribution === "pivota_offer_attributed" ||
+            (item.pivota_pdp_url_present && item.pivota_pdp_url_verified) ||
+            (item.pivota_product_object_id_present &&
+              item.pivota_product_object_id_verified) ||
+            item.channel_attribution === "pivota_pdp_attributed_verified" ||
+            item.channel_attribution === "pivota_offer_attributed_verified" ||
             item.channel_attribution === "executable_offer_attributed"
         ).length
       : 0;
     const pivotaOfferMentions = scorePivotaAttribution
       ? parsed.filter(
           (item) =>
-            item.pivota_offer_present ||
-            item.channel_attribution === "pivota_offer_attributed" ||
+            (item.pivota_offer_ids_present && item.pivota_offer_ids_verified) ||
+            item.channel_attribution === "pivota_offer_attributed_verified" ||
             item.channel_attribution === "executable_offer_attributed"
+        ).length
+      : 0;
+    const pivotaAttributionEchoes = scorePivotaAttribution
+      ? parsed.filter(
+          (item) =>
+            !item.pivota_attribution_verified &&
+            (item.pivota_pdp_mentioned ||
+              item.pivota_pdp_url_present ||
+              item.pivota_product_object_id_present ||
+              item.pivota_offer_present ||
+              item.channel_attribution === "pivota_pdp_attributed_unverified" ||
+              item.channel_attribution === "pivota_offer_attributed_unverified" ||
+              item.channel_attribution === "unverified_pivota_echo")
         ).length
       : 0;
     const executableOfferMentions = scoreExecutableOffer
@@ -1577,6 +1597,9 @@ export class ScoringService {
       pivota_offer_visibility_score: clampScore(
         (pivotaOfferMentions / total) * 100
       ),
+      pivota_attribution_echo_rate: clampScore(
+        (pivotaAttributionEchoes / total) * 100
+      ),
       executable_offer_visibility_score: scoreExecutableOffer
         ? clampScore((executableOfferMentions / total) * 100)
         : ("not_tested" as const),
@@ -1624,19 +1647,33 @@ export class ScoringService {
     const pivotaPdpMentions = scorePivotaAttribution
       ? parsed.filter(
           (item) =>
-            item.pivota_pdp_mentioned ||
-            item.pivota_pdp_url_present ||
-            item.channel_attribution === "pivota_pdp_attributed" ||
-            item.channel_attribution === "pivota_offer_attributed" ||
+            (item.pivota_pdp_url_present && item.pivota_pdp_url_verified) ||
+            (item.pivota_product_object_id_present &&
+              item.pivota_product_object_id_verified) ||
+            item.channel_attribution === "pivota_pdp_attributed_verified" ||
+            item.channel_attribution === "pivota_offer_attributed_verified" ||
             item.channel_attribution === "executable_offer_attributed"
         ).length
       : 0;
     const pivotaOfferMentions = scorePivotaAttribution
       ? parsed.filter(
           (item) =>
-            item.pivota_offer_present ||
-            item.channel_attribution === "pivota_offer_attributed" ||
+            (item.pivota_offer_ids_present && item.pivota_offer_ids_verified) ||
+            item.channel_attribution === "pivota_offer_attributed_verified" ||
             item.channel_attribution === "executable_offer_attributed"
+        ).length
+      : 0;
+    const pivotaAttributionEchoes = scorePivotaAttribution
+      ? parsed.filter(
+          (item) =>
+            !item.pivota_attribution_verified &&
+            (item.pivota_pdp_mentioned ||
+              item.pivota_pdp_url_present ||
+              item.pivota_product_object_id_present ||
+              item.pivota_offer_present ||
+              item.channel_attribution === "pivota_pdp_attributed_unverified" ||
+              item.channel_attribution === "pivota_offer_attributed_unverified" ||
+              item.channel_attribution === "unverified_pivota_echo")
         ).length
       : 0;
     const executableOfferMentions = scoreExecutableOffer
@@ -1701,18 +1738,26 @@ export class ScoringService {
       ),
       pivota_pdp_visibility_score: scoreExplanation(
         scores.pivota_pdp_visibility_score,
-        "pivota_pdp_or_product_object_attributed_runs / total_completed_runs * 100",
+        "verified_pivota_pdp_attribution_runs / total_completed_runs * 100",
         scorePivotaAttribution
-          ? `pivota_pdp_visibility_score = ${scores.pivota_pdp_visibility_score} because Pivota unified PDP, product object, or URL attribution appeared in ${pivotaPdpMentions} of ${parsed.length} completed Gemini runs.`
+          ? `pivota_pdp_visibility_score = ${scores.pivota_pdp_visibility_score} because verified Pivota PDP URL or product object attribution appeared in ${pivotaPdpMentions} of ${parsed.length} completed Gemini runs. Model-only Pivota mentions do not count.`
           : "pivota_pdp_visibility_score = 0 because this scan mode is open_product_visibility_test; open product recommendation does not prove Pivota PDP attribution.",
         supportingRuns
       ),
       pivota_offer_visibility_score: scoreExplanation(
         scores.pivota_offer_visibility_score,
-        "pivota_offer_attributed_runs / total_completed_runs * 100",
+        "verified_pivota_offer_runs / total_completed_runs * 100",
         scorePivotaAttribution
-          ? `pivota_offer_visibility_score = ${scores.pivota_offer_visibility_score} because Pivota-managed offers appeared in ${pivotaOfferMentions} of ${parsed.length} completed Gemini runs.`
+          ? `pivota_offer_visibility_score = ${scores.pivota_offer_visibility_score} because verified Pivota offer IDs appeared in ${pivotaOfferMentions} of ${parsed.length} completed Gemini runs.`
           : "pivota_offer_visibility_score = 0 because this scan mode does not test Pivota-managed offers.",
+        supportingRuns
+      ),
+      pivota_attribution_echo_rate: scoreExplanation(
+        scores.pivota_attribution_echo_rate,
+        "unverified_pivota_echo_runs / total_completed_runs * 100",
+        scorePivotaAttribution
+          ? `pivota_attribution_echo_rate = ${scores.pivota_attribution_echo_rate} because the model mentioned Pivota without a verified PDP URL, product object ID, or offer ID in ${pivotaAttributionEchoes} of ${parsed.length} completed Gemini runs. Echo rate is debug evidence, not a success score.`
+          : "pivota_attribution_echo_rate = 0 because this scan mode does not test Pivota attribution.",
         supportingRuns
       ),
       executable_offer_visibility_score: scoreExplanation(
@@ -1806,6 +1851,10 @@ export class FixTargetRouter {
 
     if (input.issueType === "pivota_offer_attribution_gap") {
       return ["pivota_unified_pdp", "pivota_product_graph"];
+    }
+
+    if (input.issueType === "unverified_pivota_attribution") {
+      return ["pivota_unified_pdp", "pivota_product_graph", "pivota_query_mapping"];
     }
 
     if (input.issueType === "missing_attribute") {
@@ -1931,6 +1980,27 @@ export class IssueEngine {
             "The product is visible to the model, but the Pivota unified PDP or product object was not returned as the agent-facing path.",
           recommendedAction:
             "Update the Pivota unified PDP, product object ID, and query mapping so the Pivota channel is returned for this demand scenario.",
+          input,
+          product,
+          missingAttributes,
+          parserConfidence,
+          matchConfidence,
+        })
+      );
+    }
+
+    if (
+      input.scanTarget.scan_mode === "pivota_pdp_attribution_test" &&
+      aggregate.pivota_attribution_echo_rate > 0
+    ) {
+      issues.push(
+        this.createIssue({
+          issueType: "unverified_pivota_attribution",
+          severity: "medium",
+          rootCause:
+            "The model recognized the product and appeared to reference Pivota, but it did not return a verified public Pivota PDP URL, product object ID, or offer path. Pivota channel visibility has not been proven.",
+          recommendedAction:
+            "Publish or verify the Pivota PDP URL/product object and expose verified offer IDs before counting Pivota channel attribution as successful.",
           input,
           product,
           missingAttributes,
@@ -2129,6 +2199,15 @@ export class IssueEngine {
           input.input.score.aggregate_scores.merchant_store_visibility_score / 100,
         pivota_pdp_visibility_rate:
           input.input.score.aggregate_scores.pivota_pdp_visibility_score / 100,
+        pivota_attribution_echo_rate:
+          input.input.score.aggregate_scores.pivota_attribution_echo_rate / 100,
+        pivota_pdp_preflight_status:
+          input.input.parsed.find((item) => item.pivota_pdp_preflight_status)
+            ?.pivota_pdp_preflight_status,
+        pivota_pdp_preflight_status_code:
+          input.input.parsed.find(
+            (item) => item.pivota_pdp_preflight_status_code !== undefined
+          )?.pivota_pdp_preflight_status_code,
         competitor_mentions: competitorMentions,
         top_competitors: unique(
           input.input.matches.flatMap((match) =>
@@ -2289,6 +2368,7 @@ export class DemandTestJobService {
               repetitionIndex,
               retestBoost: options?.retestBoost,
             };
+            input.pivotaAttributionPreflight = await buildPivotaAttributionPreflight(input);
             const run = this.createRun(job, cluster, query, provider, model, promptTemplateId, input);
             try {
               const raw = await adapter.runDemandTest(input);
@@ -2481,6 +2561,7 @@ function aggregateScores(scores: DemandVisibilityScore[]) {
       merchant_store_visibility_score: 0,
       pivota_pdp_visibility_score: 0,
       pivota_offer_visibility_score: 0,
+      pivota_attribution_echo_rate: 0,
       executable_offer_visibility_score: "not_tested" as const,
       visibility_score: 0,
       recommendation_rank_score: 0,
@@ -2506,6 +2587,8 @@ function aggregateScores(scores: DemandVisibilityScore[]) {
         score.aggregate_scores.pivota_pdp_visibility_score || 0;
       acc.pivota_offer_visibility_score +=
         score.aggregate_scores.pivota_offer_visibility_score || 0;
+      acc.pivota_attribution_echo_rate +=
+        score.aggregate_scores.pivota_attribution_echo_rate || 0;
       const executable = score.aggregate_scores.executable_offer_visibility_score;
       if (typeof executable === "number") {
         acc.executable_offer_visibility_score += executable;
@@ -2523,6 +2606,7 @@ function aggregateScores(scores: DemandVisibilityScore[]) {
       merchant_store_visibility_score: 0,
       pivota_pdp_visibility_score: 0,
       pivota_offer_visibility_score: 0,
+      pivota_attribution_echo_rate: 0,
       executable_offer_visibility_score: 0,
       executable_offer_tested_count: 0,
       visibility_score: 0,
@@ -2544,6 +2628,9 @@ function aggregateScores(scores: DemandVisibilityScore[]) {
     pivota_pdp_visibility_score: clampScore(sum.pivota_pdp_visibility_score / count),
     pivota_offer_visibility_score: clampScore(
       sum.pivota_offer_visibility_score / count
+    ),
+    pivota_attribution_echo_rate: clampScore(
+      sum.pivota_attribution_echo_rate / count
     ),
     executable_offer_visibility_score: sum.executable_offer_tested_count
       ? clampScore(
@@ -2599,6 +2686,7 @@ function scoreSnapshot(input: {
       merchant_store_visibility_score: aggregate.merchant_store_visibility_score,
       pivota_pdp_visibility_score: aggregate.pivota_pdp_visibility_score,
       pivota_offer_visibility_score: aggregate.pivota_offer_visibility_score,
+      pivota_attribution_echo_rate: aggregate.pivota_attribution_echo_rate,
       executable_offer_visibility_score: aggregate.executable_offer_visibility_score,
       visibility_score: aggregate.visibility_score,
       recommendation_rank_score: aggregate.recommendation_rank_score,
@@ -2630,6 +2718,9 @@ function scoreDelta(
     pivota_offer_visibility_score:
       after.aggregate_scores.pivota_offer_visibility_score -
       before.aggregate_scores.pivota_offer_visibility_score,
+    pivota_attribution_echo_rate:
+      after.aggregate_scores.pivota_attribution_echo_rate -
+      before.aggregate_scores.pivota_attribution_echo_rate,
     executable_offer_visibility_score:
       typeof after.aggregate_scores.executable_offer_visibility_score === "number" &&
       typeof before.aggregate_scores.executable_offer_visibility_score === "number"
@@ -3161,6 +3252,8 @@ export function getAgentCenterOverview(merchantId = DEMO_MERCHANT_ID) {
       latestResults?.aggregate_scores.merchant_store_visibility_score || 0,
     pivota_pdp_visibility_score:
       latestResults?.aggregate_scores.pivota_pdp_visibility_score || 0,
+    pivota_attribution_echo_rate:
+      latestResults?.aggregate_scores.pivota_attribution_echo_rate || 0,
     executable_offer_visibility_score:
       latestResults?.aggregate_scores.executable_offer_visibility_score ||
       "not_tested",
