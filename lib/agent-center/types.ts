@@ -646,6 +646,82 @@ export type AgenticGMVIssue = Timestamped & DemoFixtureMetadata & {
   };
 };
 
+export type IssueResolutionPlanStatus =
+  | "draft"
+  | "assigned"
+  | "waiting_merchant_approval"
+  | "in_progress"
+  | "ready_for_retest"
+  | "retesting"
+  | "resolved"
+  | "rejected"
+  | "ignored";
+
+export type IssueResolutionOwnerType =
+  | "merchant"
+  | "pivota_ops"
+  | "pivota_eng"
+  | "shared"
+  | "human_review";
+
+export type MerchantApprovalStatus =
+  | "not_required"
+  | "pending"
+  | "approved"
+  | "rejected";
+
+export type PivotaInternalStatus =
+  | "not_started"
+  | "queued"
+  | "in_progress"
+  | "applied"
+  | "blocked"
+  | "completed";
+
+export type RecommendedActionStatus =
+  | "proposed"
+  | "approved"
+  | "applied"
+  | "rejected"
+  | "skipped";
+
+export type RecommendedAction = {
+  id: string;
+  action_type: string;
+  title: string;
+  description: string;
+  target_layer: FixTarget | string;
+  requires_merchant_approval: boolean;
+  can_apply_automatically: boolean;
+  patch_payload: Record<string, unknown>;
+  status: RecommendedActionStatus;
+  evidence: Record<string, unknown>;
+  expected_impact: string;
+};
+
+export type IssueResolutionPlan = Timestamped & {
+  id: string;
+  issue_id: string;
+  merchant_id: string;
+  store_id: string;
+  scan_target_id: string;
+  blocker_type: string;
+  source_agent: "resolution_workflow";
+  status: IssueResolutionPlanStatus;
+  severity: Severity;
+  owner_type: IssueResolutionOwnerType;
+  owner_team: string;
+  fix_targets: FixTarget[];
+  root_cause_hypothesis: string;
+  recommended_actions: RecommendedAction[];
+  approval_required: boolean;
+  merchant_approval_status: MerchantApprovalStatus;
+  pivota_internal_status: PivotaInternalStatus;
+  verification_plan: Record<string, unknown>;
+  retest_result?: Record<string, unknown>;
+  usage_event_ids: string[];
+};
+
 export type ProductLayerComparison = {
   layer: "merchant_source" | "pivota_unified_pdp";
   product_title?: string;
@@ -1024,6 +1100,7 @@ export type GMVAssuranceBlocker = {
   fix_target?: FixTarget;
   issue_id?: string;
   diagnosis_id?: string;
+  resolution_plan_id?: string;
   recommended_action: string;
 };
 
@@ -1032,6 +1109,7 @@ export type GMVAssuranceUsageSummary = {
   product_understanding_credits: number;
   offer_verification_credits: number;
   checkout_verification_credits: number;
+  resolution_plan_credits?: number;
   total_preview_credits: number;
   billing_mode: "preview_only";
   billing_status: "not_invoiced";
@@ -1143,24 +1221,28 @@ export type UsageEvent = Timestamped & {
     | "ai_test_credit"
     | "product_understanding_credit"
     | "offer_verification_credit"
-    | "checkout_verification_credit";
+    | "checkout_verification_credit"
+    | "resolution_plan_credit";
   quantity: number;
   source_agent:
     | "demand_test_agent"
     | "product_understanding_agent"
     | "offer_execution_agent"
-    | "checkout_verification_agent";
+    | "checkout_verification_agent"
+    | "resolution_workflow";
   agent_type:
     | "demand_test_agent"
     | "product_understanding_agent"
     | "offer_execution_agent"
-    | "checkout_verification_agent";
+    | "checkout_verification_agent"
+    | "resolution_workflow";
   workflow_type:
     | "demand_scan"
     | "retest"
     | "product_diagnosis"
     | "offer_readiness"
-    | "checkout_readiness";
+    | "checkout_readiness"
+    | "issue_resolution";
   scan_mode: ScanMode;
   provider: UsageProviderName;
   model: string;
@@ -1351,6 +1433,7 @@ export type AgentCenterState = {
   productUnderstandingDiagnoses: ProductUnderstandingDiagnosis[];
   offerExecutionDiagnoses: OfferExecutionDiagnosis[];
   checkoutVerificationDiagnoses: CheckoutVerificationDiagnosis[];
+  issueResolutionPlans: IssueResolutionPlan[];
   gmvAssuranceSnapshots: GMVAssuranceSnapshot[];
   demoFixtures: DemoFixture[];
   productionValidationRuns: ProductionValidationRun[];

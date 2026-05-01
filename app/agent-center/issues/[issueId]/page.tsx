@@ -182,12 +182,14 @@ export default function IssueDetailPage() {
   const [diagnosis, setDiagnosis] = useState<any>(null);
   const [offerDiagnosis, setOfferDiagnosis] = useState<any>(null);
   const [checkoutDiagnosis, setCheckoutDiagnosis] = useState<any>(null);
+  const [resolutionPlan, setResolutionPlan] = useState<any>(null);
   const [retestPreparation, setRetestPreparation] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [retestState, setRetestState] = useState("idle");
   const [diagnosisState, setDiagnosisState] = useState("idle");
   const [offerDiagnosisState, setOfferDiagnosisState] = useState("idle");
   const [checkoutDiagnosisState, setCheckoutDiagnosisState] = useState("idle");
+  const [resolutionState, setResolutionState] = useState("idle");
 
   async function loadIssue(issueId: string) {
     const payload = await agentFetch<{ issue: any }>(`/api/agent-center/issues/${issueId}`);
@@ -208,6 +210,10 @@ export default function IssueDetailPage() {
       `/api/agent-center/issues/${issueId}/checkout-diagnosis`
     );
     setCheckoutDiagnosis(checkoutDiagnosisPayload.diagnosis);
+    const resolutionPayload = await agentFetch<{ resolution_plan: any }>(
+      `/api/agent-center/issues/${issueId}/resolution-plan`
+    );
+    setResolutionPlan(resolutionPayload.resolution_plan);
   }
 
   useEffect(() => {
@@ -319,6 +325,77 @@ export default function IssueDetailPage() {
       await loadIssue(issue.id);
     } catch {
       setCheckoutDiagnosisState("failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function generateResolutionPlan() {
+    if (!issue) return;
+    setLoading(true);
+    setResolutionState("generating");
+    try {
+      const payload = await agentFetch<{ resolution_plan: any }>(
+        `/api/agent-center/issues/${issue.id}/resolution-plan`,
+        { method: "POST" }
+      );
+      setResolutionPlan(payload.resolution_plan);
+      setResolutionState("completed");
+    } catch {
+      setResolutionState("failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function approveResolutionAction(actionId: string) {
+    if (!issue) return;
+    setLoading(true);
+    setResolutionState("approving");
+    try {
+      const payload = await agentFetch<{ resolution_plan: any }>(
+        `/api/agent-center/issues/${issue.id}/resolution-plan/actions/${actionId}/approve`,
+        { method: "POST" }
+      );
+      setResolutionPlan(payload.resolution_plan);
+      setResolutionState("completed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function applyResolutionAction(actionId: string) {
+    if (!issue) return;
+    setLoading(true);
+    setResolutionState("applying");
+    try {
+      const payload = await agentFetch<{ resolution_plan: any }>(
+        `/api/agent-center/issues/${issue.id}/resolution-plan/actions/${actionId}/apply`,
+        { method: "POST" }
+      );
+      setResolutionPlan(payload.resolution_plan);
+      setResolutionState("completed");
+    } catch {
+      setResolutionState("failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function retestResolutionPlan() {
+    if (!issue) return;
+    setLoading(true);
+    setResolutionState("retesting");
+    try {
+      const payload = await agentFetch<{ resolution_plan: any }>(
+        `/api/agent-center/issues/${issue.id}/resolution-plan/retest`,
+        { method: "POST" }
+      );
+      setResolutionPlan(payload.resolution_plan);
+      setResolutionState("completed");
+      await loadIssue(issue.id);
+    } catch {
+      setResolutionState("failed");
     } finally {
       setLoading(false);
     }
@@ -442,6 +519,154 @@ export default function IssueDetailPage() {
                 "Pivota will retest the same query clusters and compare before/after scores."}
             </NarrativeSection>
           </div>
+        </div>
+      </SurfaceCard>
+
+      <SurfaceCard
+        title="Resolution Plan"
+        description="Owner, recommended patches, approval state, and verification path for this blocker."
+      >
+        <div id="resolution-plan" className="space-y-5 px-5 py-5">
+          <div className="grid gap-3 sm:grid-cols-4">
+            <MetricTile
+              label="Owner"
+              value={resolutionPlan?.owner_type ? label(resolutionPlan.owner_type) : "not generated"}
+            />
+            <MetricTile
+              label="Plan status"
+              value={resolutionPlan?.status ? label(resolutionPlan.status) : label(resolutionState)}
+            />
+            <MetricTile
+              label="Approval"
+              value={
+                resolutionPlan?.merchant_approval_status
+                  ? label(resolutionPlan.merchant_approval_status)
+                  : "not required"
+              }
+            />
+            <MetricTile
+              label="Usage"
+              value={
+                resolutionPlan?.usage_event_ids?.length
+                  ? "preview only"
+                  : "not metered"
+              }
+            />
+          </div>
+
+          <NarrativeSection title="Root cause hypothesis">
+            {resolutionPlan?.root_cause_hypothesis ||
+              "Generate a resolution plan to convert this blocker into owned actions, patches, approvals, and a retest path."}
+          </NarrativeSection>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <NarrativeSection title="Fix targets">
+              <div className="flex flex-wrap gap-2">
+                {(resolutionPlan?.fix_targets || issue?.fix_targets || []).map((target: string) => (
+                  <FixTargetBadge key={target} target={target} />
+                ))}
+              </div>
+            </NarrativeSection>
+            <NarrativeSection title="Verification plan">
+              {resolutionPlan ? (
+                <JsonBlock value={resolutionPlan.verification_plan} />
+              ) : (
+                "No verification plan generated yet."
+              )}
+            </NarrativeSection>
+          </div>
+
+          {resolutionPlan?.recommended_actions?.length ? (
+            <div className="space-y-3">
+              <p className="merchant-overline">Recommended actions</p>
+              {resolutionPlan.recommended_actions.map((action: any) => (
+                <div
+                  key={action.id}
+                  className="rounded-[8px] border border-[color:var(--merchant-line)] p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-[color:var(--merchant-ink)]">
+                        {action.title}
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted)]">
+                        {action.description}
+                      </p>
+                    </div>
+                    <div className="text-right text-xs uppercase tracking-wide text-[color:var(--merchant-muted)]">
+                      <p>{label(action.status)}</p>
+                      <p>{label(action.target_layer)}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-4 lg:grid-cols-[1fr_280px]">
+                    <div>
+                      <p className="merchant-overline mb-2">Patch preview</p>
+                      <JsonBlock value={action.patch_payload || {}} />
+                    </div>
+                    <div className="space-y-3 text-sm text-[color:var(--merchant-muted-strong)]">
+                      <p>
+                        Approval:{" "}
+                        {action.requires_merchant_approval
+                          ? "merchant approval required"
+                          : "Pivota internal action"}
+                      </p>
+                      <p>Expected impact: {action.expected_impact}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {action.requires_merchant_approval &&
+                        action.status === "proposed" ? (
+                          <MerchantButton
+                            icon={CheckCircle2}
+                            variant="secondary"
+                            onClick={() => approveResolutionAction(action.id)}
+                            disabled={loading}
+                          >
+                            Approve
+                          </MerchantButton>
+                        ) : null}
+                        {action.status !== "applied" &&
+                        (!action.requires_merchant_approval ||
+                          action.status === "approved") ? (
+                          <MerchantButton
+                            icon={Send}
+                            variant="secondary"
+                            onClick={() => applyResolutionAction(action.id)}
+                            disabled={loading}
+                          >
+                            Apply
+                          </MerchantButton>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap gap-2">
+            <MerchantButton
+              icon={ClipboardList}
+              variant="secondary"
+              onClick={generateResolutionPlan}
+              disabled={loading}
+            >
+              {resolutionPlan ? "Refresh Resolution Plan" : "Generate Resolution Plan"}
+            </MerchantButton>
+            <MerchantButton
+              icon={RotateCcw}
+              onClick={retestResolutionPlan}
+              disabled={loading || !resolutionPlan}
+            >
+              Retest Resolution Plan
+            </MerchantButton>
+          </div>
+
+          {resolutionPlan?.retest_result ? (
+            <div>
+              <p className="merchant-overline mb-2">Retest result</p>
+              <JsonBlock value={resolutionPlan.retest_result} />
+            </div>
+          ) : null}
         </div>
       </SurfaceCard>
 

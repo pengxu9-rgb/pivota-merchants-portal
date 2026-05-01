@@ -313,7 +313,7 @@ export default function AgentCenterPage() {
                     <td className="px-5 py-3 text-[color:var(--merchant-muted-strong)]">
                       {blocker.issue_id ? (
                         <Link
-                          href={`/agent-center/issues/${blocker.issue_id}`}
+                          href={`/agent-center/issues/${blocker.issue_id}#resolution-plan`}
                           className="font-medium text-[color:var(--merchant-brand)]"
                         >
                           {blocker.recommended_action}
@@ -471,6 +471,10 @@ export default function AgentCenterPage() {
                 [
                   "Checkout Verification Credits",
                   snapshot?.usage_summary?.checkout_verification_credits || 0,
+                ],
+                [
+                  "Resolution Plan Credits",
+                  snapshot?.usage_summary?.resolution_plan_credits || 0,
                 ],
               ].map(([name, value]) => (
                 <div key={name} className="flex items-center justify-between px-5 py-3">

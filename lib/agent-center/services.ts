@@ -40,6 +40,8 @@ import type {
   GMVAssuranceUsageSummary,
   InputReadinessSnapshot,
   InventoryStatus,
+  IssueResolutionOwnerType,
+  IssueResolutionPlan,
   LLMSurfaceResult,
   LLMSurfaceTestRun,
   MerchantStore,
@@ -68,6 +70,8 @@ import type {
   QueryCluster,
   QueryMappingFinding,
   QueryIntentType,
+  RecommendedAction,
+  RecommendedActionStatus,
   RetestPreparation,
   ScanMode,
   ScanTarget,
@@ -1279,6 +1283,46 @@ export class UsageMeteringService {
       model: "checkout-verification-deterministic-v1",
       query_cluster_id: input.issue.affected_query_clusters[0] || "none",
       prompt_template_id: "checkout_verification_readiness_v1",
+      input_tokens: 0,
+      output_tokens: 0,
+      billable: true,
+      billing_mode: "preview_only",
+      billing_status: "not_invoiced",
+      created_at: now,
+      updated_at: now,
+    };
+    state.usageEvents.push(event);
+    return event;
+  }
+
+  recordIssueResolutionPlan(input: {
+    issue: AgenticGMVIssue;
+    planId?: string;
+    quantity?: number;
+  }) {
+    const key = `resolution_workflow:${input.issue.id}:issue_resolution:v1`;
+    const state = getAgentCenterState();
+    const existing = state.usageEvents.find((event) => event.idempotency_key === key);
+    if (existing) return existing;
+
+    const target = findScanTarget(input.issue.scan_target_id);
+    const now = nowIso();
+    const event: UsageEvent = {
+      id: nextId("usage"),
+      idempotency_key: key,
+      merchant_id: input.issue.merchant_id,
+      store_id: input.issue.store_id,
+      scan_target_id: input.issue.scan_target_id,
+      event_type: "resolution_plan_credit",
+      quantity: input.quantity || 1,
+      source_agent: "resolution_workflow",
+      agent_type: "resolution_workflow",
+      workflow_type: "issue_resolution",
+      scan_mode: target.scan_mode,
+      provider: "internal",
+      model: "issue-resolution-deterministic-v1",
+      query_cluster_id: input.issue.affected_query_clusters[0] || "none",
+      prompt_template_id: "issue_resolution_plan_v1",
       input_tokens: 0,
       output_tokens: 0,
       billable: true,
@@ -4806,12 +4850,14 @@ function usageSummaryForAssurance(events: UsageEvent[]): GMVAssuranceUsageSummar
   const product = byEvent.product_understanding_credit || 0;
   const offer = byEvent.offer_verification_credit || 0;
   const checkout = byEvent.checkout_verification_credit || 0;
+  const resolution = byEvent.resolution_plan_credit || 0;
   return {
     ai_test_credits: ai,
     product_understanding_credits: product,
     offer_verification_credits: offer,
     checkout_verification_credits: checkout,
-    total_preview_credits: ai + product + offer + checkout,
+    resolution_plan_credits: resolution,
+    total_preview_credits: ai + product + offer + checkout + resolution,
     billing_mode: "preview_only",
     billing_status: "not_invoiced",
   };
@@ -5560,6 +5606,783 @@ export class CheckoutVerificationService {
   }
 }
 
+const supportedResolutionBlockers = new Set([
+  "merchant_store_attribution_gap",
+  "pivota_pdp_attribution_gap",
+  "unverified_pivota_attribution",
+  "missing_attribute",
+  "pivota_pdp_readiness_gap",
+  "price_mismatch",
+  "expired_coupon",
+  "coupon_param_missing",
+  "checkout_url_unreachable",
+]);
+
+function latestIssueResolutionPlan(issueId: string) {
+  return (
+    latestByCreatedAt(
+      getAgentCenterState().issueResolutionPlans.filter(
+        (plan) => plan.issue_id === issueId
+      )
+    ) || null
+  );
+}
+
+function nextResolutionAction(plan?: IssueResolutionPlan | null) {
+  return plan?.recommended_actions.find(
+    (action) =>
+      !["applied", "rejected", "skipped"].includes(action.status)
+  );
+}
+
+function actionStatusAfterApply(action: RecommendedAction) {
+  return action.requires_merchant_approval && action.status !== "approved"
+    ? action.status
+    : "applied";
+}
+
+export class IssueResolutionService {
+  latest(issueId: string) {
+    findIssue(issueId);
+    return latestIssueResolutionPlan(issueId);
+  }
+
+  generate(issueId: string, options: { regenerate?: boolean } = {}) {
+    const issue = findIssue(issueId);
+    const existing = latestIssueResolutionPlan(issueId);
+    if (existing && !options.regenerate) return existing;
+
+    const blockerType = this.blockerType(issue);
+    const planId = nextId("resolution_plan");
+    const actions = this.actionsForIssue(issue, blockerType, planId);
+    const approvalRequired = actions.some(
+      (action) => action.requires_merchant_approval
+    );
+    const usageEvent = new UsageMeteringService().recordIssueResolutionPlan({
+      issue,
+      planId,
+    });
+    const now = nowIso();
+    const plan: IssueResolutionPlan = {
+      id: planId,
+      issue_id: issue.id,
+      merchant_id: issue.merchant_id,
+      store_id: issue.store_id,
+      scan_target_id: issue.scan_target_id,
+      blocker_type: blockerType,
+      source_agent: "resolution_workflow",
+      status: approvalRequired ? "waiting_merchant_approval" : "draft",
+      severity: issue.severity,
+      owner_type: this.ownerForBlocker(blockerType),
+      owner_team: this.ownerTeamForBlocker(blockerType),
+      fix_targets: this.fixTargetsForBlocker(issue, blockerType),
+      root_cause_hypothesis: this.rootCauseForBlocker(issue, blockerType),
+      recommended_actions: actions,
+      approval_required: approvalRequired,
+      merchant_approval_status: approvalRequired ? "pending" : "not_required",
+      pivota_internal_status: "not_started",
+      verification_plan: this.verificationPlanFor(issue, blockerType),
+      usage_event_ids: [usageEvent.id],
+      created_at: now,
+      updated_at: now,
+    };
+    getAgentCenterState().issueResolutionPlans.push(plan);
+    return plan;
+  }
+
+  update(issueId: string, patch: Partial<IssueResolutionPlan>) {
+    const plan = this.generate(issueId);
+    const allowed: Array<keyof IssueResolutionPlan> = [
+      "status",
+      "owner_type",
+      "owner_team",
+      "fix_targets",
+      "root_cause_hypothesis",
+      "approval_required",
+      "merchant_approval_status",
+      "pivota_internal_status",
+      "verification_plan",
+      "retest_result",
+    ];
+    for (const key of allowed) {
+      if (patch[key] !== undefined) {
+        (plan as Record<string, unknown>)[key] = patch[key];
+      }
+    }
+    touch(plan);
+    return plan;
+  }
+
+  approveAction(issueId: string, actionId: string) {
+    const plan = this.generate(issueId);
+    const action = this.findAction(plan, actionId);
+    action.status = "approved";
+    const merchantActions = plan.recommended_actions.filter(
+      (item) => item.requires_merchant_approval
+    );
+    if (merchantActions.every((item) => item.status === "approved")) {
+      plan.merchant_approval_status = "approved";
+      plan.status = "in_progress";
+    }
+    touch(plan);
+    return plan;
+  }
+
+  applyAction(issueId: string, actionId: string) {
+    const plan = this.generate(issueId);
+    const action = this.findAction(plan, actionId);
+    action.status = actionStatusAfterApply(action) as RecommendedActionStatus;
+    if (action.status !== "applied") {
+      throw new Error(
+        `Action ${action.id} requires approval before it can be applied`
+      );
+    }
+    const remainingPatchActions = plan.recommended_actions.filter(
+      (item) =>
+        !item.action_type.startsWith("rerun_") &&
+        !["applied", "skipped"].includes(item.status)
+    );
+    plan.pivota_internal_status = "applied";
+    plan.status = remainingPatchActions.length ? "in_progress" : "ready_for_retest";
+    touch(plan);
+    return plan;
+  }
+
+  async retest(issueId: string) {
+    const issue = findIssue(issueId);
+    const plan = this.generate(issueId);
+    plan.status = "retesting";
+    touch(plan);
+
+    const blockerType = plan.blocker_type;
+    let result: Record<string, unknown>;
+    if (
+      blockerType === "merchant_store_attribution_gap" ||
+      blockerType === "pivota_pdp_attribution_gap" ||
+      blockerType === "unverified_pivota_attribution"
+    ) {
+      const verification = await new VerificationService().retestIssue(issue.id);
+      result = {
+        status: "completed",
+        source_agent: "demand_test_agent",
+        scan_mode:
+          blockerType === "merchant_store_attribution_gap"
+            ? "merchant_store_attribution_test"
+            : "pivota_pdp_attribution_test",
+        verification_run_id: verification.id,
+      };
+    } else if (
+      blockerType === "missing_attribute" ||
+      blockerType === "pivota_pdp_readiness_gap"
+    ) {
+      const diagnosis = new ProductUnderstandingService().attachToRetestPlan(issue.id);
+      result = {
+        status: "completed",
+        source_agent: "product_understanding_agent",
+        diagnosis_id: diagnosis.id,
+      };
+    } else if (
+      blockerType === "price_mismatch" ||
+      blockerType === "expired_coupon"
+    ) {
+      const diagnosis = new OfferExecutionService().attachToRetestPlan(issue.id);
+      result = {
+        status: "completed",
+        source_agent: "offer_execution_agent",
+        diagnosis_id: diagnosis.id,
+      };
+    } else if (
+      blockerType === "coupon_param_missing" ||
+      blockerType === "checkout_url_unreachable"
+    ) {
+      const diagnosis = new CheckoutVerificationService().attachToRetestPlan(issue.id);
+      result = {
+        status: "completed",
+        source_agent: "checkout_verification_agent",
+        diagnosis_id: diagnosis.id,
+      };
+    } else {
+      result = {
+        status: "human_review_required",
+        source_agent: "resolution_workflow",
+      };
+    }
+
+    plan.retest_result = result;
+    plan.status = "ready_for_retest";
+    touch(plan);
+    return plan;
+  }
+
+  private findAction(plan: IssueResolutionPlan, actionId: string) {
+    const action = plan.recommended_actions.find((item) => item.id === actionId);
+    if (!action) throw new Error(`Resolution action not found: ${actionId}`);
+    return action;
+  }
+
+  private blockerType(issue: AgenticGMVIssue) {
+    const evidenceBlocker = String(issue.evidence?.blocker_type || "");
+    if (supportedResolutionBlockers.has(evidenceBlocker)) return evidenceBlocker;
+    if (supportedResolutionBlockers.has(issue.issue_type)) return issue.issue_type;
+
+    const offerDiagnosis = latestByCreatedAt(
+      getAgentCenterState().offerExecutionDiagnoses.filter(
+        (diagnosis) => diagnosis.issue_id === issue.id
+      )
+    );
+    const offerFinding = actionableOfferFindings(offerDiagnosis).find((finding) =>
+      supportedResolutionBlockers.has(finding.finding_type)
+    );
+    if (offerFinding) return offerFinding.finding_type;
+
+    const checkoutDiagnosis = latestByCreatedAt(
+      getAgentCenterState().checkoutVerificationDiagnoses.filter(
+        (diagnosis) => diagnosis.issue_id === issue.id
+      )
+    );
+    const checkoutFinding = actionableCheckoutFindings(checkoutDiagnosis).find(
+      (finding) => supportedResolutionBlockers.has(finding.finding_type)
+    );
+    if (checkoutFinding) return checkoutFinding.finding_type;
+
+    return issue.issue_type;
+  }
+
+  private ownerForBlocker(blockerType: string): IssueResolutionOwnerType {
+    if (blockerType === "missing_attribute") return "shared";
+    if (blockerType === "merchant_store_attribution_gap") return "shared";
+    if (blockerType === "coupon_param_missing") return "shared";
+    if (blockerType === "price_mismatch") return "shared";
+    if (blockerType === "checkout_url_unreachable") return "pivota_eng";
+    if (
+      blockerType === "pivota_pdp_attribution_gap" ||
+      blockerType === "unverified_pivota_attribution" ||
+      blockerType === "pivota_pdp_readiness_gap" ||
+      blockerType === "expired_coupon"
+    ) {
+      return "pivota_ops";
+    }
+    return "human_review";
+  }
+
+  private ownerTeamForBlocker(blockerType: string) {
+    const map: Record<string, string> = {
+      merchant_store_attribution_gap: "Merchant PDP + Pivota Product Ops",
+      pivota_pdp_attribution_gap: "Pivota Product Ops",
+      unverified_pivota_attribution: "Pivota Product Ops",
+      missing_attribute: "Merchant Catalog + Pivota Product Ops",
+      pivota_pdp_readiness_gap: "Pivota Product Ops",
+      price_mismatch: "Merchant Offer Ops + Pivota Offer Ops",
+      expired_coupon: "Pivota Offer Ops",
+      coupon_param_missing: "Merchant Promo Ops + Pivota Checkout Ops",
+      checkout_url_unreachable: "Pivota Checkout Engineering",
+    };
+    return map[blockerType] || "Human Review";
+  }
+
+  private fixTargetsForBlocker(issue: AgenticGMVIssue, blockerType: string) {
+    const map: Record<string, FixTarget[]> = {
+      merchant_store_attribution_gap: [
+        "merchant_structured_data",
+        "pivota_product_graph",
+        "pivota_unified_pdp",
+      ],
+      pivota_pdp_attribution_gap: ["pivota_unified_pdp", "pivota_product_graph"],
+      unverified_pivota_attribution: ["pivota_unified_pdp", "pivota_product_graph"],
+      missing_attribute: ["both_merchant_and_pivota"],
+      pivota_pdp_readiness_gap: ["pivota_unified_pdp", "pivota_product_graph"],
+      price_mismatch: ["pivota_offer_layer"],
+      expired_coupon: ["pivota_offer_layer", "merchant_promo_source"],
+      coupon_param_missing: ["pivota_checkout_layer", "merchant_promo_source"],
+      checkout_url_unreachable: ["pivota_checkout_layer"],
+    };
+    return unique([...(map[blockerType] || []), ...issue.fix_targets]);
+  }
+
+  private rootCauseForBlocker(issue: AgenticGMVIssue, blockerType: string) {
+    const map: Record<string, string> = {
+      merchant_store_attribution_gap:
+        "The product can be visible to the model, but the merchant store/PDP was not returned as the buying path. The likely cause is weak merchant buying-path structured data or a missing Pivota binding from product entity to merchant PDP.",
+      pivota_pdp_attribution_gap:
+        "The model did not return a verified public Pivota PDP URL or verified product object ID, so Pivota channel attribution has not been proven.",
+      unverified_pivota_attribution:
+        "The model appeared to mention Pivota, but the returned evidence did not verify against a public Pivota PDP URL, product object ID, or offer path.",
+      missing_attribute:
+        "The issue is likely caused by missing or weak product attributes in the merchant source and/or Pivota unified PDP.",
+      pivota_pdp_readiness_gap:
+        "Merchant source data can be sufficient while the Pivota unified PDP or product graph is missing normalized agent-facing attributes.",
+      price_mismatch:
+        "Merchant source price and Pivota offer state disagree, so the agent-facing offer should not be treated as ready until pricing is reconciled.",
+      expired_coupon:
+        "Promo/coupon state is stale or expired in one layer and needs to be reconciled before the offer can be agent-ready.",
+      coupon_param_missing:
+        "Checkout handoff does not include the required coupon passthrough parameter, so promo execution readiness is not proven.",
+      checkout_url_unreachable:
+        "The Pivota checkout path failed preflight or is missing a reachable checkout URL before payment.",
+    };
+    return map[blockerType] || issue.root_cause;
+  }
+
+  private verificationPlanFor(issue: AgenticGMVIssue, blockerType: string) {
+    const base = {
+      issue_id: issue.id,
+      blocker_type: blockerType,
+      scan_target_id: issue.scan_target_id,
+      query_cluster_ids: issue.affected_query_clusters,
+      provider_set: issue.verification_plan.providers,
+      prompt_template_ids: issue.verification_plan.prompt_templates,
+      repetition_count: 2,
+    };
+    if (blockerType === "merchant_store_attribution_gap") {
+      return {
+        ...base,
+        source_agent: "demand_test_agent",
+        scan_mode: "merchant_store_attribution_test",
+        success_metric: "merchant_store_visibility_score",
+      };
+    }
+    if (
+      blockerType === "pivota_pdp_attribution_gap" ||
+      blockerType === "unverified_pivota_attribution"
+    ) {
+      return {
+        ...base,
+        source_agent: "demand_test_agent",
+        scan_mode: "pivota_pdp_attribution_test",
+        success_metric: "pivota_pdp_visibility_score",
+      };
+    }
+    if (
+      blockerType === "missing_attribute" ||
+      blockerType === "pivota_pdp_readiness_gap"
+    ) {
+      return {
+        ...base,
+        source_agent: "product_understanding_agent",
+        workflow_type: "product_diagnosis",
+        success_metric: "attribute_readiness_score",
+      };
+    }
+    if (blockerType === "price_mismatch" || blockerType === "expired_coupon") {
+      return {
+        ...base,
+        source_agent: "offer_execution_agent",
+        workflow_type: "offer_readiness",
+        success_metric: "offer_readiness_score",
+      };
+    }
+    if (
+      blockerType === "coupon_param_missing" ||
+      blockerType === "checkout_url_unreachable"
+    ) {
+      return {
+        ...base,
+        source_agent: "checkout_verification_agent",
+        workflow_type: "checkout_readiness",
+        success_metric: "checkout_readiness_score",
+      };
+    }
+    return {
+      ...base,
+      source_agent: "resolution_workflow",
+      workflow_type: "human_review",
+    };
+  }
+
+  private actionsForIssue(
+    issue: AgenticGMVIssue,
+    blockerType: string,
+    planId: string
+  ) {
+    const action = (input: {
+      index: number;
+      action_type: string;
+      title: string;
+      description: string;
+      target_layer: FixTarget | string;
+      patch_payload?: Record<string, unknown>;
+      requires_merchant_approval?: boolean;
+      can_apply_automatically?: boolean;
+      expected_impact: string;
+    }): RecommendedAction => ({
+      id: `${planId}_action_${input.index}`,
+      action_type: input.action_type,
+      title: input.title,
+      description: input.description,
+      target_layer: input.target_layer,
+      requires_merchant_approval: Boolean(input.requires_merchant_approval),
+      can_apply_automatically: input.can_apply_automatically ?? true,
+      patch_payload: input.patch_payload || {},
+      status: "proposed",
+      evidence: {
+        issue_id: issue.id,
+        issue_type: issue.issue_type,
+        blocker_type: blockerType,
+        severity: issue.severity,
+      },
+      expected_impact: input.expected_impact,
+    });
+
+    const rerunPayload = {
+      scan_target_id: issue.scan_target_id,
+      query_cluster_ids: issue.affected_query_clusters,
+      provider_set: issue.verification_plan.providers,
+      prompt_template_ids: issue.verification_plan.prompt_templates,
+    };
+
+    if (blockerType === "merchant_store_attribution_gap") {
+      return [
+        action({
+          index: 1,
+          action_type: "merchant_pdp_structured_data_patch",
+          title: "Add merchant PDP structured data",
+          description:
+            "Patch merchant PDP/catalog metadata so the store and PDP URL are explicit buying-path evidence.",
+          target_layer: "merchant_structured_data",
+          requires_merchant_approval: true,
+          can_apply_automatically: false,
+          patch_payload: issue.merchant_source_patch || {
+            store_url: issue.store_url,
+            product_entity_ids: issue.affected_product_entities,
+          },
+          expected_impact:
+            "Improves the chance that the model returns the merchant store/PDP as purchase source.",
+        }),
+        action({
+          index: 2,
+          action_type: "pivota_product_graph_buying_path_binding",
+          title: "Bind Pivota product graph to merchant buying path",
+          description:
+            "Add a Pivota product graph binding from the ProductEntity to the merchant PDP/store path.",
+          target_layer: "pivota_product_graph",
+          patch_payload: issue.pivota_product_graph_patch || {
+            product_entity_ids: issue.affected_product_entities,
+            store_id: issue.store_id,
+            merchant_pdp_url: issue.store_url,
+          },
+          expected_impact:
+            "Gives Pivota a deterministic merchant buying-path reference for attribution retests.",
+        }),
+        action({
+          index: 3,
+          action_type: "pivota_unified_pdp_source_reference_patch",
+          title: "Add merchant source reference to Pivota PDP",
+          description:
+            "Patch Pivota unified PDP source references so merchant PDP evidence is visible to agent-facing context.",
+          target_layer: "pivota_unified_pdp",
+          patch_payload: issue.pivota_unified_pdp_patch || {
+            source_references: [issue.store_url],
+          },
+          expected_impact:
+            "Connects the unified PDP to the merchant source used for attribution proof.",
+        }),
+        action({
+          index: 4,
+          action_type: "rerun_merchant_store_attribution_test",
+          title: "Rerun Merchant Store Attribution Test",
+          description:
+            "Retest the same query cluster/provider/prompt setup after buying-path patches are applied.",
+          target_layer: "demand_test_agent",
+          patch_payload: {
+            ...rerunPayload,
+            scan_mode: "merchant_store_attribution_test",
+          },
+          expected_impact:
+            "Verifies whether merchant store visibility improves after the fix.",
+        }),
+      ];
+    }
+
+    if (blockerType === "pivota_pdp_attribution_gap") {
+      return [
+        action({
+          index: 1,
+          action_type: "publish_or_verify_pivota_pdp_url",
+          title: "Publish or verify Pivota PDP URL",
+          description:
+            "Ensure a public Pivota PDP URL exists, returns 200, and maps to the expected product entity.",
+          target_layer: "pivota_unified_pdp",
+          patch_payload: issue.pivota_unified_pdp_patch || {},
+          expected_impact:
+            "Creates verifiable channel evidence for Pivota PDP attribution.",
+        }),
+        action({
+          index: 2,
+          action_type: "bind_product_object_id",
+          title: "Bind verified product object ID",
+          description:
+            "Bind the ProductEntity to the verified Pivota product object ID used in agent-facing context.",
+          target_layer: "pivota_product_graph",
+          patch_payload: issue.pivota_product_graph_patch || {
+            product_entity_ids: issue.affected_product_entities,
+          },
+          expected_impact:
+            "Allows Pivota attribution scoring to count verified object-level evidence.",
+        }),
+        action({
+          index: 3,
+          action_type: "rerun_pivota_pdp_attribution_test",
+          title: "Rerun Pivota PDP Attribution Test",
+          description:
+            "Retest the same query cluster/provider/prompt setup after Pivota URL/object fixes.",
+          target_layer: "demand_test_agent",
+          patch_payload: {
+            ...rerunPayload,
+            scan_mode: "pivota_pdp_attribution_test",
+          },
+          expected_impact:
+            "Verifies whether Pivota channel attribution is now proven.",
+        }),
+      ];
+    }
+
+    if (blockerType === "unverified_pivota_attribution") {
+      return [
+        action({
+          index: 1,
+          action_type: "require_verified_pivota_url_or_object_id",
+          title: "Require verified Pivota URL or object ID",
+          description:
+            "Replace unverified Pivota mentions with a public PDP URL or product object ID that can pass verification.",
+          target_layer: "pivota_unified_pdp",
+          patch_payload: issue.pivota_unified_pdp_patch || {},
+          expected_impact:
+            "Prevents context echo from being counted as Pivota channel success.",
+        }),
+        action({
+          index: 2,
+          action_type: "update_pivota_product_graph_object_reference",
+          title: "Update Pivota product graph object reference",
+          description:
+            "Bind the ProductEntity to the verified Pivota object and expected offer references.",
+          target_layer: "pivota_product_graph",
+          patch_payload: issue.pivota_product_graph_patch || {},
+          expected_impact:
+            "Gives the attribution verifier deterministic object evidence.",
+        }),
+        action({
+          index: 3,
+          action_type: "rerun_pivota_pdp_attribution_test",
+          title: "Rerun Pivota PDP Attribution Test",
+          description:
+            "Retest after verified Pivota channel references are available.",
+          target_layer: "demand_test_agent",
+          patch_payload: {
+            ...rerunPayload,
+            scan_mode: "pivota_pdp_attribution_test",
+          },
+          expected_impact:
+            "Separates verified Pivota attribution from unverified Pivota echo.",
+        }),
+      ];
+    }
+
+    if (blockerType === "missing_attribute") {
+      return [
+        action({
+          index: 1,
+          action_type: "merchant_source_patch",
+          title: "Patch merchant source attributes",
+          description:
+            "Add missing merchant PDP/catalog attributes required for the affected query cluster.",
+          target_layer: "merchant_pdp",
+          requires_merchant_approval: true,
+          can_apply_automatically: false,
+          patch_payload: issue.merchant_source_patch || {},
+          expected_impact:
+            "Improves source completeness before Product Understanding diagnosis is rerun.",
+        }),
+        action({
+          index: 2,
+          action_type: "pivota_unified_pdp_patch",
+          title: "Patch Pivota unified PDP attributes",
+          description:
+            "Normalize the missing agent-facing attributes into the Pivota unified PDP.",
+          target_layer: "pivota_unified_pdp",
+          patch_payload: issue.pivota_unified_pdp_patch || {},
+          expected_impact:
+            "Aligns Pivota PDP readiness with the merchant source layer.",
+        }),
+        action({
+          index: 3,
+          action_type: "rerun_product_understanding_diagnosis",
+          title: "Rerun Product Understanding Diagnosis",
+          description:
+            "Verify merchant/Pivota layer gaps after product patches are applied.",
+          target_layer: "product_understanding_agent",
+          patch_payload: rerunPayload,
+          expected_impact:
+            "Confirms whether attribute readiness and fix targets improved.",
+        }),
+      ];
+    }
+
+    if (blockerType === "pivota_pdp_readiness_gap") {
+      return [
+        action({
+          index: 1,
+          action_type: "pivota_unified_pdp_patch",
+          title: "Patch Pivota unified PDP",
+          description:
+            "Add missing normalized attributes and source references to the Pivota unified PDP.",
+          target_layer: "pivota_unified_pdp",
+          patch_payload: issue.pivota_unified_pdp_patch || {},
+          expected_impact:
+            "Improves Pivota agent-facing PDP readiness without requiring merchant source changes.",
+        }),
+        action({
+          index: 2,
+          action_type: "pivota_product_graph_patch",
+          title: "Patch Pivota product graph",
+          description:
+            "Update product graph mappings that support the unified PDP and query/entity routing.",
+          target_layer: "pivota_product_graph",
+          patch_payload: issue.pivota_product_graph_patch || {},
+          expected_impact:
+            "Improves ProductEntity mapping and Pivota PDP readiness.",
+        }),
+        action({
+          index: 3,
+          action_type: "rerun_product_understanding_diagnosis",
+          title: "Rerun Product Understanding Diagnosis",
+          description: "Verify Pivota PDP readiness after patches are applied.",
+          target_layer: "product_understanding_agent",
+          patch_payload: rerunPayload,
+          expected_impact:
+            "Confirms whether Pivota layer gaps were closed.",
+        }),
+      ];
+    }
+
+    if (blockerType === "price_mismatch") {
+      return [
+        action({
+          index: 1,
+          action_type: "pivota_offer_patch",
+          title: "Patch Pivota offer price",
+          description:
+            "Align Pivota offer price/currency with the current merchant offer source.",
+          target_layer: "pivota_offer_layer",
+          patch_payload: issue.pivota_offer_patch || {},
+          expected_impact:
+            "Removes price inconsistency as an agentic checkout blocker.",
+        }),
+        action({
+          index: 2,
+          action_type: "rerun_offer_diagnosis",
+          title: "Rerun Offer Diagnosis",
+          description:
+            "Verify offer price consistency after the Pivota offer patch.",
+          target_layer: "offer_execution_agent",
+          patch_payload: rerunPayload,
+          expected_impact:
+            "Confirms the offer readiness score after price reconciliation.",
+        }),
+      ];
+    }
+
+    if (blockerType === "expired_coupon") {
+      return [
+        action({
+          index: 1,
+          action_type: "promo_state_patch",
+          title: "Patch stale promo/coupon state",
+          description:
+            "Expire or update Pivota promo state to match the merchant source coupon status.",
+          target_layer: "pivota_offer_layer",
+          patch_payload: issue.promo_state_patch || {},
+          expected_impact:
+            "Prevents stale promo state from being presented as an executable offer.",
+        }),
+        action({
+          index: 2,
+          action_type: "rerun_offer_diagnosis",
+          title: "Rerun Offer Diagnosis",
+          description:
+            "Verify promo/coupon consistency after the state patch.",
+          target_layer: "offer_execution_agent",
+          patch_payload: rerunPayload,
+          expected_impact:
+            "Confirms offer readiness after coupon reconciliation.",
+        }),
+      ];
+    }
+
+    if (blockerType === "coupon_param_missing") {
+      return [
+        action({
+          index: 1,
+          action_type: "coupon_passthrough_patch",
+          title: "Patch coupon passthrough",
+          description:
+            "Add required coupon parameter and coupon code to the Pivota cart handoff payload.",
+          target_layer: "pivota_checkout_layer",
+          patch_payload: issue.coupon_passthrough_patch || {},
+          expected_impact:
+            "Allows checkout verification to prove promo passthrough before payment.",
+        }),
+        action({
+          index: 2,
+          action_type: "rerun_checkout_diagnosis",
+          title: "Rerun Checkout Diagnosis",
+          description:
+            "Verify checkout handoff metadata after coupon passthrough patch.",
+          target_layer: "checkout_verification_agent",
+          patch_payload: rerunPayload,
+          expected_impact:
+            "Confirms coupon passthrough is ready in checkout handoff.",
+        }),
+      ];
+    }
+
+    if (blockerType === "checkout_url_unreachable") {
+      return [
+        action({
+          index: 1,
+          action_type: "pivota_checkout_patch",
+          title: "Patch Pivota checkout URL",
+          description:
+            "Refresh or replace the Pivota checkout URL/session so preflight returns a reachable path.",
+          target_layer: "pivota_checkout_layer",
+          patch_payload: issue.pivota_checkout_patch || {},
+          expected_impact:
+            "Restores checkout path availability before payment is attempted.",
+        }),
+        action({
+          index: 2,
+          action_type: "rerun_checkout_diagnosis",
+          title: "Rerun Checkout Diagnosis",
+          description:
+            "Verify checkout URL preflight after the Pivota checkout patch.",
+          target_layer: "checkout_verification_agent",
+          patch_payload: rerunPayload,
+          expected_impact:
+            "Confirms checkout readiness after URL/session refresh.",
+        }),
+      ];
+    }
+
+    return [
+      action({
+        index: 1,
+        action_type: "human_review_required",
+        title: "Route to human review",
+        description:
+          "This issue type is not yet covered by deterministic Issue Resolution Workflow V1.",
+        target_layer: "human_review",
+        requires_merchant_approval: true,
+        can_apply_automatically: false,
+        patch_payload: {
+          issue_type: issue.issue_type,
+          blocker_type: blockerType,
+        },
+        expected_impact:
+          "Creates an explicit owner and review path for unsupported blockers.",
+      }),
+    ];
+  }
+}
+
 type CreateAssuranceSnapshotInput = {
   merchant_id?: string;
   store_id?: string;
@@ -5578,6 +6401,24 @@ function issueForTypes(
   return issues.find((issue) => types.includes(issue.issue_type));
 }
 
+function applyResolutionPlansToSnapshot(snapshot: GMVAssuranceSnapshot) {
+  for (const blocker of snapshot.top_blockers) {
+    if (!blocker.issue_id) continue;
+    const plan = latestIssueResolutionPlan(blocker.issue_id);
+    const action = nextResolutionAction(plan);
+    if (!plan || !action) continue;
+    blocker.resolution_plan_id = plan.id;
+    blocker.recommended_action = action.title;
+  }
+  snapshot.recommended_next_actions = unique(
+    [
+      ...snapshot.top_blockers.map((blocker) => blocker.recommended_action),
+      ...snapshot.recommended_next_actions,
+    ].filter(Boolean)
+  );
+  return snapshot;
+}
+
 export class GMVAssuranceService {
   list(merchantId = DEMO_MERCHANT_ID) {
     return getAgentCenterState().gmvAssuranceSnapshots.filter(
@@ -5594,14 +6435,15 @@ export class GMVAssuranceService {
   }
 
   latest(merchantId = DEMO_MERCHANT_ID) {
-    return latestByCreatedAt(this.list(merchantId)) || null;
+    const snapshot = latestByCreatedAt(this.list(merchantId)) || null;
+    return snapshot ? applyResolutionPlansToSnapshot(snapshot) : null;
   }
 
   overview(merchantId = DEMO_MERCHANT_ID) {
     const latest = this.latest(merchantId);
     return {
       latest_snapshot: latest,
-      snapshots: this.list(merchantId).slice(-10).reverse(),
+      snapshots: this.list(merchantId).slice(-10).reverse().map(applyResolutionPlansToSnapshot),
     };
   }
 
@@ -5996,6 +6838,7 @@ export class GMVAssuranceService {
       created_at: now,
       updated_at: now,
     };
+    applyResolutionPlansToSnapshot(snapshot);
     state.gmvAssuranceSnapshots.push(snapshot);
     return snapshot;
   }

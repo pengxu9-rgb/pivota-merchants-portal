@@ -29,9 +29,11 @@ const {
   DemandTestJobService,
   FixTargetRouter,
   GMVAssuranceService,
+  getAgentCenterOverview,
   getIssueDebugView,
   InputReadinessService,
   IssueEngine,
+  IssueResolutionService,
   MerchantStoreService,
   OfferExecutionService,
   ProductionValidationRunService,
@@ -3320,6 +3322,205 @@ test("GMV assurance API creates and fetches snapshots", async () => {
   );
 });
 
+test("issue resolution plan generation handles merchant store attribution gaps", () => {
+  const fixture = runIsntreeProductUnderstandingCase({
+    issueType: "merchant_store_attribution_gap",
+  });
+  const plan = new IssueResolutionService().generate(fixture.issue.id);
+  const actionTypes = plan.recommended_actions.map((action) => action.action_type);
+  const usageEvent = getAgentCenterState().usageEvents.find(
+    (event) => event.id === plan.usage_event_ids[0]
+  );
+
+  assert.equal(plan.blocker_type, "merchant_store_attribution_gap");
+  assert.equal(plan.owner_type, "shared");
+  assert.ok(actionTypes.includes("merchant_pdp_structured_data_patch"));
+  assert.ok(actionTypes.includes("pivota_product_graph_buying_path_binding"));
+  assert.ok(actionTypes.includes("pivota_unified_pdp_source_reference_patch"));
+  assert.ok(actionTypes.includes("rerun_merchant_store_attribution_test"));
+  assert.equal(usageEvent.event_type, "resolution_plan_credit");
+  assert.equal(usageEvent.billing_mode, "preview_only");
+  assert.equal(usageEvent.billing_status, "not_invoiced");
+});
+
+test("issue resolution plan generation handles Pivota attribution gaps", () => {
+  const fixture = runIsntreeProductUnderstandingCase({
+    issueType: "pivota_pdp_attribution_gap",
+  });
+  const plan = new IssueResolutionService().generate(fixture.issue.id);
+  const actionTypes = plan.recommended_actions.map((action) => action.action_type);
+
+  assert.equal(plan.blocker_type, "pivota_pdp_attribution_gap");
+  assert.equal(plan.owner_type, "pivota_ops");
+  assert.ok(actionTypes.includes("publish_or_verify_pivota_pdp_url"));
+  assert.ok(actionTypes.includes("bind_product_object_id"));
+  assert.ok(actionTypes.includes("rerun_pivota_pdp_attribution_test"));
+  assert.equal(plan.verification_plan.scan_mode, "pivota_pdp_attribution_test");
+});
+
+test("issue resolution plan generation handles missing attributes", () => {
+  const fixture = runIsntreeProductUnderstandingCase({
+    merchantAttributes: {},
+    pivotaAttributes: {},
+    issueType: "missing_attribute",
+  });
+  const plan = new IssueResolutionService().generate(fixture.issue.id);
+  const actionTypes = plan.recommended_actions.map((action) => action.action_type);
+
+  assert.equal(plan.blocker_type, "missing_attribute");
+  assert.ok(plan.fix_targets.includes("both_merchant_and_pivota"));
+  assert.ok(actionTypes.includes("merchant_source_patch"));
+  assert.ok(actionTypes.includes("pivota_unified_pdp_patch"));
+  assert.ok(actionTypes.includes("rerun_product_understanding_diagnosis"));
+});
+
+test("issue resolution plan generation handles price mismatch findings", () => {
+  const fixture = createOfferExecutionFixture({
+    pivotaOfferPatch: { price: 21.99 },
+    issueType: "offer_execution_issue",
+  });
+  new OfferExecutionService().runDiagnosis(fixture.issue.id);
+  const plan = new IssueResolutionService().generate(fixture.issue.id);
+  const actionTypes = plan.recommended_actions.map((action) => action.action_type);
+
+  assert.equal(plan.blocker_type, "price_mismatch");
+  assert.ok(plan.fix_targets.includes("pivota_offer_layer"));
+  assert.ok(actionTypes.includes("pivota_offer_patch"));
+  assert.ok(actionTypes.includes("rerun_offer_diagnosis"));
+});
+
+test("issue resolution plan generation handles coupon passthrough gaps", () => {
+  const fixture = createCheckoutVerificationFixture({
+    merchantOfferPatch: {
+      coupon_code: "SUN10",
+      coupon_status: "active",
+    },
+    pivotaCheckoutPatch: {
+      cart_handoff_payload: {
+        variant: "ISNTREE-PU-WATERY-SUN-GEL-SPF50-PA4-50ML",
+        quantity: 1,
+      },
+    },
+  });
+  new CheckoutVerificationService().runDiagnosis(fixture.issue.id);
+  const plan = new IssueResolutionService().generate(fixture.issue.id);
+  const actionTypes = plan.recommended_actions.map((action) => action.action_type);
+
+  assert.equal(plan.blocker_type, "coupon_param_missing");
+  assert.ok(plan.fix_targets.includes("pivota_checkout_layer"));
+  assert.ok(plan.fix_targets.includes("merchant_promo_source"));
+  assert.ok(actionTypes.includes("coupon_passthrough_patch"));
+  assert.ok(actionTypes.includes("rerun_checkout_diagnosis"));
+});
+
+test("issue resolution action approval and apply update action state", () => {
+  const fixture = runIsntreeProductUnderstandingCase({
+    issueType: "merchant_store_attribution_gap",
+  });
+  const service = new IssueResolutionService();
+  const plan = service.generate(fixture.issue.id);
+  const merchantAction = plan.recommended_actions.find(
+    (action) => action.action_type === "merchant_pdp_structured_data_patch"
+  );
+
+  assert.throws(() => service.applyAction(fixture.issue.id, merchantAction.id));
+  service.approveAction(fixture.issue.id, merchantAction.id);
+  const applied = service.applyAction(fixture.issue.id, merchantAction.id);
+  const updatedAction = applied.recommended_actions.find(
+    (action) => action.id === merchantAction.id
+  );
+
+  assert.equal(updatedAction.status, "applied");
+  assert.equal(applied.merchant_approval_status, "approved");
+});
+
+test("issue resolution retest uses the correct agent and scan mode", async () => {
+  const fixture = runIsntreeProductUnderstandingCase({
+    issueType: "merchant_store_attribution_gap",
+  });
+  const service = new IssueResolutionService();
+  const plan = service.generate(fixture.issue.id);
+
+  assert.equal(plan.verification_plan.source_agent, "demand_test_agent");
+  assert.equal(plan.verification_plan.scan_mode, "merchant_store_attribution_test");
+
+  const retested = await service.retest(fixture.issue.id);
+  assert.equal(retested.retest_result.source_agent, "demand_test_agent");
+  assert.equal(
+    retested.retest_result.scan_mode,
+    "merchant_store_attribution_test"
+  );
+});
+
+test("issue resolution API creates, approves, applies, and retests a plan", async () => {
+  const fixture = runIsntreeProductUnderstandingCase({
+    issueType: "pivota_pdp_attribution_gap",
+  });
+  const created = await handleAgentCenterRequest(
+    new NextRequest(
+      `https://example.test/api/agent-center/issues/${fixture.issue.id}/resolution-plan`,
+      { method: "POST" }
+    ),
+    { path: ["issues", fixture.issue.id, "resolution-plan"] }
+  );
+  const createdPayload = await created.json();
+  const plan = createdPayload.resolution_plan;
+  const firstAction = plan.recommended_actions[0];
+
+  const applied = await handleAgentCenterRequest(
+    new NextRequest(
+      `https://example.test/api/agent-center/issues/${fixture.issue.id}/resolution-plan/actions/${firstAction.id}/apply`,
+      { method: "POST" }
+    ),
+    {
+      path: [
+        "issues",
+        fixture.issue.id,
+        "resolution-plan",
+        "actions",
+        firstAction.id,
+        "apply",
+      ],
+    }
+  );
+  const retested = await handleAgentCenterRequest(
+    new NextRequest(
+      `https://example.test/api/agent-center/issues/${fixture.issue.id}/resolution-plan/retest`,
+      { method: "POST" }
+    ),
+    { path: ["issues", fixture.issue.id, "resolution-plan", "retest"] }
+  );
+  const appliedPayload = await applied.json();
+  const retestedPayload = await retested.json();
+
+  assert.equal(created.status, 201);
+  assert.equal(
+    appliedPayload.resolution_plan.recommended_actions[0].status,
+    "applied"
+  );
+  assert.equal(retestedPayload.resolution_plan.retest_result.status, "completed");
+});
+
+test("GMV overview next action reads from the resolution plan", () => {
+  resetAgentCenterState();
+  const fixture = new DemoFixtureService().create({
+    preset: "offer_price_blocker_chain",
+    environment: "test",
+  });
+  const blocker = fixture.gmv_assurance_snapshot.top_blockers[0];
+  const plan = new IssueResolutionService().generate(blocker.issue_id);
+  const overview = getAgentCenterOverview();
+
+  assert.equal(
+    overview.latest_assurance_snapshot.top_blockers[0].resolution_plan_id,
+    plan.id
+  );
+  assert.equal(
+    overview.latest_assurance_snapshot.recommended_next_actions[0],
+    plan.recommended_actions[0].title
+  );
+});
+
 test("internal production validation route returns 403 when disabled", async () => {
   resetAgentCenterState();
   const originalEnabled = process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION;
@@ -3761,6 +3962,19 @@ test("Issue Detail renders Checkout Verification Diagnosis controls", async () =
   assert.match(source, /checkout-diagnosis/);
   assert.match(source, /regenerate-checkout-patch/);
   assert.match(source, /attach-checkout-diagnosis-to-retest/);
+});
+
+test("Issue Detail renders Issue Resolution Workflow controls", async () => {
+  const source = await readFile(
+    new URL("../../app/agent-center/issues/[issueId]/page.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(source, /Resolution Plan/);
+  assert.match(source, /Generate Resolution Plan/);
+  assert.match(source, /Retest Resolution Plan/);
+  assert.match(source, /resolution-plan/);
+  assert.match(source, /Recommended actions/);
 });
 
 test("Agent Center overview renders GMV Assurance summary", async () => {

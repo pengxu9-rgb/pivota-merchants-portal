@@ -11,6 +11,7 @@ import {
   getPublicState,
   getUsageSummary,
   InputReadinessService,
+  IssueResolutionService,
   MerchantStoreService,
   OfferExecutionService,
   ProductionValidationRunService,
@@ -423,6 +424,10 @@ export async function handleAgentCenterRequest(
             debug: service.debugPayload(id),
           });
         }
+        if (action === "resolution-plan") {
+          const service = new IssueResolutionService();
+          return json({ resolution_plan: service.latest(id) });
+        }
         const issue = state.issues.find((item) => item.id === id);
         return issue ? json({ issue }) : json({ error: "Issue not found" }, 404);
       }
@@ -431,11 +436,44 @@ export async function handleAgentCenterRequest(
           issues: state.issues.filter((issue) => issue.merchant_id === merchantId),
         });
       }
+      if (req.method === "PATCH" && id && action === "resolution-plan") {
+        const service = new IssueResolutionService();
+        return json({
+          resolution_plan: service.update(id, await requestBody(req)),
+        });
+      }
       if (req.method === "PATCH" && id) {
         const issue = state.issues.find((item) => item.id === id);
         if (!issue) return json({ error: "Issue not found" }, 404);
         Object.assign(issue, await requestBody(req), { updated_at: new Date().toISOString() });
         return json({ issue });
+      }
+      if (req.method === "POST" && id && action === "resolution-plan") {
+        const service = new IssueResolutionService();
+        if (segments[3] === "actions" && segments[4] && segments[5] === "approve") {
+          return json({
+            resolution_plan: service.approveAction(id, segments[4]),
+          });
+        }
+        if (segments[3] === "actions" && segments[4] && segments[5] === "apply") {
+          return json({
+            resolution_plan: service.applyAction(id, segments[4]),
+          });
+        }
+        if (segments[3] === "retest") {
+          return json({
+            resolution_plan: await service.retest(id),
+          });
+        }
+        const body = await requestBody(req);
+        return json(
+          {
+            resolution_plan: service.generate(id, {
+              regenerate: Boolean(body.regenerate),
+            }),
+          },
+          201
+        );
       }
       if (req.method === "POST" && id && ["approve", "ignore", "assign"].includes(action || "")) {
         const issue = state.issues.find((item) => item.id === id);

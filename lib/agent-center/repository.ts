@@ -291,6 +291,7 @@ function createInitialState(): AgentCenterState {
     productUnderstandingDiagnoses: [],
     offerExecutionDiagnoses: [],
     checkoutVerificationDiagnoses: [],
+    issueResolutionPlans: [],
     gmvAssuranceSnapshots: [],
     demoFixtures: [],
     productionValidationRuns: [],
