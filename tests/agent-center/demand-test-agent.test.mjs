@@ -102,6 +102,30 @@ test("usage estimate previews AI Test Credits without billing status", () => {
   assert.equal(estimate.billing_status, "not_invoiced");
 });
 
+test("usage estimate and job creation can scope to selected query clusters", () => {
+  const { target } = createConnectedTarget();
+  const cluster = new QueryClusterService().generateForScanTarget(target.id)[0];
+  const estimate = new UsageMeteringService().estimate({
+    scan_target_id: target.id,
+    query_cluster_ids: [cluster.id],
+    providers: ["gemini"],
+    prompt_template_ids: ["general_recommendation_v1"],
+    repetitions: 1,
+  });
+  const job = new DemandTestJobService().create({
+    scan_target_id: target.id,
+    query_cluster_ids: [cluster.id],
+    providers: ["gemini"],
+    prompt_template_ids: ["general_recommendation_v1"],
+    repetitions: 1,
+  });
+
+  assert.equal(estimate.estimated_query_clusters, 1);
+  assert.equal(estimate.estimated_ai_test_credits, 1);
+  assert.deepEqual(job.scope.query_cluster_ids, [cluster.id]);
+  assert.equal(job.estimated_credits, 1);
+});
+
 test("GeminiProviderAdapter uses deterministic mock results when configured", async () => {
   const { store, target } = createConnectedTarget();
   const cluster = new QueryClusterService().generateForScanTarget(target.id)[0];
@@ -136,6 +160,28 @@ test("parser schema validation marks invalid raw output", () => {
 
   assert.equal(parsed.schema_valid, false);
   assert.ok(parsed.validation_errors.includes("mentioned_products_missing"));
+});
+
+test("parser schema validation handles malformed JSON as parse evidence", () => {
+  const { store, target } = createConnectedTarget();
+  const cluster = new QueryClusterService().generateForScanTarget(target.id)[0];
+  const input = demandInput(store, target, cluster, store.products[0]);
+  const parsed = parseProviderOutput(
+    {
+      provider: "gemini",
+      model: "gemini-2.0-flash",
+      raw_output: "not-json",
+      normalized_output: {},
+      input_tokens: 1,
+      output_tokens: 1,
+      tool_calls: 0,
+      provider_request_id: "malformed",
+    },
+    input
+  );
+
+  assert.equal(parsed.schema_valid, false);
+  assert.ok(parsed.validation_errors.includes("raw_output_json_invalid"));
 });
 
 test("product and competitor matching drives scoring and issue generation", async () => {

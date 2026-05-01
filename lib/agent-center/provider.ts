@@ -106,6 +106,33 @@ function merchantRecommendation(input: DemandTestInput, rank = 2): MentionedProd
   };
 }
 
+function parseJsonObject(value: string) {
+  const trimmed = value.trim();
+  const candidates = [
+    trimmed,
+    trimmed.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim(),
+  ];
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Let parseProviderOutput mark schema validity; a malformed model payload is
+      // parser evidence, not a transport/provider failure.
+    }
+  }
+
+  return undefined;
+}
+
 function mockGeminiOutput(input: DemandTestInput) {
   const hash = stableHash(
     `${input.query}:${input.promptTemplateId}:${input.repetitionIndex}`
@@ -235,12 +262,13 @@ export class GeminiProviderAdapter {
             ?.map((part: { text?: string }) => part.text || "")
             .join("") || "{}";
         const usage = payload?.usageMetadata || {};
+        const normalized = parseJsonObject(rawText);
 
         return {
           provider: "gemini",
           model: input.model,
           raw_output: rawText,
-          normalized_output: JSON.parse(rawText),
+          normalized_output: normalized || {},
           input_tokens: Number(usage.promptTokenCount || 0),
           output_tokens: Number(usage.candidatesTokenCount || 0),
           tool_calls: 0,
@@ -269,10 +297,13 @@ export function parseProviderOutput(
   let output: Record<string, unknown> = {};
 
   try {
-    output =
-      typeof raw.raw_output === "string"
-        ? JSON.parse(raw.raw_output)
-        : raw.normalized_output || raw.raw_output;
+    if (typeof raw.raw_output === "string") {
+      const parsed = parseJsonObject(raw.raw_output);
+      if (parsed) output = parsed;
+      else validationErrors.push("raw_output_json_invalid");
+    } else {
+      output = raw.normalized_output || raw.raw_output;
+    }
   } catch {
     validationErrors.push("raw_output_json_invalid");
   }

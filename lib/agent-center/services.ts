@@ -48,6 +48,7 @@ type CreateScanTargetInput = {
 type UsageEstimateInput = {
   scan_target_id: string;
   selected_product_ids?: string[];
+  query_cluster_ids?: string[];
   providers?: ProviderName[];
   prompt_template_ids?: string[];
   repetitions?: number;
@@ -99,6 +100,19 @@ function findScanTarget(scanTargetId: string) {
 function findProduct(store: MerchantStore, productId?: string) {
   if (!productId) return store.products?.[0];
   return store.products?.find((product) => product.id === productId);
+}
+
+function applyQueryClusterScope(
+  clusters: QueryCluster[],
+  queryClusterIds?: string[]
+) {
+  if (!queryClusterIds?.length) return clusters;
+  const requested = new Set(queryClusterIds);
+  const scoped = clusters.filter((cluster) => requested.has(cluster.id));
+  if (!scoped.length) {
+    throw new Error("No matching query clusters found for requested scope");
+  }
+  return scoped;
 }
 
 function activePromptTemplateIds() {
@@ -501,7 +515,14 @@ export class UsageMeteringService {
       target.id,
       selectedProductIds
     );
-    const productCount = selectedProductIds.length || Math.max(1, store.products?.length || 1);
+    const scopedClusters = applyQueryClusterScope(clusters, input.query_cluster_ids);
+    const scopedProductIds = unique(
+      scopedClusters.map((cluster) => cluster.product_id).filter(Boolean)
+    );
+    const productCount =
+      scopedProductIds.length ||
+      selectedProductIds.length ||
+      Math.max(1, store.products?.length || 1);
     const providers: ProviderName[] = input.providers?.length
       ? input.providers
       : ["gemini"];
@@ -517,7 +538,10 @@ export class UsageMeteringService {
       0
     );
     const estimatedCredits = Math.ceil(
-      clusters.length * promptTemplateIds.length * repetitions * providerMultiplier
+      scopedClusters.length *
+        promptTemplateIds.length *
+        repetitions *
+        providerMultiplier
     );
     const used = this.usedCredits(target.merchant_id);
     const included = getAgentCenterState().usagePlan.included_credits;
@@ -526,7 +550,7 @@ export class UsageMeteringService {
 
     return {
       products_selected: productCount,
-      estimated_query_clusters: clusters.length,
+      estimated_query_clusters: scopedClusters.length,
       providers,
       prompt_templates: promptTemplateIds,
       repetitions,
@@ -1044,6 +1068,7 @@ export class DemandTestJobService {
       target.id,
       input.selected_product_ids
     );
+    const scopedClusters = applyQueryClusterScope(clusters, input.query_cluster_ids);
     const now = nowIso();
     const job: DemandTestJob = {
       id: nextId("job"),
@@ -1054,7 +1079,7 @@ export class DemandTestJobService {
       scan_mode: target.scan_mode,
       execution_mode: "sync",
       scope: {
-        query_cluster_ids: clusters.map((cluster) => cluster.id),
+        query_cluster_ids: scopedClusters.map((cluster) => cluster.id),
         providers: input.providers?.length ? input.providers : ["gemini"],
         prompt_templates: input.prompt_template_ids?.length
           ? input.prompt_template_ids
@@ -1386,15 +1411,16 @@ export class VerificationService {
       scan_target_id: target.id,
       providers: issue.verification_plan.providers,
       prompt_template_ids: issue.verification_plan.prompt_templates,
+      query_cluster_ids: issue.affected_query_clusters,
       repetitions: 2,
       job_type: "retest",
       parent_issue_id: issue.id,
     });
-    job.scope.query_cluster_ids = issue.affected_query_clusters;
     job.estimated_credits = new UsageMeteringService().estimate({
       scan_target_id: target.id,
       providers: job.scope.providers,
       prompt_template_ids: job.scope.prompt_templates,
+      query_cluster_ids: job.scope.query_cluster_ids,
       repetitions: job.scope.repetitions,
     }).estimated_ai_test_credits;
 
