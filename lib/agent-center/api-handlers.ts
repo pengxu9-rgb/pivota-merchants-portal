@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server.js";
 import { getAgentCenterState, DEMO_MERCHANT_ID } from "./repository.ts";
 import {
+  DemoFixtureService,
   DemoScenarioService,
   DemandTestJobService,
   getAgentCenterOverview,
@@ -50,10 +51,67 @@ function demoScenarioAllowed(_req: NextRequest) {
   );
 }
 
+function internalDemoFixtureGate(req: NextRequest) {
+  if (process.env.ENABLE_INTERNAL_DEMO_FIXTURES !== "true") {
+    return { allowed: false, error: "Internal demo fixtures are disabled" };
+  }
+
+  const expected =
+    process.env.PIVOTA_INTERNAL_DEMO_FIXTURE_SECRET ||
+    process.env.INTERNAL_DEMO_FIXTURE_TOKEN ||
+    process.env.PIVOTA_INTERNAL_API_SECRET;
+  if (!expected) {
+    return { allowed: false, error: "Internal demo fixture auth is not configured" };
+  }
+
+  const authorization = req.headers.get("authorization") || "";
+  const bearer = authorization.toLowerCase().startsWith("bearer ")
+    ? authorization.slice(7)
+    : "";
+  const provided =
+    req.headers.get("x-pivota-internal-secret") ||
+    req.headers.get("x-internal-demo-fixture-token") ||
+    bearer;
+
+  return provided === expected
+    ? { allowed: true }
+    : { allowed: false, error: "Internal authorization required" };
+}
+
 function routeError(error: unknown) {
   const message = error instanceof Error ? error.message : "Agent Center request failed";
   const status = /not found/i.test(message) ? 404 : 400;
   return json({ error: message }, status);
+}
+
+export async function handleInternalDemoFixturesRequest(
+  req: NextRequest,
+  params?: { fixtureId?: string }
+) {
+  const gate = internalDemoFixtureGate(req);
+  if (!gate.allowed) return json({ error: gate.error }, 403);
+
+  const service = new DemoFixtureService();
+  const fixtureId = params?.fixtureId;
+
+  try {
+    if (req.method === "POST" && !fixtureId) {
+      const body = await requestBody(req);
+      return json({ demo_fixture: service.create(body) }, 201);
+    }
+
+    if (req.method === "GET" && fixtureId) {
+      return json({ demo_fixture: service.get(fixtureId) });
+    }
+
+    if (req.method === "DELETE" && fixtureId) {
+      return json({ demo_fixture: service.delete(fixtureId) });
+    }
+
+    return json({ error: "Unsupported internal demo fixture route" }, 404);
+  } catch (error) {
+    return routeError(error);
+  }
 }
 
 export async function handleMerchantStoresRequest(

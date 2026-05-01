@@ -22,7 +22,9 @@ const {
   parseProviderOutput,
 } = provider;
 const {
+  cleanupExpiredDemoFixtures,
   DemoScenarioService,
+  DemoFixtureService,
   DemandTestJobService,
   FixTargetRouter,
   getIssueDebugView,
@@ -39,7 +41,7 @@ const {
   UsageMeteringService,
   VerificationService,
 } = services;
-const { handleAgentCenterRequest } = apiHandlers;
+const { handleAgentCenterRequest, handleInternalDemoFixturesRequest } = apiHandlers;
 
 const verifiedPivotaPdpUrl =
   "https://agent.pivota.cc/products/ext_d7c74bcb380cbc2bdd5d5d90?return=%2Fproducts%2Fext_0281be2868f91dcf200fa248%3Freturn%3D%252F";
@@ -567,6 +569,32 @@ function offerFindingTypes(diagnosis) {
   return diagnosis.offer_layer_findings.flatMap((comparison) =>
     comparison.findings.map((finding) => finding.finding_type)
   );
+}
+
+async function withInternalFixtureEnv(callback) {
+  const originalEnabled = process.env.ENABLE_INTERNAL_DEMO_FIXTURES;
+  const originalSecret = process.env.PIVOTA_INTERNAL_DEMO_FIXTURE_SECRET;
+  process.env.ENABLE_INTERNAL_DEMO_FIXTURES = "true";
+  process.env.PIVOTA_INTERNAL_DEMO_FIXTURE_SECRET = "fixture-secret";
+  try {
+    return await callback();
+  } finally {
+    if (originalEnabled === undefined) delete process.env.ENABLE_INTERNAL_DEMO_FIXTURES;
+    else process.env.ENABLE_INTERNAL_DEMO_FIXTURES = originalEnabled;
+    if (originalSecret === undefined) delete process.env.PIVOTA_INTERNAL_DEMO_FIXTURE_SECRET;
+    else process.env.PIVOTA_INTERNAL_DEMO_FIXTURE_SECRET = originalSecret;
+  }
+}
+
+function internalFixtureRequest(url, options = {}) {
+  return new NextRequest(url, {
+    ...options,
+    headers: {
+      "content-type": "application/json",
+      authorization: "Bearer fixture-secret",
+      ...(options.headers || {}),
+    },
+  });
 }
 
 test("scan target creation requires a store and preserves scan scope", () => {
@@ -2276,6 +2304,257 @@ test("offer execution API returns debug payload and can attach diagnosis to rete
         event.billing_mode === "preview_only" &&
         event.billing_status === "not_invoiced"
     )
+  );
+});
+
+test("internal demo fixture route returns 403 when disabled", async () => {
+  resetAgentCenterState();
+  const originalEnabled = process.env.ENABLE_INTERNAL_DEMO_FIXTURES;
+  const originalSecret = process.env.PIVOTA_INTERNAL_DEMO_FIXTURE_SECRET;
+  delete process.env.ENABLE_INTERNAL_DEMO_FIXTURES;
+  process.env.PIVOTA_INTERNAL_DEMO_FIXTURE_SECRET = "fixture-secret";
+  try {
+    const response = await handleInternalDemoFixturesRequest(
+      internalFixtureRequest(
+        "https://example.test/api/internal/agent-center/demo-fixtures",
+        {
+          method: "POST",
+          body: JSON.stringify({ preset: "clean_offer" }),
+        }
+      )
+    );
+    const payload = await response.json();
+
+    assert.equal(response.status, 403);
+    assert.match(payload.error, /disabled/);
+  } finally {
+    if (originalEnabled === undefined) delete process.env.ENABLE_INTERNAL_DEMO_FIXTURES;
+    else process.env.ENABLE_INTERNAL_DEMO_FIXTURES = originalEnabled;
+    if (originalSecret === undefined) delete process.env.PIVOTA_INTERNAL_DEMO_FIXTURE_SECRET;
+    else process.env.PIVOTA_INTERNAL_DEMO_FIXTURE_SECRET = originalSecret;
+  }
+});
+
+test("internal demo fixture route creates tagged fixture records", async () => {
+  resetAgentCenterState();
+  await withInternalFixtureEnv(async () => {
+    const response = await handleInternalDemoFixturesRequest(
+      internalFixtureRequest(
+        "https://example.test/api/internal/agent-center/demo-fixtures",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            preset: "clean_offer",
+            ttl_minutes: 30,
+            environment: "production-smoke",
+          }),
+        }
+      )
+    );
+    const payload = await response.json();
+    const fixture = payload.demo_fixture.fixture;
+    const store = payload.demo_fixture.store;
+    const product = payload.demo_fixture.product;
+    const issue = payload.demo_fixture.issue;
+
+    assert.equal(response.status, 201);
+    assert.equal(fixture.demo_fixture, true);
+    assert.equal(fixture.created_by, "internal");
+    assert.equal(fixture.cleanup_status, "active");
+    assert.equal(fixture.environment, "production-smoke");
+    assert.ok(fixture.expires_at);
+    assert.equal(store.demo_fixture, true);
+    assert.equal(product.demo_fixture, true);
+    assert.equal(issue.demo_fixture, true);
+    assert.equal(issue.fixture_id, fixture.fixture_id);
+    assert.ok(
+      fixture.records.some(
+        (record) => record.fixture_type === "merchant_offer"
+      )
+    );
+
+    const fetched = await handleInternalDemoFixturesRequest(
+      internalFixtureRequest(
+        `https://example.test/api/internal/agent-center/demo-fixtures/${fixture.fixture_id}`,
+        { method: "GET" }
+      ),
+      { fixtureId: fixture.fixture_id }
+    );
+    const fetchedPayload = await fetched.json();
+
+    assert.equal(fetched.status, 200);
+    assert.equal(fetchedPayload.demo_fixture.fixture.fixture_id, fixture.fixture_id);
+    assert.equal(fetchedPayload.demo_fixture.records.stores[0].fixture_id, fixture.fixture_id);
+  });
+});
+
+test("clean offer fixture can run offer diagnosis without generating offer issue", () => {
+  resetAgentCenterState();
+  const fixture = new DemoFixtureService().create({
+    preset: "clean_offer",
+    environment: "test",
+  });
+  const issueCount = getAgentCenterState().issues.length;
+  const diagnosis = new OfferExecutionService().runDiagnosis(fixture.issue.id);
+  const usageEvent = getAgentCenterState().usageEvents.find(
+    (event) => event.id === diagnosis.usage_event_ids[0]
+  );
+
+  assert.deepEqual(offerFindingTypes(diagnosis), ["clean_offer"]);
+  assert.equal(diagnosis.offer_readiness_score, 100);
+  assert.equal(getAgentCenterState().issues.length, issueCount);
+  assert.equal(
+    getAgentCenterState().issues.some(
+      (issue) => issue.issue_type === "offer_execution_issue" && !issue.demo_fixture
+    ),
+    false
+  );
+  assert.equal(usageEvent.event_type, "offer_verification_credit");
+  assert.equal(usageEvent.billing_mode, "preview_only");
+  assert.equal(usageEvent.billing_status, "not_invoiced");
+});
+
+test("price mismatch fixture generates price mismatch patch", () => {
+  resetAgentCenterState();
+  const fixture = new DemoFixtureService().create({
+    preset: "price_mismatch",
+    environment: "test",
+  });
+  const diagnosis = new OfferExecutionService().runDiagnosis(fixture.issue.id);
+  const patch = diagnosis.patch_recommendations.find(
+    (item) => item.patch_type === "pivota_offer_patch"
+  );
+
+  assert.ok(offerFindingTypes(diagnosis).includes("price_mismatch"));
+  assert.ok(
+    diagnosis.refined_fix_targets.includes("pivota_offer_layer") ||
+      diagnosis.refined_fix_targets.includes("both_merchant_and_pivota")
+  );
+  assert.equal(patch.patch.price, 18.99);
+});
+
+test("expired coupon fixture generates expired coupon or promo mismatch patch", () => {
+  resetAgentCenterState();
+  const fixture = new DemoFixtureService().create({
+    preset: "expired_coupon",
+    environment: "test",
+  });
+  const diagnosis = new OfferExecutionService().runDiagnosis(fixture.issue.id);
+  const findingTypes = offerFindingTypes(diagnosis);
+  const patch = diagnosis.patch_recommendations.find(
+    (item) => item.patch_type === "promo_state_patch"
+  );
+
+  assert.ok(
+    findingTypes.includes("expired_coupon") || findingTypes.includes("promo_mismatch")
+  );
+  assert.ok(diagnosis.refined_fix_targets.includes("pivota_offer_layer"));
+  assert.equal(patch.patch.coupon_status, "expired");
+});
+
+test("internal demo fixture presets cover inventory mismatch and missing Pivota offer", () => {
+  resetAgentCenterState();
+  const inventoryFixture = new DemoFixtureService().create({
+    preset: "inventory_mismatch",
+    environment: "test",
+  });
+  const inventoryDiagnosis = new OfferExecutionService().runDiagnosis(
+    inventoryFixture.issue.id
+  );
+
+  assert.ok(offerFindingTypes(inventoryDiagnosis).includes("inventory_mismatch"));
+
+  const missingFixture = new DemoFixtureService().create({
+    preset: "missing_pivota_offer",
+    environment: "test",
+  });
+  const missingDiagnosis = new OfferExecutionService().runDiagnosis(
+    missingFixture.issue.id
+  );
+
+  assert.ok(offerFindingTypes(missingDiagnosis).includes("missing_offer"));
+  assert.equal(missingFixture.pivota_offer, null);
+});
+
+test("internal demo fixture cleanup removes fixture records", async () => {
+  resetAgentCenterState();
+  await withInternalFixtureEnv(async () => {
+    const created = await handleInternalDemoFixturesRequest(
+      internalFixtureRequest(
+        "https://example.test/api/internal/agent-center/demo-fixtures",
+        {
+          method: "POST",
+          body: JSON.stringify({ preset: "price_mismatch" }),
+        }
+      )
+    );
+    const createdPayload = await created.json();
+    const fixtureId = createdPayload.demo_fixture.fixture.fixture_id;
+    const issueId = createdPayload.demo_fixture.issue.id;
+    const diagnosis = new OfferExecutionService().runDiagnosis(issueId);
+
+    assert.ok(
+      getAgentCenterState().merchantOffers.some(
+        (offer) => offer.fixture_id === fixtureId
+      )
+    );
+    assert.ok(diagnosis.usage_event_ids.length);
+
+    const deleted = await handleInternalDemoFixturesRequest(
+      internalFixtureRequest(
+        `https://example.test/api/internal/agent-center/demo-fixtures/${fixtureId}`,
+        { method: "DELETE" }
+      ),
+      { fixtureId }
+    );
+    const deletedPayload = await deleted.json();
+
+    assert.equal(deleted.status, 200);
+    assert.equal(deletedPayload.demo_fixture.fixture.cleanup_status, "deleted");
+    assert.equal(
+      getAgentCenterState().stores.some((store) => store.fixture_id === fixtureId),
+      false
+    );
+    assert.equal(
+      getAgentCenterState().merchantOffers.some(
+        (offer) => offer.fixture_id === fixtureId
+      ),
+      false
+    );
+    assert.equal(
+      getAgentCenterState().issues.some((issue) => issue.fixture_id === fixtureId),
+      false
+    );
+    assert.equal(
+      getAgentCenterState().offerExecutionDiagnoses.some(
+        (item) => item.issue_id === issueId
+      ),
+      false
+    );
+    assert.equal(
+      getAgentCenterState().usageEvents.some((event) =>
+        event.idempotency_key.includes(issueId)
+      ),
+      false
+    );
+  });
+});
+
+test("cleanupExpiredDemoFixtures expires stale internal fixtures", () => {
+  resetAgentCenterState();
+  const created = new DemoFixtureService().create({
+    preset: "clean_offer",
+    ttl_minutes: -1,
+    environment: "test",
+  });
+  const fixtureId = created.fixture.fixture_id;
+  const cleaned = cleanupExpiredDemoFixtures();
+
+  assert.equal(cleaned.length, 1);
+  assert.equal(cleaned[0].fixture.cleanup_status, "expired");
+  assert.equal(
+    getAgentCenterState().stores.some((store) => store.fixture_id === fixtureId),
+    false
   );
 });
 

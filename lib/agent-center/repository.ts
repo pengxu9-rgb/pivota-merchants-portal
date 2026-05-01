@@ -288,6 +288,7 @@ function createInitialState(): AgentCenterState {
     verificationRuns: [],
     productUnderstandingDiagnoses: [],
     offerExecutionDiagnoses: [],
+    demoFixtures: [],
     usageEvents: [],
     usagePlan: {
       included_credits: 1000,

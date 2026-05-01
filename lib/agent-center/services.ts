@@ -19,6 +19,10 @@ import type {
   AttributeGap,
   CompetitorMappingFinding,
   CouponStatus,
+  DemoFixture,
+  DemoFixtureMetadata,
+  DemoFixturePreset,
+  DemoFixtureType,
   DemandTestInput,
   DemandTestJob,
   DemandTestJobStatus,
@@ -4529,6 +4533,514 @@ export class OfferExecutionService {
     };
     touch(issue);
   }
+}
+
+function demoFixtureMetadata(input: {
+  fixtureId: string;
+  createdAt: string;
+  expiresAt: string;
+  ttlMinutes: number;
+  environment: string;
+}): Required<DemoFixtureMetadata> {
+  return {
+    demo_fixture: true,
+    fixture_id: input.fixtureId,
+    created_by: "internal",
+    created_at: input.createdAt,
+    expires_at: input.expiresAt,
+    ttl_minutes: input.ttlMinutes,
+    environment: input.environment,
+    cleanup_status: "active",
+  };
+}
+
+function expiresAtFromTtl(createdAt: string, ttlMinutes: number) {
+  return new Date(new Date(createdAt).getTime() + ttlMinutes * 60_000).toISOString();
+}
+
+function currentFixtureEnvironment(input?: string) {
+  return input || process.env.VERCEL_ENV || process.env.NODE_ENV || "development";
+}
+
+function fixtureRecord(
+  fixtureType: DemoFixtureType,
+  recordId: string,
+  parentRecordId?: string
+): DemoFixture["records"][number] {
+  return {
+    fixture_type: fixtureType,
+    record_id: recordId,
+    ...(parentRecordId ? { parent_record_id: parentRecordId } : {}),
+  };
+}
+
+function hasFixtureId(record: unknown, fixtureId: string) {
+  return Boolean(
+    record &&
+      typeof record === "object" &&
+      "fixture_id" in record &&
+      (record as { fixture_id?: string }).fixture_id === fixtureId
+  );
+}
+
+function offerSmokeFixtureProduct(
+  metadata: Required<DemoFixtureMetadata>
+): ProductRecord {
+  return {
+    ...metadata,
+    id: nextId("fixture_product"),
+    product_entity_id: `pe_${metadata.fixture_id}_watery_sun_gel`,
+    sku: `SKU-${metadata.fixture_id.toUpperCase()}-50ML`,
+    title: "Internal Demo Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml",
+    brand: "Internal Demo Skincare",
+    category: "skincare sunscreen",
+    price: 18.99,
+    currency: "USD",
+    pdp_url: `https://internal-demo.pivota.cc/products/${metadata.fixture_id}-watery-sun-gel`,
+    attributes: {
+      spf_level: "SPF50+",
+      pa_rating: "PA++++",
+      skin_type: "normal and combination",
+      finish: "lightweight watery gel",
+      active_ingredients: "UV filters plus hyaluronic acid",
+    },
+    pivota_attributes: {
+      spf_level: "SPF50+",
+      pa_rating: "PA++++",
+      skin_type: "normal and combination",
+      finish: "lightweight watery gel",
+      active_ingredients: "UV filters plus hyaluronic acid",
+      pivota_pdp_url: `https://agent.pivota.cc/products/${metadata.fixture_id}`,
+      pivota_product_object_id: metadata.fixture_id,
+      offer_ids: [`pivota_offer_${metadata.fixture_id}`],
+    },
+    agent_summary:
+      "Internal demo sunscreen fixture for production smoke testing offer readiness.",
+    priority: "high",
+  };
+}
+
+function offerIssueForFixture(input: {
+  metadata: Required<DemoFixtureMetadata>;
+  store: MerchantStore;
+  target: ScanTarget;
+  cluster: QueryCluster;
+  product: ProductRecord;
+  preset: DemoFixturePreset;
+}) {
+  const { metadata, store, target, cluster, product, preset } = input;
+  const isClean = preset === "clean_offer";
+  const now = metadata.created_at;
+  const issue: AgenticGMVIssue = {
+    ...metadata,
+    id: nextId("issue"),
+    merchant_id: store.merchant_id,
+    store_id: store.id,
+    scan_target_id: target.id,
+    store_url: store.store_url,
+    platform: store.platform,
+    source_agent: "demand_test_agent",
+    issue_type: "offer_execution_issue",
+    severity: isClean ? "low" : "medium",
+    status: "recommendation_ready",
+    affected_product_entities: [product.product_entity_id],
+    affected_skus: [product.sku],
+    affected_query_clusters: [cluster.id],
+    evidence: {
+      demo_fixture: true,
+      fixture_id: metadata.fixture_id,
+      preset,
+      query_cluster: cluster.cluster_name,
+      query_cluster_id: cluster.id,
+      product_entity_id: product.product_entity_id,
+      sku: product.sku,
+    },
+    root_cause: isClean
+      ? "Internal clean-offer fixture for Offer Execution smoke validation."
+      : "Internal offer mismatch fixture for Offer Execution smoke validation.",
+    fix_targets: isClean ? ["pivota_offer_layer"] : ["pivota_offer_layer"],
+    recommended_action:
+      "Run Offer Execution diagnosis and verify the generated patch recommendation.",
+    merchant_source_patch: {},
+    pivota_unified_pdp_patch: {},
+    estimated_gmv_at_risk: cluster.estimated_demand_value,
+    gmv_estimation_method:
+      "Internal demo fixture estimate for smoke testing only; not transaction attribution.",
+    estimated_gmv_at_risk_confidence: "low",
+    merchant_facing_summary:
+      "Internal demo fixture issue for Offer Execution production smoke testing.",
+    merchant_facing_narrative: {
+      what_happened:
+        "Internal demo fixture was created to validate offer readiness diagnostics.",
+      what_ai_recommended_instead:
+        "No consumer-facing recommendation evidence is part of this fixture.",
+      why_this_likely_happened:
+        "The fixture intentionally controls merchant offer and Pivota offer state.",
+      where_to_fix: "Internal fixture only.",
+      recommended_merchant_pdp_changes: [
+        "No merchant PDP change is required for this fixture.",
+      ],
+      recommended_pivota_pdp_changes: [
+        "Review Offer Execution patch recommendations generated by the agent.",
+      ],
+      how_pivota_will_verify_the_fix:
+        "Pivota will rerun the same internal offer diagnosis after fixture changes.",
+    },
+    approval_required: false,
+    verification_plan: {
+      retest_query_clusters: [cluster.id],
+      providers: ["gemini"],
+      prompt_templates: activePromptTemplateIds(),
+      success_metric: "visibility_rate",
+      target_improvement:
+        "verify Offer Execution fixture diagnosis and patch recommendation",
+    },
+    created_at: now,
+    updated_at: now,
+  };
+  return issue;
+}
+
+export class DemoFixtureService {
+  create(input?: {
+    preset?: DemoFixturePreset;
+    ttl_minutes?: number;
+    environment?: string;
+  }) {
+    this.cleanupExpiredDemoFixtures();
+    const state = getAgentCenterState();
+    const preset = input?.preset || "clean_offer";
+    const ttlMinutes = input?.ttl_minutes || 60;
+    const createdAt = nowIso();
+    const fixtureId = nextId("fixture");
+    const environment = currentFixtureEnvironment(input?.environment);
+    const expiresAt = expiresAtFromTtl(createdAt, ttlMinutes);
+    const metadata = demoFixtureMetadata({
+      fixtureId,
+      createdAt,
+      expiresAt,
+      ttlMinutes,
+      environment,
+    });
+    const product = offerSmokeFixtureProduct(metadata);
+
+    const store = new MerchantStoreService().create(
+      {
+        ...metadata,
+        store_name: `Internal Offer Fixture ${preset}`,
+        store_url: `https://internal-demo.pivota.cc/${fixtureId}`,
+        platform: "shopify",
+        integration_status: "connected",
+        primary_category: "skincare sunscreen",
+        competitor_brands: SUNSCREEN_COMPETITOR_BRANDS,
+        competitor_products: SUNSCREEN_COMPETITOR_PRODUCTS,
+        products: [product],
+      },
+      DEMO_MERCHANT_ID
+    );
+    Object.assign(store, metadata);
+    const connection = state.connections.find((item) => item.store_id === store.id);
+    if (connection) {
+      Object.assign(connection, metadata, {
+        status: "connected",
+        last_catalog_sync_at: createdAt,
+        last_offer_sync_at: createdAt,
+        capabilities: {
+          ...connection.capabilities,
+          catalog: true,
+          pdp_urls: true,
+          sku_variant_map: true,
+          structured_attributes: true,
+          offers: true,
+          checkout: false,
+          orders: false,
+        },
+      });
+      touch(connection);
+    }
+
+    const target = new ScanTargetService().create({
+      merchant_id: DEMO_MERCHANT_ID,
+      store_id: store.id,
+      selected_product_ids: [product.id],
+      scan_mode: "pivota_pdp_attribution_test",
+    });
+    Object.assign(target, metadata);
+
+    const clusters = new QueryClusterService().generateForScanTarget(target.id, [
+      product.id,
+    ]);
+    for (const cluster of clusters) {
+      Object.assign(cluster, metadata);
+      touch(cluster);
+    }
+    const cluster =
+      clusters.find((item) => item.intent_type === "category_recommendation") ||
+      clusters[0];
+    if (!cluster) throw new Error("Demo fixture query cluster could not be created");
+
+    const merchantOffer: MerchantOffer = {
+      ...metadata,
+      id: nextId("merchant_offer"),
+      merchant_id: store.merchant_id,
+      store_id: store.id,
+      product_id: product.id,
+      sku_id: product.sku,
+      price: 18.99,
+      currency: "USD",
+      promo_price: preset === "expired_coupon" ? 16.99 : null,
+      coupon_code: preset === "expired_coupon" ? "SUN10" : null,
+      coupon_status: preset === "expired_coupon" ? "expired" : "none",
+      inventory_status: preset === "inventory_mismatch" ? "out_of_stock" : "in_stock",
+      inventory_quantity: preset === "inventory_mismatch" ? 0 : 24,
+      expires_at:
+        preset === "expired_coupon"
+          ? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+          : null,
+      source_url: product.pdp_url,
+      last_synced_at: createdAt,
+      created_at: createdAt,
+      updated_at: createdAt,
+    };
+    state.merchantOffers.push(merchantOffer);
+
+    let pivotaOffer: PivotaOffer | null = null;
+    if (preset !== "missing_pivota_offer") {
+      pivotaOffer = {
+        ...metadata,
+        id: `pivota_offer_${fixtureId}`,
+        product_entity_id: product.product_entity_id,
+        pivota_unified_pdp_id: `pdp_${product.product_entity_id}`,
+        merchant_id: store.merchant_id,
+        store_id: store.id,
+        sku_id: product.sku,
+        price: preset === "price_mismatch" ? 21.99 : 18.99,
+        currency: "USD",
+        promo_price: preset === "expired_coupon" ? 16.99 : null,
+        coupon_code: preset === "expired_coupon" ? "SUN10" : null,
+        coupon_status: preset === "expired_coupon" ? "active" : "none",
+        inventory_status:
+          preset === "inventory_mismatch" ? "in_stock" : merchantOffer.inventory_status,
+        execution_status: preset === "clean_offer" ? "ready" : "needs_sync",
+        attached_to_pivota_pdp: true,
+        last_verified_at: createdAt,
+        created_at: createdAt,
+        updated_at: createdAt,
+      };
+      state.pivotaOffers.push(pivotaOffer);
+    }
+
+    const issue = offerIssueForFixture({
+      metadata,
+      store,
+      target,
+      cluster,
+      product,
+      preset,
+    });
+    state.issues.push(issue);
+
+    const records: DemoFixture["records"] = [
+      fixtureRecord("merchant_store", store.id),
+      fixtureRecord("scan_target", target.id, store.id),
+      fixtureRecord("product_entity", product.product_entity_id, product.id),
+      fixtureRecord("pivota_unified_pdp", `pdp_${product.product_entity_id}`, product.id),
+      fixtureRecord("merchant_product", product.id, store.id),
+      fixtureRecord("merchant_sku", product.sku, product.id),
+      fixtureRecord("merchant_offer", merchantOffer.id, product.id),
+      fixtureRecord("agentic_gmv_issue", issue.id, target.id),
+    ];
+    if (pivotaOffer) {
+      records.push(fixtureRecord("pivota_offer", pivotaOffer.id, product.id));
+    }
+
+    const fixture: DemoFixture = {
+      id: fixtureId,
+      fixture_id: fixtureId,
+      preset,
+      demo_fixture: true,
+      created_by: "internal",
+      expires_at: expiresAt,
+      ttl_minutes: ttlMinutes,
+      environment,
+      cleanup_status: "active",
+      records,
+      created_at: createdAt,
+      updated_at: createdAt,
+    };
+    state.demoFixtures.push(fixture);
+
+    return {
+      fixture,
+      store,
+      scan_target: target,
+      query_cluster: cluster,
+      product,
+      merchant_offer: merchantOffer,
+      pivota_offer: pivotaOffer,
+      issue,
+    };
+  }
+
+  get(fixtureId: string) {
+    this.cleanupExpiredDemoFixtures();
+    const fixture = getAgentCenterState().demoFixtures.find(
+      (item) => item.fixture_id === fixtureId
+    );
+    if (!fixture) throw new Error(`Demo fixture not found: ${fixtureId}`);
+    return {
+      fixture,
+      records: this.recordsForFixture(fixtureId),
+    };
+  }
+
+  delete(fixtureId: string) {
+    return this.cleanupFixture(fixtureId, "deleted");
+  }
+
+  cleanupExpiredDemoFixtures(now = nowIso()) {
+    const expired = getAgentCenterState().demoFixtures.filter(
+      (fixture) =>
+        fixture.cleanup_status === "active" &&
+        new Date(fixture.expires_at).getTime() <= new Date(now).getTime()
+    );
+    return expired.map((fixture) => this.cleanupFixture(fixture.fixture_id, "expired"));
+  }
+
+  private recordsForFixture(fixtureId: string) {
+    const state = getAgentCenterState();
+    return {
+      stores: state.stores.filter((item) => hasFixtureId(item, fixtureId)),
+      connections: state.connections.filter((item) => hasFixtureId(item, fixtureId)),
+      scan_targets: state.scanTargets.filter((item) => hasFixtureId(item, fixtureId)),
+      query_clusters: state.queryClusters.filter((item) => hasFixtureId(item, fixtureId)),
+      merchant_offers: state.merchantOffers.filter((item) =>
+        hasFixtureId(item, fixtureId)
+      ),
+      pivota_offers: state.pivotaOffers.filter((item) => hasFixtureId(item, fixtureId)),
+      issues: state.issues.filter((item) => hasFixtureId(item, fixtureId)),
+      offer_diagnoses: state.offerExecutionDiagnoses.filter((item) =>
+        this.fixtureIssueIds(fixtureId).includes(item.issue_id)
+      ),
+      usage_events: state.usageEvents.filter((item) =>
+        this.fixtureUsageEvent(item, fixtureId)
+      ),
+    };
+  }
+
+  private fixtureIssueIds(fixtureId: string) {
+    return getAgentCenterState()
+      .issues.filter((item) => hasFixtureId(item, fixtureId))
+      .map((item) => item.id);
+  }
+
+  private fixtureUsageEvent(event: UsageEvent, fixtureId: string) {
+    const state = getAgentCenterState();
+    const targetIds = state.scanTargets
+      .filter((item) => hasFixtureId(item, fixtureId))
+      .map((item) => item.id);
+    const clusterIds = state.queryClusters
+      .filter((item) => hasFixtureId(item, fixtureId))
+      .map((item) => item.id);
+    const issueIds = this.fixtureIssueIds(fixtureId);
+    return (
+      targetIds.includes(event.scan_target_id) ||
+      clusterIds.includes(event.query_cluster_id) ||
+      issueIds.some((issueId) => event.idempotency_key.includes(issueId))
+    );
+  }
+
+  private cleanupFixture(
+    fixtureId: string,
+    cleanupStatus: "deleted" | "expired"
+  ) {
+    const state = getAgentCenterState();
+    const fixture = state.demoFixtures.find((item) => item.fixture_id === fixtureId);
+    if (!fixture) throw new Error(`Demo fixture not found: ${fixtureId}`);
+
+    const targetIds = state.scanTargets
+      .filter((item) => hasFixtureId(item, fixtureId))
+      .map((item) => item.id);
+    const clusterIds = state.queryClusters
+      .filter((item) => hasFixtureId(item, fixtureId))
+      .map((item) => item.id);
+    const jobIds = state.jobs
+      .filter((item) => targetIds.includes(item.scan_target_id))
+      .map((item) => item.id);
+    const runIds = state.testRuns
+      .filter((item) => targetIds.includes(item.scan_target_id) || jobIds.includes(item.job_id))
+      .map((item) => item.id);
+    const resultIds = state.results
+      .filter((item) => runIds.includes(item.test_run_id))
+      .map((item) => item.id);
+    const parsedIds = state.parsedRecommendations
+      .filter(
+        (item) =>
+          runIds.includes(item.test_run_id) || clusterIds.includes(item.query_cluster_id)
+      )
+      .map((item) => item.id);
+    const issueIds = state.issues
+      .filter((item) => hasFixtureId(item, fixtureId))
+      .map((item) => item.id);
+
+    state.usageEvents = state.usageEvents.filter(
+      (item) => !this.fixtureUsageEvent(item, fixtureId)
+    );
+    state.offerExecutionDiagnoses = state.offerExecutionDiagnoses.filter(
+      (item) => !issueIds.includes(item.issue_id)
+    );
+    state.productUnderstandingDiagnoses = state.productUnderstandingDiagnoses.filter(
+      (item) => !issueIds.includes(item.issue_id)
+    );
+    state.verificationRuns = state.verificationRuns.filter(
+      (item) => !issueIds.includes(item.issue_id) && !targetIds.includes(item.scan_target_id)
+    );
+    state.retestPreparations = state.retestPreparations.filter(
+      (item) => !issueIds.includes(item.issue_id) && !targetIds.includes(item.scan_target_id)
+    );
+    state.issues = state.issues.filter((item) => !issueIds.includes(item.id));
+    state.scores = state.scores.filter(
+      (item) =>
+        !targetIds.includes(item.scan_target_id) &&
+        !clusterIds.includes(item.query_cluster_id)
+    );
+    state.matches = state.matches.filter(
+      (item) => !parsedIds.includes(item.parsed_recommendation_id)
+    );
+    state.parsedRecommendations = state.parsedRecommendations.filter(
+      (item) => !parsedIds.includes(item.id)
+    );
+    state.results = state.results.filter((item) => !resultIds.includes(item.id));
+    state.testRuns = state.testRuns.filter((item) => !runIds.includes(item.id));
+    state.jobs = state.jobs.filter((item) => !jobIds.includes(item.id));
+    state.queryClusters = state.queryClusters.filter(
+      (item) => !hasFixtureId(item, fixtureId)
+    );
+    state.scanTargets = state.scanTargets.filter(
+      (item) => !hasFixtureId(item, fixtureId)
+    );
+    state.readinessSnapshots = state.readinessSnapshots.filter(
+      (item) => !targetIds.includes(item.scan_target_id)
+    );
+    state.merchantOffers = state.merchantOffers.filter(
+      (item) => !hasFixtureId(item, fixtureId)
+    );
+    state.pivotaOffers = state.pivotaOffers.filter(
+      (item) => !hasFixtureId(item, fixtureId)
+    );
+    state.connections = state.connections.filter(
+      (item) => !hasFixtureId(item, fixtureId)
+    );
+    state.stores = state.stores.filter((item) => !hasFixtureId(item, fixtureId));
+
+    fixture.cleanup_status = cleanupStatus;
+    fixture.updated_at = nowIso();
+    return { fixture };
+  }
+}
+
+export function cleanupExpiredDemoFixtures() {
+  return new DemoFixtureService().cleanupExpiredDemoFixtures();
 }
 
 const SUNSCREEN_REQUIRED_ATTRIBUTES = [

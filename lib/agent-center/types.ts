@@ -120,6 +120,37 @@ export type Timestamped = {
   updated_at?: string;
 };
 
+export type DemoFixtureType =
+  | "merchant_store"
+  | "scan_target"
+  | "product_entity"
+  | "pivota_unified_pdp"
+  | "merchant_product"
+  | "merchant_sku"
+  | "merchant_offer"
+  | "pivota_offer"
+  | "agentic_gmv_issue";
+
+export type DemoFixturePreset =
+  | "clean_offer"
+  | "price_mismatch"
+  | "expired_coupon"
+  | "inventory_mismatch"
+  | "missing_pivota_offer";
+
+export type DemoFixtureCleanupStatus = "active" | "deleted" | "expired";
+
+export type DemoFixtureMetadata = {
+  demo_fixture?: boolean;
+  fixture_id?: string;
+  created_by?: "internal";
+  created_at?: string;
+  expires_at?: string;
+  ttl_minutes?: number;
+  environment?: string;
+  cleanup_status?: DemoFixtureCleanupStatus;
+};
+
 export type ChannelAttribution =
   | "unattributed_product_recommendation"
   | "merchant_store_attributed"
@@ -144,7 +175,7 @@ export type PurchasePathType =
 
 export type VisibilityScoreValue = number | "not_tested";
 
-export type ProductRecord = {
+export type ProductRecord = DemoFixtureMetadata & {
   id: string;
   product_entity_id: string;
   sku: string;
@@ -160,7 +191,7 @@ export type ProductRecord = {
   priority?: "low" | "medium" | "high";
 };
 
-export type MerchantStore = Timestamped & {
+export type MerchantStore = Timestamped & DemoFixtureMetadata & {
   id: string;
   merchant_id: string;
   store_name: string;
@@ -178,7 +209,7 @@ export type MerchantStore = Timestamped & {
   products?: ProductRecord[];
 };
 
-export type StorePlatformConnection = Timestamped & {
+export type StorePlatformConnection = Timestamped & DemoFixtureMetadata & {
   id: string;
   merchant_id: string;
   store_id: string;
@@ -198,7 +229,7 @@ export type StorePlatformConnection = Timestamped & {
   };
 };
 
-export type ScanTarget = Timestamped & {
+export type ScanTarget = Timestamped & DemoFixtureMetadata & {
   id: string;
   merchant_id: string;
   store_id: string;
@@ -249,7 +280,7 @@ export type ProviderRegistry = {
   credit_multiplier: number | null;
 };
 
-export type QueryCluster = Timestamped & {
+export type QueryCluster = Timestamped & DemoFixtureMetadata & {
   id: string;
   merchant_id: string;
   store_id: string;
@@ -544,7 +575,7 @@ export type MerchantFacingIssueNarrative = {
   how_pivota_will_verify_the_fix: string;
 };
 
-export type AgenticGMVIssue = Timestamped & {
+export type AgenticGMVIssue = Timestamped & DemoFixtureMetadata & {
   id: string;
   merchant_id: string;
   store_id: string;
@@ -709,7 +740,7 @@ export type OfferExecutionStatus =
   | "needs_sync"
   | "human_review";
 
-export type MerchantOffer = Timestamped & {
+export type MerchantOffer = Timestamped & DemoFixtureMetadata & {
   id: string;
   merchant_id: string;
   store_id: string;
@@ -727,7 +758,7 @@ export type MerchantOffer = Timestamped & {
   last_synced_at?: string | null;
 };
 
-export type PivotaOffer = Timestamped & {
+export type PivotaOffer = Timestamped & DemoFixtureMetadata & {
   id: string;
   product_entity_id: string;
   pivota_unified_pdp_id: string;
@@ -919,6 +950,23 @@ export type UsageEvent = Timestamped & {
   billing_status: "not_invoiced" | "pending_invoice" | "invoiced" | "void";
 };
 
+export type DemoFixture = Timestamped & {
+  id: string;
+  fixture_id: string;
+  preset: DemoFixturePreset;
+  demo_fixture: true;
+  created_by: "internal";
+  expires_at: string;
+  ttl_minutes: number;
+  environment: string;
+  cleanup_status: DemoFixtureCleanupStatus;
+  records: Array<{
+    fixture_type: DemoFixtureType;
+    record_id: string;
+    parent_record_id?: string;
+  }>;
+};
+
 export type UsageEstimate = {
   products_selected: number;
   estimated_query_clusters: number;
@@ -956,6 +1004,7 @@ export type AgentCenterState = {
   verificationRuns: VerificationRun[];
   productUnderstandingDiagnoses: ProductUnderstandingDiagnosis[];
   offerExecutionDiagnoses: OfferExecutionDiagnosis[];
+  demoFixtures: DemoFixture[];
   usageEvents: UsageEvent[];
   usagePlan: {
     included_credits: number;
