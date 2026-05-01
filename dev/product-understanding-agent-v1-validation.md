@@ -180,6 +180,157 @@ Product Understanding emits one deterministic preview-only usage event per issue
 
 Patch regeneration is traceable by new diagnosis IDs. The usage event remains idempotent for the same issue diagnosis workflow.
 
+## Production Live Validation Summary
+
+Validation ran on the production deployment:
+
+```text
+https://pivota-merchants-portal-clean.vercel.app
+```
+
+Date: 2026-05-01
+
+Baseline checks:
+
+- `/agent-center` returned HTTP 200.
+- `/api/agent-center/providers` returned HTTP 200.
+- Gemini baseline provider was `gemini-2.5-flash`.
+- Production demo scenario seeding returned HTTP 403 with `Demo scenario seeding is not enabled`. This is expected because demo seeding is disabled in production unless explicitly enabled.
+
+### Live Case B: Merchant PDP Weak, Pivota PDP Weak
+
+Product:
+
+```text
+Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml
+```
+
+Merchant source layer intentionally omitted key sunscreen attributes. Pivota unified PDP also omitted normalized sunscreen attributes.
+
+Run shape:
+
+- scan mode: `open_product_visibility_test`
+- provider: `gemini`
+- model: `gemini-2.5-flash`
+- query scope: one `category_recommendation` query cluster
+- prompt scope: `general_recommendation_v1`
+- repetitions: 1
+
+Gemini returned the Isntree product and the official merchant PDP URL:
+
+```text
+https://isntree-global.com/products/isntree-hyaluronic-acid-watery-sun-gel-50ml
+```
+
+Observed scores:
+
+- `product_entity_visibility_score = 100`
+- `attribute_readiness_score = 0`
+- `pivota_pdp_readiness_score = 35`
+- `merchant_store_visibility_score = 0`
+- `pivota_pdp_visibility_score = 0`
+- `executable_offer_visibility_score = not_tested`
+
+Generated Demand Test issues:
+
+- `missing_attribute`
+- `pivota_pdp_readiness_gap`
+
+Product Understanding diagnosis result:
+
+- root cause: merchant PDP/catalog and Pivota unified PDP both lacked required sunscreen attributes
+- `refined_fix_targets = both_merchant_and_pivota, merchant_variant_map`
+- generated patch types:
+  - `merchant_source_patch`
+  - `merchant_variant_map_patch`
+  - `pivota_unified_pdp_patch`
+
+Usage validation:
+
+- Demand scan emitted `ai_test_credit`
+- Product diagnosis emitted `product_understanding_credit`
+- all usage events stayed `preview_only / not_invoiced`
+
+### Live Case A: Merchant PDP Strong, Pivota PDP Weak
+
+Product:
+
+```text
+Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml
+```
+
+Merchant source attributes included:
+
+- `SPF50+`
+- `PA++++`
+- skin type
+- lightweight watery gel finish
+- active ingredients
+- hyaluronic acid
+- daily sunscreen positioning
+- skin hydration
+
+Pivota unified PDP intentionally included only partial normalized data.
+
+Run shape:
+
+- scan mode: `open_product_visibility_test`
+- provider: `gemini`
+- model: `gemini-2.5-flash`
+- query scope: one `category_recommendation` query cluster
+- prompt scope: `general_recommendation_v1`
+- repetitions: 1
+
+Gemini returned the exact Isntree product and official merchant PDP URL.
+
+Observed scores:
+
+- `product_entity_visibility_score = 100`
+- `attribute_readiness_score = 100`
+- `pivota_pdp_readiness_score = 54`
+- `merchant_store_visibility_score = 0`
+- `pivota_pdp_visibility_score = 0`
+- `executable_offer_visibility_score = not_tested`
+
+Generated Demand Test issue:
+
+- `pivota_pdp_readiness_gap`
+
+Product Understanding diagnosis result:
+
+- root cause: merchant source data was complete for the tested sunscreen attributes, but Pivota unified PDP was missing normalized values
+- merchant missing attributes: none
+- Pivota missing attributes:
+  - `pa_rating`
+  - `skin_type`
+  - `finish`
+  - `active_ingredients`
+- `refined_fix_targets = pivota_unified_pdp`
+- generated patch type:
+  - `pivota_unified_pdp_patch`
+
+Usage validation:
+
+- Demand scan emitted `ai_test_credit`
+- Product diagnosis emitted `product_understanding_credit`
+- all usage events stayed `preview_only / not_invoiced`
+
+### Product Diagnosis Debug Payload
+
+For both live cases, `GET /api/agent-center/issues/:issueId/product-diagnosis` returned:
+
+- `source_issue_summary`
+- `merchant_layer_inputs_used`
+- `pivota_layer_inputs_used`
+- `findings`
+- `refined_fix_targets`
+- `patch_recommendations`
+- `confidence`
+- `usage_event_ids`
+- usage event rows with `billing_mode = preview_only` and `billing_status = not_invoiced`
+
+This validates that the merchant UI can request the Product Understanding result while internal/debug consumers can inspect the exact source issue, layer inputs, findings, and usage IDs.
+
 ## Known Limitations
 
 - V1 diagnosis is deterministic and rule-based; it does not call an LLM.
