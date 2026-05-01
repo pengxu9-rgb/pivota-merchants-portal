@@ -39,6 +39,7 @@ import type {
   GMVAssuranceSnapshot,
   GMVAssuranceUsageSummary,
   InputReadinessSnapshot,
+  InventoryStatus,
   LLMSurfaceResult,
   LLMSurfaceTestRun,
   MerchantStore,
@@ -47,6 +48,7 @@ import type {
   MerchantOffer,
   ParsedRecommendation,
   OfferExecutionDiagnosis,
+  OfferExecutionStatus,
   OfferIssueType,
   OfferLayerComparison,
   OfferMismatchFinding,
@@ -59,6 +61,9 @@ import type {
   ProductPatchRecommendation,
   ProductRecord,
   ProductUnderstandingDiagnosis,
+  ProductionValidationReport,
+  ProductionValidationRun,
+  ProductionValidationUrlPreflight,
   ProviderName,
   QueryCluster,
   QueryMappingFinding,
@@ -5993,6 +5998,1032 @@ export class GMVAssuranceService {
     };
     state.gmvAssuranceSnapshots.push(snapshot);
     return snapshot;
+  }
+}
+
+type CreateProductionValidationRunInput = Partial<
+  Pick<
+    ProductionValidationRun,
+    | "environment"
+    | "merchant_name"
+    | "store_url"
+    | "merchant_pdp_url"
+    | "product_name"
+    | "brand"
+    | "sku_name"
+    | "category"
+    | "market"
+    | "language"
+    | "currency"
+    | "pivota_product_entity_id"
+    | "pivota_pdp_url"
+    | "pivota_offer_id"
+    | "merchant_offer_input"
+    | "pivota_offer_input"
+    | "merchant_checkout_input"
+    | "pivota_checkout_input"
+  >
+> & {
+  product_attributes?: Record<string, unknown>;
+  merchant_product_attributes?: Record<string, unknown>;
+  pivota_product_attributes?: Record<string, unknown>;
+  competitor_brands?: string[];
+  competitor_products?: string[];
+  repetitions?: number;
+};
+
+function stringInput(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function numberInput(value: unknown, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function booleanInput(value: unknown, fallback = false) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function recordInput(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function hasRecordInput(value: unknown) {
+  return Object.keys(recordInput(value)).length > 0;
+}
+
+function arrayOfStringInput(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim())
+    : [];
+}
+
+function originFromUrl(value: string) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return "https://internal-validation.pivota.cc";
+  }
+}
+
+function slugFrom(value: string) {
+  return compactWhitespace(value.toLowerCase().replace(/[^a-z0-9]+/g, " "))
+    .replace(/\s+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 60) || "product";
+}
+
+function extractPivotaProductObjectId(value?: string) {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    const match = url.pathname.match(/\/products\/([^/?#]+)/);
+    return match?.[1] || "";
+  } catch {
+    return "";
+  }
+}
+
+async function preflightPublicUrl(
+  url?: string
+): Promise<ProductionValidationUrlPreflight> {
+  const checkedAt = nowIso();
+  if (!url) {
+    return {
+      status: "not_provided",
+      status_code: null,
+      checked_at: checkedAt,
+    };
+  }
+
+  try {
+    let response = await fetch(url, { method: "HEAD", redirect: "follow" });
+    if (response.status === 403 || response.status === 405) {
+      response = await fetch(url, { method: "GET", redirect: "follow" });
+    }
+    const passed = response.status >= 200 && response.status < 400;
+    return {
+      url,
+      status: passed ? "passed" : "failed",
+      status_code: response.status,
+      final_url: response.url || url,
+      checked_at: checkedAt,
+    };
+  } catch (error) {
+    return {
+      url,
+      status: "failed",
+      status_code: null,
+      error:
+        error instanceof Error
+          ? error.message
+          : "URL preflight request failed",
+      checked_at: checkedAt,
+    };
+  }
+}
+
+function checkoutUrlFromRun(run: ProductionValidationRun) {
+  const pivotaCheckout = recordInput(run.pivota_checkout_input);
+  const merchantCheckout = recordInput(run.merchant_checkout_input);
+  return (
+    stringInput(pivotaCheckout.checkout_url) ||
+    stringInput(merchantCheckout.checkout_url) ||
+    stringInput(merchantCheckout.cart_url)
+  );
+}
+
+function productionValidationMerchantId(runId: string) {
+  return `internal_validation_${runId}`;
+}
+
+function scoreExplanationForProductionValidation(
+  score: VisibilityScoreValue,
+  formula: string,
+  supportingRuns: string[]
+) {
+  return scoreExplanation(
+    score,
+    formula,
+    "Internal production validation consolidated this score from real-input Demand Test runs.",
+    supportingRuns
+  );
+}
+
+export class ProductionValidationRunService {
+  create(input: CreateProductionValidationRunInput = {}) {
+    const merchantPdpUrl = stringInput(input.merchant_pdp_url);
+    const productName = stringInput(input.product_name);
+    if (!merchantPdpUrl) {
+      throw new Error("merchant_pdp_url is required");
+    }
+    if (!productName) {
+      throw new Error("product_name is required");
+    }
+
+    const now = nowIso();
+    const run: ProductionValidationRun = {
+      id: nextId("prod_validation"),
+      status: "created",
+      environment: currentFixtureEnvironment(input.environment),
+      merchant_name: stringInput(input.merchant_name) || "Internal Validation Merchant",
+      store_url: stringInput(input.store_url) || originFromUrl(merchantPdpUrl),
+      merchant_pdp_url: merchantPdpUrl,
+      product_name: productName,
+      brand: stringInput(input.brand) || undefined,
+      sku_name: stringInput(input.sku_name) || undefined,
+      category: stringInput(input.category) || "skincare",
+      market: stringInput(input.market) || "US",
+      language: stringInput(input.language) || "en",
+      currency: stringInput(input.currency) || "USD",
+      pivota_product_entity_id:
+        stringInput(input.pivota_product_entity_id) || undefined,
+      pivota_pdp_url: stringInput(input.pivota_pdp_url) || undefined,
+      pivota_offer_id: stringInput(input.pivota_offer_id) || undefined,
+      merchant_offer_input: hasRecordInput(input.merchant_offer_input)
+        ? recordInput(input.merchant_offer_input)
+        : undefined,
+      pivota_offer_input: hasRecordInput(input.pivota_offer_input)
+        ? recordInput(input.pivota_offer_input)
+        : undefined,
+      merchant_checkout_input: hasRecordInput(input.merchant_checkout_input)
+        ? recordInput(input.merchant_checkout_input)
+        : undefined,
+      pivota_checkout_input: hasRecordInput(input.pivota_checkout_input)
+        ? recordInput(input.pivota_checkout_input)
+        : undefined,
+      issue_ids: [],
+      demand_test_job_ids: [],
+      product_diagnosis_ids: [],
+      offer_diagnosis_ids: [],
+      checkout_diagnosis_ids: [],
+      usage_event_ids: [],
+      created_at: now,
+      updated_at: now,
+    };
+
+    const extendedRun = run as ProductionValidationRun & {
+      product_attributes?: Record<string, unknown>;
+      merchant_product_attributes?: Record<string, unknown>;
+      pivota_product_attributes?: Record<string, unknown>;
+      competitor_brands?: string[];
+      competitor_products?: string[];
+      repetitions?: number;
+    };
+    extendedRun.product_attributes = input.product_attributes;
+    extendedRun.merchant_product_attributes = input.merchant_product_attributes;
+    extendedRun.pivota_product_attributes = input.pivota_product_attributes;
+    extendedRun.competitor_brands = input.competitor_brands;
+    extendedRun.competitor_products = input.competitor_products;
+    extendedRun.repetitions = input.repetitions;
+
+    getAgentCenterState().productionValidationRuns.push(run);
+    return run;
+  }
+
+  get(runId: string) {
+    const run = getAgentCenterState().productionValidationRuns.find(
+      (item) => item.id === runId
+    );
+    if (!run) throw new Error(`Production validation run not found: ${runId}`);
+    return run;
+  }
+
+  async run(runId: string) {
+    const run = this.get(runId);
+    if (run.status === "deleted") {
+      throw new Error(`Production validation run is deleted: ${runId}`);
+    }
+
+    run.status = "running";
+    touch(run);
+    try {
+      const report = await this.execute(run);
+      run.validation_report = report;
+      run.gmv_assurance_snapshot_id = report.gmv_assurance_snapshot?.id;
+      run.status = "completed";
+      run.completed_at = nowIso();
+      touch(run);
+      return run;
+    } catch (error) {
+      run.status = "failed";
+      touch(run);
+      throw error;
+    }
+  }
+
+  delete(runId: string) {
+    const run = this.get(runId);
+    if (run.status !== "deleted") {
+      this.cleanupRunState(run);
+      run.status = "deleted";
+      run.deleted_at = nowIso();
+      touch(run);
+    }
+    return run;
+  }
+
+  private async execute(run: ProductionValidationRun): Promise<ProductionValidationReport> {
+    const state = getAgentCenterState();
+    const merchantPdpPreflight = await preflightPublicUrl(run.merchant_pdp_url);
+    const pivotaPdpPreflight = await preflightPublicUrl(run.pivota_pdp_url);
+    const checkoutPreflightResult = await preflightPublicUrl(checkoutUrlFromRun(run));
+    const merchantId = productionValidationMerchantId(run.id);
+    const product = this.createProduct(run);
+    const store = new MerchantStoreService().create(
+      {
+        store_name: run.merchant_name,
+        store_url: run.store_url,
+        platform: "custom",
+        integration_status: "url_only",
+        market: run.market,
+        language: run.language,
+        currency: run.currency,
+        primary_category: run.category,
+        optional_pdp_urls: [run.merchant_pdp_url],
+        competitor_brands: this.competitorBrands(run),
+        competitor_products: this.competitorProducts(run),
+        products: [product],
+      },
+      merchantId
+    );
+    const connection = state.connections.find((item) => item.store_id === store.id);
+    if (connection) {
+      Object.assign(connection, {
+        status: "connected",
+        last_catalog_sync_at: nowIso(),
+        last_offer_sync_at:
+          run.merchant_offer_input || run.pivota_offer_input ? nowIso() : null,
+        last_checkout_sync_at:
+          run.merchant_checkout_input || run.pivota_checkout_input ? nowIso() : null,
+        capabilities: {
+          ...connection.capabilities,
+          catalog: true,
+          pdp_urls: true,
+          sku_variant_map: true,
+          structured_attributes: true,
+          offers: Boolean(run.merchant_offer_input || run.pivota_offer_input),
+          checkout: Boolean(
+            run.merchant_checkout_input || run.pivota_checkout_input
+          ),
+          orders: false,
+        },
+      });
+      touch(connection);
+    }
+
+    const target = new ScanTargetService().create({
+      merchant_id: merchantId,
+      store_id: store.id,
+      selected_product_ids: [product.id],
+      scan_mode: "open_product_visibility_test",
+    });
+    run.scan_target_id = target.id;
+    touch(run);
+
+    const clusters = new QueryClusterService().generateForScanTarget(target.id, [
+      product.id,
+    ]);
+    const cluster =
+      clusters.find((item) => item.intent_type === "purchase_ready") ||
+      clusters[0];
+    if (!cluster) throw new Error("Production validation query cluster not found");
+
+    const createdOffers = this.createOfferState(run, store, product);
+    this.createCheckoutState(run, store, product, createdOffers);
+
+    const demandModes: ScanMode[] = [
+      "open_product_visibility_test",
+      "merchant_store_attribution_test",
+      ...(run.pivota_pdp_url ? (["pivota_pdp_attribution_test"] as ScanMode[]) : []),
+    ];
+    const demandSummaries: ProductionValidationReport["demand_test_summary"]["modes_run"] =
+      [];
+    for (const scanMode of demandModes) {
+      target.scan_mode = scanMode;
+      touch(target);
+      const job = new DemandTestJobService().create({
+        scan_target_id: target.id,
+        query_cluster_ids: [cluster.id],
+        prompt_template_ids: ["purchase_ready_v1"],
+        providers: ["gemini"],
+        repetitions: this.repetitions(run),
+      });
+      run.demand_test_job_ids = unique([...run.demand_test_job_ids, job.id]);
+      touch(run);
+      const results = await new DemandTestJobService().run(job.id);
+      demandSummaries.push({
+        scan_mode: scanMode,
+        job_id: job.id,
+        aggregate_scores: results.aggregate_scores,
+        issue_ids: results.issues.map((issue) => issue.id),
+      });
+    }
+
+    target.scan_mode = run.pivota_pdp_url
+      ? "agentic_execution_test"
+      : "merchant_store_attribution_test";
+    touch(target);
+    this.createConsolidatedDemandScore({
+      target,
+      cluster,
+      product,
+      demandSummaries,
+    });
+
+    let issues = state.issues.filter((issue) => issue.scan_target_id === target.id);
+    if (
+      !issues.length &&
+      (run.merchant_offer_input ||
+        run.pivota_offer_input ||
+        run.merchant_checkout_input ||
+        run.pivota_checkout_input)
+    ) {
+      issues = [this.createValidationAnchorIssue({ run, store, target, cluster, product })];
+    }
+    run.issue_ids = unique(issues.map((issue) => issue.id));
+
+    for (const issue of issues) {
+      const diagnosis = new ProductUnderstandingService().runDiagnosis(issue.id);
+      run.product_diagnosis_ids = unique([
+        ...run.product_diagnosis_ids,
+        diagnosis.id,
+      ]);
+    }
+
+    const downstreamIssue = issues[0];
+    if (downstreamIssue && (run.merchant_offer_input || run.pivota_offer_input)) {
+      const diagnosis = new OfferExecutionService().runDiagnosis(downstreamIssue.id);
+      run.offer_diagnosis_ids = unique([...run.offer_diagnosis_ids, diagnosis.id]);
+    }
+    if (
+      downstreamIssue &&
+      (run.merchant_checkout_input || run.pivota_checkout_input)
+    ) {
+      const diagnosis = new CheckoutVerificationService().runDiagnosis(
+        downstreamIssue.id
+      );
+      run.checkout_diagnosis_ids = unique([
+        ...run.checkout_diagnosis_ids,
+        diagnosis.id,
+      ]);
+    }
+
+    const snapshot = new GMVAssuranceService().createSnapshot({
+      merchant_id: merchantId,
+      store_id: store.id,
+      scan_target_id: target.id,
+      product_entity_id: product.product_entity_id,
+    });
+    run.gmv_assurance_snapshot_id = snapshot.id;
+    run.usage_event_ids = this.usageEventIdsForRun(run, target.id);
+    touch(run);
+
+    const productDiagnoses = state.productUnderstandingDiagnoses.filter((item) =>
+      run.product_diagnosis_ids.includes(item.id)
+    );
+    const offerDiagnoses = state.offerExecutionDiagnoses.filter((item) =>
+      run.offer_diagnosis_ids.includes(item.id)
+    );
+    const checkoutDiagnoses = state.checkoutVerificationDiagnoses.filter((item) =>
+      run.checkout_diagnosis_ids.includes(item.id)
+    );
+
+    return {
+      target_summary: {
+        production_validation_run_id: run.id,
+        merchant_name: run.merchant_name,
+        store_url: run.store_url,
+        merchant_pdp_url: run.merchant_pdp_url,
+        pivota_pdp_url: run.pivota_pdp_url,
+        product_name: run.product_name,
+        brand: run.brand,
+        sku_name: run.sku_name,
+        category: run.category,
+        market: run.market,
+        language: run.language,
+        currency: run.currency,
+        scan_target_id: target.id,
+      },
+      url_preflight_results: {
+        merchant_pdp: merchantPdpPreflight,
+        pivota_pdp: pivotaPdpPreflight,
+        checkout: checkoutPreflightResult,
+      },
+      demand_test_summary: {
+        modes_run: demandSummaries,
+        skipped_modes: run.pivota_pdp_url ? [] : ["pivota_pdp_attribution_test"],
+      },
+      product_understanding_summary: {
+        diagnosis_ids: run.product_diagnosis_ids,
+        root_causes: productDiagnoses.map((item) => item.root_cause_summary),
+      },
+      offer_execution_summary: {
+        diagnosis_ids: run.offer_diagnosis_ids,
+        findings: offerDiagnoses.flatMap((diagnosis) =>
+          diagnosis.offer_layer_findings.flatMap((comparison) =>
+            comparison.findings.map((finding) => finding.finding_type)
+          )
+        ),
+        readiness_scores: offerDiagnoses.map(
+          (diagnosis) => diagnosis.offer_readiness_score
+        ),
+      },
+      checkout_verification_summary: {
+        diagnosis_ids: run.checkout_diagnosis_ids,
+        findings: checkoutDiagnoses.flatMap((diagnosis) =>
+          diagnosis.checkout_layer_findings.flatMap((comparison) =>
+            comparison.findings.map((finding) => finding.finding_type)
+          )
+        ),
+        readiness_scores: checkoutDiagnoses.map(
+          (diagnosis) => diagnosis.checkout_readiness_score
+        ),
+      },
+      gmv_assurance_snapshot: snapshot,
+      top_blockers: snapshot.top_blockers,
+      next_best_action: snapshot.recommended_next_actions[0] || "Monitor only.",
+      usage_summary: snapshot.usage_summary,
+      billing_mode: "preview_only",
+      billing_status: "not_invoiced",
+    };
+  }
+
+  private createProduct(run: ProductionValidationRun): ProductRecord {
+    const extended = run as ProductionValidationRun & {
+      product_attributes?: Record<string, unknown>;
+      merchant_product_attributes?: Record<string, unknown>;
+      pivota_product_attributes?: Record<string, unknown>;
+    };
+    const productSlug = slugFrom(run.product_name);
+    const productEntityId =
+      run.pivota_product_entity_id || `pe_${productSlug}_${run.id}`;
+    const pivotaProductObjectId =
+      extractPivotaProductObjectId(run.pivota_pdp_url) || productEntityId;
+    const pivotaOfferInput = recordInput(run.pivota_offer_input);
+    const expectedPivotaOfferId =
+      run.pivota_offer_id || stringInput(pivotaOfferInput.id);
+    const merchantAttributes = {
+      purchase_path: run.merchant_pdp_url,
+      ...(extended.product_attributes || {}),
+      ...(extended.merchant_product_attributes || {}),
+    };
+    const pivotaAttributes = {
+      ...(extended.pivota_product_attributes || {}),
+      ...(run.pivota_pdp_url
+        ? {
+            pivota_pdp_url: run.pivota_pdp_url,
+            pivota_product_object_id: pivotaProductObjectId,
+          }
+        : {}),
+      ...(expectedPivotaOfferId
+        ? {
+            offer_ids: [expectedPivotaOfferId],
+            pivota_offer_ids: [expectedPivotaOfferId],
+          }
+        : {}),
+    };
+    const merchantOfferInput = recordInput(run.merchant_offer_input);
+    const price =
+      merchantOfferInput.price === undefined
+        ? undefined
+        : numberInput(merchantOfferInput.price);
+
+    return {
+      id: nextId("prod_validation_product"),
+      product_entity_id: productEntityId,
+      sku: run.sku_name || `${productSlug}_default_sku`,
+      title: run.product_name,
+      brand: run.brand || run.merchant_name,
+      category: run.category || "skincare",
+      ...(price === undefined ? {} : { price }),
+      currency: run.currency,
+      pdp_url: run.merchant_pdp_url,
+      attributes: merchantAttributes,
+      pivota_attributes: pivotaAttributes,
+      agent_summary: `${run.product_name} production validation target.`,
+      priority: "high",
+    };
+  }
+
+  private competitorBrands(run: ProductionValidationRun) {
+    const extended = run as ProductionValidationRun & { competitor_brands?: string[] };
+    return extended.competitor_brands?.length
+      ? extended.competitor_brands
+      : SUNSCREEN_COMPETITOR_BRANDS;
+  }
+
+  private competitorProducts(run: ProductionValidationRun) {
+    const extended = run as ProductionValidationRun & { competitor_products?: string[] };
+    return extended.competitor_products?.length
+      ? extended.competitor_products
+      : SUNSCREEN_COMPETITOR_PRODUCTS;
+  }
+
+  private repetitions(run: ProductionValidationRun) {
+    const extended = run as ProductionValidationRun & { repetitions?: number };
+    return Math.max(1, Math.min(3, Number(extended.repetitions || 1)));
+  }
+
+  private createOfferState(
+    run: ProductionValidationRun,
+    store: MerchantStore,
+    product: ProductRecord
+  ) {
+    const state = getAgentCenterState();
+    const merchantInput = recordInput(run.merchant_offer_input);
+    const pivotaInput = recordInput(run.pivota_offer_input);
+    const checkoutNeedsOffer = Boolean(
+      run.merchant_checkout_input || run.pivota_checkout_input
+    );
+    const merchantOfferNeeded = hasRecordInput(merchantInput) || checkoutNeedsOffer;
+    const pivotaOfferNeeded =
+      hasRecordInput(pivotaInput) || Boolean(run.pivota_offer_id) || checkoutNeedsOffer;
+    const now = nowIso();
+    let merchantOffer: MerchantOffer | undefined;
+    let pivotaOffer: PivotaOffer | undefined;
+
+    if (merchantOfferNeeded) {
+      merchantOffer = {
+        id: stringInput(merchantInput.id) || nextId("merchant_offer"),
+        merchant_id: store.merchant_id,
+        store_id: store.id,
+        product_id: product.id,
+        sku_id: stringInput(merchantInput.sku_id) || product.sku,
+        price: numberInput(merchantInput.price, product.price || 0),
+        currency: stringInput(merchantInput.currency) || run.currency,
+        promo_price:
+          merchantInput.promo_price === undefined || merchantInput.promo_price === null
+            ? null
+            : numberInput(merchantInput.promo_price),
+        coupon_code: stringInput(merchantInput.coupon_code) || null,
+        coupon_status:
+          (stringInput(merchantInput.coupon_status) as CouponStatus) || "none",
+        inventory_status:
+          (stringInput(merchantInput.inventory_status) as InventoryStatus) ||
+          "in_stock",
+        inventory_quantity:
+          merchantInput.inventory_quantity === undefined
+            ? null
+            : numberInput(merchantInput.inventory_quantity),
+        expires_at: stringInput(merchantInput.expires_at) || null,
+        source_url: stringInput(merchantInput.source_url) || run.merchant_pdp_url,
+        last_synced_at: stringInput(merchantInput.last_synced_at) || now,
+        created_at: now,
+        updated_at: now,
+      };
+      state.merchantOffers.push(merchantOffer);
+    }
+
+    if (pivotaOfferNeeded) {
+      pivotaOffer = {
+        id:
+          stringInput(run.pivota_offer_id) ||
+          stringInput(pivotaInput.id) ||
+          `pivota_offer_${run.id}`,
+        product_entity_id:
+          stringInput(pivotaInput.product_entity_id) || product.product_entity_id,
+        pivota_unified_pdp_id:
+          stringInput(pivotaInput.pivota_unified_pdp_id) ||
+          `pdp_${product.product_entity_id}`,
+        merchant_id: store.merchant_id,
+        store_id: store.id,
+        sku_id:
+          stringInput(pivotaInput.sku_id) || merchantOffer?.sku_id || product.sku,
+        price: numberInput(pivotaInput.price, merchantOffer?.price || product.price || 0),
+        currency: stringInput(pivotaInput.currency) || run.currency,
+        promo_price:
+          pivotaInput.promo_price === undefined || pivotaInput.promo_price === null
+            ? null
+            : numberInput(pivotaInput.promo_price),
+        coupon_code: stringInput(pivotaInput.coupon_code) || null,
+        coupon_status:
+          (stringInput(pivotaInput.coupon_status) as CouponStatus) ||
+          merchantOffer?.coupon_status ||
+          "none",
+        inventory_status:
+          (stringInput(pivotaInput.inventory_status) as InventoryStatus) ||
+          merchantOffer?.inventory_status ||
+          "in_stock",
+        execution_status:
+          (stringInput(pivotaInput.execution_status) as OfferExecutionStatus) ||
+          "ready",
+        attached_to_pivota_pdp: booleanInput(
+          pivotaInput.attached_to_pivota_pdp,
+          true
+        ),
+        last_verified_at: stringInput(pivotaInput.last_verified_at) || now,
+        created_at: now,
+        updated_at: now,
+      };
+      state.pivotaOffers.push(pivotaOffer);
+    }
+
+    return { merchantOffer, pivotaOffer };
+  }
+
+  private createCheckoutState(
+    run: ProductionValidationRun,
+    store: MerchantStore,
+    product: ProductRecord,
+    offers: { merchantOffer?: MerchantOffer; pivotaOffer?: PivotaOffer }
+  ) {
+    const state = getAgentCenterState();
+    const merchantInput = recordInput(run.merchant_checkout_input);
+    const pivotaInput = recordInput(run.pivota_checkout_input);
+    const now = nowIso();
+
+    if (hasRecordInput(merchantInput) && offers.merchantOffer) {
+      const checkoutUrl = stringInput(merchantInput.checkout_url);
+      const checkoutDomain =
+        stringInput(merchantInput.checkout_domain) || checkoutUrlHost(checkoutUrl);
+      const requiredParams = arrayOfStringInput(merchantInput.required_params);
+      state.merchantCheckoutPaths.push({
+        id: stringInput(merchantInput.id) || nextId("merchant_checkout"),
+        merchant_id: store.merchant_id,
+        store_id: store.id,
+        merchant_offer_id:
+          stringInput(merchantInput.merchant_offer_id) || offers.merchantOffer.id,
+        sku_id: stringInput(merchantInput.sku_id) || product.sku,
+        checkout_url: checkoutUrl || null,
+        cart_url: stringInput(merchantInput.cart_url) || null,
+        checkout_domain: checkoutDomain,
+        required_params: requiredParams.length
+          ? requiredParams
+          : ["variant", "quantity"],
+        supported_params: arrayOfStringInput(merchantInput.supported_params).length
+          ? arrayOfStringInput(merchantInput.supported_params)
+          : requiredParams.length
+            ? requiredParams
+            : ["variant", "quantity"],
+        coupon_param_name: stringInput(merchantInput.coupon_param_name) || null,
+        quantity_param_name: stringInput(merchantInput.quantity_param_name) || "quantity",
+        variant_param_name: stringInput(merchantInput.variant_param_name) || "variant",
+        expires_at: stringInput(merchantInput.expires_at) || null,
+        last_verified_at: stringInput(merchantInput.last_verified_at) || now,
+        source: stringInput(merchantInput.source) || "production_validation_input",
+        created_at: now,
+        updated_at: now,
+      });
+    }
+
+    if (hasRecordInput(pivotaInput) && offers.pivotaOffer) {
+      const checkoutUrl = stringInput(pivotaInput.checkout_url);
+      state.pivotaCheckoutPaths.push({
+        id: stringInput(pivotaInput.id) || nextId("pivota_checkout"),
+        pivota_offer_id:
+          stringInput(pivotaInput.pivota_offer_id) || offers.pivotaOffer.id,
+        product_entity_id:
+          stringInput(pivotaInput.product_entity_id) || product.product_entity_id,
+        merchant_id: store.merchant_id,
+        store_id: store.id,
+        sku_id: stringInput(pivotaInput.sku_id) || product.sku,
+        checkout_url: checkoutUrl || null,
+        cart_handoff_payload: recordInput(pivotaInput.cart_handoff_payload),
+        checkout_domain:
+          stringInput(pivotaInput.checkout_domain) || checkoutUrlHost(checkoutUrl),
+        required_params: arrayOfStringInput(pivotaInput.required_params).length
+          ? arrayOfStringInput(pivotaInput.required_params)
+          : ["variant", "quantity"],
+        coupon_code: stringInput(pivotaInput.coupon_code) || null,
+        quantity:
+          pivotaInput.quantity === undefined || pivotaInput.quantity === null
+            ? null
+            : numberInput(pivotaInput.quantity),
+        variant_id: stringInput(pivotaInput.variant_id) || null,
+        execution_status:
+          (stringInput(pivotaInput.execution_status) as OfferExecutionStatus) ||
+          "ready",
+        attached_to_pivota_offer: booleanInput(
+          pivotaInput.attached_to_pivota_offer,
+          true
+        ),
+        last_verified_at: stringInput(pivotaInput.last_verified_at) || now,
+        created_at: now,
+        updated_at: now,
+      });
+    }
+  }
+
+  private createConsolidatedDemandScore(input: {
+    target: ScanTarget;
+    cluster: QueryCluster;
+    product: ProductRecord;
+    demandSummaries: ProductionValidationReport["demand_test_summary"]["modes_run"];
+  }) {
+    const summaryForMode = (scanMode: ScanMode) =>
+      input.demandSummaries.find((summary) => summary.scan_mode === scanMode);
+    const open = summaryForMode("open_product_visibility_test")?.aggregate_scores;
+    const merchant =
+      summaryForMode("merchant_store_attribution_test")?.aggregate_scores;
+    const pivota =
+      summaryForMode("pivota_pdp_attribution_test")?.aggregate_scores;
+    const aggregate: DemandVisibilityScore["aggregate_scores"] = {
+      product_entity_visibility_score:
+        open?.product_entity_visibility_score ??
+        merchant?.product_entity_visibility_score ??
+        pivota?.product_entity_visibility_score ??
+        0,
+      merchant_store_visibility_score:
+        merchant?.merchant_store_visibility_score || 0,
+      pivota_pdp_visibility_score: pivota?.pivota_pdp_visibility_score || 0,
+      pivota_offer_visibility_score: pivota?.pivota_offer_visibility_score || 0,
+      pivota_attribution_echo_rate: pivota?.pivota_attribution_echo_rate || 0,
+      executable_offer_visibility_score: "not_tested",
+      visibility_score:
+        open?.product_entity_visibility_score ??
+        merchant?.product_entity_visibility_score ??
+        pivota?.product_entity_visibility_score ??
+        0,
+      recommendation_rank_score:
+        open?.recommendation_rank_score ??
+        merchant?.recommendation_rank_score ??
+        pivota?.recommendation_rank_score ??
+        0,
+      competitor_substitution_score:
+        open?.competitor_substitution_score ??
+        merchant?.competitor_substitution_score ??
+        pivota?.competitor_substitution_score ??
+        0,
+      attribute_readiness_score:
+        open?.attribute_readiness_score ??
+        merchant?.attribute_readiness_score ??
+        pivota?.attribute_readiness_score ??
+        0,
+      pivota_pdp_readiness_score:
+        pivota?.pivota_pdp_readiness_score ??
+        open?.pivota_pdp_readiness_score ??
+        0,
+    };
+    const supportingRuns = input.demandSummaries.map((summary) => summary.job_id);
+    const explanation = (key: keyof DemandVisibilityScore["aggregate_scores"]) =>
+      scoreExplanationForProductionValidation(
+        aggregate[key],
+        "production_validation_consolidated_mode_score",
+        supportingRuns
+      );
+    const now = nowIso();
+    const score: DemandVisibilityScore = {
+      id: nextId("score"),
+      merchant_id: input.target.merchant_id,
+      store_id: input.target.store_id,
+      scan_target_id: input.target.id,
+      query_cluster_id: input.cluster.id,
+      product_entity_id: input.product.product_entity_id,
+      provider_scores: {
+        production_validation: aggregate,
+      },
+      aggregate_scores: aggregate,
+      score_explanations: {
+        product_entity_visibility_score: explanation("product_entity_visibility_score"),
+        merchant_store_visibility_score: explanation("merchant_store_visibility_score"),
+        pivota_pdp_visibility_score: explanation("pivota_pdp_visibility_score"),
+        pivota_offer_visibility_score: explanation("pivota_offer_visibility_score"),
+        pivota_attribution_echo_rate: explanation("pivota_attribution_echo_rate"),
+        executable_offer_visibility_score: explanation(
+          "executable_offer_visibility_score"
+        ),
+        visibility_score: explanation("visibility_score"),
+        recommendation_rank_score: explanation("recommendation_rank_score"),
+        competitor_substitution_score: explanation("competitor_substitution_score"),
+        attribute_readiness_score: explanation("attribute_readiness_score"),
+        pivota_pdp_readiness_score: explanation("pivota_pdp_readiness_score"),
+      },
+      created_at: now,
+      updated_at: now,
+    };
+    getAgentCenterState().scores.push(score);
+    return score;
+  }
+
+  private createValidationAnchorIssue(input: {
+    run: ProductionValidationRun;
+    store: MerchantStore;
+    target: ScanTarget;
+    cluster: QueryCluster;
+    product: ProductRecord;
+  }) {
+    const now = nowIso();
+    const issueType: AgenticGMVIssueType = input.run.merchant_checkout_input ||
+      input.run.pivota_checkout_input
+      ? "checkout_verification_issue"
+      : input.run.merchant_offer_input || input.run.pivota_offer_input
+        ? "offer_execution_issue"
+        : "human_review_required";
+    const issue: AgenticGMVIssue = {
+      id: nextId("issue"),
+      merchant_id: input.store.merchant_id,
+      store_id: input.store.id,
+      scan_target_id: input.target.id,
+      store_url: input.store.store_url,
+      platform: input.store.platform,
+      source_agent: "demand_test_agent",
+      issue_type: issueType,
+      severity: "low",
+      status: "recommendation_ready",
+      affected_product_entities: [input.product.product_entity_id],
+      affected_skus: [input.product.sku],
+      affected_query_clusters: [input.cluster.id],
+      evidence: {
+        production_validation_run_id: input.run.id,
+        validation_anchor: true,
+        product_name: input.run.product_name,
+        merchant_pdp_url: input.run.merchant_pdp_url,
+        pivota_pdp_url: input.run.pivota_pdp_url,
+      },
+      root_cause:
+        "Internal production validation anchor issue for downstream pre-payment readiness checks.",
+      fix_targets: ["human_review"],
+      recommended_action:
+        "Review Product Understanding, Offer Execution, and Checkout Verification outputs for this production validation run.",
+      merchant_source_patch: {},
+      pivota_unified_pdp_patch: {},
+      estimated_gmv_at_risk: input.cluster.estimated_demand_value,
+      gmv_estimation_method:
+        "Internal production validation estimate only; not transaction attribution.",
+      estimated_gmv_at_risk_confidence: "low",
+      merchant_facing_summary:
+        "Internal production validation anchor. This is not exposed as a merchant-facing workflow.",
+      merchant_facing_narrative: {
+        what_happened:
+          "Internal production validation created an anchor issue so downstream readiness agents can run on real inputs.",
+        what_ai_recommended_instead:
+          "No replacement recommendation is implied by this anchor issue.",
+        why_this_likely_happened:
+          "The validation run needs an issue-scoped record for downstream deterministic agents.",
+        where_to_fix: "Internal validation only.",
+        recommended_merchant_pdp_changes: [
+          "Use downstream diagnosis patches if findings are generated.",
+        ],
+        recommended_pivota_pdp_changes: [
+          "Use downstream diagnosis patches if findings are generated.",
+        ],
+        how_pivota_will_verify_the_fix:
+          "Rerun the production validation run or rerun the relevant diagnosis after patches.",
+      },
+      approval_required: false,
+      verification_plan: {
+        retest_query_clusters: [input.cluster.id],
+        providers: ["gemini"],
+        prompt_templates: ["purchase_ready_v1"],
+        success_metric: "visibility_rate",
+        target_improvement: "verify production validation downstream readiness",
+      },
+      created_at: now,
+      updated_at: now,
+    };
+    getAgentCenterState().issues.push(issue);
+    return issue;
+  }
+
+  private usageEventIdsForRun(run: ProductionValidationRun, scanTargetId: string) {
+    const issueIds = new Set(run.issue_ids);
+    return getAgentCenterState()
+      .usageEvents.filter(
+        (event) =>
+          event.scan_target_id === scanTargetId ||
+          [...issueIds].some((issueId) => event.idempotency_key.includes(issueId))
+      )
+      .map((event) => event.id);
+  }
+
+  private cleanupRunState(run: ProductionValidationRun) {
+    const state = getAgentCenterState();
+    const targetIds = run.scan_target_id ? [run.scan_target_id] : [];
+    const storeIds = state.scanTargets
+      .filter((target) => targetIds.includes(target.id))
+      .map((target) => target.store_id);
+    const jobIds = new Set(run.demand_test_job_ids);
+    const clusterIds = state.queryClusters
+      .filter((cluster) => targetIds.includes(cluster.scan_target_id))
+      .map((cluster) => cluster.id);
+    const testRunIds = state.testRuns
+      .filter(
+        (testRun) =>
+          targetIds.includes(testRun.scan_target_id) || jobIds.has(testRun.job_id)
+      )
+      .map((testRun) => testRun.id);
+    const resultIds = state.results
+      .filter((result) => testRunIds.includes(result.test_run_id))
+      .map((result) => result.id);
+    const parsedIds = state.parsedRecommendations
+      .filter(
+        (parsed) =>
+          testRunIds.includes(parsed.test_run_id) ||
+          clusterIds.includes(parsed.query_cluster_id)
+      )
+      .map((parsed) => parsed.id);
+    const issueIds = new Set(run.issue_ids);
+
+    state.usageEvents = state.usageEvents.filter(
+      (event) =>
+        !run.usage_event_ids.includes(event.id) &&
+        !targetIds.includes(event.scan_target_id) &&
+        ![...issueIds].some((issueId) => event.idempotency_key.includes(issueId))
+    );
+    state.checkoutVerificationDiagnoses = state.checkoutVerificationDiagnoses.filter(
+      (diagnosis) =>
+        !run.checkout_diagnosis_ids.includes(diagnosis.id) &&
+        !issueIds.has(diagnosis.issue_id)
+    );
+    state.offerExecutionDiagnoses = state.offerExecutionDiagnoses.filter(
+      (diagnosis) =>
+        !run.offer_diagnosis_ids.includes(diagnosis.id) &&
+        !issueIds.has(diagnosis.issue_id)
+    );
+    state.productUnderstandingDiagnoses = state.productUnderstandingDiagnoses.filter(
+      (diagnosis) =>
+        !run.product_diagnosis_ids.includes(diagnosis.id) &&
+        !issueIds.has(diagnosis.issue_id)
+    );
+    state.gmvAssuranceSnapshots = state.gmvAssuranceSnapshots.filter(
+      (snapshot) =>
+        snapshot.id !== run.gmv_assurance_snapshot_id &&
+        !targetIds.includes(snapshot.scan_target_id)
+    );
+    state.issues = state.issues.filter((issue) => !issueIds.has(issue.id));
+    state.scores = state.scores.filter(
+      (score) =>
+        !targetIds.includes(score.scan_target_id) &&
+        !clusterIds.includes(score.query_cluster_id)
+    );
+    state.matches = state.matches.filter(
+      (match) => !parsedIds.includes(match.parsed_recommendation_id)
+    );
+    state.parsedRecommendations = state.parsedRecommendations.filter(
+      (parsed) => !parsedIds.includes(parsed.id)
+    );
+    state.results = state.results.filter((result) => !resultIds.includes(result.id));
+    state.testRuns = state.testRuns.filter((testRun) => !testRunIds.includes(testRun.id));
+    state.jobs = state.jobs.filter((job) => !jobIds.has(job.id));
+    state.queryClusters = state.queryClusters.filter(
+      (cluster) => !clusterIds.includes(cluster.id)
+    );
+    state.scanTargets = state.scanTargets.filter(
+      (target) => !targetIds.includes(target.id)
+    );
+    state.readinessSnapshots = state.readinessSnapshots.filter(
+      (snapshot) => !targetIds.includes(snapshot.scan_target_id)
+    );
+    state.merchantOffers = state.merchantOffers.filter(
+      (offer) => !storeIds.includes(offer.store_id)
+    );
+    state.pivotaOffers = state.pivotaOffers.filter(
+      (offer) => !storeIds.includes(offer.store_id)
+    );
+    state.merchantCheckoutPaths = state.merchantCheckoutPaths.filter(
+      (path) => !storeIds.includes(path.store_id)
+    );
+    state.pivotaCheckoutPaths = state.pivotaCheckoutPaths.filter(
+      (path) => !storeIds.includes(path.store_id)
+    );
+    state.connections = state.connections.filter(
+      (connection) => !storeIds.includes(connection.store_id)
+    );
+    state.stores = state.stores.filter((store) => !storeIds.includes(store.id));
   }
 }
 

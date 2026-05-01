@@ -293,6 +293,7 @@ function createInitialState(): AgentCenterState {
     checkoutVerificationDiagnoses: [],
     gmvAssuranceSnapshots: [],
     demoFixtures: [],
+    productionValidationRuns: [],
     usageEvents: [],
     usagePlan: {
       included_credits: 1000,

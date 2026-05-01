@@ -13,6 +13,7 @@ import {
   InputReadinessService,
   MerchantStoreService,
   OfferExecutionService,
+  ProductionValidationRunService,
   ProductUnderstandingService,
   ScanTargetService,
   UsageMeteringService,
@@ -80,6 +81,40 @@ function internalDemoFixtureGate(req: NextRequest) {
     : { allowed: false, error: "Internal authorization required" };
 }
 
+function internalProductionValidationGate(req: NextRequest) {
+  if (process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION !== "true") {
+    return {
+      allowed: false,
+      error: "Internal production validation is disabled",
+    };
+  }
+
+  const expected =
+    process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET ||
+    process.env.PIVOTA_INTERNAL_DEMO_FIXTURE_SECRET ||
+    process.env.INTERNAL_DEMO_FIXTURE_TOKEN ||
+    process.env.PIVOTA_INTERNAL_API_SECRET;
+  if (!expected) {
+    return {
+      allowed: false,
+      error: "Internal production validation auth is not configured",
+    };
+  }
+
+  const authorization = req.headers.get("authorization") || "";
+  const bearer = authorization.toLowerCase().startsWith("bearer ")
+    ? authorization.slice(7)
+    : "";
+  const provided =
+    req.headers.get("x-pivota-internal-secret") ||
+    req.headers.get("x-internal-production-validation-token") ||
+    bearer;
+
+  return provided === expected
+    ? { allowed: true }
+    : { allowed: false, error: "Internal authorization required" };
+}
+
 function routeError(error: unknown) {
   const message = error instanceof Error ? error.message : "Agent Center request failed";
   const status = /not found/i.test(message) ? 404 : 400;
@@ -111,6 +146,42 @@ export async function handleInternalDemoFixturesRequest(
     }
 
     return json({ error: "Unsupported internal demo fixture route" }, 404);
+  } catch (error) {
+    return routeError(error);
+  }
+}
+
+export async function handleInternalProductionValidationRunsRequest(
+  req: NextRequest,
+  params?: { runId?: string; action?: string }
+) {
+  const gate = internalProductionValidationGate(req);
+  if (!gate.allowed) return json({ error: gate.error }, 403);
+
+  const service = new ProductionValidationRunService();
+  const runId = params?.runId;
+
+  try {
+    if (req.method === "POST" && !runId) {
+      const body = await requestBody(req);
+      return json({ production_validation_run: service.create(body) }, 201);
+    }
+
+    if (req.method === "GET" && runId) {
+      return json({ production_validation_run: service.get(runId) });
+    }
+
+    if (req.method === "POST" && runId && params?.action === "run") {
+      return json({
+        production_validation_run: await service.run(runId),
+      });
+    }
+
+    if (req.method === "DELETE" && runId) {
+      return json({ production_validation_run: service.delete(runId) });
+    }
+
+    return json({ error: "Unsupported internal production validation route" }, 404);
   } catch (error) {
     return routeError(error);
   }
@@ -165,6 +236,13 @@ export async function handleAgentCenterRequest(
       return handleInternalDemoFixturesRequest(
         req,
         id ? { fixtureId: id } : undefined
+      );
+    }
+
+    if (resource === "internal-production-validation-runs") {
+      return handleInternalProductionValidationRunsRequest(
+        req,
+        id ? { runId: id, action } : undefined
       );
     }
 

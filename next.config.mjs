@@ -17,6 +17,21 @@ const nextConfig = {
           source: "/api/internal/agent-center/demo-fixtures/:fixtureId",
           destination: "/api/agent-center/internal-demo-fixtures/:fixtureId",
         },
+        {
+          source: "/api/internal/agent-center/production-validation-runs",
+          destination: "/api/agent-center/internal-production-validation-runs",
+        },
+        {
+          source: "/api/internal/agent-center/production-validation-runs/:runId",
+          destination:
+            "/api/agent-center/internal-production-validation-runs/:runId",
+        },
+        {
+          source:
+            "/api/internal/agent-center/production-validation-runs/:runId/run",
+          destination:
+            "/api/agent-center/internal-production-validation-runs/:runId/run",
+        },
       ],
     };
   },

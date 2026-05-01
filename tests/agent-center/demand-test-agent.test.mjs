@@ -34,6 +34,7 @@ const {
   IssueEngine,
   MerchantStoreService,
   OfferExecutionService,
+  ProductionValidationRunService,
   ProductNameNormalizer,
   ProductMatchService,
   ProductUnderstandingService,
@@ -43,7 +44,11 @@ const {
   UsageMeteringService,
   VerificationService,
 } = services;
-const { handleAgentCenterRequest, handleInternalDemoFixturesRequest } = apiHandlers;
+const {
+  handleAgentCenterRequest,
+  handleInternalDemoFixturesRequest,
+  handleInternalProductionValidationRunsRequest,
+} = apiHandlers;
 
 const verifiedPivotaPdpUrl =
   "https://agent.pivota.cc/products/ext_d7c74bcb380cbc2bdd5d5d90?return=%2Fproducts%2Fext_0281be2868f91dcf200fa248%3Freturn%3D%252F";
@@ -681,6 +686,102 @@ function internalFixtureRequest(url, options = {}) {
       ...(options.headers || {}),
     },
   });
+}
+
+async function withInternalProductionValidationEnv(callback) {
+  const originalEnabled = process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION;
+  const originalSecret = process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET;
+  process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION = "true";
+  process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET = "validation-secret";
+  try {
+    return await callback();
+  } finally {
+    if (originalEnabled === undefined) {
+      delete process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION;
+    } else {
+      process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION = originalEnabled;
+    }
+    if (originalSecret === undefined) {
+      delete process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET;
+    } else {
+      process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET = originalSecret;
+    }
+  }
+}
+
+function internalProductionValidationRequest(url, options = {}) {
+  return new NextRequest(url, {
+    ...options,
+    headers: {
+      "content-type": "application/json",
+      authorization: "Bearer validation-secret",
+      ...(options.headers || {}),
+    },
+  });
+}
+
+async function withMockProductionValidationFetch(callback) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    const status =
+      url.includes("failed") ||
+      url.includes("missing") ||
+      url.includes("unreachable")
+        ? 404
+        : 200;
+    return {
+      status,
+      url,
+    };
+  };
+  try {
+    return await callback();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+function productionValidationPayload(overrides = {}) {
+  return {
+    environment: "test",
+    merchant_name: "Isntree Official",
+    store_url: "https://isntree.example",
+    merchant_pdp_url:
+      "https://isntree.example/products/hyaluronic-acid-watery-sun-gel",
+    product_name: "Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml",
+    brand: "Isntree",
+    sku_name: "isntree_watery_sun_gel_50ml",
+    category: "skincare sunscreen",
+    market: "US",
+    language: "en",
+    currency: "USD",
+    pivota_product_entity_id: "pe_isntree_watery_sun_gel",
+    merchant_product_attributes: {
+      spf_level: "SPF50+",
+      pa_rating: "PA++++",
+      skin_type: "all skin types",
+      finish: "watery lightweight gel",
+      active_ingredients: "hyaluronic acid and UV filters",
+      purchase_path: true,
+    },
+    pivota_product_attributes: {
+      spf_level: "SPF50+",
+      pa_rating: "PA++++",
+      skin_type: "all skin types",
+      finish: "watery lightweight gel",
+      active_ingredients: "hyaluronic acid and UV filters",
+      purchase_path: true,
+      agent_summary: "Daily hydrating sunscreen with watery gel finish.",
+    },
+    competitor_brands: ["Beauty of Joseon", "COSRX", "Laneige", "Anua"],
+    competitor_products: [
+      "Beauty of Joseon Relief Sun",
+      "COSRX Aloe Soothing Sun Cream",
+    ],
+    repetitions: 1,
+    ...overrides,
+  };
 }
 
 test("scan target creation requires a store and preserves scan scope", () => {
@@ -3217,6 +3318,347 @@ test("GMV assurance API creates and fetches snapshots", async () => {
     overviewPayload.latest_snapshot.id,
     createdPayload.snapshot.id
   );
+});
+
+test("internal production validation route returns 403 when disabled", async () => {
+  resetAgentCenterState();
+  const originalEnabled = process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION;
+  const originalSecret = process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET;
+  delete process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION;
+  process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET = "validation-secret";
+  try {
+    const response = await handleInternalProductionValidationRunsRequest(
+      internalProductionValidationRequest(
+        "https://example.test/api/internal/agent-center/production-validation-runs",
+        {
+          method: "POST",
+          body: JSON.stringify(productionValidationPayload()),
+        }
+      )
+    );
+    const payload = await response.json();
+
+    assert.equal(response.status, 403);
+    assert.match(payload.error, /disabled/);
+  } finally {
+    if (originalEnabled === undefined) {
+      delete process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION;
+    } else {
+      process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION = originalEnabled;
+    }
+    if (originalSecret === undefined) {
+      delete process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET;
+    } else {
+      process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET = originalSecret;
+    }
+  }
+});
+
+test("internal production validation route creates validation run", async () => {
+  resetAgentCenterState();
+  await withInternalProductionValidationEnv(async () => {
+    const response = await handleInternalProductionValidationRunsRequest(
+      internalProductionValidationRequest(
+        "https://example.test/api/internal/agent-center/production-validation-runs",
+        {
+          method: "POST",
+          body: JSON.stringify(productionValidationPayload()),
+        }
+      )
+    );
+    const payload = await response.json();
+    const run = payload.production_validation_run;
+
+    assert.equal(response.status, 201);
+    assert.equal(run.status, "created");
+    assert.equal(run.merchant_name, "Isntree Official");
+    assert.equal(run.merchant_pdp_url.includes("isntree.example"), true);
+  });
+});
+
+test("production validation preflights merchant and Pivota PDP URLs", async () => {
+  resetAgentCenterState();
+  await withMockProductionValidationFetch(async () => {
+    const run = new ProductionValidationRunService().create(
+      productionValidationPayload({
+        pivota_pdp_url:
+          "https://agent.pivota.cc/products/ext_isntree_watery_sun_gel",
+        pivota_offer_id: "offer_isntree_direct_50ml",
+      })
+    );
+    const completed = await new ProductionValidationRunService().run(run.id);
+    const report = completed.validation_report;
+
+    assert.equal(report.url_preflight_results.merchant_pdp.status, "passed");
+    assert.equal(report.url_preflight_results.merchant_pdp.status_code, 200);
+    assert.equal(report.url_preflight_results.pivota_pdp.status, "passed");
+    assert.equal(report.url_preflight_results.pivota_pdp.status_code, 200);
+    assert.ok(
+      report.demand_test_summary.modes_run.some(
+        (item) => item.scan_mode === "pivota_pdp_attribution_test"
+      )
+    );
+  });
+});
+
+test("production validation records failed merchant and Pivota PDP preflight", async () => {
+  resetAgentCenterState();
+  await withMockProductionValidationFetch(async () => {
+    const run = new ProductionValidationRunService().create(
+      productionValidationPayload({
+        merchant_pdp_url: "https://isntree.example/failed/product",
+        pivota_pdp_url: "https://agent.pivota.cc/products/failed_object",
+      })
+    );
+    const completed = await new ProductionValidationRunService().run(run.id);
+    const report = completed.validation_report;
+
+    assert.equal(report.url_preflight_results.merchant_pdp.status, "failed");
+    assert.equal(report.url_preflight_results.pivota_pdp.status, "failed");
+  });
+});
+
+test("production validation without Pivota PDP skips Pivota attribution mode", async () => {
+  resetAgentCenterState();
+  await withMockProductionValidationFetch(async () => {
+    const run = new ProductionValidationRunService().create(
+      productionValidationPayload({
+        pivota_pdp_url: undefined,
+        pivota_offer_id: undefined,
+      })
+    );
+    const completed = await new ProductionValidationRunService().run(run.id);
+    const report = completed.validation_report;
+    const modes = report.demand_test_summary.modes_run.map(
+      (item) => item.scan_mode
+    );
+
+    assert.ok(!modes.includes("pivota_pdp_attribution_test"));
+    assert.ok(report.demand_test_summary.skipped_modes.includes("pivota_pdp_attribution_test"));
+    assert.equal(
+      report.gmv_assurance_snapshot.demand_test_summary.pivota_attribution_status.status,
+      "not_tested"
+    );
+  });
+});
+
+test("production validation offer inputs trigger Offer Execution diagnosis", async () => {
+  resetAgentCenterState();
+  await withMockProductionValidationFetch(async () => {
+    const run = new ProductionValidationRunService().create(
+      productionValidationPayload({
+        merchant_offer_input: {
+          price: 18.99,
+          currency: "USD",
+          coupon_status: "none",
+          inventory_status: "in_stock",
+        },
+        pivota_offer_input: {
+          price: 21.99,
+          currency: "USD",
+          coupon_status: "none",
+          inventory_status: "in_stock",
+        },
+      })
+    );
+    const completed = await new ProductionValidationRunService().run(run.id);
+    const report = completed.validation_report;
+
+    assert.equal(completed.offer_diagnosis_ids.length, 1);
+    assert.ok(report.offer_execution_summary.findings.includes("price_mismatch"));
+    assert.ok(report.top_blockers.some((item) => item.blocker_type === "price_mismatch"));
+  });
+});
+
+test("production validation checkout inputs trigger Checkout Verification diagnosis", async () => {
+  resetAgentCenterState();
+  await withMockProductionValidationFetch(async () => {
+    const run = new ProductionValidationRunService().create(
+      productionValidationPayload({
+        merchant_offer_input: {
+          price: 18.99,
+          currency: "USD",
+          coupon_code: "SUN10",
+          coupon_status: "active",
+          inventory_status: "in_stock",
+        },
+        pivota_offer_input: {
+          price: 18.99,
+          currency: "USD",
+          coupon_code: "SUN10",
+          coupon_status: "active",
+          inventory_status: "in_stock",
+        },
+        merchant_checkout_input: {
+          checkout_url: "https://checkout.isntree.example/checkout",
+          checkout_domain: "checkout.isntree.example",
+          required_params: ["variant", "quantity", "discount"],
+          variant_param_name: "variant",
+          quantity_param_name: "quantity",
+          coupon_param_name: "discount",
+        },
+        pivota_checkout_input: {
+          checkout_url: "https://checkout.isntree.example/checkout",
+          checkout_domain: "checkout.isntree.example",
+          required_params: ["variant", "quantity", "discount"],
+          cart_handoff_payload: {
+            variant: "isntree_watery_sun_gel_50ml",
+            quantity: 1,
+          },
+          variant_id: "isntree_watery_sun_gel_50ml",
+          quantity: 1,
+        },
+      })
+    );
+    const completed = await new ProductionValidationRunService().run(run.id);
+    const report = completed.validation_report;
+
+    assert.equal(completed.checkout_diagnosis_ids.length, 1);
+    assert.ok(
+      report.checkout_verification_summary.findings.includes("coupon_param_missing")
+    );
+    assert.equal(
+      report.gmv_assurance_snapshot.checkout_verification_summary
+        .checkout_readiness_status.status,
+      "needs_work"
+    );
+  });
+});
+
+test("production validation report includes snapshot blockers and preview usage", async () => {
+  resetAgentCenterState();
+  await withMockProductionValidationFetch(async () => {
+    const run = new ProductionValidationRunService().create(
+      productionValidationPayload({
+        merchant_offer_input: {
+          price: 18.99,
+          currency: "USD",
+          coupon_status: "none",
+          inventory_status: "in_stock",
+        },
+        pivota_offer_input: {
+          price: 18.99,
+          currency: "USD",
+          coupon_status: "none",
+          inventory_status: "in_stock",
+        },
+        merchant_checkout_input: {
+          checkout_url: "https://checkout.isntree.example/checkout",
+          checkout_domain: "checkout.isntree.example",
+          required_params: ["variant", "quantity"],
+          variant_param_name: "variant",
+          quantity_param_name: "quantity",
+        },
+        pivota_checkout_input: {
+          checkout_url: "https://checkout.isntree.example/checkout",
+          checkout_domain: "checkout.isntree.example",
+          required_params: ["variant", "quantity"],
+          cart_handoff_payload: {
+            variant: "isntree_watery_sun_gel_50ml",
+            quantity: 1,
+          },
+          variant_id: "isntree_watery_sun_gel_50ml",
+          quantity: 1,
+        },
+      })
+    );
+    const completed = await new ProductionValidationRunService().run(run.id);
+    const report = completed.validation_report;
+    const usageEvents = getAgentCenterState().usageEvents.filter((event) =>
+      completed.usage_event_ids.includes(event.id)
+    );
+
+    assert.ok(report.gmv_assurance_snapshot.id);
+    assert.ok(Array.isArray(report.top_blockers));
+    assert.equal(report.usage_summary.billing_mode, "preview_only");
+    assert.equal(report.usage_summary.billing_status, "not_invoiced");
+    assert.ok(usageEvents.length >= 4);
+    assert.ok(
+      usageEvents.every(
+        (event) =>
+          event.billing_mode === "preview_only" &&
+          event.billing_status === "not_invoiced"
+      )
+    );
+  });
+});
+
+test("production validation delete marks run deleted and cleans temporary state", async () => {
+  resetAgentCenterState();
+  await withMockProductionValidationFetch(async () => {
+    const service = new ProductionValidationRunService();
+    const run = service.create(
+      productionValidationPayload({
+        merchant_offer_input: {
+          price: 18.99,
+          currency: "USD",
+          coupon_status: "none",
+          inventory_status: "in_stock",
+        },
+      })
+    );
+    const completed = await service.run(run.id);
+    const scanTargetId = completed.scan_target_id;
+    const issueId = completed.issue_ids[0];
+    const deleted = service.delete(run.id);
+
+    assert.equal(deleted.status, "deleted");
+    assert.ok(deleted.deleted_at);
+    assert.equal(
+      getAgentCenterState().scanTargets.some((target) => target.id === scanTargetId),
+      false
+    );
+    assert.equal(
+      getAgentCenterState().issues.some((issue) => issue.id === issueId),
+      false
+    );
+    assert.equal(
+      getAgentCenterState().usageEvents.some((event) =>
+        completed.usage_event_ids.includes(event.id)
+      ),
+      false
+    );
+  });
+});
+
+test("internal production validation rewrite target uses shared Agent Center handler", async () => {
+  resetAgentCenterState();
+  await withInternalProductionValidationEnv(async () => {
+    await withMockProductionValidationFetch(async () => {
+      const created = await handleAgentCenterRequest(
+        internalProductionValidationRequest(
+          "https://example.test/api/agent-center/internal-production-validation-runs",
+          {
+            method: "POST",
+            body: JSON.stringify(productionValidationPayload()),
+          }
+        ),
+        { path: ["internal-production-validation-runs"] }
+      );
+      const createdPayload = await created.json();
+      const runId = createdPayload.production_validation_run.id;
+      const ran = await handleAgentCenterRequest(
+        internalProductionValidationRequest(
+          `https://example.test/api/agent-center/internal-production-validation-runs/${runId}/run`,
+          { method: "POST" }
+        ),
+        { path: ["internal-production-validation-runs", runId, "run"] }
+      );
+      const ranPayload = await ran.json();
+      const deleted = await handleAgentCenterRequest(
+        internalProductionValidationRequest(
+          `https://example.test/api/agent-center/internal-production-validation-runs/${runId}`,
+          { method: "DELETE" }
+        ),
+        { path: ["internal-production-validation-runs", runId] }
+      );
+      const deletedPayload = await deleted.json();
+
+      assert.equal(created.status, 201);
+      assert.equal(ranPayload.production_validation_run.status, "completed");
+      assert.equal(deletedPayload.production_validation_run.status, "deleted");
+    });
+  });
 });
 
 test("cleanupExpiredDemoFixtures expires stale internal fixtures", () => {

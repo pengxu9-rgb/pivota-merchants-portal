@@ -1192,6 +1192,125 @@ export type DemoFixture = Timestamped & {
   }>;
 };
 
+export type ProductionValidationRunStatus =
+  | "created"
+  | "running"
+  | "completed"
+  | "failed"
+  | "deleted";
+
+export type ProductionValidationUrlPreflight = {
+  url?: string;
+  status: "not_provided" | "passed" | "failed";
+  status_code?: number | null;
+  final_url?: string;
+  error?: string;
+  checked_at: string;
+};
+
+export type ProductionValidationReport = {
+  target_summary: {
+    production_validation_run_id: string;
+    merchant_name: string;
+    store_url: string;
+    merchant_pdp_url: string;
+    pivota_pdp_url?: string;
+    product_name: string;
+    brand?: string;
+    sku_name?: string;
+    category?: string;
+    market: string;
+    language: string;
+    currency: string;
+    scan_target_id?: string;
+  };
+  url_preflight_results: {
+    merchant_pdp: ProductionValidationUrlPreflight;
+    pivota_pdp: ProductionValidationUrlPreflight;
+    checkout: ProductionValidationUrlPreflight;
+  };
+  demand_test_summary: {
+    modes_run: Array<{
+      scan_mode: ScanMode;
+      job_id: string;
+      aggregate_scores: ReturnTypePlaceholderDemandAggregate;
+      issue_ids: string[];
+    }>;
+    skipped_modes: ScanMode[];
+  };
+  product_understanding_summary: {
+    diagnosis_ids: string[];
+    root_causes: string[];
+  };
+  offer_execution_summary: {
+    diagnosis_ids: string[];
+    findings: string[];
+    readiness_scores: number[];
+  };
+  checkout_verification_summary: {
+    diagnosis_ids: string[];
+    findings: string[];
+    readiness_scores: number[];
+  };
+  gmv_assurance_snapshot?: GMVAssuranceSnapshot;
+  top_blockers: GMVAssuranceBlocker[];
+  next_best_action: string;
+  usage_summary: GMVAssuranceUsageSummary;
+  billing_mode: "preview_only";
+  billing_status: "not_invoiced";
+};
+
+type ReturnTypePlaceholderDemandAggregate = {
+  product_entity_visibility_score: number;
+  merchant_store_visibility_score: number;
+  pivota_pdp_visibility_score: number;
+  pivota_offer_visibility_score: number;
+  pivota_attribution_echo_rate: number;
+  executable_offer_visibility_score: VisibilityScoreValue;
+  visibility_score: number;
+  recommendation_rank_score: number;
+  competitor_substitution_score: number;
+  attribute_readiness_score: number;
+  pivota_pdp_readiness_score: number;
+  estimated_gmv_at_risk?: number;
+  gmv_estimation_method?: string;
+  estimated_gmv_at_risk_confidence?: "low" | "medium" | "high";
+};
+
+export type ProductionValidationRun = Timestamped & {
+  id: string;
+  status: ProductionValidationRunStatus;
+  environment: string;
+  merchant_name: string;
+  store_url: string;
+  merchant_pdp_url: string;
+  product_name: string;
+  brand?: string;
+  sku_name?: string;
+  category?: string;
+  market: string;
+  language: string;
+  currency: string;
+  pivota_product_entity_id?: string;
+  pivota_pdp_url?: string;
+  pivota_offer_id?: string;
+  merchant_offer_input?: Record<string, unknown>;
+  pivota_offer_input?: Record<string, unknown>;
+  merchant_checkout_input?: Record<string, unknown>;
+  pivota_checkout_input?: Record<string, unknown>;
+  scan_target_id?: string;
+  issue_ids: string[];
+  demand_test_job_ids: string[];
+  product_diagnosis_ids: string[];
+  offer_diagnosis_ids: string[];
+  checkout_diagnosis_ids: string[];
+  gmv_assurance_snapshot_id?: string;
+  usage_event_ids: string[];
+  validation_report?: ProductionValidationReport;
+  completed_at?: string;
+  deleted_at?: string;
+};
+
 export type UsageEstimate = {
   products_selected: number;
   estimated_query_clusters: number;
@@ -1234,6 +1353,7 @@ export type AgentCenterState = {
   checkoutVerificationDiagnoses: CheckoutVerificationDiagnosis[];
   gmvAssuranceSnapshots: GMVAssuranceSnapshot[];
   demoFixtures: DemoFixture[];
+  productionValidationRuns: ProductionValidationRun[];
   usageEvents: UsageEvent[];
   usagePlan: {
     included_credits: number;

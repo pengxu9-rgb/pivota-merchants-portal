@@ -1,0 +1,223 @@
+# Agent Center V1 Demo Guide
+
+Last updated: 2026-05-01
+
+## Product Positioning
+
+Pivota Agent Center V1 helps merchants verify whether agentic demand can become executable pre-payment GMV by checking product visibility, merchant/Pivota attribution, product data readiness, offer readiness, and checkout path readiness.
+
+The core message for V1 is simple: Pivota does not only test whether an LLM mentions a product. It tests whether agentic demand can be routed to the merchant or Pivota layer, and whether the product, offer, and checkout path are ready before payment.
+
+## Current Validated Baseline
+
+Agent Center V1 currently includes:
+
+- Agentic GMV Assurance Overview
+- Demand Test Agent
+- Product Understanding + SKU Match Agent
+- Offer Execution Agent
+- Checkout Verification Agent
+- Internal Demo Fixtures
+- Usage Preview
+
+This baseline has been production-smoked with internal demo fixtures. All merchant-facing usage remains preview-only and not invoiced.
+
+## Demo Story
+
+Start with the problem merchants understand: AI agents can recommend products, but a recommendation is not GMV until the product can be attributed to the right buying path and the pre-payment chain is ready.
+
+Agent Center V1 shows the chain from AI demand to pre-payment readiness:
+
+1. Is the product visible to the model?
+2. Can the model attribute that demand to the merchant store or verified Pivota channel?
+3. Does Pivota understand the product, SKU, variant, and query mapping correctly?
+4. Is the merchant offer consistent with Pivota offer state?
+5. Is the checkout path present, reachable, and correctly parameterized before payment?
+
+The demo should make clear that V1 proves pre-payment readiness only. It does not prove payment authorization, order placement, settlement, or final GMV attribution.
+
+## Demo Flow
+
+1. Open `/agent-center`.
+2. Show the `Agentic GMV Assurance Summary` card.
+3. Show readiness dimensions:
+   - Product Visibility
+   - Merchant Store Attribution
+   - Pivota Channel Attribution
+   - Product Data Readiness
+   - SKU / Variant Readiness
+   - Offer Readiness
+   - Checkout Readiness
+4. Show the top blocker and next best action.
+5. Drill into Issue Detail at `/agent-center/issues/:issueId`.
+6. Show Demand Test result.
+7. Show `Product Understanding Diagnosis`.
+8. Show `Offer Execution Diagnosis`.
+9. Show `Checkout Verification Diagnosis`.
+10. Show Usage Preview and confirm it says `preview_only` / `not_invoiced`.
+
+## Demo Fixture Presets
+
+Internal fixture presets for the V1 demo:
+
+- `full_ready_pre_payment_chain`
+- `offer_price_blocker_chain`
+
+These fixtures are internal-only and must not be exposed in merchant UI. They are created through `/api/internal/agent-center/demo-fixtures` with internal authorization and the demo fixtures feature flag enabled.
+
+## Expected `full_ready_pre_payment_chain` Result
+
+Expected Agentic GMV Assurance Overview result:
+
+- `readiness_level = ready_for_agentic_checkout`
+- `overall_readiness_score = 100`
+- 7/7 readiness dimensions passed
+- no high-severity blocker
+- usage remains `preview_only` / `not_invoiced`
+
+Demo interpretation:
+
+The product is visible, attribution is proven, product/SKU data is ready, offer state is consistent, and checkout path readiness passes V1 pre-payment checks. The merchant can treat the chain as ready for agentic checkout integration work, while still understanding that no real payment or order has been executed.
+
+## Expected `offer_price_blocker_chain` Result
+
+Expected Agentic GMV Assurance Overview result:
+
+- `readiness_level = needs_work`
+- top blocker = `price_mismatch`
+- next best action = `Apply Offer Execution patches and rerun offer diagnosis.`
+- offer dimension = `needs_work`
+- other main dimensions passed
+- usage remains `preview_only` / `not_invoiced`
+
+Demo interpretation:
+
+Demand, attribution, product understanding, and checkout readiness can be healthy while the offer layer still blocks agentic GMV readiness. Agent Center points to the exact blocker, the affected layer, and the next action instead of treating the whole workflow as a generic failure.
+
+## Agent Explanations
+
+### Demand Test Agent
+
+Demand Test Agent verifies whether the product is visible in AI demand scenarios and whether attribution is proven for the selected scan mode.
+
+It supports:
+
+- open product/entity visibility testing
+- merchant store attribution testing
+- verified Pivota PDP / offer attribution testing
+- retest and before/after verification
+- usage preview
+
+Important distinction: product/entity visibility does not prove merchant store visibility or Pivota channel visibility. Pivota attribution only counts when a verified public Pivota PDP URL, verified product object ID, or verified offer ID is returned.
+
+### Product Understanding + SKU Match Agent
+
+Product Understanding + SKU Match Agent diagnoses whether an issue is caused by weak merchant source data, incomplete Pivota unified PDP data, incorrect ProductEntity mapping, SKU/variant mismatch, missing query mapping, missing competitor/substitute mapping, or human-review ambiguity.
+
+It compares the merchant source layer against the Pivota agent-facing layer and generates deterministic patch recommendations, including merchant source patches, variant map patches, Pivota unified PDP patches, product graph patches, and query mapping patches.
+
+### Offer Execution Agent
+
+Offer Execution Agent diagnoses offer readiness and consistency across merchant offer source data and Pivota offer state.
+
+It checks:
+
+- missing offer
+- stale offer
+- price mismatch
+- promo/coupon mismatch
+- expired coupon
+- inventory mismatch
+- offer attachment to Pivota PDP
+- offer SKU/variant mismatch
+- clean offer state
+
+V1 does not execute checkout or payments. It only verifies whether the offer state is ready and consistent before payment.
+
+### Checkout Verification Agent
+
+Checkout Verification Agent diagnoses checkout path readiness before payment.
+
+It checks:
+
+- checkout URL/session presence
+- checkout URL preflight status
+- cart handoff payload completeness
+- SKU / variant / quantity parameters
+- coupon / promo passthrough parameters
+- merchant checkout domain consistency
+- stale or expired checkout session
+- checkout path attachment to the correct offer
+
+V1 does not authorize payments, tokenize cards, place orders, write orders back, refund, settle funds, or prove final GMV.
+
+## What V1 Proves
+
+Agent Center V1 can prove:
+
+- product/entity visibility
+- merchant attribution when tested in Merchant Store Attribution mode
+- verified Pivota attribution when tested in Pivota PDP Attribution mode
+- product data readiness
+- SKU / variant readiness
+- offer consistency
+- checkout path readiness before payment
+- pre-payment readiness across the agentic GMV chain
+
+## What V1 Does Not Prove
+
+Agent Center V1 does not prove:
+
+- real payment authorization
+- PSP success
+- payment token creation
+- order placement
+- order write-back
+- refund
+- settlement
+- transaction fees
+- final GMV attribution
+- real billing
+
+Any V1 claim that a path is ready means pre-payment readiness only.
+
+## Usage Explanation
+
+All usage remains `preview_only` / `not_invoiced`.
+
+Merchant UI should show credits and usage only. It should not expose token-level provider costs or imply that billing, invoicing, subscriptions, payment collection, or settlement have been enabled.
+
+V1 usage areas include:
+
+- AI Test Credits
+- Product Understanding Credits
+- Offer Verification Credits
+- Checkout Verification Credits
+
+These are preview usage signals for product validation and merchant understanding.
+
+## Founder Demo Script
+
+Use this concise script for merchants or investors:
+
+```text
+Agent Center starts with the question merchants actually care about: not just "does AI know my product?", but "can AI demand become a ready buying path?"
+
+Here, the Assurance Overview shows the full pre-payment chain. Product Visibility tells us whether the model surfaces the product. Merchant and Pivota Attribution tell us whether the demand can be routed to the right channel. Product Data and SKU readiness tell us whether the agent is working with the right product and variant. Offer Readiness checks price, promo, coupon, inventory, and attachment. Checkout Readiness checks that the pre-payment checkout path exists, is reachable, and has the right parameters.
+
+In the ready fixture, all seven readiness dimensions pass and the system marks the chain ready for agentic checkout work. In the blocker fixture, most of the chain passes, but the offer layer has a price mismatch. Agent Center does not hide that under a generic score. It identifies the blocker, shows the affected layer, recommends the next action, and keeps usage clearly marked as preview-only and not invoiced.
+
+V1 does not process payments or place orders. It proves the pre-payment readiness layer that has to be correct before agentic checkout can safely execute.
+```
+
+## Validation Commands
+
+Run these before shipping Agent Center V1 changes:
+
+```bash
+npm run test:agent-center
+npm run lint
+npm run build
+```
+
+For production smoke, use internal demo fixtures only and delete each fixture after validation.
