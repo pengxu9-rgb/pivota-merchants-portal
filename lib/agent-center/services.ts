@@ -6518,6 +6518,14 @@ function issueForTypes(
   return issues.find((issue) => types.includes(issue.issue_type));
 }
 
+function preferredAssuranceScore(scores: DemandVisibilityScore[]) {
+  return (
+    latestByCreatedAt(
+      scores.filter((score) => Boolean(score.provider_scores.production_validation))
+    ) || latestByCreatedAt(scores)
+  );
+}
+
 function dimensionNeedsWork(summary: GMVAssuranceDimensionSummary) {
   return summary.status === "needs_work" || summary.status === "blocked";
 }
@@ -6637,7 +6645,7 @@ export class GMVAssuranceService {
         score.scan_target_id === target.id &&
         (!productEntityId || score.product_entity_id === productEntityId)
     );
-    const latestScore = latestByCreatedAt(scores);
+    const latestScore = preferredAssuranceScore(scores);
     const issues = state.issues.filter(
       (issue) =>
         issue.merchant_id === merchantId &&

@@ -3708,6 +3708,51 @@ test("GMV assurance does not let a not-tested dimension own top blocker", () => 
   );
 });
 
+test("GMV assurance prefers production validation consolidated score over latest mode score", () => {
+  const result = runIsntreeProductUnderstandingCase({
+    merchantAttributes: isntreeStrongMerchantAttributes,
+    pivotaAttributes: {
+      ...isntreeStrongMerchantAttributes,
+      pivota_pdp_url: verifiedPivotaPdpUrl,
+      pivota_product_object_id: verifiedPivotaObjectId,
+      offer_ids: [verifiedPivotaOfferId],
+      agent_summary: "Daily hydrating sunscreen with watery gel finish.",
+    },
+  });
+  result.target.scan_mode = "agentic_execution_test";
+  markDemandScoresPassed(result);
+  result.score.provider_scores = {
+    production_validation: { ...result.score.aggregate_scores },
+  };
+  result.score.created_at = "2026-05-01T12:00:00.000Z";
+  const latestModeScore = structuredClone(result.score);
+  latestModeScore.id = "score_latest_single_mode";
+  latestModeScore.created_at = "2026-05-01T12:01:00.000Z";
+  latestModeScore.provider_scores = {
+    gemini: {
+      ...result.score.aggregate_scores,
+      merchant_store_visibility_score: 0,
+    },
+  };
+  latestModeScore.aggregate_scores = {
+    ...result.score.aggregate_scores,
+    merchant_store_visibility_score: 0,
+  };
+  getAgentCenterState().scores.push(latestModeScore);
+  addPivotaPdpQualityIssue(result);
+
+  const snapshot = new GMVAssuranceService().createSnapshot({
+    scan_target_id: result.target.id,
+    product_entity_id: result.product.product_entity_id,
+  });
+
+  assert.equal(
+    snapshot.demand_test_summary.merchant_attribution_status.status,
+    "passed"
+  );
+  assert.equal(snapshot.top_blockers[0].blocker_type, "pivota_pdp_content_quality_gap");
+});
+
 test("GMV assurance checkout blocker chain surfaces checkout finding", () => {
   const fixture = createCheckoutVerificationFixture({
     pivotaCheckoutPatch: {
