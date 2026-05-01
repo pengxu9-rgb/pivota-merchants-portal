@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
+  Bot,
   ClipboardCheck,
   CreditCard,
   LayoutDashboard,
@@ -34,6 +35,13 @@ export const primaryNavigation: MerchantNavigationItem[] = [
     matchPrefixes: ["/dashboard"],
     description: "Attention now",
     descriptionKey: "shell.nav.overviewDesc",
+  },
+  {
+    label: "Agentic GMV Center",
+    href: "/agent-center",
+    icon: Bot,
+    matchPrefixes: ["/agent-center"],
+    description: "AI demand scans",
   },
   {
     label: "Catalog",

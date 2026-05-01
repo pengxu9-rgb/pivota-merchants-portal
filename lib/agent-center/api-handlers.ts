@@ -1,0 +1,218 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getAgentCenterState, DEMO_MERCHANT_ID } from "./repository.ts";
+import {
+  DemandTestJobService,
+  getAgentCenterOverview,
+  getPublicState,
+  getUsageSummary,
+  InputReadinessService,
+  MerchantStoreService,
+  ScanTargetService,
+  UsageMeteringService,
+  VerificationService,
+} from "./services.ts";
+
+function json(data: unknown, status = 200) {
+  return NextResponse.json(data, { status });
+}
+
+function merchantIdFromRequest(req: NextRequest) {
+  return (
+    req.headers.get("x-merchant-id") ||
+    req.nextUrl.searchParams.get("merchantId") ||
+    DEMO_MERCHANT_ID
+  );
+}
+
+async function requestBody(req: NextRequest) {
+  return req.json().catch(() => ({}));
+}
+
+function pathSegments(params?: { path?: string[] }) {
+  return params?.path || [];
+}
+
+function routeError(error: unknown) {
+  const message = error instanceof Error ? error.message : "Agent Center request failed";
+  const status = /not found/i.test(message) ? 404 : 400;
+  return json({ error: message }, status);
+}
+
+export async function handleMerchantStoresRequest(
+  req: NextRequest,
+  params?: { path?: string[] }
+) {
+  const segments = pathSegments(params);
+  const merchantId = merchantIdFromRequest(req);
+  const service = new MerchantStoreService();
+
+  try {
+    if (req.method === "GET" && segments.length === 0) {
+      return json({ stores: service.list(merchantId) });
+    }
+
+    if (req.method === "POST" && segments.length === 0) {
+      const body = await requestBody(req);
+      return json({ store: service.create(body, merchantId) }, 201);
+    }
+
+    const storeId = segments[0];
+    if (req.method === "GET" && storeId) {
+      const store = service.list(merchantId).find((item) => item.id === storeId);
+      return store ? json({ store }) : json({ error: "Store not found" }, 404);
+    }
+
+    if (req.method === "PATCH" && storeId) {
+      const body = await requestBody(req);
+      return json({ store: service.update(storeId, body) });
+    }
+
+    return json({ error: "Unsupported merchant store route" }, 404);
+  } catch (error) {
+    return routeError(error);
+  }
+}
+
+export async function handleAgentCenterRequest(
+  req: NextRequest,
+  params?: { path?: string[] }
+) {
+  const segments = pathSegments(params);
+  const [resource, id, action] = segments;
+  const merchantId = merchantIdFromRequest(req);
+  const state = getAgentCenterState();
+
+  try {
+    if (!resource || resource === "overview") {
+      if (req.method === "GET") return json(getAgentCenterOverview(merchantId));
+    }
+
+    if (resource === "bootstrap" && req.method === "GET") {
+      return json(getPublicState());
+    }
+
+    if (resource === "providers" && req.method === "GET") {
+      return json({ providers: state.providers });
+    }
+
+    if (resource === "scan-targets") {
+      if (req.method === "POST" && !id) {
+        const body = await requestBody(req);
+        return json(
+          { scan_target: new ScanTargetService().create({ ...body, merchant_id: merchantId }) },
+          201
+        );
+      }
+      if (req.method === "GET" && id) {
+        return json({ scan_target: new ScanTargetService().get(id) });
+      }
+    }
+
+    if (resource === "input-readiness") {
+      if (req.method === "POST") {
+        const body = await requestBody(req);
+        return json({
+          readiness: new InputReadinessService().createSnapshot(body.scan_target_id),
+        });
+      }
+      if (req.method === "GET" && id) {
+        return json({ readiness: new InputReadinessService().getLatest(id) });
+      }
+    }
+
+    if (resource === "usage-estimate" && req.method === "POST") {
+      const body = await requestBody(req);
+      return json({ estimate: new UsageMeteringService().estimate(body) });
+    }
+
+    if (resource === "demand-test-jobs") {
+      const jobService = new DemandTestJobService();
+      if (req.method === "POST" && !id) {
+        const body = await requestBody(req);
+        return json({ job: jobService.create(body) }, 201);
+      }
+      if (req.method === "GET" && id) {
+        return json({ job: jobService.get(id), results: jobService.results(id) });
+      }
+      if (req.method === "POST" && id && action === "run") {
+        const results = await jobService.run(id);
+        return json({ job: results.job, results });
+      }
+      if (req.method === "POST" && id && action === "cancel") {
+        const job = jobService.get(id);
+        job.status = "cancelled";
+        return json({ job });
+      }
+    }
+
+    if (resource === "results" && req.method === "GET" && id) {
+      return json(new DemandTestJobService().results(id));
+    }
+
+    if (resource === "query-clusters") {
+      if (req.method === "GET" && id) {
+        const cluster = state.queryClusters.find((item) => item.id === id);
+        return cluster ? json({ query_cluster: cluster }) : json({ error: "Query cluster not found" }, 404);
+      }
+      if (req.method === "GET") {
+        const scanTargetId = req.nextUrl.searchParams.get("scan_target_id");
+        return json({
+          query_clusters: state.queryClusters.filter(
+            (cluster) => !scanTargetId || cluster.scan_target_id === scanTargetId
+          ),
+        });
+      }
+    }
+
+    if (resource === "issues") {
+      if (req.method === "GET" && id) {
+        const issue = state.issues.find((item) => item.id === id);
+        return issue ? json({ issue }) : json({ error: "Issue not found" }, 404);
+      }
+      if (req.method === "GET") {
+        return json({
+          issues: state.issues.filter((issue) => issue.merchant_id === merchantId),
+        });
+      }
+      if (req.method === "PATCH" && id) {
+        const issue = state.issues.find((item) => item.id === id);
+        if (!issue) return json({ error: "Issue not found" }, 404);
+        Object.assign(issue, await requestBody(req), { updated_at: new Date().toISOString() });
+        return json({ issue });
+      }
+      if (req.method === "POST" && id && ["approve", "ignore", "assign"].includes(action || "")) {
+        const issue = state.issues.find((item) => item.id === id);
+        if (!issue) return json({ error: "Issue not found" }, 404);
+        if (action === "approve") issue.status = "approved";
+        if (action === "ignore") issue.status = "ignored";
+        if (action === "assign") issue.status = "approval_required";
+        issue.updated_at = new Date().toISOString();
+        return json({ issue });
+      }
+      if (req.method === "POST" && id && action === "retest") {
+        const verification = await new VerificationService().retestIssue(id);
+        return json({ verification });
+      }
+    }
+
+    if (resource === "verification" && req.method === "GET" && id) {
+      const verification = state.verificationRuns.find((item) => item.id === id);
+      return verification
+        ? json({ verification })
+        : json({ error: "Verification not found" }, 404);
+    }
+
+    if (resource === "usage" && req.method === "GET") {
+      const summary = getUsageSummary(merchantId);
+      if (id === "by-store") return json({ usage_by_store: summary.usage_by_store });
+      if (id === "by-provider") {
+        return json({ usage_by_provider: summary.usage_by_provider });
+      }
+      return json(summary);
+    }
+
+    return json({ error: "Unsupported Agent Center route" }, 404);
+  } catch (error) {
+    return routeError(error);
+  }
+}
