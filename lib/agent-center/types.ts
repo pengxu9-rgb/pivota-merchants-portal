@@ -92,6 +92,8 @@ export type AgenticGMVIssueType =
   | "missing_attribute"
   | "weak_recommendation_evidence"
   | "pivota_pdp_readiness_gap"
+  | "pivota_pdp_content_quality_gap"
+  | "pivota_product_intelligence_gap"
   | "product_entity_mapping_issue"
   | "wrong_product_family"
   | "no_purchase_path"
@@ -606,6 +608,7 @@ export type AgenticGMVIssue = Timestamped & DemoFixtureMetadata & {
   affected_skus: string[];
   affected_query_clusters: string[];
   evidence: Record<string, unknown>;
+  blocker_eligible?: boolean;
   root_cause: string;
   fix_targets: FixTarget[];
   recommended_action: string;
@@ -1334,6 +1337,11 @@ export type ProductionValidationReport = {
     findings: string[];
     readiness_scores: number[];
   };
+  pivota_pdp_quality_summary?: {
+    status: "not_provided" | "passed" | "needs_work";
+    findings: string[];
+    issue_id?: string;
+  };
   gmv_assurance_snapshot?: GMVAssuranceSnapshot;
   top_blockers: GMVAssuranceBlocker[];
   next_best_action: string;
@@ -1380,6 +1388,15 @@ export type ProductionValidationRun = Timestamped & {
   pivota_offer_input?: Record<string, unknown>;
   merchant_checkout_input?: Record<string, unknown>;
   pivota_checkout_input?: Record<string, unknown>;
+  product_attributes?: Record<string, unknown>;
+  merchant_product_attributes?: Record<string, unknown>;
+  pivota_product_attributes?: Record<string, unknown>;
+  competitor_brands?: string[];
+  competitor_products?: string[];
+  pivota_pdp_quality_findings?: string[];
+  pivota_live_pdp_quality_findings?: string[];
+  pivota_pdp_quality_gate?: Record<string, unknown>;
+  repetitions?: number;
   scan_target_id?: string;
   issue_ids: string[];
   demand_test_job_ids: string[];

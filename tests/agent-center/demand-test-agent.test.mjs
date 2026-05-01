@@ -809,6 +809,149 @@ function productionValidationPayload(overrides = {}) {
   };
 }
 
+const pivotaLivePdpQualityFindings = [
+  "missing_pdp_identity",
+  "product_intel_module_empty_or_blocked",
+  "missing_overview_from_available_description",
+  "similar_card_missing_highlight",
+];
+
+const pivotaPdpQualityNextAction =
+  "Complete Pivota PDP identity, overview, product intelligence module, and similar-card highlight, then rerun Pivota PDP Attribution Test and GMV Assurance Snapshot.";
+
+function markDemandScoresPassed(result) {
+  Object.assign(result.score.aggregate_scores, {
+    product_entity_visibility_score: 100,
+    merchant_store_visibility_score: 100,
+    pivota_pdp_visibility_score: 100,
+    pivota_offer_visibility_score: 100,
+    executable_offer_visibility_score: "not_tested",
+    visibility_score: 100,
+    recommendation_rank_score: 100,
+    competitor_substitution_score: 0,
+    attribute_readiness_score: 100,
+    pivota_pdp_readiness_score: 100,
+  });
+  result.score.provider_scores.production_validation = {
+    ...result.score.aggregate_scores,
+  };
+}
+
+function addPivotaPdpQualityIssue(result, findings = pivotaLivePdpQualityFindings) {
+  const issue = new IssueEngine().createIssue({
+    issueType: "pivota_pdp_content_quality_gap",
+    severity: "high",
+    rootCause:
+      "Merchant-owned PDP attribution passed. The main readiness gap is on the Pivota agent-facing PDP layer.",
+    recommendedAction: pivotaPdpQualityNextAction,
+    input: {
+      scanTarget: result.target,
+      score: result.score,
+      cluster: result.cluster,
+      parsed: result.parsed,
+      matches: result.matches,
+    },
+    product: result.product,
+    missingAttributes: [],
+    parserConfidence: 1,
+    matchConfidence: 1,
+  });
+  issue.evidence = {
+    ...issue.evidence,
+    blocker_eligible: true,
+    target_layer: "pivota_agent_facing_path",
+    affected_readiness_dimension: "product_data_readiness_status",
+    pivota_pdp_quality_findings: findings,
+  };
+  issue.blocker_eligible = true;
+  issue.fix_targets = ["pivota_unified_pdp", "pivota_product_graph"];
+  issue.recommended_action = pivotaPdpQualityNextAction;
+  issue.merchant_facing_summary =
+    "Merchant-owned PDP attribution passed. The main readiness gap is on the Pivota agent-facing PDP layer.";
+  issue.pivota_unified_pdp_patch = {
+    complete_pdp_identity: true,
+    add_overview_from_available_description: true,
+  };
+  issue.pivota_product_graph_patch = {
+    populate_product_intelligence_module: true,
+    add_similar_card_highlight: true,
+  };
+  getAgentCenterState().issues.push(issue);
+  return issue;
+}
+
+function addValidationAnchorIssue(result) {
+  const issue = new IssueEngine().createIssue({
+    issueType: "human_review_required",
+    severity: "low",
+    rootCause: "Internal production validation anchor.",
+    recommendedAction: "Review downstream validation outputs.",
+    input: {
+      scanTarget: result.target,
+      score: result.score,
+      cluster: result.cluster,
+      parsed: result.parsed,
+      matches: result.matches,
+    },
+    product: result.product,
+    missingAttributes: [],
+    parserConfidence: 1,
+    matchConfidence: 1,
+  });
+  issue.evidence = {
+    ...issue.evidence,
+    validation_anchor: true,
+    blocker_eligible: false,
+  };
+  issue.blocker_eligible = false;
+  issue.fix_targets = ["human_review"];
+  getAgentCenterState().issues.push(issue);
+  return issue;
+}
+
+function addCleanOfferDiagnosis(result, issue) {
+  const now = new Date("2026-05-01T12:00:00.000Z").toISOString();
+  getAgentCenterState().merchantOffers.push({
+    id: "merchant_offer_skin1004_clean",
+    merchant_id: result.store.merchant_id,
+    store_id: result.store.id,
+    product_id: result.product.id,
+    sku_id: result.product.sku,
+    price: 12.6,
+    currency: "USD",
+    promo_price: null,
+    coupon_code: null,
+    coupon_status: "none",
+    inventory_status: "in_stock",
+    inventory_quantity: 42,
+    expires_at: null,
+    source_url: result.product.pdp_url,
+    last_synced_at: now,
+    created_at: now,
+    updated_at: now,
+  });
+  getAgentCenterState().pivotaOffers.push({
+    id: "pivota_offer_skin1004_clean",
+    product_entity_id: result.product.product_entity_id,
+    pivota_unified_pdp_id: `pdp_${result.product.product_entity_id}`,
+    merchant_id: result.store.merchant_id,
+    store_id: result.store.id,
+    sku_id: result.product.sku,
+    price: 12.6,
+    currency: "USD",
+    promo_price: null,
+    coupon_code: null,
+    coupon_status: "none",
+    inventory_status: "in_stock",
+    execution_status: "ready",
+    attached_to_pivota_pdp: true,
+    last_verified_at: now,
+    created_at: now,
+    updated_at: now,
+  });
+  return new OfferExecutionService().runDiagnosis(issue.id);
+}
+
 test("AgentCenterRepository CRUD and query helpers cover persisted core records", () => {
   resetAgentCenterState();
   const repository = getAgentCenterRepository();
@@ -3456,6 +3599,115 @@ test("offer price blocker chain fixture surfaces price mismatch as top blocker",
   );
 });
 
+test("GMV assurance selects Pivota PDP quality blocker when attribution and offer pass", () => {
+  const result = runIsntreeProductUnderstandingCase({
+    merchantAttributes: isntreeStrongMerchantAttributes,
+    pivotaAttributes: {
+      ...isntreeStrongMerchantAttributes,
+      pivota_pdp_url: verifiedPivotaPdpUrl,
+      pivota_product_object_id: verifiedPivotaObjectId,
+      offer_ids: [verifiedPivotaOfferId],
+      agent_summary: "Daily hydrating sunscreen with watery gel finish.",
+    },
+  });
+  result.target.scan_mode = "agentic_execution_test";
+  markDemandScoresPassed(result);
+  const qualityIssue = addPivotaPdpQualityIssue(result);
+  const anchorIssue = addValidationAnchorIssue(result);
+  addCleanOfferDiagnosis(result, qualityIssue);
+
+  const snapshot = new GMVAssuranceService().createSnapshot({
+    scan_target_id: result.target.id,
+    product_entity_id: result.product.product_entity_id,
+  });
+  const topBlockerTypes = snapshot.top_blockers.map(
+    (blocker) => blocker.blocker_type
+  );
+
+  assert.equal(snapshot.readiness_level, "needs_work");
+  assert.equal(snapshot.top_blockers[0].blocker_type, "pivota_pdp_content_quality_gap");
+  assert.equal(snapshot.top_blockers[0].issue_id, qualityIssue.id);
+  assert.equal(
+    snapshot.demand_test_summary.merchant_attribution_status.status,
+    "passed"
+  );
+  assert.equal(
+    snapshot.demand_test_summary.pivota_attribution_status.status,
+    "passed"
+  );
+  assert.equal(
+    snapshot.offer_execution_summary.offer_readiness_status.status,
+    "passed"
+  );
+  assert.equal(
+    snapshot.checkout_verification_summary.checkout_readiness_status.status,
+    "not_tested"
+  );
+  assert.ok(!topBlockerTypes.includes("merchant_store_attribution_gap"));
+  assert.ok(!snapshot.top_blockers.some((blocker) => blocker.issue_id === anchorIssue.id));
+  assert.equal(snapshot.recommended_next_actions[0], pivotaPdpQualityNextAction);
+  assert.match(
+    qualityIssue.merchant_facing_summary,
+    /Merchant-owned PDP attribution passed/
+  );
+});
+
+test("GMV assurance does not let a passed dimension own top blocker", () => {
+  const result = runIsntreeProductUnderstandingCase({
+    merchantAttributes: isntreeStrongMerchantAttributes,
+    pivotaAttributes: {
+      ...isntreeStrongMerchantAttributes,
+      agent_summary: "Daily hydrating sunscreen with watery gel finish.",
+    },
+    issueType: "merchant_store_attribution_gap",
+  });
+  result.target.scan_mode = "merchant_store_attribution_test";
+  markDemandScoresPassed(result);
+
+  const snapshot = new GMVAssuranceService().createSnapshot({
+    scan_target_id: result.target.id,
+    product_entity_id: result.product.product_entity_id,
+  });
+
+  assert.equal(
+    snapshot.demand_test_summary.merchant_attribution_status.status,
+    "passed"
+  );
+  assert.ok(
+    !snapshot.top_blockers.some(
+      (blocker) => blocker.blocker_type === "merchant_store_attribution_gap"
+    )
+  );
+});
+
+test("GMV assurance does not let a not-tested dimension own top blocker", () => {
+  const result = runIsntreeProductUnderstandingCase({
+    merchantAttributes: isntreeStrongMerchantAttributes,
+    pivotaAttributes: {
+      ...isntreeStrongMerchantAttributes,
+      agent_summary: "Daily hydrating sunscreen with watery gel finish.",
+    },
+    issueType: "merchant_store_attribution_gap",
+  });
+  result.target.scan_mode = "open_product_visibility_test";
+  markDemandScoresPassed(result);
+
+  const snapshot = new GMVAssuranceService().createSnapshot({
+    scan_target_id: result.target.id,
+    product_entity_id: result.product.product_entity_id,
+  });
+
+  assert.equal(
+    snapshot.demand_test_summary.merchant_attribution_status.status,
+    "not_tested"
+  );
+  assert.ok(
+    !snapshot.top_blockers.some(
+      (blocker) => blocker.blocker_type === "merchant_store_attribution_gap"
+    )
+  );
+});
+
 test("GMV assurance checkout blocker chain surfaces checkout finding", () => {
   const fixture = createCheckoutVerificationFixture({
     pivotaCheckoutPatch: {
@@ -3572,6 +3824,28 @@ test("issue resolution plan generation handles Pivota attribution gaps", () => {
   assert.equal(plan.owner_type, "pivota_ops");
   assert.ok(actionTypes.includes("publish_or_verify_pivota_pdp_url"));
   assert.ok(actionTypes.includes("bind_product_object_id"));
+  assert.ok(actionTypes.includes("rerun_pivota_pdp_attribution_test"));
+  assert.equal(plan.verification_plan.scan_mode, "pivota_pdp_attribution_test");
+});
+
+test("issue resolution plan generation handles Pivota PDP quality gaps", () => {
+  const result = runIsntreeProductUnderstandingCase({
+    merchantAttributes: isntreeStrongMerchantAttributes,
+    pivotaAttributes: {
+      ...isntreeStrongMerchantAttributes,
+      pivota_pdp_url: verifiedPivotaPdpUrl,
+      agent_summary: "Daily hydrating sunscreen with watery gel finish.",
+    },
+  });
+  markDemandScoresPassed(result);
+  const issue = addPivotaPdpQualityIssue(result);
+  const plan = new IssueResolutionService().generate(issue.id);
+  const actionTypes = plan.recommended_actions.map((action) => action.action_type);
+
+  assert.equal(plan.blocker_type, "pivota_pdp_content_quality_gap");
+  assert.equal(plan.owner_type, "pivota_ops");
+  assert.ok(actionTypes.includes("pivota_pdp_identity_and_overview_patch"));
+  assert.ok(actionTypes.includes("pivota_product_intelligence_module_patch"));
   assert.ok(actionTypes.includes("rerun_pivota_pdp_attribution_test"));
   assert.equal(plan.verification_plan.scan_mode, "pivota_pdp_attribution_test");
 });
@@ -3999,6 +4273,55 @@ test("production validation report includes snapshot blockers and preview usage"
           event.billing_status === "not_invoiced"
       )
     );
+  });
+});
+
+test("production validation maps live Pivota PDP quality findings to blocker issue", async () => {
+  resetAgentCenterState();
+  await withMockProductionValidationFetch(async () => {
+    const run = new ProductionValidationRunService().create(
+      productionValidationPayload({
+        pivota_pdp_url: verifiedPivotaPdpUrl,
+        pivota_offer_id: verifiedPivotaOfferId,
+        pivota_pdp_quality_findings: pivotaLivePdpQualityFindings,
+        merchant_offer_input: {
+          price: 12.6,
+          currency: "USD",
+          coupon_status: "none",
+          inventory_status: "in_stock",
+        },
+        pivota_offer_input: {
+          price: 12.6,
+          currency: "USD",
+          coupon_status: "none",
+          inventory_status: "in_stock",
+        },
+      })
+    );
+    const completed = await new ProductionValidationRunService().run(run.id);
+    const report = completed.validation_report;
+    const issue = getAgentCenterState().issues.find(
+      (item) => item.issue_type === "pivota_pdp_content_quality_gap"
+    );
+
+    assert.ok(issue, "expected Pivota PDP content quality issue");
+    assert.equal(issue.blocker_eligible, true);
+    assert.deepEqual(
+      issue.evidence.pivota_pdp_quality_findings,
+      pivotaLivePdpQualityFindings
+    );
+    assert.equal(report.pivota_pdp_quality_summary.status, "needs_work");
+    assert.deepEqual(
+      report.pivota_pdp_quality_summary.findings,
+      pivotaLivePdpQualityFindings
+    );
+    assert.ok(
+      report.top_blockers.some(
+        (blocker) => blocker.blocker_type === "pivota_pdp_content_quality_gap"
+      )
+    );
+    assert.equal(report.usage_summary.billing_mode, "preview_only");
+    assert.equal(report.usage_summary.billing_status, "not_invoiced");
   });
 });
 

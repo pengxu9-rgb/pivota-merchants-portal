@@ -111,6 +111,7 @@ export default function IssueInboxPage() {
             "competitor_substitution",
             "missing_attribute",
             "pivota_pdp_readiness_gap",
+            "pivota_pdp_content_quality_gap",
             "high",
             "resolved",
           ].map((value) => (

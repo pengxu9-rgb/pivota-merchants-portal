@@ -76,6 +76,7 @@ import type {
   RetestPreparation,
   ScanMode,
   ScanTarget,
+  Severity,
   UsageEstimate,
   UsageEvent,
   VariantMappingFinding,
@@ -2095,6 +2096,13 @@ export class FixTargetRouter {
       return ["pivota_unified_pdp"];
     }
 
+    if (
+      input.issueType === "pivota_pdp_content_quality_gap" ||
+      input.issueType === "pivota_product_intelligence_gap"
+    ) {
+      return ["pivota_unified_pdp", "pivota_product_graph"];
+    }
+
     if (input.issueType === "merchant_store_attribution_gap") {
       return ["merchant_pdp", "merchant_catalog", "merchant_structured_data"];
     }
@@ -3012,7 +3020,9 @@ function estimatedAfterGmvAtRisk(
       scores.competitor_substitution_score < 60) ||
     (issue.issue_type === "missing_attribute" &&
       scores.attribute_readiness_score >= 60) ||
-    (issue.issue_type === "pivota_pdp_readiness_gap" &&
+    ((issue.issue_type === "pivota_pdp_readiness_gap" ||
+      issue.issue_type === "pivota_pdp_content_quality_gap" ||
+      issue.issue_type === "pivota_product_intelligence_gap") &&
       scores.pivota_pdp_readiness_score >= 70);
 
   return resolvedByIssueType ? 0 : issue.estimated_gmv_at_risk;
@@ -5618,6 +5628,8 @@ const supportedResolutionBlockers = new Set([
   "unverified_pivota_attribution",
   "missing_attribute",
   "pivota_pdp_readiness_gap",
+  "pivota_pdp_content_quality_gap",
+  "pivota_product_intelligence_gap",
   "price_mismatch",
   "expired_coupon",
   "coupon_param_missing",
@@ -5765,7 +5777,9 @@ export class IssueResolutionService {
     if (
       blockerType === "merchant_store_attribution_gap" ||
       blockerType === "pivota_pdp_attribution_gap" ||
-      blockerType === "unverified_pivota_attribution"
+      blockerType === "unverified_pivota_attribution" ||
+      blockerType === "pivota_pdp_content_quality_gap" ||
+      blockerType === "pivota_product_intelligence_gap"
     ) {
       const verification = await new VerificationService().retestIssue(issue.id);
       result = {
@@ -5863,6 +5877,8 @@ export class IssueResolutionService {
     if (
       blockerType === "pivota_pdp_attribution_gap" ||
       blockerType === "unverified_pivota_attribution" ||
+      blockerType === "pivota_pdp_content_quality_gap" ||
+      blockerType === "pivota_product_intelligence_gap" ||
       blockerType === "pivota_pdp_readiness_gap" ||
       blockerType === "expired_coupon"
     ) {
@@ -5878,6 +5894,8 @@ export class IssueResolutionService {
       unverified_pivota_attribution: "Pivota Product Ops",
       missing_attribute: "Merchant Catalog + Pivota Product Ops",
       pivota_pdp_readiness_gap: "Pivota Product Ops",
+      pivota_pdp_content_quality_gap: "Pivota Product Ops",
+      pivota_product_intelligence_gap: "Pivota Product Ops",
       price_mismatch: "Merchant Offer Ops + Pivota Offer Ops",
       expired_coupon: "Pivota Offer Ops",
       coupon_param_missing: "Merchant Promo Ops + Pivota Checkout Ops",
@@ -5897,6 +5915,14 @@ export class IssueResolutionService {
       unverified_pivota_attribution: ["pivota_unified_pdp", "pivota_product_graph"],
       missing_attribute: ["both_merchant_and_pivota"],
       pivota_pdp_readiness_gap: ["pivota_unified_pdp", "pivota_product_graph"],
+      pivota_pdp_content_quality_gap: [
+        "pivota_unified_pdp",
+        "pivota_product_graph",
+      ],
+      pivota_product_intelligence_gap: [
+        "pivota_unified_pdp",
+        "pivota_product_graph",
+      ],
       price_mismatch: ["pivota_offer_layer"],
       expired_coupon: ["pivota_offer_layer", "merchant_promo_source"],
       coupon_param_missing: ["pivota_checkout_layer", "merchant_promo_source"],
@@ -5917,6 +5943,10 @@ export class IssueResolutionService {
         "The issue is likely caused by missing or weak product attributes in the merchant source and/or Pivota unified PDP.",
       pivota_pdp_readiness_gap:
         "Merchant source data can be sufficient while the Pivota unified PDP or product graph is missing normalized agent-facing attributes.",
+      pivota_pdp_content_quality_gap:
+        "Merchant-owned PDP attribution passed. The main readiness gap is on the Pivota agent-facing PDP layer: identity, overview, product intelligence, or similar-product content is incomplete.",
+      pivota_product_intelligence_gap:
+        "The Pivota agent-facing product intelligence layer is incomplete or blocked even though the product path is reachable.",
       price_mismatch:
         "Merchant source price and Pivota offer state disagree, so the agent-facing offer should not be treated as ready until pricing is reconciled.",
       expired_coupon:
@@ -5949,7 +5979,9 @@ export class IssueResolutionService {
     }
     if (
       blockerType === "pivota_pdp_attribution_gap" ||
-      blockerType === "unverified_pivota_attribution"
+      blockerType === "unverified_pivota_attribution" ||
+      blockerType === "pivota_pdp_content_quality_gap" ||
+      blockerType === "pivota_product_intelligence_gap"
     ) {
       return {
         ...base,
@@ -5958,10 +5990,7 @@ export class IssueResolutionService {
         success_metric: "pivota_pdp_visibility_score",
       };
     }
-    if (
-      blockerType === "missing_attribute" ||
-      blockerType === "pivota_pdp_readiness_gap"
-    ) {
+    if (blockerType === "missing_attribute" || blockerType === "pivota_pdp_readiness_gap") {
       return {
         ...base,
         source_agent: "product_understanding_agent",
@@ -6183,6 +6212,50 @@ export class IssueResolutionService {
       ];
     }
 
+    if (
+      blockerType === "pivota_pdp_content_quality_gap" ||
+      blockerType === "pivota_product_intelligence_gap"
+    ) {
+      return [
+        action({
+          index: 1,
+          action_type: "pivota_pdp_identity_and_overview_patch",
+          title: "Complete Pivota PDP identity and overview",
+          description:
+            "Patch the agent-facing PDP identity and overview from the available merchant product description.",
+          target_layer: "pivota_unified_pdp",
+          patch_payload: issue.pivota_unified_pdp_patch || {},
+          expected_impact:
+            "Makes the Pivota PDP understandable as a verified agent-facing product path.",
+        }),
+        action({
+          index: 2,
+          action_type: "pivota_product_intelligence_module_patch",
+          title: "Fill Pivota product intelligence module",
+          description:
+            "Populate product intelligence and similar-card highlight content used by agent-facing PDP quality checks.",
+          target_layer: "pivota_product_graph",
+          patch_payload: issue.pivota_product_graph_patch || {},
+          expected_impact:
+            "Closes Pivota product intelligence quality gaps without changing merchant-owned PDP content.",
+        }),
+        action({
+          index: 3,
+          action_type: "rerun_pivota_pdp_attribution_test",
+          title: "Rerun Pivota PDP Attribution Test",
+          description:
+            "Retest the same query cluster/provider/prompt setup after Pivota PDP quality fixes.",
+          target_layer: "demand_test_agent",
+          patch_payload: {
+            ...rerunPayload,
+            scan_mode: "pivota_pdp_attribution_test",
+          },
+          expected_impact:
+            "Verifies Pivota channel attribution after the agent-facing PDP quality gap is closed.",
+        }),
+      ];
+    }
+
     if (blockerType === "missing_attribute") {
       return [
         action({
@@ -6396,6 +6469,44 @@ type CreateAssuranceSnapshotInput = {
   product_entity_id?: string;
 };
 
+const PIVOTA_PDP_QUALITY_FINDING_TYPES = [
+  "missing_pdp_identity",
+  "product_intel_module_empty_or_blocked",
+  "missing_overview_from_available_description",
+  "similar_card_missing_highlight",
+] as const;
+
+const PIVOTA_PDP_QUALITY_NEXT_ACTION =
+  "Complete Pivota PDP identity, overview, product intelligence module, and similar-card highlight, then rerun Pivota PDP Attribution Test and GMV Assurance Snapshot.";
+
+const PIVOTA_PDP_QUALITY_MERCHANT_SUMMARY =
+  "Merchant-owned PDP attribution passed. The main readiness gap is on the Pivota agent-facing PDP layer.";
+
+function isPivotaPdpQualityFinding(value: string) {
+  return (PIVOTA_PDP_QUALITY_FINDING_TYPES as readonly string[]).includes(value);
+}
+
+function collectPivotaPdpQualityFindings(value: unknown): string[] {
+  if (typeof value === "string") {
+    return isPivotaPdpQualityFinding(value) ? [value] : [];
+  }
+  if (Array.isArray(value)) {
+    return unique(value.flatMap((item) => collectPivotaPdpQualityFindings(item)));
+  }
+  if (value && typeof value === "object") {
+    return unique(
+      Object.values(value as Record<string, unknown>).flatMap((item) =>
+        collectPivotaPdpQualityFindings(item)
+      )
+    );
+  }
+  return [];
+}
+
+function pivotaPdpQualityFindingsFromIssue(issue?: AgenticGMVIssue) {
+  return issue ? collectPivotaPdpQualityFindings(issue.evidence) : [];
+}
+
 function scoreFromDimension(summary: GMVAssuranceDimensionSummary) {
   return typeof summary.score === "number" ? summary.score : undefined;
 }
@@ -6405,6 +6516,50 @@ function issueForTypes(
   types: AgenticGMVIssueType[]
 ) {
   return issues.find((issue) => types.includes(issue.issue_type));
+}
+
+function dimensionNeedsWork(summary: GMVAssuranceDimensionSummary) {
+  return summary.status === "needs_work" || summary.status === "blocked";
+}
+
+function severityValue(severity: Severity) {
+  const rank: Record<Severity, number> = {
+    low: 1,
+    medium: 2,
+    high: 3,
+    critical: 4,
+  };
+  return rank[severity];
+}
+
+function isValidationAnchorIssue(issue?: AgenticGMVIssue) {
+  return Boolean(issue?.evidence?.validation_anchor);
+}
+
+function isLowSeverityHumanReviewPlaceholder(issue?: AgenticGMVIssue) {
+  return (
+    issue?.severity === "low" &&
+    (issue.issue_type === "human_review_required" ||
+      issue.fix_targets.every((target) => target === "human_review"))
+  );
+}
+
+function issueEligibleForTopBlocker(input: {
+  issue?: AgenticGMVIssue;
+  dimension: GMVAssuranceDimensionSummary;
+  blockerType: string;
+}) {
+  const { issue, dimension, blockerType } = input;
+  if (!dimensionNeedsWork(dimension)) return false;
+  if (!issue) return true;
+  if (issue.blocker_eligible || issue.evidence?.blocker_eligible === true) {
+    return true;
+  }
+  if (isValidationAnchorIssue(issue)) {
+    return blockerType !== issue.issue_type && blockerType !== "human_review_required";
+  }
+  if (isLowSeverityHumanReviewPlaceholder(issue)) return false;
+  return severityValue(issue.severity) >= severityValue("medium") || dimensionNeedsWork(dimension);
 }
 
 function applyResolutionPlansToSnapshot(snapshot: GMVAssuranceSnapshot) {
@@ -6543,11 +6698,17 @@ export class GMVAssuranceService {
     const merchantAttributionIssue = issueForTypes(issues, [
       "merchant_store_attribution_gap",
     ]);
+    const merchantAttributionDimensionStatus = merchantRequired
+      ? scoreStatus(merchantAttributionScore, 80, -1)
+      : "not_tested";
     const merchantAttributionStatus: GMVAssuranceDimensionSummary = merchantRequired
       ? {
-          status: scoreStatus(merchantAttributionScore, 80, -1),
+          status: merchantAttributionDimensionStatus,
           score: merchantAttributionScore ?? "not_tested",
-          issue_id: merchantAttributionIssue?.id,
+          issue_id:
+            merchantAttributionDimensionStatus === "passed"
+              ? undefined
+              : merchantAttributionIssue?.id,
           recommended_next_action:
             (merchantAttributionScore || 0) > 0
               ? "Monitor merchant store attribution."
@@ -6575,11 +6736,17 @@ export class GMVAssuranceService {
       "pivota_offer_attribution_gap",
       "unverified_pivota_attribution",
     ]);
+    const pivotaAttributionDimensionStatus = pivotaRequired
+      ? scoreStatus(pivotaAttributionScore, 80, -1)
+      : "not_tested";
     const pivotaAttributionStatus: GMVAssuranceDimensionSummary = pivotaRequired
       ? {
-          status: scoreStatus(pivotaAttributionScore, 80, -1),
+          status: pivotaAttributionDimensionStatus,
           score: pivotaAttributionScore ?? "not_tested",
-          issue_id: pivotaAttributionIssue?.id,
+          issue_id:
+            pivotaAttributionDimensionStatus === "passed"
+              ? undefined
+              : pivotaAttributionIssue?.id,
           recommended_next_action:
             (pivotaAttributionScore || 0) > 0
               ? "Monitor verified Pivota channel attribution."
@@ -6599,10 +6766,35 @@ export class GMVAssuranceService {
 
     const productFindings = actionableProductFindings(productDiagnosis);
     const skuFindings = actionableSkuFindings(productDiagnosis);
-    const productDataStatus: GMVAssuranceDimensionSummary = productDiagnosis
+    const explicitPivotaPdpQualityIssue = issueForTypes(issues, [
+      "pivota_pdp_content_quality_gap",
+      "pivota_product_intelligence_gap",
+    ]);
+    const blockerEligiblePivotaReadinessIssue = issueForTypes(issues, [
+      "pivota_pdp_readiness_gap",
+    ]);
+    const pivotaPdpQualityIssue =
+      explicitPivotaPdpQualityIssue ||
+      (blockerEligiblePivotaReadinessIssue?.blocker_eligible
+        ? blockerEligiblePivotaReadinessIssue
+        : undefined);
+    const pivotaPdpQualityFindings =
+      pivotaPdpQualityFindingsFromIssue(pivotaPdpQualityIssue);
+    const productDataStatus: GMVAssuranceDimensionSummary = pivotaPdpQualityIssue
       ? {
-          status: productFindings.length ? "needs_work" : "passed",
-          score: productFindings.length ? 70 : 100,
+          status: "needs_work",
+          score: 70,
+          diagnosis_id: productDiagnosis?.id,
+          issue_id: pivotaPdpQualityIssue.id,
+          recommended_next_action: PIVOTA_PDP_QUALITY_NEXT_ACTION,
+          evidence: pivotaPdpQualityFindings.length
+            ? `Pivota PDP quality gate found ${pivotaPdpQualityFindings.length} gap(s): ${pivotaPdpQualityFindings.join(", ")}.`
+            : "Pivota PDP quality gate found an agent-facing PDP readiness gap.",
+        }
+      : productDiagnosis
+        ? {
+            status: productFindings.length ? "needs_work" : "passed",
+            score: productFindings.length ? 70 : 100,
           diagnosis_id: productDiagnosis.id,
           issue_id: productDiagnosis.issue_id,
           recommended_next_action: productFindings.length
@@ -6682,38 +6874,65 @@ export class GMVAssuranceService {
         };
 
     const topBlockers: GMVAssuranceBlocker[] = [];
+    const addTopBlocker = (
+      blocker: GMVAssuranceBlocker,
+      dimension: GMVAssuranceDimensionSummary,
+      issue?: AgenticGMVIssue
+    ) => {
+      if (
+        issueEligibleForTopBlocker({
+          issue,
+          dimension,
+          blockerType: blocker.blocker_type,
+        })
+      ) {
+        topBlockers.push(blocker);
+      }
+    };
+
     if (productVisibilityStatus.status === "blocked") {
-      topBlockers.push({
+      addTopBlocker({
         blocker_type: "low_product_visibility",
         severity: "critical",
         affected_layer: "demand_test",
         fix_target: productVisibilityIssue?.fix_targets[0],
         issue_id: productVisibilityIssue?.id,
         recommended_action: "Improve product visibility and rerun Demand Test.",
-      });
+      }, productVisibilityStatus, productVisibilityIssue);
     }
-    if (merchantRequired && merchantAttributionStatus.status !== "passed") {
-      topBlockers.push({
+    if (merchantRequired) {
+      addTopBlocker({
         blocker_type: "merchant_store_attribution_gap",
         severity: "high",
         affected_layer: "merchant_attribution",
         fix_target: "merchant_pdp",
         issue_id: merchantAttributionIssue?.id,
         recommended_action: "Return a verified merchant store/PDP buying path.",
-      });
+      }, merchantAttributionStatus, merchantAttributionIssue);
     }
-    if (pivotaRequired && pivotaAttributionStatus.status !== "passed") {
-      topBlockers.push({
+    if (pivotaRequired) {
+      addTopBlocker({
         blocker_type: "pivota_attribution_gap",
         severity: "high",
         affected_layer: "pivota_channel",
         fix_target: "pivota_unified_pdp",
         issue_id: pivotaAttributionIssue?.id,
         recommended_action: "Publish or verify Pivota PDP / offer attribution.",
-      });
+      }, pivotaAttributionStatus, pivotaAttributionIssue);
+    }
+    if (pivotaPdpQualityIssue) {
+      addTopBlocker({
+        blocker_type: pivotaPdpQualityIssue.issue_type,
+        severity: pivotaPdpQualityIssue.severity,
+        affected_layer: "pivota_agent_facing_path",
+        fix_target: "pivota_unified_pdp",
+        issue_id: pivotaPdpQualityIssue.id,
+        diagnosis_id: productDiagnosis?.id,
+        recommended_action: PIVOTA_PDP_QUALITY_NEXT_ACTION,
+      }, productDataStatus, pivotaPdpQualityIssue);
     }
     for (const finding of productFindings.slice(0, 1)) {
-      topBlockers.push({
+      addTopBlocker({
         blocker_type:
           "attribute" in finding
             ? `missing_${finding.attribute}`
@@ -6724,10 +6943,10 @@ export class GMVAssuranceService {
         issue_id: productDiagnosis?.issue_id,
         diagnosis_id: productDiagnosis?.id,
         recommended_action: productDataStatus.recommended_next_action,
-      });
+      }, productDataStatus, issues.find((issue) => issue.id === productDiagnosis?.issue_id));
     }
     for (const finding of offerFindings.filter((item) => item.severity === "high" || item.severity === "critical").slice(0, 2)) {
-      topBlockers.push({
+      addTopBlocker({
         blocker_type: finding.finding_type,
         severity: finding.severity,
         affected_layer: "offer_execution",
@@ -6735,10 +6954,10 @@ export class GMVAssuranceService {
         issue_id: offerDiagnosis?.issue_id,
         diagnosis_id: offerDiagnosis?.id,
         recommended_action: offerStatus.recommended_next_action,
-      });
+      }, offerStatus, issues.find((issue) => issue.id === offerDiagnosis?.issue_id));
     }
     for (const finding of checkoutFindings.filter((item) => item.severity === "high" || item.severity === "critical").slice(0, 2)) {
-      topBlockers.push({
+      addTopBlocker({
         blocker_type: finding.finding_type,
         severity: finding.severity,
         affected_layer: "checkout_verification",
@@ -6746,7 +6965,7 @@ export class GMVAssuranceService {
         issue_id: checkoutDiagnosis?.issue_id,
         diagnosis_id: checkoutDiagnosis?.id,
         recommended_action: checkoutStatus.recommended_next_action,
-      });
+      }, checkoutStatus, issues.find((issue) => issue.id === checkoutDiagnosis?.issue_id));
     }
 
     const dimensions = [
@@ -6878,6 +7097,9 @@ type CreateProductionValidationRunInput = Partial<
   pivota_product_attributes?: Record<string, unknown>;
   competitor_brands?: string[];
   competitor_products?: string[];
+  pivota_pdp_quality_findings?: string[];
+  pivota_live_pdp_quality_findings?: string[];
+  pivota_pdp_quality_gate?: Record<string, unknown>;
   repetitions?: number;
 };
 
@@ -7062,6 +7284,9 @@ export class ProductionValidationRunService {
       pivota_product_attributes?: Record<string, unknown>;
       competitor_brands?: string[];
       competitor_products?: string[];
+      pivota_pdp_quality_findings?: string[];
+      pivota_live_pdp_quality_findings?: string[];
+      pivota_pdp_quality_gate?: Record<string, unknown>;
       repetitions?: number;
     };
     extendedRun.product_attributes = input.product_attributes;
@@ -7069,6 +7294,10 @@ export class ProductionValidationRunService {
     extendedRun.pivota_product_attributes = input.pivota_product_attributes;
     extendedRun.competitor_brands = input.competitor_brands;
     extendedRun.competitor_products = input.competitor_products;
+    extendedRun.pivota_pdp_quality_findings = input.pivota_pdp_quality_findings;
+    extendedRun.pivota_live_pdp_quality_findings =
+      input.pivota_live_pdp_quality_findings;
+    extendedRun.pivota_pdp_quality_gate = input.pivota_pdp_quality_gate;
     extendedRun.repetitions = input.repetitions;
 
     getAgentCenterRepository().upsert("productionValidationRuns", run);
@@ -7226,8 +7455,20 @@ export class ProductionValidationRunService {
       product,
       demandSummaries,
     });
+    const pivotaQualityIssue = this.createPivotaPdpQualityIssue({
+      run,
+      store,
+      target,
+      cluster,
+      product,
+      pivotaPdpPreflight,
+      demandSummaries,
+    });
 
     let issues = state.issues.filter((issue) => issue.scan_target_id === target.id);
+    if (pivotaQualityIssue && !issues.some((issue) => issue.id === pivotaQualityIssue.id)) {
+      issues = [...issues, pivotaQualityIssue];
+    }
     if (
       !issues.length &&
       (run.merchant_offer_input ||
@@ -7313,6 +7554,13 @@ export class ProductionValidationRunService {
       product_understanding_summary: {
         diagnosis_ids: run.product_diagnosis_ids,
         root_causes: productDiagnoses.map((item) => item.root_cause_summary),
+      },
+      pivota_pdp_quality_summary: {
+        status: this.pivotaPdpQualityFindings(run).length
+          ? "needs_work"
+          : "not_provided",
+        findings: this.pivotaPdpQualityFindings(run),
+        issue_id: pivotaQualityIssue?.id,
       },
       offer_execution_summary: {
         diagnosis_ids: run.offer_diagnosis_ids,
@@ -7692,6 +7940,143 @@ export class ProductionValidationRunService {
     return score;
   }
 
+  private pivotaPdpQualityFindings(run: ProductionValidationRun) {
+    return unique([
+      ...arrayOfStringInput(run.pivota_pdp_quality_findings),
+      ...arrayOfStringInput(run.pivota_live_pdp_quality_findings),
+      ...collectPivotaPdpQualityFindings(run.pivota_pdp_quality_gate),
+    ]).filter(isPivotaPdpQualityFinding);
+  }
+
+  private pivotaPdpQualitySeverity(findings: string[]): Severity {
+    const criticalContentGap =
+      findings.includes("missing_pdp_identity") ||
+      findings.includes("product_intel_module_empty_or_blocked");
+    return criticalContentGap || findings.length >= 3 ? "high" : "medium";
+  }
+
+  private createPivotaPdpQualityIssue(input: {
+    run: ProductionValidationRun;
+    store: MerchantStore;
+    target: ScanTarget;
+    cluster: QueryCluster;
+    product: ProductRecord;
+    pivotaPdpPreflight: ProductionValidationUrlPreflight;
+    demandSummaries: ProductionValidationReport["demand_test_summary"]["modes_run"];
+  }) {
+    const findings = this.pivotaPdpQualityFindings(input.run);
+    if (!findings.length || input.pivotaPdpPreflight.status !== "passed") {
+      return undefined;
+    }
+
+    const state = getAgentCenterState();
+    const existing = state.issues.find(
+      (issue) =>
+        issue.scan_target_id === input.target.id &&
+        issue.issue_type === "pivota_pdp_content_quality_gap" &&
+        issue.evidence?.production_validation_run_id === input.run.id
+    );
+    if (existing) return existing;
+
+    const merchantMode = input.demandSummaries.find(
+      (summary) => summary.scan_mode === "merchant_store_attribution_test"
+    );
+    const pivotaMode = input.demandSummaries.find(
+      (summary) => summary.scan_mode === "pivota_pdp_attribution_test"
+    );
+    const now = nowIso();
+    const issue: AgenticGMVIssue = {
+      id: nextId("issue"),
+      merchant_id: input.store.merchant_id,
+      store_id: input.store.id,
+      scan_target_id: input.target.id,
+      store_url: input.store.store_url,
+      platform: input.store.platform,
+      source_agent: "demand_test_agent",
+      issue_type: "pivota_pdp_content_quality_gap",
+      severity: this.pivotaPdpQualitySeverity(findings),
+      status: "recommendation_ready",
+      affected_product_entities: [input.product.product_entity_id],
+      affected_skus: [input.product.sku],
+      affected_query_clusters: [input.cluster.id],
+      evidence: {
+        production_validation_run_id: input.run.id,
+        blocker_eligible: true,
+        affected_readiness_dimension: "product_data_readiness_status",
+        target_layer: "pivota_agent_facing_path",
+        merchant_owned_path_status:
+          merchantMode?.aggregate_scores.merchant_store_visibility_score === 100
+            ? "passed"
+            : "not_proven",
+        pivota_path_status:
+          pivotaMode?.aggregate_scores.pivota_pdp_visibility_score === 100
+            ? "passed"
+            : "not_proven",
+        pivota_pdp_preflight_status: input.pivotaPdpPreflight.status,
+        pivota_pdp_preflight_status_code: input.pivotaPdpPreflight.status_code,
+        pivota_pdp_url: input.run.pivota_pdp_url,
+        pivota_pdp_quality_findings: findings,
+      },
+      blocker_eligible: true,
+      root_cause: PIVOTA_PDP_QUALITY_MERCHANT_SUMMARY,
+      fix_targets: ["pivota_unified_pdp", "pivota_product_graph"],
+      recommended_action: PIVOTA_PDP_QUALITY_NEXT_ACTION,
+      merchant_source_patch: {},
+      pivota_unified_pdp_patch: {
+        complete_pdp_identity: findings.includes("missing_pdp_identity"),
+        add_overview_from_available_description: findings.includes(
+          "missing_overview_from_available_description"
+        ),
+        source_product_description_available: true,
+      },
+      pivota_product_graph_patch: {
+        populate_product_intelligence_module: findings.includes(
+          "product_intel_module_empty_or_blocked"
+        ),
+        add_similar_card_highlight: findings.includes(
+          "similar_card_missing_highlight"
+        ),
+        product_entity_id: input.product.product_entity_id,
+      },
+      estimated_gmv_at_risk: input.cluster.estimated_demand_value,
+      gmv_estimation_method:
+        "Internal production validation estimate from reachable Pivota PDP quality gate failures; not transaction attribution.",
+      estimated_gmv_at_risk_confidence: "medium",
+      merchant_facing_summary: PIVOTA_PDP_QUALITY_MERCHANT_SUMMARY,
+      merchant_facing_narrative: {
+        what_happened:
+          "The merchant-owned PDP path and Pivota attribution path were reachable, but Pivota live PDP quality checks found missing agent-facing content.",
+        what_ai_recommended_instead:
+          "No competitor substitution is implied by this quality gate finding.",
+        why_this_likely_happened:
+          "The Pivota PDP exists, but identity, overview, product intelligence, or similar-card content is incomplete or blocked.",
+        where_to_fix: "Pivota unified PDP and Pivota product graph.",
+        recommended_merchant_pdp_changes: [],
+        recommended_pivota_pdp_changes: [
+          "Complete PDP identity.",
+          "Add overview from the available merchant description.",
+          "Populate the product intelligence module.",
+          "Add similar-card highlight content.",
+        ],
+        how_pivota_will_verify_the_fix:
+          "Rerun Pivota PDP Attribution Test and regenerate the GMV Assurance Snapshot after the Pivota PDP quality fixes are applied.",
+      },
+      approval_required: false,
+      verification_plan: {
+        retest_query_clusters: [input.cluster.id],
+        providers: ["gemini"],
+        prompt_templates: ["purchase_ready_v1"],
+        success_metric: "attribute_readiness_score",
+        target_improvement:
+          "Pivota PDP quality gate passes and GMV Assurance top blocker clears.",
+      },
+      created_at: now,
+      updated_at: now,
+    };
+    state.issues.push(issue);
+    return issue;
+  }
+
   private createValidationAnchorIssue(input: {
     run: ProductionValidationRun;
     store: MerchantStore;
@@ -7723,10 +8108,12 @@ export class ProductionValidationRunService {
       evidence: {
         production_validation_run_id: input.run.id,
         validation_anchor: true,
+        blocker_eligible: false,
         product_name: input.run.product_name,
         merchant_pdp_url: input.run.merchant_pdp_url,
         pivota_pdp_url: input.run.pivota_pdp_url,
       },
+      blocker_eligible: false,
       root_cause:
         "Internal production validation anchor issue for downstream pre-payment readiness checks.",
       fix_targets: ["human_review"],
