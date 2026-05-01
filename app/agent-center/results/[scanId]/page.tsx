@@ -117,7 +117,8 @@ export default function ScanResultsPage() {
                     {issue.root_cause}
                   </p>
                   <p className="text-sm text-[color:var(--merchant-muted)]">
-                    GMV at risk placeholder: {issue.estimated_gmv_at_risk}
+                    Estimated GMV at risk: {issue.estimated_gmv_at_risk} · Confidence:{" "}
+                    {issue.estimated_gmv_at_risk_confidence || "low"}
                   </p>
                 </div>
                 <ArrowRight className="mt-1 h-4 w-4 text-[color:var(--merchant-muted)]" />
