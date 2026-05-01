@@ -2388,6 +2388,41 @@ test("internal demo fixture route creates tagged fixture records", async () => {
   });
 });
 
+test("internal demo fixture rewrite target uses shared Agent Center handler", async () => {
+  resetAgentCenterState();
+  await withInternalFixtureEnv(async () => {
+    const response = await handleAgentCenterRequest(
+      internalFixtureRequest(
+        "https://example.test/api/agent-center/internal-demo-fixtures",
+        {
+          method: "POST",
+          body: JSON.stringify({ preset: "price_mismatch" }),
+        }
+      ),
+      { path: ["internal-demo-fixtures"] }
+    );
+    const payload = await response.json();
+    const fixtureId = payload.demo_fixture.fixture.fixture_id;
+    const issueId = payload.demo_fixture.issue.id;
+    const diagnosis = new OfferExecutionService().runDiagnosis(issueId);
+
+    assert.equal(response.status, 201);
+    assert.ok(offerFindingTypes(diagnosis).includes("price_mismatch"));
+
+    const deleted = await handleAgentCenterRequest(
+      internalFixtureRequest(
+        `https://example.test/api/agent-center/internal-demo-fixtures/${fixtureId}`,
+        { method: "DELETE" }
+      ),
+      { path: ["internal-demo-fixtures", fixtureId] }
+    );
+    const deletedPayload = await deleted.json();
+
+    assert.equal(deleted.status, 200);
+    assert.equal(deletedPayload.demo_fixture.fixture.cleanup_status, "deleted");
+  });
+});
+
 test("clean offer fixture can run offer diagnosis without generating offer issue", () => {
   resetAgentCenterState();
   const fixture = new DemoFixtureService().create({

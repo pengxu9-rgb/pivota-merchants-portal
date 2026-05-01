@@ -159,6 +159,13 @@ export async function handleAgentCenterRequest(
   const state = getAgentCenterState();
 
   try {
+    if (resource === "internal-demo-fixtures") {
+      return handleInternalDemoFixturesRequest(
+        req,
+        id ? { fixtureId: id } : undefined
+      );
+    }
+
     if (!resource || resource === "overview") {
       if (req.method === "GET") return json(getAgentCenterOverview(merchantId));
     }

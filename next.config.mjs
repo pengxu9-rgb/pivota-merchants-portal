@@ -6,6 +6,20 @@ const configDir = path.dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   outputFileTracingRoot: configDir,
+  async rewrites() {
+    return {
+      beforeFiles: [
+        {
+          source: "/api/internal/agent-center/demo-fixtures",
+          destination: "/api/agent-center/internal-demo-fixtures",
+        },
+        {
+          source: "/api/internal/agent-center/demo-fixtures/:fixtureId",
+          destination: "/api/agent-center/internal-demo-fixtures/:fixtureId",
+        },
+      ],
+    };
+  },
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -15,4 +29,3 @@ const nextConfig = {
 };
 
 export default nextConfig;
-

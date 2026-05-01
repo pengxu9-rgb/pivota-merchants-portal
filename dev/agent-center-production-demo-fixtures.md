@@ -20,7 +20,7 @@ GET    /api/internal/agent-center/demo-fixtures/:fixtureId
 DELETE /api/internal/agent-center/demo-fixtures/:fixtureId
 ```
 
-These routes are separate from merchant-facing Agent Center APIs and are not linked from any page.
+These routes are separate from merchant-facing Agent Center APIs and are not linked from any page. In the current Vercel deployment they are rewritten to the shared Agent Center API handler so fixture create, diagnosis, and cleanup run against the same in-memory Agent Center state during smoke tests.
 
 ## Enablement Flag
 
@@ -266,4 +266,3 @@ npm run test:agent-center
 npm run lint
 npm run build
 ```
-
