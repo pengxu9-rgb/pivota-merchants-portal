@@ -96,6 +96,7 @@ export type AgenticGMVIssueType =
   | "wrong_product_family"
   | "no_purchase_path"
   | "offer_execution_issue"
+  | "checkout_verification_issue"
   | "human_review_required";
 
 export type FixTarget =
@@ -110,6 +111,9 @@ export type FixTarget =
   | "pivota_offer_layer"
   | "merchant_inventory_source"
   | "merchant_promo_source"
+  | "merchant_checkout_source"
+  | "pivota_checkout_layer"
+  | "merchant_cart_config"
   | "both_merchant_and_pivota"
   | "human_review";
 
@@ -129,6 +133,8 @@ export type DemoFixtureType =
   | "merchant_sku"
   | "merchant_offer"
   | "pivota_offer"
+  | "merchant_checkout_path"
+  | "pivota_checkout_path"
   | "agentic_gmv_issue";
 
 export type DemoFixturePreset =
@@ -136,16 +142,24 @@ export type DemoFixturePreset =
   | "price_mismatch"
   | "expired_coupon"
   | "inventory_mismatch"
-  | "missing_pivota_offer";
+  | "missing_pivota_offer"
+  | "clean_checkout_path"
+  | "missing_checkout_path"
+  | "checkout_url_unreachable"
+  | "missing_variant_param"
+  | "missing_coupon_param"
+  | "stale_checkout_session"
+  | "checkout_domain_mismatch"
+  | "checkout_not_attached_to_offer";
 
 export type DemoFixtureCleanupStatus = "active" | "deleted" | "expired";
 
 export type DemoFixtureMetadata = {
   demo_fixture?: boolean;
   fixture_id?: string;
-  created_by?: "internal";
+  created_by?: "internal" | "demand_test_agent" | "merchant";
   created_at?: string;
-  expires_at?: string;
+  expires_at?: string | null;
   ttl_minutes?: number;
   environment?: string;
   cleanup_status?: DemoFixtureCleanupStatus;
@@ -602,11 +616,19 @@ export type AgenticGMVIssue = Timestamped & DemoFixtureMetadata & {
   product_understanding_diagnosis_ids?: string[];
   offer_execution_diagnosis_id?: string;
   offer_execution_diagnosis_ids?: string[];
+  checkout_verification_diagnosis_id?: string;
+  checkout_verification_diagnosis_ids?: string[];
   merchant_offer_patch?: Record<string, unknown>;
   pivota_offer_patch?: Record<string, unknown>;
   inventory_sync_patch?: Record<string, unknown>;
   promo_state_patch?: Record<string, unknown>;
   offer_attachment_patch?: Record<string, unknown>;
+  merchant_checkout_patch?: Record<string, unknown>;
+  pivota_checkout_patch?: Record<string, unknown>;
+  cart_handoff_payload_patch?: Record<string, unknown>;
+  coupon_passthrough_patch?: Record<string, unknown>;
+  checkout_attachment_patch?: Record<string, unknown>;
+  checkout_domain_patch?: Record<string, unknown>;
   estimated_gmv_at_risk: number;
   gmv_estimation_method: string;
   estimated_gmv_at_risk_confidence: "low" | "medium" | "high";
@@ -850,6 +872,128 @@ export type OfferExecutionDiagnosis = Timestamped & {
   usage_event_ids: string[];
 };
 
+export type MerchantCheckoutPath = Timestamped & DemoFixtureMetadata & {
+  id: string;
+  merchant_id: string;
+  store_id: string;
+  merchant_offer_id: string;
+  sku_id: string;
+  checkout_url?: string | null;
+  cart_url?: string | null;
+  checkout_domain: string;
+  required_params: string[];
+  supported_params: string[];
+  coupon_param_name?: string | null;
+  quantity_param_name?: string | null;
+  variant_param_name?: string | null;
+  expires_at?: string | null;
+  last_verified_at?: string | null;
+  source: string;
+};
+
+export type PivotaCheckoutPath = Timestamped & DemoFixtureMetadata & {
+  id: string;
+  pivota_offer_id: string;
+  product_entity_id: string;
+  merchant_id: string;
+  store_id: string;
+  sku_id: string;
+  checkout_url?: string | null;
+  cart_handoff_payload: Record<string, unknown>;
+  checkout_domain: string;
+  required_params: string[];
+  coupon_code?: string | null;
+  quantity?: number | null;
+  variant_id?: string | null;
+  execution_status: OfferExecutionStatus;
+  attached_to_pivota_offer: boolean;
+  last_verified_at?: string | null;
+};
+
+export type CheckoutIssueType =
+  | "missing_checkout_path"
+  | "checkout_url_unreachable"
+  | "stale_checkout_session"
+  | "cart_handoff_missing_required_param"
+  | "variant_param_missing"
+  | "quantity_param_missing"
+  | "coupon_param_missing"
+  | "checkout_domain_mismatch"
+  | "checkout_not_attached_to_pivota_offer"
+  | "checkout_offer_sku_mismatch"
+  | "human_review_required";
+
+export type CheckoutPreflightStatus = "not_tested" | "passed" | "failed";
+
+export type CheckoutReadinessFinding = {
+  finding_type: CheckoutIssueType | "clean_checkout_path";
+  severity: Severity;
+  field:
+    | "checkout_path"
+    | "checkout_url"
+    | "cart_handoff"
+    | "variant"
+    | "quantity"
+    | "coupon"
+    | "domain"
+    | "session"
+    | "attachment"
+    | "sku_variant";
+  merchant_value?: unknown;
+  pivota_value?: unknown;
+  evidence: string;
+  fix_target: FixTarget;
+};
+
+export type CheckoutPathComparison = {
+  merchant_checkout_path?: MerchantCheckoutPath | null;
+  pivota_checkout_path?: PivotaCheckoutPath | null;
+  checkout_url_preflight_status: CheckoutPreflightStatus;
+  checkout_url_status_code?: number | null;
+  cart_handoff_required_params: string[];
+  missing_params: string[];
+  coupon_passthrough_consistent: boolean;
+  domain_consistent: boolean;
+  session_fresh: boolean;
+  attached_to_pivota_offer: boolean;
+  sku_variant_consistent: boolean;
+  findings: CheckoutReadinessFinding[];
+};
+
+export type CheckoutPatchRecommendation = {
+  patch_type:
+    | "merchant_checkout_patch"
+    | "pivota_checkout_patch"
+    | "cart_handoff_payload_patch"
+    | "coupon_passthrough_patch"
+    | "checkout_attachment_patch"
+    | "checkout_domain_patch";
+  target: FixTarget;
+  patch: Record<string, unknown>;
+  rationale: string;
+};
+
+export type CheckoutVerificationDiagnosis = Timestamped & {
+  id: string;
+  merchant_id: string;
+  store_id: string;
+  issue_id: string;
+  product_entity_id?: string;
+  sku_id?: string;
+  merchant_offer_id?: string;
+  pivota_offer_id?: string;
+  merchant_checkout_path_id?: string;
+  pivota_checkout_path_id?: string;
+  source_agent: "checkout_verification_agent";
+  checkout_layer_findings: CheckoutPathComparison[];
+  root_cause_summary: string;
+  refined_fix_targets: FixTarget[];
+  patch_recommendations: CheckoutPatchRecommendation[];
+  checkout_readiness_score: number;
+  confidence: "low" | "medium" | "high";
+  usage_event_ids: string[];
+};
+
 export type RetestPreparation = Timestamped & {
   id: string;
   merchant_id: string;
@@ -921,21 +1065,25 @@ export type UsageEvent = Timestamped & {
   event_type:
     | "ai_test_credit"
     | "product_understanding_credit"
-    | "offer_verification_credit";
+    | "offer_verification_credit"
+    | "checkout_verification_credit";
   quantity: number;
   source_agent:
     | "demand_test_agent"
     | "product_understanding_agent"
-    | "offer_execution_agent";
+    | "offer_execution_agent"
+    | "checkout_verification_agent";
   agent_type:
     | "demand_test_agent"
     | "product_understanding_agent"
-    | "offer_execution_agent";
+    | "offer_execution_agent"
+    | "checkout_verification_agent";
   workflow_type:
     | "demand_scan"
     | "retest"
     | "product_diagnosis"
-    | "offer_readiness";
+    | "offer_readiness"
+    | "checkout_readiness";
   scan_mode: ScanMode;
   provider: UsageProviderName;
   model: string;
@@ -1000,10 +1148,13 @@ export type AgentCenterState = {
   issues: AgenticGMVIssue[];
   merchantOffers: MerchantOffer[];
   pivotaOffers: PivotaOffer[];
+  merchantCheckoutPaths: MerchantCheckoutPath[];
+  pivotaCheckoutPaths: PivotaCheckoutPath[];
   retestPreparations: RetestPreparation[];
   verificationRuns: VerificationRun[];
   productUnderstandingDiagnoses: ProductUnderstandingDiagnosis[];
   offerExecutionDiagnoses: OfferExecutionDiagnosis[];
+  checkoutVerificationDiagnoses: CheckoutVerificationDiagnosis[];
   demoFixtures: DemoFixture[];
   usageEvents: UsageEvent[];
   usagePlan: {

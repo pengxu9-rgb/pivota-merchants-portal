@@ -6,7 +6,7 @@ Last updated: 2026-05-01
 
 Production demo fixtures provide a safe internal-only way to seed controlled Agent Center records for production smoke testing.
 
-The first supported use case is Offer Execution Agent V1 smoke validation. The fixture system can create merchant store/product/SKU/offer records, Pivota offer state, scan target context, and an issue that can be passed to `POST /api/agent-center/issues/:issueId/offer-diagnosis`.
+The supported use cases are Offer Execution Agent V1 and Checkout Verification Agent V1 smoke validation. The fixture system can create merchant store/product/SKU/offer records, Pivota offer state, checkout path records, scan target context, and an issue that can be passed to issue-scoped diagnosis APIs.
 
 This is not a merchant feature and must not be exposed in Merchant Portal UI.
 
@@ -74,6 +74,8 @@ Fixture manifests can include:
 - `merchant_sku`
 - `merchant_offer`
 - `pivota_offer`
+- `merchant_checkout_path`
+- `pivota_checkout_path`
 - `agentic_gmv_issue`
 
 The current implementation also tags tied runtime records such as query clusters and platform connections so cleanup can remove the complete fixture context.
@@ -181,6 +183,85 @@ Expected smoke result:
 - refined fix target includes `pivota_offer_layer`
 - `pivota_offer_patch` generated
 
+### `clean_checkout_path`
+
+Creates merchant and Pivota checkout paths with reachable deterministic checkout URL, required variant/quantity params, matching domain, and correct offer attachment.
+
+Expected smoke result:
+
+- finding: `clean_checkout_path`
+- `checkout_readiness_score` high
+- no new checkout issue generated
+- usage remains `preview_only` / `not_invoiced`
+
+### `missing_checkout_path`
+
+Creates offer context without merchant or Pivota checkout path records.
+
+Expected smoke result:
+
+- finding: `missing_checkout_path`
+- refined fix targets include `merchant_checkout_source` and `pivota_checkout_layer`
+- `merchant_checkout_patch` generated
+
+### `checkout_url_unreachable`
+
+Creates a Pivota checkout path whose URL fails deterministic preflight.
+
+Expected smoke result:
+
+- finding: `checkout_url_unreachable`
+- preflight status `failed`
+- `pivota_checkout_patch` generated
+
+### `missing_variant_param`
+
+Creates a checkout handoff payload without the required variant parameter.
+
+Expected smoke result:
+
+- finding: `variant_param_missing`
+- refined fix target includes `merchant_cart_config`
+- `cart_handoff_payload_patch` generated
+
+### `missing_coupon_param`
+
+Creates an active coupon offer while Pivota checkout handoff omits the coupon passthrough parameter.
+
+Expected smoke result:
+
+- finding: `coupon_param_missing`
+- refined fix target includes `pivota_checkout_layer` and `merchant_promo_source`
+- `coupon_passthrough_patch` generated
+
+### `stale_checkout_session`
+
+Creates a merchant checkout source whose expiration is in the past.
+
+Expected smoke result:
+
+- finding: `stale_checkout_session`
+- refined fix target includes `merchant_checkout_source`
+
+### `checkout_domain_mismatch`
+
+Creates a Pivota checkout path with a different checkout domain than the merchant checkout source.
+
+Expected smoke result:
+
+- finding: `checkout_domain_mismatch`
+- `checkout_domain_patch` generated
+
+### `checkout_not_attached_to_offer`
+
+Creates a Pivota checkout path that is not attached to the Pivota offer.
+
+Expected smoke result:
+
+- finding: `checkout_not_attached_to_pivota_offer`
+- refined fix target includes `pivota_offer_layer`
+- `checkout_attachment_patch` generated
+
 ## Cleanup Behavior
 
 `DELETE /api/internal/agent-center/demo-fixtures/:fixtureId` removes records tied to the fixture, including:
@@ -196,8 +277,11 @@ Expected smoke result:
 - issues
 - merchant offers
 - Pivota offers
+- merchant checkout paths
+- Pivota checkout paths
 - Product Understanding diagnoses tied to fixture issues
 - Offer Execution diagnoses tied to fixture issues
+- Checkout Verification diagnoses tied to fixture issues
 - retest preparations and verification runs tied to fixture issues/targets
 - usage events tied to fixture scan targets, query clusters, or issue idempotency keys
 
@@ -209,10 +293,11 @@ The service helper `cleanupExpiredDemoFixtures()` removes active fixture records
 
 1. Create fixture with the required preset.
 2. Read `issue.id` from the response.
-3. Run:
+3. Run the relevant diagnosis endpoint:
 
 ```text
 POST /api/agent-center/issues/:issueId/offer-diagnosis
+POST /api/agent-center/issues/:issueId/checkout-diagnosis
 ```
 
 4. Optionally open:
@@ -229,6 +314,9 @@ POST /api/agent-center/issues/:issueId/offer-diagnosis
 - `UsageEvent.agent_type = offer_execution_agent`
 - `UsageEvent.workflow_type = offer_readiness`
 - `UsageEvent.event_type = offer_verification_credit`
+- for checkout fixtures, `UsageEvent.agent_type = checkout_verification_agent`
+- for checkout fixtures, `UsageEvent.workflow_type = checkout_readiness`
+- for checkout fixtures, `UsageEvent.event_type = checkout_verification_credit`
 - `UsageEvent.billing_mode = preview_only`
 - `UsageEvent.billing_status = not_invoiced`
 
@@ -239,7 +327,6 @@ POST /api/agent-center/issues/:issueId/offer-diagnosis
 - Fixtures are internal-only and disabled unless explicitly enabled.
 - Fixtures currently use the in-memory Agent Center state, so persistence follows the active serverless instance lifecycle.
 - For long-lived production validation, add a persistent fixture store or production-safe demo tenant.
-- This system does not implement checkout verification.
 - This system does not validate PSP/payment authorization.
 - This system does not write orders, refunds, settlement records, invoices, or transaction fees.
 - This system does not expose token-level or real billing data to merchants.
@@ -256,7 +343,9 @@ Automated tests cover:
 - expired coupon fixture generates `expired_coupon` or `promo_mismatch`
 - inventory mismatch fixture works
 - missing Pivota offer fixture works
+- checkout fixture presets work
 - cleanup removes fixture records
+- cleanup removes checkout fixture records
 - usage remains `preview_only` / `not_invoiced`
 
 Run:

@@ -284,10 +284,13 @@ function createInitialState(): AgentCenterState {
     issues: [],
     merchantOffers: [],
     pivotaOffers: [],
+    merchantCheckoutPaths: [],
+    pivotaCheckoutPaths: [],
     retestPreparations: [],
     verificationRuns: [],
     productUnderstandingDiagnoses: [],
     offerExecutionDiagnoses: [],
+    checkoutVerificationDiagnoses: [],
     demoFixtures: [],
     usageEvents: [],
     usagePlan: {

@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import {
   CheckCircle2,
   ClipboardList,
+  CreditCard,
   RotateCcw,
   Send,
   ShoppingCart,
@@ -67,7 +68,11 @@ function offerPatchByType(diagnosis: any, patchType: string) {
   )?.patch;
 }
 
-function offerFindingEvidence(diagnosis: any, findingTypes: string[], emptyText: string) {
+function offerFindingEvidence(
+  diagnosis: any,
+  findingTypes: string[],
+  emptyText: string
+): string[] {
   const findings = (diagnosis?.offer_layer_findings || []).flatMap(
     (comparison: any) => comparison.findings || []
   );
@@ -79,6 +84,30 @@ function offerFindingEvidence(diagnosis: any, findingTypes: string[], emptyText:
 
 function latestOfferComparison(diagnosis: any) {
   return diagnosis?.offer_layer_findings?.[0] || {};
+}
+
+function checkoutPatchByType(diagnosis: any, patchType: string) {
+  return diagnosis?.patch_recommendations?.find(
+    (recommendation: any) => recommendation.patch_type === patchType
+  )?.patch;
+}
+
+function checkoutFindingEvidence(
+  diagnosis: any,
+  findingTypes: string[],
+  emptyText: string
+): string[] {
+  const findings = (diagnosis?.checkout_layer_findings || []).flatMap(
+    (comparison: any) => comparison.findings || []
+  );
+  const items = findings
+    .filter((finding: any) => findingTypes.includes(finding.finding_type))
+    .map((finding: any) => finding.evidence || label(finding.finding_type));
+  return items.length ? items : [emptyText];
+}
+
+function latestCheckoutComparison(diagnosis: any) {
+  return diagnosis?.checkout_layer_findings?.[0] || {};
 }
 
 function estimatedRetestCredits(issue: any, preparation: any) {
@@ -152,11 +181,13 @@ export default function IssueDetailPage() {
   const [verification, setVerification] = useState<any>(null);
   const [diagnosis, setDiagnosis] = useState<any>(null);
   const [offerDiagnosis, setOfferDiagnosis] = useState<any>(null);
+  const [checkoutDiagnosis, setCheckoutDiagnosis] = useState<any>(null);
   const [retestPreparation, setRetestPreparation] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [retestState, setRetestState] = useState("idle");
   const [diagnosisState, setDiagnosisState] = useState("idle");
   const [offerDiagnosisState, setOfferDiagnosisState] = useState("idle");
+  const [checkoutDiagnosisState, setCheckoutDiagnosisState] = useState("idle");
 
   async function loadIssue(issueId: string) {
     const payload = await agentFetch<{ issue: any }>(`/api/agent-center/issues/${issueId}`);
@@ -173,6 +204,10 @@ export default function IssueDetailPage() {
       `/api/agent-center/issues/${issueId}/offer-diagnosis`
     );
     setOfferDiagnosis(offerDiagnosisPayload.diagnosis);
+    const checkoutDiagnosisPayload = await agentFetch<{ diagnosis: any }>(
+      `/api/agent-center/issues/${issueId}/checkout-diagnosis`
+    );
+    setCheckoutDiagnosis(checkoutDiagnosisPayload.diagnosis);
   }
 
   useEffect(() => {
@@ -269,6 +304,26 @@ export default function IssueDetailPage() {
     }
   }
 
+  async function runCheckoutDiagnosis(action = "checkout-diagnosis") {
+    if (!issue) return;
+    setLoading(true);
+    setCheckoutDiagnosisState(action === "checkout-diagnosis" ? "running" : "updating");
+    try {
+      const payload = await agentFetch<{ diagnosis: any; issue: any }>(
+        `/api/agent-center/issues/${issue.id}/${action}`,
+        { method: "POST" }
+      );
+      setCheckoutDiagnosis(payload.diagnosis);
+      if (payload.issue) setIssue(payload.issue);
+      setCheckoutDiagnosisState("completed");
+      await loadIssue(issue.id);
+    } catch {
+      setCheckoutDiagnosisState("failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const narrative = issue?.merchant_facing_narrative || {};
   const beforeScores = verification?.before_scores?.aggregate_scores;
   const afterScores = verification?.after_scores?.aggregate_scores;
@@ -278,6 +333,9 @@ export default function IssueDetailPage() {
   const offerComparison = latestOfferComparison(offerDiagnosis);
   const merchantOffer = offerComparison.merchant_offer;
   const pivotaOffer = offerComparison.pivota_offer;
+  const checkoutComparison = latestCheckoutComparison(checkoutDiagnosis);
+  const merchantCheckoutPath = checkoutComparison.merchant_checkout_path;
+  const pivotaCheckoutPath = checkoutComparison.pivota_checkout_path;
 
   return (
     <main className="merchant-page space-y-6 py-6">
@@ -698,6 +756,208 @@ export default function IssueDetailPage() {
           <p className="text-sm text-[color:var(--merchant-muted)]">
             Offer Execution V1 verifies offer readiness signals only. Checkout, payment,
             authorization, settlement, refunds, and order write-back are out of scope.
+          </p>
+        </div>
+      </SurfaceCard>
+
+      <SurfaceCard title="Checkout Verification Diagnosis">
+        <div className="space-y-5 px-5 py-5">
+          <div className="grid gap-3 sm:grid-cols-4">
+            <MetricTile
+              label="Checkout readiness"
+              value={
+                checkoutDiagnosis?.checkout_readiness_score !== undefined
+                  ? `${checkoutDiagnosis.checkout_readiness_score}%`
+                  : "not run"
+              }
+              tone={
+                (checkoutDiagnosis?.checkout_readiness_score || 0) >= 80
+                  ? "success"
+                  : "warning"
+              }
+            />
+            <MetricTile
+              label="Preflight"
+              value={
+                checkoutComparison.checkout_url_preflight_status
+                  ? label(checkoutComparison.checkout_url_preflight_status)
+                  : "not run"
+              }
+              tone={
+                checkoutComparison.checkout_url_preflight_status === "passed"
+                  ? "success"
+                  : "neutral"
+              }
+            />
+            <MetricTile
+              label="Confidence"
+              value={checkoutDiagnosis?.confidence || "not run"}
+              tone={checkoutDiagnosis?.confidence === "high" ? "success" : "neutral"}
+            />
+            <MetricTile label="Usage status" value="preview only" />
+          </div>
+
+          <NarrativeSection title="Root cause">
+            {checkoutDiagnosis?.root_cause_summary ||
+              "Run Checkout Diagnosis to verify checkout path readiness before payment. V1 checks URL/session presence, cart handoff parameters, domain consistency, and offer attachment only."}
+          </NarrativeSection>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <NarrativeSection title="Merchant checkout path">
+              <div className="space-y-1">
+                <p>ID: {merchantCheckoutPath?.id || "not found"}</p>
+                <p>URL: {merchantCheckoutPath?.checkout_url || "not available"}</p>
+                <p>Domain: {merchantCheckoutPath?.checkout_domain || "not available"}</p>
+                <p>
+                  Required params:{" "}
+                  {(merchantCheckoutPath?.required_params || []).join(", ") || "none"}
+                </p>
+              </div>
+            </NarrativeSection>
+            <NarrativeSection title="Pivota checkout path">
+              <div className="space-y-1">
+                <p>ID: {pivotaCheckoutPath?.id || "not found"}</p>
+                <p>URL: {pivotaCheckoutPath?.checkout_url || "not available"}</p>
+                <p>Domain: {pivotaCheckoutPath?.checkout_domain || "not available"}</p>
+                <p>
+                  Attached to offer:{" "}
+                  {pivotaCheckoutPath
+                    ? pivotaCheckoutPath.attached_to_pivota_offer
+                      ? "yes"
+                      : "no"
+                    : "not available"}
+                </p>
+              </div>
+            </NarrativeSection>
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <NarrativeSection title="Checkout URL preflight status">
+              <ul className="list-disc space-y-1 pl-5">
+                {checkoutFindingEvidence(
+                  checkoutDiagnosis,
+                  ["missing_checkout_path", "checkout_url_unreachable", "stale_checkout_session"],
+                  checkoutComparison.checkout_url_preflight_status
+                    ? `Preflight ${label(checkoutComparison.checkout_url_preflight_status)}${
+                        checkoutComparison.checkout_url_status_code
+                          ? ` (${checkoutComparison.checkout_url_status_code})`
+                          : ""
+                      }.`
+                    : "No checkout URL preflight finding diagnosed yet."
+                ).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </NarrativeSection>
+            <NarrativeSection title="Cart handoff required params">
+              <ul className="list-disc space-y-1 pl-5">
+                {checkoutFindingEvidence(
+                  checkoutDiagnosis,
+                  [
+                    "cart_handoff_missing_required_param",
+                    "variant_param_missing",
+                    "quantity_param_missing",
+                  ],
+                  checkoutComparison.missing_params?.length
+                    ? `Missing params: ${checkoutComparison.missing_params.join(", ")}.`
+                    : "No cart handoff parameter gap diagnosed yet."
+                ).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </NarrativeSection>
+            <NarrativeSection title="Coupon passthrough status">
+              <ul className="list-disc space-y-1 pl-5">
+                {checkoutFindingEvidence(
+                  checkoutDiagnosis,
+                  ["coupon_param_missing"],
+                  checkoutComparison.coupon_passthrough_consistent === false
+                    ? "Coupon passthrough is inconsistent."
+                    : "No coupon passthrough gap diagnosed yet."
+                ).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </NarrativeSection>
+            <NarrativeSection title="Domain consistency">
+              <ul className="list-disc space-y-1 pl-5">
+                {checkoutFindingEvidence(
+                  checkoutDiagnosis,
+                  [
+                    "checkout_domain_mismatch",
+                    "checkout_not_attached_to_pivota_offer",
+                    "checkout_offer_sku_mismatch",
+                  ],
+                  "No domain, attachment, or SKU mismatch diagnosed yet."
+                ).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </NarrativeSection>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {(checkoutDiagnosis?.refined_fix_targets || []).map((target: string) => (
+              <FixTargetBadge key={target} target={target} />
+            ))}
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-2">
+            <div>
+              <p className="merchant-overline mb-2">Recommended merchant checkout patch</p>
+              <JsonBlock
+                value={
+                  checkoutPatchByType(checkoutDiagnosis, "merchant_checkout_patch") ||
+                  checkoutPatchByType(checkoutDiagnosis, "coupon_passthrough_patch") ||
+                  {}
+                }
+              />
+            </div>
+            <div>
+              <p className="merchant-overline mb-2">Recommended Pivota checkout patch</p>
+              <JsonBlock
+                value={
+                  checkoutPatchByType(checkoutDiagnosis, "pivota_checkout_patch") ||
+                  checkoutPatchByType(checkoutDiagnosis, "cart_handoff_payload_patch") ||
+                  checkoutPatchByType(checkoutDiagnosis, "checkout_attachment_patch") ||
+                  checkoutPatchByType(checkoutDiagnosis, "checkout_domain_patch") ||
+                  {}
+                }
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <MerchantButton
+              icon={CreditCard}
+              variant="secondary"
+              onClick={() => runCheckoutDiagnosis("checkout-diagnosis")}
+              disabled={loading}
+            >
+              Run Checkout Diagnosis
+            </MerchantButton>
+            <MerchantButton
+              icon={RotateCcw}
+              variant="secondary"
+              onClick={() => runCheckoutDiagnosis("regenerate-checkout-patch")}
+              disabled={loading}
+            >
+              Regenerate Checkout Patch
+            </MerchantButton>
+            <MerchantButton
+              icon={Send}
+              variant="secondary"
+              onClick={() => runCheckoutDiagnosis("attach-checkout-diagnosis-to-retest")}
+              disabled={loading}
+            >
+              Attach to Retest Plan
+            </MerchantButton>
+          </div>
+
+          <p className="text-sm text-[color:var(--merchant-muted)]">
+            Checkout Verification V1 checks pre-payment checkout path readiness only.
+            PSP authorization, payment tokens, real orders, refunds, settlement, and
+            transaction fees are out of scope.
           </p>
         </div>
       </SurfaceCard>

@@ -17,6 +17,11 @@ import type {
   AgenticGMVIssue,
   AgenticGMVIssueType,
   AttributeGap,
+  CheckoutIssueType,
+  CheckoutPatchRecommendation,
+  CheckoutPathComparison,
+  CheckoutReadinessFinding,
+  CheckoutVerificationDiagnosis,
   CompetitorMappingFinding,
   CouponStatus,
   DemoFixture,
@@ -33,6 +38,7 @@ import type {
   LLMSurfaceResult,
   LLMSurfaceTestRun,
   MerchantStore,
+  MerchantCheckoutPath,
   MatchConfidence,
   MerchantOffer,
   ParsedRecommendation,
@@ -42,6 +48,7 @@ import type {
   OfferMismatchFinding,
   OfferPatchRecommendation,
   PivotaOffer,
+  PivotaCheckoutPath,
   ProductLayerComparison,
   ProductMatchLevel,
   ProductMatchResult,
@@ -427,6 +434,9 @@ function formatFixTarget(target: FixTarget) {
     pivota_offer_layer: "Pivota offer layer",
     merchant_inventory_source: "merchant inventory source",
     merchant_promo_source: "merchant promo source",
+    merchant_checkout_source: "merchant checkout source",
+    pivota_checkout_layer: "Pivota checkout layer",
+    merchant_cart_config: "merchant cart configuration",
     both_merchant_and_pivota: "merchant PDP and Pivota unified PDP",
     human_review: "human review",
   };
@@ -1220,6 +1230,46 @@ export class UsageMeteringService {
       model: "offer-execution-deterministic-v1",
       query_cluster_id: input.issue.affected_query_clusters[0] || "none",
       prompt_template_id: "offer_execution_readiness_v1",
+      input_tokens: 0,
+      output_tokens: 0,
+      billable: true,
+      billing_mode: "preview_only",
+      billing_status: "not_invoiced",
+      created_at: now,
+      updated_at: now,
+    };
+    state.usageEvents.push(event);
+    return event;
+  }
+
+  recordCheckoutVerification(input: {
+    issue: AgenticGMVIssue;
+    diagnosisId?: string;
+    quantity?: number;
+  }) {
+    const key = `checkout_verification:${input.issue.id}:checkout_readiness:v1`;
+    const state = getAgentCenterState();
+    const existing = state.usageEvents.find((event) => event.idempotency_key === key);
+    if (existing) return existing;
+
+    const target = findScanTarget(input.issue.scan_target_id);
+    const now = nowIso();
+    const event: UsageEvent = {
+      id: nextId("usage"),
+      idempotency_key: key,
+      merchant_id: input.issue.merchant_id,
+      store_id: input.issue.store_id,
+      scan_target_id: input.issue.scan_target_id,
+      event_type: "checkout_verification_credit",
+      quantity: input.quantity || 1,
+      source_agent: "checkout_verification_agent",
+      agent_type: "checkout_verification_agent",
+      workflow_type: "checkout_readiness",
+      scan_mode: target.scan_mode,
+      provider: "internal",
+      model: "checkout-verification-deterministic-v1",
+      query_cluster_id: input.issue.affected_query_clusters[0] || "none",
+      prompt_template_id: "checkout_verification_readiness_v1",
       input_tokens: 0,
       output_tokens: 0,
       billable: true,
@@ -4535,6 +4585,899 @@ export class OfferExecutionService {
   }
 }
 
+function checkoutFinding(input: {
+  findingType: CheckoutIssueType | "clean_checkout_path";
+  severity?: CheckoutReadinessFinding["severity"];
+  field: CheckoutReadinessFinding["field"];
+  merchantValue?: unknown;
+  pivotaValue?: unknown;
+  evidence: string;
+  fixTarget: FixTarget;
+}): CheckoutReadinessFinding {
+  return {
+    finding_type: input.findingType,
+    severity: input.severity || "medium",
+    field: input.field,
+    merchant_value: input.merchantValue,
+    pivota_value: input.pivotaValue,
+    evidence: input.evidence,
+    fix_target: input.fixTarget,
+  };
+}
+
+function checkoutRootCause(findings: CheckoutReadinessFinding[]) {
+  const actionable = findings.filter(
+    (finding) => finding.finding_type !== "clean_checkout_path"
+  );
+  if (!actionable.length) {
+    return "Merchant checkout source and Pivota checkout path are ready for V1 pre-payment handoff checks.";
+  }
+
+  const first = actionable[0];
+  const labels: Record<CheckoutIssueType, string> = {
+    missing_checkout_path:
+      "No usable checkout path is attached to the merchant offer or Pivota offer.",
+    checkout_url_unreachable:
+      "The agent-facing checkout URL failed deterministic preflight.",
+    stale_checkout_session:
+      "The checkout session or source checkout path appears expired or stale.",
+    cart_handoff_missing_required_param:
+      "The cart handoff payload is missing one or more required checkout parameters.",
+    variant_param_missing:
+      "The checkout handoff does not include the required SKU or variant parameter.",
+    quantity_param_missing:
+      "The checkout handoff does not include the required quantity parameter.",
+    coupon_param_missing:
+      "The checkout handoff does not pass through the expected coupon or promo parameter.",
+    checkout_domain_mismatch:
+      "The Pivota checkout path points to a different checkout domain than the merchant checkout source.",
+    checkout_not_attached_to_pivota_offer:
+      "The checkout path exists but is not attached to the Pivota offer.",
+    checkout_offer_sku_mismatch:
+      "The checkout path SKU or variant does not match the merchant offer SKU.",
+    human_review_required:
+      "Checkout readiness evidence is incomplete or ambiguous and needs human review.",
+  };
+  return labels[first.finding_type as CheckoutIssueType] || first.evidence;
+}
+
+function checkoutReadinessScore(findings: CheckoutReadinessFinding[]) {
+  const penalties: Record<CheckoutReadinessFinding["severity"], number> = {
+    low: 10,
+    medium: 20,
+    high: 35,
+    critical: 50,
+  };
+  const totalPenalty = findings
+    .filter((finding) => finding.finding_type !== "clean_checkout_path")
+    .reduce((sum, finding) => sum + penalties[finding.severity], 0);
+  return clampScore(100 - totalPenalty);
+}
+
+function checkoutConfidence(input: {
+  merchantCheckoutPath?: MerchantCheckoutPath | null;
+  pivotaCheckoutPath?: PivotaCheckoutPath | null;
+  findings: CheckoutReadinessFinding[];
+}): CheckoutVerificationDiagnosis["confidence"] {
+  if (!input.merchantCheckoutPath && !input.pivotaCheckoutPath) return "low";
+  if (
+    input.findings.some((finding) =>
+      ["human_review_required", "checkout_offer_sku_mismatch"].includes(
+        finding.finding_type
+      )
+    )
+  ) {
+    return "medium";
+  }
+  return input.merchantCheckoutPath && input.pivotaCheckoutPath ? "high" : "medium";
+}
+
+function cleanCheckoutComparison(
+  merchantCheckoutPath?: MerchantCheckoutPath | null,
+  pivotaCheckoutPath?: PivotaCheckoutPath | null
+): CheckoutPathComparison {
+  return {
+    merchant_checkout_path: merchantCheckoutPath || null,
+    pivota_checkout_path: pivotaCheckoutPath || null,
+    checkout_url_preflight_status: "passed",
+    checkout_url_status_code: 200,
+    cart_handoff_required_params: merchantCheckoutPath?.required_params || [],
+    missing_params: [],
+    coupon_passthrough_consistent: true,
+    domain_consistent: true,
+    session_fresh: true,
+    attached_to_pivota_offer: Boolean(pivotaCheckoutPath?.attached_to_pivota_offer),
+    sku_variant_consistent: true,
+    findings: [
+      checkoutFinding({
+        findingType: "clean_checkout_path",
+        severity: "low",
+        field: "checkout_path",
+        evidence:
+          "Merchant checkout source and Pivota checkout path are ready for V1 pre-payment handoff checks.",
+        fixTarget: "pivota_checkout_layer",
+      }),
+    ],
+  };
+}
+
+function checkoutUrlHost(value?: string | null) {
+  if (!value) return "";
+  try {
+    return new URL(value).host;
+  } catch {
+    return "";
+  }
+}
+
+function checkoutPreflight(value?: string | null): {
+  status: "not_tested" | "passed" | "failed";
+  statusCode: number | null;
+} {
+  if (!value) return { status: "not_tested", statusCode: null };
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol)) {
+      return { status: "failed", statusCode: 0 };
+    }
+    if (url.href.includes("unreachable")) {
+      return { status: "failed", statusCode: 404 };
+    }
+    return { status: "passed", statusCode: 200 };
+  } catch {
+    return { status: "failed", statusCode: 0 };
+  }
+}
+
+function payloadHasParam(payload: Record<string, unknown> | undefined, param?: string | null) {
+  if (!param) return false;
+  const value = payload?.[param];
+  return value !== undefined && value !== null && value !== "";
+}
+
+export class CheckoutVerificationService {
+  latest(issueId: string) {
+    return [...getAgentCenterState().checkoutVerificationDiagnoses]
+      .reverse()
+      .find((diagnosis) => diagnosis.issue_id === issueId) || null;
+  }
+
+  debugPayload(issueId: string) {
+    const state = getAgentCenterState();
+    const issue = findIssue(issueId);
+    const store = findStore(issue.store_id);
+    const clusters = state.queryClusters.filter((cluster) =>
+      issue.affected_query_clusters.includes(cluster.id)
+    );
+    const product = findProductForIssue(store, issue, clusters);
+    const diagnosis = this.latest(issueId);
+    const merchantOffer = this.findMerchantOffer(issue, product);
+    const pivotaOffer = this.findPivotaOffer(issue, product, merchantOffer);
+    const merchantCheckoutPath = diagnosis?.merchant_checkout_path_id
+      ? state.merchantCheckoutPaths.find(
+          (path) => path.id === diagnosis.merchant_checkout_path_id
+        )
+      : this.findMerchantCheckoutPath(issue, merchantOffer, product);
+    const pivotaCheckoutPath = diagnosis?.pivota_checkout_path_id
+      ? state.pivotaCheckoutPaths.find(
+          (path) => path.id === diagnosis.pivota_checkout_path_id
+        )
+      : this.findPivotaCheckoutPath(issue, pivotaOffer, merchantCheckoutPath, product);
+    const offerDiagnosis =
+      issue.offer_execution_diagnosis_id
+        ? state.offerExecutionDiagnoses.find(
+            (item) => item.id === issue.offer_execution_diagnosis_id
+          )
+        : new OfferExecutionService().latest(issueId);
+    const usageEvents = diagnosis
+      ? state.usageEvents.filter((event) =>
+          diagnosis.usage_event_ids.includes(event.id)
+        )
+      : [];
+
+    return {
+      source_issue_summary: {
+        issue_id: issue.id,
+        issue_type: issue.issue_type,
+        severity: issue.severity,
+        status: issue.status,
+        affected_product_entities: issue.affected_product_entities,
+        affected_skus: issue.affected_skus,
+        fix_targets: issue.fix_targets,
+      },
+      offer_execution_diagnosis: offerDiagnosis || null,
+      merchant_checkout_path: merchantCheckoutPath || null,
+      pivota_checkout_path: pivotaCheckoutPath || null,
+      findings: diagnosis?.checkout_layer_findings || [],
+      refined_fix_targets: diagnosis?.refined_fix_targets || [],
+      patch_recommendations: diagnosis?.patch_recommendations || [],
+      checkout_readiness_score: diagnosis?.checkout_readiness_score ?? null,
+      confidence: diagnosis?.confidence || null,
+      usage_event_ids: diagnosis?.usage_event_ids || [],
+      usage_events: usageEvents,
+    };
+  }
+
+  runDiagnosis(
+    issueId: string,
+    options?: { regeneratePatch?: boolean; attachToRetestPlan?: boolean }
+  ) {
+    const existing = this.latest(issueId);
+    if (existing && !options?.regeneratePatch && !options?.attachToRetestPlan) {
+      return existing;
+    }
+
+    const state = getAgentCenterState();
+    const issue = findIssue(issueId);
+    const store = findStore(issue.store_id);
+    const clusters = state.queryClusters.filter((cluster) =>
+      issue.affected_query_clusters.includes(cluster.id)
+    );
+    const product = findProductForIssue(store, issue, clusters);
+    const merchantOffer = this.findMerchantOffer(issue, product);
+    const pivotaOffer = this.findPivotaOffer(issue, product, merchantOffer);
+    const merchantCheckoutPath = this.findMerchantCheckoutPath(
+      issue,
+      merchantOffer,
+      product
+    );
+    const pivotaCheckoutPath = this.findPivotaCheckoutPath(
+      issue,
+      pivotaOffer,
+      merchantCheckoutPath,
+      product
+    );
+    const comparison = this.compareCheckoutPaths({
+      issue,
+      product,
+      merchantOffer,
+      pivotaOffer,
+      merchantCheckoutPath,
+      pivotaCheckoutPath,
+    });
+    const actionable = comparison.findings.filter(
+      (finding) => finding.finding_type !== "clean_checkout_path"
+    );
+    const refinedFixTargets = this.refinedFixTargets(actionable, {
+      merchantCheckoutPath,
+      pivotaCheckoutPath,
+    });
+    const patchRecommendations = this.patchRecommendations({
+      issue,
+      product,
+      merchantOffer,
+      pivotaOffer,
+      merchantCheckoutPath,
+      pivotaCheckoutPath,
+      findings: actionable,
+      missingParams: comparison.missing_params,
+    });
+    const now = nowIso();
+    const diagnosisId = nextId("checkout_diag");
+    const usageEvent = new UsageMeteringService().recordCheckoutVerification({
+      issue,
+      diagnosisId,
+    });
+    const diagnosis: CheckoutVerificationDiagnosis = {
+      id: diagnosisId,
+      merchant_id: issue.merchant_id,
+      store_id: issue.store_id,
+      issue_id: issue.id,
+      product_entity_id: product?.product_entity_id || issue.affected_product_entities[0],
+      sku_id: product?.sku || issue.affected_skus[0],
+      merchant_offer_id: merchantOffer?.id,
+      pivota_offer_id: pivotaOffer?.id,
+      merchant_checkout_path_id: merchantCheckoutPath?.id,
+      pivota_checkout_path_id: pivotaCheckoutPath?.id,
+      source_agent: "checkout_verification_agent",
+      checkout_layer_findings: [comparison],
+      root_cause_summary: checkoutRootCause(comparison.findings),
+      refined_fix_targets: refinedFixTargets.length
+        ? refinedFixTargets
+        : ["pivota_checkout_layer"],
+      patch_recommendations: patchRecommendations,
+      checkout_readiness_score: checkoutReadinessScore(comparison.findings),
+      confidence: checkoutConfidence({
+        merchantCheckoutPath,
+        pivotaCheckoutPath,
+        findings: comparison.findings,
+      }),
+      usage_event_ids: [usageEvent.id],
+      created_at: now,
+      updated_at: now,
+    };
+
+    state.checkoutVerificationDiagnoses.push(diagnosis);
+    this.attachDiagnosisToIssue(issue, diagnosis);
+    if (options?.attachToRetestPlan) {
+      this.attachDiagnosisToRetestPlan(issue, diagnosis);
+    }
+    return diagnosis;
+  }
+
+  regeneratePatch(issueId: string) {
+    return this.runDiagnosis(issueId, { regeneratePatch: true });
+  }
+
+  attachToRetestPlan(issueId: string) {
+    return this.runDiagnosis(issueId, { attachToRetestPlan: true });
+  }
+
+  private findMerchantOffer(issue: AgenticGMVIssue, product?: ProductRecord) {
+    return getAgentCenterState().merchantOffers.find(
+      (offer) =>
+        offer.merchant_id === issue.merchant_id &&
+        offer.store_id === issue.store_id &&
+        (offer.product_id === product?.id ||
+          offer.sku_id === product?.sku ||
+          issue.affected_skus.includes(offer.sku_id))
+    );
+  }
+
+  private findPivotaOffer(
+    issue: AgenticGMVIssue,
+    product?: ProductRecord,
+    merchantOffer?: MerchantOffer
+  ) {
+    const productEntityId = product?.product_entity_id || issue.affected_product_entities[0];
+    return getAgentCenterState().pivotaOffers.find(
+      (offer) =>
+        offer.merchant_id === issue.merchant_id &&
+        offer.store_id === issue.store_id &&
+        offer.product_entity_id === productEntityId &&
+        (!merchantOffer || offer.sku_id === merchantOffer.sku_id)
+    ) ||
+      getAgentCenterState().pivotaOffers.find(
+        (offer) =>
+          offer.merchant_id === issue.merchant_id &&
+          offer.store_id === issue.store_id &&
+          offer.product_entity_id === productEntityId
+      );
+  }
+
+  private findMerchantCheckoutPath(
+    issue: AgenticGMVIssue,
+    merchantOffer?: MerchantOffer,
+    product?: ProductRecord
+  ) {
+    return getAgentCenterState().merchantCheckoutPaths.find(
+      (path) =>
+        path.merchant_id === issue.merchant_id &&
+        path.store_id === issue.store_id &&
+        ((merchantOffer && path.merchant_offer_id === merchantOffer.id) ||
+          path.sku_id === merchantOffer?.sku_id ||
+          path.sku_id === product?.sku ||
+          issue.affected_skus.includes(path.sku_id))
+    );
+  }
+
+  private findPivotaCheckoutPath(
+    issue: AgenticGMVIssue,
+    pivotaOffer?: PivotaOffer,
+    merchantCheckoutPath?: MerchantCheckoutPath,
+    product?: ProductRecord
+  ) {
+    const productEntityId = product?.product_entity_id || issue.affected_product_entities[0];
+    return getAgentCenterState().pivotaCheckoutPaths.find(
+      (path) =>
+        path.merchant_id === issue.merchant_id &&
+        path.store_id === issue.store_id &&
+        ((pivotaOffer && path.pivota_offer_id === pivotaOffer.id) ||
+          path.product_entity_id === productEntityId) &&
+        (!merchantCheckoutPath || path.sku_id === merchantCheckoutPath.sku_id)
+    ) ||
+      getAgentCenterState().pivotaCheckoutPaths.find(
+        (path) =>
+          path.merchant_id === issue.merchant_id &&
+          path.store_id === issue.store_id &&
+          path.product_entity_id === productEntityId
+      );
+  }
+
+  private compareCheckoutPaths(input: {
+    issue: AgenticGMVIssue;
+    product?: ProductRecord;
+    merchantOffer?: MerchantOffer;
+    pivotaOffer?: PivotaOffer;
+    merchantCheckoutPath?: MerchantCheckoutPath;
+    pivotaCheckoutPath?: PivotaCheckoutPath;
+  }): CheckoutPathComparison {
+    const {
+      product,
+      merchantOffer,
+      pivotaOffer,
+      merchantCheckoutPath,
+      pivotaCheckoutPath,
+    } = input;
+    const findings: CheckoutReadinessFinding[] = [];
+    const preflight = checkoutPreflight(pivotaCheckoutPath?.checkout_url);
+    const requiredParams = unique([
+      ...(merchantCheckoutPath?.required_params || []),
+      ...(pivotaCheckoutPath?.required_params || []),
+    ]);
+    const missingParams = requiredParams.filter(
+      (param) => !payloadHasParam(pivotaCheckoutPath?.cart_handoff_payload, param)
+    );
+
+    if (!merchantCheckoutPath && !pivotaCheckoutPath) {
+      findings.push(
+        checkoutFinding({
+          findingType: "missing_checkout_path",
+          severity: "high",
+          field: "checkout_path",
+          evidence:
+            "No merchant checkout source or Pivota checkout path was found for the affected offer.",
+          fixTarget: "both_merchant_and_pivota",
+        })
+      );
+    } else if (merchantCheckoutPath && !pivotaCheckoutPath) {
+      findings.push(
+        checkoutFinding({
+          findingType: "missing_checkout_path",
+          severity: "high",
+          field: "checkout_path",
+          merchantValue: merchantCheckoutPath.id,
+          evidence:
+            "Merchant checkout source exists, but no matching Pivota checkout path is attached to the offer.",
+          fixTarget: "pivota_checkout_layer",
+        })
+      );
+    }
+
+    if (pivotaCheckoutPath) {
+      if (preflight.status !== "passed") {
+        findings.push(
+          checkoutFinding({
+            findingType: "checkout_url_unreachable",
+            severity: "high",
+            field: "checkout_url",
+            pivotaValue: {
+              checkout_url: pivotaCheckoutPath.checkout_url,
+              status_code: preflight.statusCode,
+            },
+            evidence:
+              "Pivota checkout URL did not pass deterministic preflight and cannot be treated as a ready checkout path.",
+            fixTarget: "pivota_checkout_layer",
+          })
+        );
+      }
+
+      if (!pivotaCheckoutPath.attached_to_pivota_offer) {
+        findings.push(
+          checkoutFinding({
+            findingType: "checkout_not_attached_to_pivota_offer",
+            severity: "high",
+            field: "attachment",
+            pivotaValue: pivotaCheckoutPath.id,
+            evidence:
+              "Checkout path exists, but it is not attached to the Pivota offer.",
+            fixTarget: "pivota_offer_layer",
+          })
+        );
+      }
+
+      if (pivotaOffer && pivotaCheckoutPath.pivota_offer_id !== pivotaOffer.id) {
+        findings.push(
+          checkoutFinding({
+            findingType: "checkout_not_attached_to_pivota_offer",
+            severity: "high",
+            field: "attachment",
+            merchantValue: pivotaOffer.id,
+            pivotaValue: pivotaCheckoutPath.pivota_offer_id,
+            evidence:
+              "Checkout path points to a different Pivota offer than the affected offer.",
+            fixTarget: "pivota_offer_layer",
+          })
+        );
+      }
+    }
+
+    if (merchantCheckoutPath && pivotaCheckoutPath) {
+      const payload = pivotaCheckoutPath.cart_handoff_payload;
+      const variantParam = merchantCheckoutPath.variant_param_name;
+      const quantityParam = merchantCheckoutPath.quantity_param_name;
+      const couponParam = merchantCheckoutPath.coupon_param_name;
+
+      if (merchantOffer && merchantCheckoutPath.merchant_offer_id !== merchantOffer.id) {
+        findings.push(
+          checkoutFinding({
+            findingType: "human_review_required",
+            severity: "medium",
+            field: "attachment",
+            merchantValue: merchantOffer.id,
+            pivotaValue: merchantCheckoutPath.merchant_offer_id,
+            evidence:
+              "Merchant checkout source points to a different merchant offer than the affected offer.",
+            fixTarget: "merchant_checkout_source",
+          })
+        );
+      }
+
+      if (
+        variantParam &&
+        !payloadHasParam(payload, variantParam) &&
+        !pivotaCheckoutPath.variant_id
+      ) {
+        findings.push(
+          checkoutFinding({
+            findingType: "variant_param_missing",
+            severity: "high",
+            field: "variant",
+            merchantValue: variantParam,
+            pivotaValue: payload,
+            evidence:
+              "Pivota cart handoff is missing the required SKU or variant parameter.",
+            fixTarget: "pivota_checkout_layer",
+          })
+        );
+      }
+
+      if (
+        quantityParam &&
+        !payloadHasParam(payload, quantityParam) &&
+        !pivotaCheckoutPath.quantity
+      ) {
+        findings.push(
+          checkoutFinding({
+            findingType: "quantity_param_missing",
+            severity: "medium",
+            field: "quantity",
+            merchantValue: quantityParam,
+            pivotaValue: payload,
+            evidence:
+              "Pivota cart handoff is missing the required quantity parameter.",
+            fixTarget: "pivota_checkout_layer",
+          })
+        );
+      }
+
+      const expectedCoupon = merchantOffer?.coupon_code || pivotaOffer?.coupon_code;
+      if (
+        expectedCoupon &&
+        couponParam &&
+        !payloadHasParam(payload, couponParam)
+      ) {
+        findings.push(
+          checkoutFinding({
+            findingType: "coupon_param_missing",
+            severity: "medium",
+            field: "coupon",
+            merchantValue: {
+              coupon_param_name: couponParam,
+              coupon_code: expectedCoupon,
+            },
+            pivotaValue: payload,
+            evidence:
+              "Pivota cart handoff is missing the required coupon or promo passthrough parameter.",
+            fixTarget: "pivota_checkout_layer",
+          })
+        );
+      }
+
+      const genericMissing = missingParams.filter(
+        (param) => ![variantParam, quantityParam, couponParam].includes(param)
+      );
+      if (genericMissing.length) {
+        findings.push(
+          checkoutFinding({
+            findingType: "cart_handoff_missing_required_param",
+            severity: "medium",
+            field: "cart_handoff",
+            merchantValue: merchantCheckoutPath.required_params,
+            pivotaValue: payload,
+            evidence: `Pivota cart handoff is missing required parameter(s): ${genericMissing.join(", ")}.`,
+            fixTarget: "pivota_checkout_layer",
+          })
+        );
+      }
+
+      const merchantDomain =
+        merchantCheckoutPath.checkout_domain ||
+        checkoutUrlHost(merchantCheckoutPath.checkout_url);
+      const pivotaDomain =
+        pivotaCheckoutPath.checkout_domain ||
+        checkoutUrlHost(pivotaCheckoutPath.checkout_url);
+      if (merchantDomain && pivotaDomain && merchantDomain !== pivotaDomain) {
+        findings.push(
+          checkoutFinding({
+            findingType: "checkout_domain_mismatch",
+            severity: "high",
+            field: "domain",
+            merchantValue: merchantDomain,
+            pivotaValue: pivotaDomain,
+            evidence:
+              "Pivota checkout path points to a different checkout domain than the merchant checkout source.",
+            fixTarget: "pivota_checkout_layer",
+          })
+        );
+      }
+
+      if (isExpired(merchantCheckoutPath.expires_at)) {
+        findings.push(
+          checkoutFinding({
+            findingType: "stale_checkout_session",
+            severity: "high",
+            field: "session",
+            merchantValue: merchantCheckoutPath.expires_at,
+            evidence:
+              "Merchant checkout path or session expiration is in the past.",
+            fixTarget: "merchant_checkout_source",
+          })
+        );
+      }
+
+      if (
+        merchantCheckoutPath.sku_id !== pivotaCheckoutPath.sku_id ||
+        (product?.sku && merchantCheckoutPath.sku_id !== product.sku)
+      ) {
+        findings.push(
+          checkoutFinding({
+            findingType: "checkout_offer_sku_mismatch",
+            severity: "high",
+            field: "sku_variant",
+            merchantValue: merchantCheckoutPath.sku_id,
+            pivotaValue: pivotaCheckoutPath.sku_id,
+            evidence:
+              "Checkout path SKU or variant does not match the merchant offer SKU.",
+            fixTarget: "pivota_product_graph",
+          })
+        );
+      }
+    }
+
+    if (!findings.length) {
+      return cleanCheckoutComparison(merchantCheckoutPath, pivotaCheckoutPath);
+    }
+
+    return {
+      merchant_checkout_path: merchantCheckoutPath || null,
+      pivota_checkout_path: pivotaCheckoutPath || null,
+      checkout_url_preflight_status: preflight.status,
+      checkout_url_status_code: preflight.statusCode,
+      cart_handoff_required_params: requiredParams,
+      missing_params: missingParams,
+      coupon_passthrough_consistent: !findings.some(
+        (finding) => finding.field === "coupon"
+      ),
+      domain_consistent: !findings.some((finding) => finding.field === "domain"),
+      session_fresh: !findings.some((finding) => finding.field === "session"),
+      attached_to_pivota_offer: Boolean(pivotaCheckoutPath?.attached_to_pivota_offer),
+      sku_variant_consistent: !findings.some(
+        (finding) => finding.field === "sku_variant"
+      ),
+      findings,
+    };
+  }
+
+  private refinedFixTargets(
+    findings: CheckoutReadinessFinding[],
+    context: {
+      merchantCheckoutPath?: MerchantCheckoutPath;
+      pivotaCheckoutPath?: PivotaCheckoutPath;
+    }
+  ) {
+    const targets = new Set<FixTarget>();
+    for (const finding of findings) {
+      targets.add(finding.fix_target);
+      if (finding.finding_type === "missing_checkout_path") {
+        if (!context.merchantCheckoutPath) targets.add("merchant_checkout_source");
+        targets.add("pivota_checkout_layer");
+      }
+      if (
+        finding.finding_type === "cart_handoff_missing_required_param" ||
+        finding.finding_type === "variant_param_missing" ||
+        finding.finding_type === "quantity_param_missing"
+      ) {
+        targets.add("merchant_cart_config");
+      }
+      if (finding.finding_type === "coupon_param_missing") {
+        targets.add("merchant_promo_source");
+      }
+      if (finding.finding_type === "checkout_offer_sku_mismatch") {
+        targets.add("pivota_product_graph");
+      }
+    }
+    return [...targets];
+  }
+
+  private patchRecommendations(input: {
+    issue: AgenticGMVIssue;
+    product?: ProductRecord;
+    merchantOffer?: MerchantOffer;
+    pivotaOffer?: PivotaOffer;
+    merchantCheckoutPath?: MerchantCheckoutPath;
+    pivotaCheckoutPath?: PivotaCheckoutPath;
+    findings: CheckoutReadinessFinding[];
+    missingParams: string[];
+  }) {
+    const recommendations: CheckoutPatchRecommendation[] = [];
+    const has = (type: CheckoutIssueType) =>
+      input.findings.some((finding) => finding.finding_type === type);
+    const hasField = (field: CheckoutReadinessFinding["field"]) =>
+      input.findings.some((finding) => finding.field === field);
+
+    if (
+      has("missing_checkout_path") ||
+      has("checkout_url_unreachable") ||
+      has("stale_checkout_session")
+    ) {
+      recommendations.push({
+        patch_type: input.merchantCheckoutPath
+          ? "pivota_checkout_patch"
+          : "merchant_checkout_patch",
+        target: input.merchantCheckoutPath
+          ? "pivota_checkout_layer"
+          : "merchant_checkout_source",
+        patch: {
+          merchant_offer_id: input.merchantOffer?.id,
+          pivota_offer_id: input.pivotaOffer?.id,
+          merchant_checkout_path_id: input.merchantCheckoutPath?.id,
+          pivota_checkout_path_id: input.pivotaCheckoutPath?.id,
+          sku_id: input.merchantOffer?.sku_id || input.product?.sku,
+          checkout_url: input.merchantCheckoutPath?.checkout_url,
+          cart_url: input.merchantCheckoutPath?.cart_url,
+          checkout_domain: input.merchantCheckoutPath?.checkout_domain,
+          required_params: input.merchantCheckoutPath?.required_params || [],
+          action: input.merchantCheckoutPath
+            ? "Create or refresh the Pivota checkout path from merchant checkout source."
+            : "Add merchant checkout source metadata before Pivota checkout readiness can be verified.",
+        },
+        rationale:
+          "A reachable checkout path must exist before checkout readiness can be counted.",
+      });
+    }
+
+    if (
+      hasField("cart_handoff") ||
+      has("variant_param_missing") ||
+      has("quantity_param_missing")
+    ) {
+      recommendations.push({
+        patch_type: "cart_handoff_payload_patch",
+        target: "pivota_checkout_layer",
+        patch: {
+          pivota_checkout_path_id: input.pivotaCheckoutPath?.id,
+          required_params: input.merchantCheckoutPath?.required_params || [],
+          missing_params: input.missingParams,
+          expected_variant_param: input.merchantCheckoutPath?.variant_param_name,
+          expected_quantity_param: input.merchantCheckoutPath?.quantity_param_name,
+          expected_variant_id: input.merchantOffer?.sku_id || input.product?.sku,
+          expected_quantity: input.pivotaCheckoutPath?.quantity || 1,
+          action:
+            "Update Pivota cart handoff payload with required variant and quantity parameters.",
+        },
+        rationale:
+          "Agent-routed cart handoff must include required SKU/variant and quantity parameters.",
+      });
+    }
+
+    if (has("coupon_param_missing")) {
+      recommendations.push({
+        patch_type: "coupon_passthrough_patch",
+        target: "merchant_promo_source",
+        patch: {
+          merchant_offer_id: input.merchantOffer?.id,
+          pivota_checkout_path_id: input.pivotaCheckoutPath?.id,
+          coupon_param_name: input.merchantCheckoutPath?.coupon_param_name,
+          coupon_code: input.merchantOffer?.coupon_code || input.pivotaOffer?.coupon_code,
+          action:
+            "Add coupon passthrough to the Pivota cart handoff payload and align merchant promo source metadata.",
+        },
+        rationale:
+          "Promo/coupon state must pass through checkout handoff before the offer is treated as checkout-ready.",
+      });
+    }
+
+    if (has("checkout_not_attached_to_pivota_offer") || has("checkout_offer_sku_mismatch")) {
+      recommendations.push({
+        patch_type: "checkout_attachment_patch",
+        target: has("checkout_offer_sku_mismatch")
+          ? "pivota_product_graph"
+          : "pivota_offer_layer",
+        patch: {
+          product_entity_id: input.product?.product_entity_id || input.issue.affected_product_entities[0],
+          pivota_offer_id: input.pivotaOffer?.id,
+          pivota_checkout_path_id: input.pivotaCheckoutPath?.id,
+          expected_sku_id: input.merchantOffer?.sku_id || input.product?.sku,
+          current_checkout_sku_id: input.pivotaCheckoutPath?.sku_id,
+          attached_to_pivota_offer: true,
+        },
+        rationale:
+          "The checkout path must attach to the correct Pivota offer and SKU/variant.",
+      });
+    }
+
+    if (has("checkout_domain_mismatch")) {
+      recommendations.push({
+        patch_type: "checkout_domain_patch",
+        target: "pivota_checkout_layer",
+        patch: {
+          merchant_checkout_path_id: input.merchantCheckoutPath?.id,
+          pivota_checkout_path_id: input.pivotaCheckoutPath?.id,
+          expected_checkout_domain: input.merchantCheckoutPath?.checkout_domain,
+          current_checkout_domain: input.pivotaCheckoutPath?.checkout_domain,
+          action:
+            "Align Pivota checkout domain with the merchant checkout source domain.",
+        },
+        rationale:
+          "Domain consistency is required before Pivota can assert the checkout path points to the merchant buying path.",
+      });
+    }
+
+    if (!recommendations.length && input.findings.length) {
+      recommendations.push({
+        patch_type: "merchant_checkout_patch",
+        target: "human_review",
+        patch: {
+          issue_id: input.issue.id,
+          action: "Review merchant checkout source and Pivota checkout path manually.",
+        },
+        rationale: "Checkout readiness evidence was incomplete or ambiguous.",
+      });
+    }
+
+    return recommendations;
+  }
+
+  private attachDiagnosisToIssue(
+    issue: AgenticGMVIssue,
+    diagnosis: CheckoutVerificationDiagnosis
+  ) {
+    const byType = (patchType: CheckoutPatchRecommendation["patch_type"]) =>
+      diagnosis.patch_recommendations.find(
+        (recommendation) => recommendation.patch_type === patchType
+      )?.patch;
+
+    issue.checkout_verification_diagnosis_id = diagnosis.id;
+    issue.checkout_verification_diagnosis_ids = unique([
+      ...(issue.checkout_verification_diagnosis_ids || []),
+      diagnosis.id,
+    ]);
+    issue.merchant_checkout_patch = byType("merchant_checkout_patch");
+    issue.pivota_checkout_patch = byType("pivota_checkout_patch");
+    issue.cart_handoff_payload_patch = byType("cart_handoff_payload_patch");
+    issue.coupon_passthrough_patch = byType("coupon_passthrough_patch");
+    issue.checkout_attachment_patch = byType("checkout_attachment_patch");
+    issue.checkout_domain_patch = byType("checkout_domain_patch");
+    issue.evidence = {
+      ...issue.evidence,
+      checkout_verification_diagnosis_id: diagnosis.id,
+      checkout_readiness_score: diagnosis.checkout_readiness_score,
+      checkout_verification_confidence: diagnosis.confidence,
+      checkout_verification_root_cause_summary: diagnosis.root_cause_summary,
+    };
+    if (
+      diagnosis.checkout_layer_findings.some((comparison) =>
+        comparison.findings.some(
+          (finding) => finding.finding_type !== "clean_checkout_path"
+        )
+      )
+    ) {
+      issue.fix_targets = unique([...issue.fix_targets, ...diagnosis.refined_fix_targets]);
+      issue.root_cause = `${issue.root_cause} Checkout readiness: ${diagnosis.root_cause_summary}`;
+      issue.recommended_action =
+        "Apply Product Understanding, Offer Execution, and Checkout Verification readiness patches before retesting the same Demand Test query cluster.";
+      issue.status = "diagnosed";
+    }
+    touch(issue);
+  }
+
+  private attachDiagnosisToRetestPlan(
+    issue: AgenticGMVIssue,
+    diagnosis: CheckoutVerificationDiagnosis
+  ) {
+    issue.verification_plan = {
+      ...issue.verification_plan,
+      target_improvement: `${issue.verification_plan.target_improvement}; verify Checkout Verification diagnosis ${diagnosis.id} before before/after comparison.`,
+    };
+    issue.evidence = {
+      ...issue.evidence,
+      checkout_verification_attached_to_retest_plan: diagnosis.id,
+    };
+    touch(issue);
+  }
+}
+
 function demoFixtureMetadata(input: {
   fixtureId: string;
   createdAt: string;
@@ -4572,6 +5515,19 @@ function fixtureRecord(
     record_id: recordId,
     ...(parentRecordId ? { parent_record_id: parentRecordId } : {}),
   };
+}
+
+function isCheckoutFixturePreset(preset: DemoFixturePreset) {
+  return [
+    "clean_checkout_path",
+    "missing_checkout_path",
+    "checkout_url_unreachable",
+    "missing_variant_param",
+    "missing_coupon_param",
+    "stale_checkout_session",
+    "checkout_domain_mismatch",
+    "checkout_not_attached_to_offer",
+  ].includes(preset);
 }
 
 function hasFixtureId(record: unknown, fixtureId: string) {
@@ -4629,7 +5585,8 @@ function offerIssueForFixture(input: {
   preset: DemoFixturePreset;
 }) {
   const { metadata, store, target, cluster, product, preset } = input;
-  const isClean = preset === "clean_offer";
+  const isCheckoutFixture = isCheckoutFixturePreset(preset);
+  const isClean = preset === "clean_offer" || preset === "clean_checkout_path";
   const now = metadata.created_at;
   const issue: AgenticGMVIssue = {
     ...metadata,
@@ -4640,7 +5597,9 @@ function offerIssueForFixture(input: {
     store_url: store.store_url,
     platform: store.platform,
     source_agent: "demand_test_agent",
-    issue_type: "offer_execution_issue",
+    issue_type: isCheckoutFixture
+      ? "checkout_verification_issue"
+      : "offer_execution_issue",
     severity: isClean ? "low" : "medium",
     status: "recommendation_ready",
     affected_product_entities: [product.product_entity_id],
@@ -4656,11 +5615,13 @@ function offerIssueForFixture(input: {
       sku: product.sku,
     },
     root_cause: isClean
-      ? "Internal clean-offer fixture for Offer Execution smoke validation."
-      : "Internal offer mismatch fixture for Offer Execution smoke validation.",
-    fix_targets: isClean ? ["pivota_offer_layer"] : ["pivota_offer_layer"],
+      ? `Internal clean ${isCheckoutFixture ? "checkout" : "offer"} fixture for Agent Center smoke validation.`
+      : `Internal ${isCheckoutFixture ? "checkout" : "offer"} mismatch fixture for Agent Center smoke validation.`,
+    fix_targets: isCheckoutFixture ? ["pivota_checkout_layer"] : ["pivota_offer_layer"],
     recommended_action:
-      "Run Offer Execution diagnosis and verify the generated patch recommendation.",
+      isCheckoutFixture
+        ? "Run Checkout Verification diagnosis and verify the generated patch recommendation."
+        : "Run Offer Execution diagnosis and verify the generated patch recommendation.",
     merchant_source_patch: {},
     pivota_unified_pdp_patch: {},
     estimated_gmv_at_risk: cluster.estimated_demand_value,
@@ -4675,16 +5636,18 @@ function offerIssueForFixture(input: {
       what_ai_recommended_instead:
         "No consumer-facing recommendation evidence is part of this fixture.",
       why_this_likely_happened:
-        "The fixture intentionally controls merchant offer and Pivota offer state.",
+        isCheckoutFixture
+          ? "The fixture intentionally controls merchant checkout source and Pivota checkout path state."
+          : "The fixture intentionally controls merchant offer and Pivota offer state.",
       where_to_fix: "Internal fixture only.",
       recommended_merchant_pdp_changes: [
         "No merchant PDP change is required for this fixture.",
       ],
       recommended_pivota_pdp_changes: [
-        "Review Offer Execution patch recommendations generated by the agent.",
+        `Review ${isCheckoutFixture ? "Checkout Verification" : "Offer Execution"} patch recommendations generated by the agent.`,
       ],
       how_pivota_will_verify_the_fix:
-        "Pivota will rerun the same internal offer diagnosis after fixture changes.",
+        `Pivota will rerun the same internal ${isCheckoutFixture ? "checkout" : "offer"} diagnosis after fixture changes.`,
     },
     approval_required: false,
     verification_plan: {
@@ -4693,7 +5656,7 @@ function offerIssueForFixture(input: {
       prompt_templates: activePromptTemplateIds(),
       success_metric: "visibility_rate",
       target_improvement:
-        "verify Offer Execution fixture diagnosis and patch recommendation",
+        `verify ${isCheckoutFixture ? "Checkout Verification" : "Offer Execution"} fixture diagnosis and patch recommendation`,
     },
     created_at: now,
     updated_at: now,
@@ -4722,6 +5685,7 @@ export class DemoFixtureService {
       ttlMinutes,
       environment,
     });
+    const checkoutPreset = isCheckoutFixturePreset(preset);
     const product = offerSmokeFixtureProduct(metadata);
 
     const store = new MerchantStoreService().create(
@@ -4752,7 +5716,7 @@ export class DemoFixtureService {
           sku_variant_map: true,
           structured_attributes: true,
           offers: true,
-          checkout: false,
+          checkout: checkoutPreset,
           orders: false,
         },
       });
@@ -4788,9 +5752,18 @@ export class DemoFixtureService {
       sku_id: product.sku,
       price: 18.99,
       currency: "USD",
-      promo_price: preset === "expired_coupon" ? 16.99 : null,
-      coupon_code: preset === "expired_coupon" ? "SUN10" : null,
-      coupon_status: preset === "expired_coupon" ? "expired" : "none",
+      promo_price:
+        preset === "expired_coupon" || preset === "missing_coupon_param" ? 16.99 : null,
+      coupon_code:
+        preset === "expired_coupon" || preset === "missing_coupon_param"
+          ? "SUN10"
+          : null,
+      coupon_status:
+        preset === "expired_coupon"
+          ? "expired"
+          : preset === "missing_coupon_param"
+            ? "active"
+            : "none",
       inventory_status: preset === "inventory_mismatch" ? "out_of_stock" : "in_stock",
       inventory_quantity: preset === "inventory_mismatch" ? 0 : 24,
       expires_at:
@@ -4830,6 +5803,81 @@ export class DemoFixtureService {
       state.pivotaOffers.push(pivotaOffer);
     }
 
+    let merchantCheckoutPath: MerchantCheckoutPath | null = null;
+    let pivotaCheckoutPath: PivotaCheckoutPath | null = null;
+    if (checkoutPreset && preset !== "missing_checkout_path" && pivotaOffer) {
+      const couponExpected = preset === "missing_coupon_param";
+      const checkoutDomain = "checkout.internal-demo.pivota.cc";
+      const requiredParams = couponExpected
+        ? ["variant", "quantity", "discount"]
+        : ["variant", "quantity"];
+      merchantCheckoutPath = {
+        ...metadata,
+        id: nextId("merchant_checkout"),
+        merchant_id: store.merchant_id,
+        store_id: store.id,
+        merchant_offer_id: merchantOffer.id,
+        sku_id: product.sku,
+        checkout_url: `https://${checkoutDomain}/${fixtureId}/checkout`,
+        cart_url: `https://${checkoutDomain}/${fixtureId}/cart`,
+        checkout_domain: checkoutDomain,
+        required_params: requiredParams,
+        supported_params: requiredParams,
+        coupon_param_name: couponExpected ? "discount" : null,
+        quantity_param_name: "quantity",
+        variant_param_name: "variant",
+        expires_at:
+          preset === "stale_checkout_session"
+            ? new Date(Date.now() - 60 * 60 * 1000).toISOString()
+            : new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        last_verified_at: createdAt,
+        source: "internal_demo_fixture",
+        created_at: createdAt,
+        updated_at: createdAt,
+      };
+      state.merchantCheckoutPaths.push(merchantCheckoutPath);
+
+      const payload: Record<string, unknown> = {
+        variant: product.sku,
+        quantity: 1,
+      };
+      if (couponExpected) payload.discount = merchantOffer.coupon_code;
+      if (preset === "missing_variant_param") delete payload.variant;
+      if (preset === "missing_coupon_param") delete payload.discount;
+
+      pivotaCheckoutPath = {
+        ...metadata,
+        id: `pivota_checkout_${fixtureId}`,
+        pivota_offer_id: pivotaOffer.id,
+        product_entity_id: product.product_entity_id,
+        merchant_id: store.merchant_id,
+        store_id: store.id,
+        sku_id: product.sku,
+        checkout_url:
+          preset === "checkout_url_unreachable"
+            ? `https://${checkoutDomain}/unreachable/${fixtureId}/checkout`
+            : preset === "checkout_domain_mismatch"
+              ? `https://checkout.other-demo.test/${fixtureId}/checkout`
+              : `https://${checkoutDomain}/${fixtureId}/checkout`,
+        cart_handoff_payload: payload,
+        checkout_domain:
+          preset === "checkout_domain_mismatch"
+            ? "checkout.other-demo.test"
+            : checkoutDomain,
+        required_params: requiredParams,
+        coupon_code: couponExpected ? null : merchantOffer.coupon_code,
+        quantity: 1,
+        variant_id: preset === "missing_variant_param" ? null : product.sku,
+        execution_status:
+          preset === "clean_checkout_path" ? "ready" : "needs_sync",
+        attached_to_pivota_offer: preset !== "checkout_not_attached_to_offer",
+        last_verified_at: createdAt,
+        created_at: createdAt,
+        updated_at: createdAt,
+      };
+      state.pivotaCheckoutPaths.push(pivotaCheckoutPath);
+    }
+
     const issue = offerIssueForFixture({
       metadata,
       store,
@@ -4852,6 +5900,16 @@ export class DemoFixtureService {
     ];
     if (pivotaOffer) {
       records.push(fixtureRecord("pivota_offer", pivotaOffer.id, product.id));
+    }
+    if (merchantCheckoutPath) {
+      records.push(
+        fixtureRecord("merchant_checkout_path", merchantCheckoutPath.id, merchantOffer.id)
+      );
+    }
+    if (pivotaCheckoutPath) {
+      records.push(
+        fixtureRecord("pivota_checkout_path", pivotaCheckoutPath.id, pivotaOffer?.id)
+      );
     }
 
     const fixture: DemoFixture = {
@@ -4878,6 +5936,8 @@ export class DemoFixtureService {
       product,
       merchant_offer: merchantOffer,
       pivota_offer: pivotaOffer,
+      merchant_checkout_path: merchantCheckoutPath,
+      pivota_checkout_path: pivotaCheckoutPath,
       issue,
     };
   }
@@ -4918,8 +5978,17 @@ export class DemoFixtureService {
         hasFixtureId(item, fixtureId)
       ),
       pivota_offers: state.pivotaOffers.filter((item) => hasFixtureId(item, fixtureId)),
+      merchant_checkout_paths: state.merchantCheckoutPaths.filter((item) =>
+        hasFixtureId(item, fixtureId)
+      ),
+      pivota_checkout_paths: state.pivotaCheckoutPaths.filter((item) =>
+        hasFixtureId(item, fixtureId)
+      ),
       issues: state.issues.filter((item) => hasFixtureId(item, fixtureId)),
       offer_diagnoses: state.offerExecutionDiagnoses.filter((item) =>
+        this.fixtureIssueIds(fixtureId).includes(item.issue_id)
+      ),
+      checkout_diagnoses: state.checkoutVerificationDiagnoses.filter((item) =>
         this.fixtureIssueIds(fixtureId).includes(item.issue_id)
       ),
       usage_events: state.usageEvents.filter((item) =>
@@ -4989,6 +6058,9 @@ export class DemoFixtureService {
     state.offerExecutionDiagnoses = state.offerExecutionDiagnoses.filter(
       (item) => !issueIds.includes(item.issue_id)
     );
+    state.checkoutVerificationDiagnoses = state.checkoutVerificationDiagnoses.filter(
+      (item) => !issueIds.includes(item.issue_id)
+    );
     state.productUnderstandingDiagnoses = state.productUnderstandingDiagnoses.filter(
       (item) => !issueIds.includes(item.issue_id)
     );
@@ -5026,6 +6098,12 @@ export class DemoFixtureService {
       (item) => !hasFixtureId(item, fixtureId)
     );
     state.pivotaOffers = state.pivotaOffers.filter(
+      (item) => !hasFixtureId(item, fixtureId)
+    );
+    state.merchantCheckoutPaths = state.merchantCheckoutPaths.filter(
+      (item) => !hasFixtureId(item, fixtureId)
+    );
+    state.pivotaCheckoutPaths = state.pivotaCheckoutPaths.filter(
       (item) => !hasFixtureId(item, fixtureId)
     );
     state.connections = state.connections.filter(

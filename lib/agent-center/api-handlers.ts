@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server.js";
 import { getAgentCenterState, DEMO_MERCHANT_ID } from "./repository.ts";
 import {
+  CheckoutVerificationService,
   DemoFixtureService,
   DemoScenarioService,
   DemandTestJobService,
@@ -300,6 +301,13 @@ export async function handleAgentCenterRequest(
             debug: service.debugPayload(id),
           });
         }
+        if (action === "checkout-diagnosis") {
+          const service = new CheckoutVerificationService();
+          return json({
+            diagnosis: service.latest(id),
+            debug: service.debugPayload(id),
+          });
+        }
         const issue = state.issues.find((item) => item.id === id);
         return issue ? json({ issue }) : json({ error: "Issue not found" }, 404);
       }
@@ -358,6 +366,25 @@ export async function handleAgentCenterRequest(
         action === "attach-offer-diagnosis-to-retest"
       ) {
         const diagnosis = new OfferExecutionService().attachToRetestPlan(id);
+        const issue = state.issues.find((item) => item.id === id);
+        return json({ diagnosis, issue });
+      }
+      if (req.method === "POST" && id && action === "checkout-diagnosis") {
+        const diagnosis = new CheckoutVerificationService().runDiagnosis(id);
+        const issue = state.issues.find((item) => item.id === id);
+        return json({ diagnosis, issue }, 201);
+      }
+      if (req.method === "POST" && id && action === "regenerate-checkout-patch") {
+        const diagnosis = new CheckoutVerificationService().regeneratePatch(id);
+        const issue = state.issues.find((item) => item.id === id);
+        return json({ diagnosis, issue }, 201);
+      }
+      if (
+        req.method === "POST" &&
+        id &&
+        action === "attach-checkout-diagnosis-to-retest"
+      ) {
+        const diagnosis = new CheckoutVerificationService().attachToRetestPlan(id);
         const issue = state.issues.find((item) => item.id === id);
         return json({ diagnosis, issue });
       }

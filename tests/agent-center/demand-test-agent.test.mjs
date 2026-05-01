@@ -22,6 +22,7 @@ const {
   parseProviderOutput,
 } = provider;
 const {
+  CheckoutVerificationService,
   cleanupExpiredDemoFixtures,
   DemoScenarioService,
   DemoFixtureService,
@@ -567,6 +568,90 @@ function createOfferExecutionFixture({
 
 function offerFindingTypes(diagnosis) {
   return diagnosis.offer_layer_findings.flatMap((comparison) =>
+    comparison.findings.map((finding) => finding.finding_type)
+  );
+}
+
+function createCheckoutVerificationFixture({
+  merchantCheckoutPatch = {},
+  pivotaCheckoutPatch = {},
+  merchantOfferPatch = {},
+  pivotaOfferPatch = {},
+  omitMerchantCheckout = false,
+  omitPivotaCheckout = false,
+} = {}) {
+  const fixture = createOfferExecutionFixture({
+    merchantOfferPatch,
+    pivotaOfferPatch,
+    issueType: "offer_execution_issue",
+  });
+  const now = new Date("2026-05-01T12:00:00.000Z").toISOString();
+  const requiredParams = fixture.merchantOffer.coupon_code
+    ? ["variant", "quantity", "discount"]
+    : ["variant", "quantity"];
+  const merchantCheckoutPath = omitMerchantCheckout
+    ? null
+    : {
+        id: "merchant_checkout_isntree_50ml",
+        merchant_id: fixture.store.merchant_id,
+        store_id: fixture.store.id,
+        merchant_offer_id: fixture.merchantOffer.id,
+        sku_id: fixture.product.sku,
+        checkout_url: "https://checkout.isntree.example/checkout",
+        cart_url: "https://checkout.isntree.example/cart",
+        checkout_domain: "checkout.isntree.example",
+        required_params: requiredParams,
+        supported_params: requiredParams,
+        coupon_param_name: fixture.merchantOffer.coupon_code ? "discount" : null,
+        quantity_param_name: "quantity",
+        variant_param_name: "variant",
+        expires_at: new Date("2027-05-01T13:00:00.000Z").toISOString(),
+        last_verified_at: now,
+        source: "test_fixture",
+        created_at: now,
+        updated_at: now,
+        ...merchantCheckoutPatch,
+      };
+  const payload = {
+    variant: fixture.product.sku,
+    quantity: 1,
+    ...(fixture.merchantOffer.coupon_code
+      ? { discount: fixture.merchantOffer.coupon_code }
+      : {}),
+  };
+  const pivotaCheckoutPath =
+    omitPivotaCheckout || !fixture.pivotaOffer
+      ? null
+      : {
+          id: "pivota_checkout_isntree_50ml",
+          pivota_offer_id: fixture.pivotaOffer.id,
+          product_entity_id: fixture.product.product_entity_id,
+          merchant_id: fixture.store.merchant_id,
+          store_id: fixture.store.id,
+          sku_id: fixture.product.sku,
+          checkout_url: "https://checkout.isntree.example/checkout",
+          cart_handoff_payload: payload,
+          checkout_domain: "checkout.isntree.example",
+          required_params: requiredParams,
+          coupon_code: fixture.merchantOffer.coupon_code,
+          quantity: 1,
+          variant_id: fixture.product.sku,
+          execution_status: "ready",
+          attached_to_pivota_offer: true,
+          last_verified_at: now,
+          created_at: now,
+          updated_at: now,
+          ...pivotaCheckoutPatch,
+        };
+
+  if (merchantCheckoutPath) getAgentCenterState().merchantCheckoutPaths.push(merchantCheckoutPath);
+  if (pivotaCheckoutPath) getAgentCenterState().pivotaCheckoutPaths.push(pivotaCheckoutPath);
+
+  return { ...fixture, merchantCheckoutPath, pivotaCheckoutPath };
+}
+
+function checkoutFindingTypes(diagnosis) {
+  return diagnosis.checkout_layer_findings.flatMap((comparison) =>
     comparison.findings.map((finding) => finding.finding_type)
   );
 }
@@ -2307,6 +2392,243 @@ test("offer execution API returns debug payload and can attach diagnosis to rete
   );
 });
 
+test("checkout verification diagnosis treats clean path as high readiness without a new issue", () => {
+  const fixture = createCheckoutVerificationFixture();
+  const issueCountBefore = getAgentCenterState().issues.length;
+  const diagnosis = new CheckoutVerificationService().runDiagnosis(fixture.issue.id);
+  const usageEvent = getAgentCenterState().usageEvents.find(
+    (event) => event.id === diagnosis.usage_event_ids[0]
+  );
+
+  assert.deepEqual(checkoutFindingTypes(diagnosis), ["clean_checkout_path"]);
+  assert.equal(diagnosis.checkout_readiness_score, 100);
+  assert.equal(diagnosis.confidence, "high");
+  assert.equal(getAgentCenterState().issues.length, issueCountBefore);
+  assert.equal(usageEvent.event_type, "checkout_verification_credit");
+  assert.equal(usageEvent.agent_type, "checkout_verification_agent");
+  assert.equal(usageEvent.workflow_type, "checkout_readiness");
+  assert.equal(usageEvent.provider, "internal");
+  assert.equal(usageEvent.model, "checkout-verification-deterministic-v1");
+  assert.equal(usageEvent.billing_mode, "preview_only");
+  assert.equal(usageEvent.billing_status, "not_invoiced");
+});
+
+test("checkout verification diagnosis detects missing checkout path", () => {
+  const fixture = createCheckoutVerificationFixture({
+    omitMerchantCheckout: true,
+    omitPivotaCheckout: true,
+  });
+  const diagnosis = new CheckoutVerificationService().runDiagnosis(fixture.issue.id);
+  const patch = diagnosis.patch_recommendations.find(
+    (item) => item.patch_type === "merchant_checkout_patch"
+  );
+
+  assert.ok(checkoutFindingTypes(diagnosis).includes("missing_checkout_path"));
+  assert.ok(diagnosis.refined_fix_targets.includes("merchant_checkout_source"));
+  assert.ok(diagnosis.refined_fix_targets.includes("pivota_checkout_layer"));
+  assert.equal(patch.target, "merchant_checkout_source");
+});
+
+test("checkout verification diagnosis detects unreachable checkout URL", () => {
+  const fixture = createCheckoutVerificationFixture({
+    pivotaCheckoutPatch: {
+      checkout_url: "https://checkout.isntree.example/unreachable/session",
+    },
+  });
+  const diagnosis = new CheckoutVerificationService().runDiagnosis(fixture.issue.id);
+  const comparison = diagnosis.checkout_layer_findings[0];
+  const patch = diagnosis.patch_recommendations.find(
+    (item) => item.patch_type === "pivota_checkout_patch"
+  );
+
+  assert.ok(checkoutFindingTypes(diagnosis).includes("checkout_url_unreachable"));
+  assert.equal(comparison.checkout_url_preflight_status, "failed");
+  assert.equal(comparison.checkout_url_status_code, 404);
+  assert.equal(patch.target, "pivota_checkout_layer");
+});
+
+test("checkout verification diagnosis detects missing variant parameter", () => {
+  const fixture = createCheckoutVerificationFixture({
+    pivotaCheckoutPatch: {
+      cart_handoff_payload: { quantity: 1 },
+      variant_id: null,
+    },
+  });
+  const diagnosis = new CheckoutVerificationService().runDiagnosis(fixture.issue.id);
+  const patch = diagnosis.patch_recommendations.find(
+    (item) => item.patch_type === "cart_handoff_payload_patch"
+  );
+
+  assert.ok(checkoutFindingTypes(diagnosis).includes("variant_param_missing"));
+  assert.ok(diagnosis.refined_fix_targets.includes("merchant_cart_config"));
+  assert.equal(patch.patch.expected_variant_id, fixture.product.sku);
+});
+
+test("checkout verification diagnosis detects missing coupon passthrough parameter", () => {
+  const fixture = createCheckoutVerificationFixture({
+    merchantOfferPatch: {
+      promo_price: 16.99,
+      coupon_code: "SUN10",
+      coupon_status: "active",
+    },
+    pivotaOfferPatch: {
+      promo_price: 16.99,
+      coupon_code: "SUN10",
+      coupon_status: "active",
+    },
+    pivotaCheckoutPatch: {
+      cart_handoff_payload: {
+        variant: "ISNTREE-PU-WATERY-SUN-GEL-SPF50-PA4-50ML",
+        quantity: 1,
+      },
+      coupon_code: null,
+    },
+  });
+  const diagnosis = new CheckoutVerificationService().runDiagnosis(fixture.issue.id);
+  const patch = diagnosis.patch_recommendations.find(
+    (item) => item.patch_type === "coupon_passthrough_patch"
+  );
+
+  assert.ok(checkoutFindingTypes(diagnosis).includes("coupon_param_missing"));
+  assert.ok(diagnosis.refined_fix_targets.includes("pivota_checkout_layer"));
+  assert.ok(diagnosis.refined_fix_targets.includes("merchant_promo_source"));
+  assert.equal(patch.patch.coupon_code, "SUN10");
+});
+
+test("checkout verification diagnosis detects stale checkout session", () => {
+  const fixture = createCheckoutVerificationFixture({
+    merchantCheckoutPatch: {
+      expires_at: "2026-04-01T00:00:00.000Z",
+    },
+  });
+  const diagnosis = new CheckoutVerificationService().runDiagnosis(fixture.issue.id);
+
+  assert.ok(checkoutFindingTypes(diagnosis).includes("stale_checkout_session"));
+  assert.ok(diagnosis.refined_fix_targets.includes("merchant_checkout_source"));
+});
+
+test("checkout verification diagnosis detects checkout domain mismatch", () => {
+  const fixture = createCheckoutVerificationFixture({
+    pivotaCheckoutPatch: {
+      checkout_url: "https://checkout.other.example/checkout",
+      checkout_domain: "checkout.other.example",
+    },
+  });
+  const diagnosis = new CheckoutVerificationService().runDiagnosis(fixture.issue.id);
+  const patch = diagnosis.patch_recommendations.find(
+    (item) => item.patch_type === "checkout_domain_patch"
+  );
+
+  assert.ok(checkoutFindingTypes(diagnosis).includes("checkout_domain_mismatch"));
+  assert.ok(diagnosis.refined_fix_targets.includes("pivota_checkout_layer"));
+  assert.equal(patch.patch.expected_checkout_domain, "checkout.isntree.example");
+});
+
+test("checkout verification diagnosis detects checkout not attached to offer", () => {
+  const fixture = createCheckoutVerificationFixture({
+    pivotaCheckoutPatch: {
+      attached_to_pivota_offer: false,
+    },
+  });
+  const diagnosis = new CheckoutVerificationService().runDiagnosis(fixture.issue.id);
+  const patch = diagnosis.patch_recommendations.find(
+    (item) => item.patch_type === "checkout_attachment_patch"
+  );
+
+  assert.ok(
+    checkoutFindingTypes(diagnosis).includes(
+      "checkout_not_attached_to_pivota_offer"
+    )
+  );
+  assert.ok(diagnosis.refined_fix_targets.includes("pivota_offer_layer"));
+  assert.equal(patch.patch.attached_to_pivota_offer, true);
+});
+
+test("checkout verification usage events are idempotent across reruns and patch regeneration", () => {
+  const fixture = createCheckoutVerificationFixture({
+    pivotaCheckoutPatch: {
+      cart_handoff_payload: { quantity: 1 },
+      variant_id: null,
+    },
+  });
+  const service = new CheckoutVerificationService();
+  const first = service.runDiagnosis(fixture.issue.id);
+  const usageCount = getAgentCenterState().usageEvents.length;
+  const second = service.runDiagnosis(fixture.issue.id);
+  const regenerated = service.regeneratePatch(fixture.issue.id);
+
+  assert.equal(first.id, second.id);
+  assert.notEqual(first.id, regenerated.id);
+  assert.equal(getAgentCenterState().usageEvents.length, usageCount);
+  assert.deepEqual(first.usage_event_ids, second.usage_event_ids);
+  assert.deepEqual(first.usage_event_ids, regenerated.usage_event_ids);
+  assert.ok(
+    getAgentCenterState()
+      .issues.find((item) => item.id === fixture.issue.id)
+      .checkout_verification_diagnosis_ids.includes(regenerated.id)
+  );
+});
+
+test("checkout verification API returns debug payload and can attach diagnosis to retest plan", async () => {
+  const fixture = createCheckoutVerificationFixture({
+    pivotaCheckoutPatch: {
+      checkout_url: "https://checkout.isntree.example/unreachable/session",
+    },
+  });
+  const created = await handleAgentCenterRequest(
+    new NextRequest(
+      `https://example.test/api/agent-center/issues/${fixture.issue.id}/checkout-diagnosis`,
+      { method: "POST" }
+    ),
+    { path: ["issues", fixture.issue.id, "checkout-diagnosis"] }
+  );
+  const createdPayload = await created.json();
+  const attached = await handleAgentCenterRequest(
+    new NextRequest(
+      `https://example.test/api/agent-center/issues/${fixture.issue.id}/attach-checkout-diagnosis-to-retest`,
+      { method: "POST" }
+    ),
+    { path: ["issues", fixture.issue.id, "attach-checkout-diagnosis-to-retest"] }
+  );
+  const attachedPayload = await attached.json();
+  const fetched = await handleAgentCenterRequest(
+    new NextRequest(
+      `https://example.test/api/agent-center/issues/${fixture.issue.id}/checkout-diagnosis`
+    ),
+    { path: ["issues", fixture.issue.id, "checkout-diagnosis"] }
+  );
+  const fetchedPayload = await fetched.json();
+
+  assert.equal(created.status, 201);
+  assert.equal(createdPayload.diagnosis.issue_id, fixture.issue.id);
+  assert.equal(attached.status, 200);
+  assert.equal(
+    attachedPayload.issue.evidence.checkout_verification_attached_to_retest_plan,
+    attachedPayload.diagnosis.id
+  );
+  assert.match(
+    attachedPayload.issue.verification_plan.target_improvement,
+    /Checkout Verification diagnosis/
+  );
+  assert.equal(fetched.status, 200);
+  assert.equal(fetchedPayload.debug.source_issue_summary.issue_id, fixture.issue.id);
+  assert.equal(
+    fetchedPayload.debug.merchant_checkout_path.id,
+    fixture.merchantCheckoutPath.id
+  );
+  assert.deepEqual(
+    fetchedPayload.debug.refined_fix_targets,
+    fetchedPayload.diagnosis.refined_fix_targets
+  );
+  assert.ok(
+    fetchedPayload.debug.usage_events.every(
+      (event) =>
+        event.billing_mode === "preview_only" &&
+        event.billing_status === "not_invoiced"
+    )
+  );
+});
+
 test("internal demo fixture route returns 403 when disabled", async () => {
   resetAgentCenterState();
   const originalEnabled = process.env.ENABLE_INTERNAL_DEMO_FIXTURES;
@@ -2511,6 +2833,53 @@ test("internal demo fixture presets cover inventory mismatch and missing Pivota 
   assert.equal(missingFixture.pivota_offer, null);
 });
 
+test("internal demo fixture presets cover checkout verification scenarios", () => {
+  resetAgentCenterState();
+  const cleanFixture = new DemoFixtureService().create({
+    preset: "clean_checkout_path",
+    environment: "test",
+  });
+  const cleanDiagnosis = new CheckoutVerificationService().runDiagnosis(
+    cleanFixture.issue.id
+  );
+
+  assert.deepEqual(checkoutFindingTypes(cleanDiagnosis), ["clean_checkout_path"]);
+  assert.equal(cleanDiagnosis.checkout_readiness_score, 100);
+  assert.ok(cleanFixture.merchant_checkout_path.demo_fixture);
+  assert.ok(cleanFixture.pivota_checkout_path.demo_fixture);
+
+  const expectations = [
+    ["missing_checkout_path", "missing_checkout_path"],
+    ["checkout_url_unreachable", "checkout_url_unreachable"],
+    ["missing_variant_param", "variant_param_missing"],
+    ["missing_coupon_param", "coupon_param_missing"],
+    ["stale_checkout_session", "stale_checkout_session"],
+    ["checkout_domain_mismatch", "checkout_domain_mismatch"],
+    ["checkout_not_attached_to_offer", "checkout_not_attached_to_pivota_offer"],
+  ];
+
+  for (const [preset, expectedFinding] of expectations) {
+    const fixture = new DemoFixtureService().create({
+      preset,
+      environment: "test",
+    });
+    const diagnosis = new CheckoutVerificationService().runDiagnosis(
+      fixture.issue.id
+    );
+
+    assert.ok(
+      checkoutFindingTypes(diagnosis).includes(expectedFinding),
+      `${preset} should generate ${expectedFinding}`
+    );
+    assert.equal(
+      getAgentCenterState()
+        .usageEvents.find((event) => event.id === diagnosis.usage_event_ids[0])
+        .billing_mode,
+      "preview_only"
+    );
+  }
+});
+
 test("internal demo fixture cleanup removes fixture records", async () => {
   resetAgentCenterState();
   await withInternalFixtureEnv(async () => {
@@ -2575,6 +2944,66 @@ test("internal demo fixture cleanup removes fixture records", async () => {
   });
 });
 
+test("internal demo fixture cleanup removes checkout fixture records", async () => {
+  resetAgentCenterState();
+  await withInternalFixtureEnv(async () => {
+    const created = await handleInternalDemoFixturesRequest(
+      internalFixtureRequest(
+        "https://example.test/api/internal/agent-center/demo-fixtures",
+        {
+          method: "POST",
+          body: JSON.stringify({ preset: "missing_variant_param" }),
+        }
+      )
+    );
+    const createdPayload = await created.json();
+    const fixtureId = createdPayload.demo_fixture.fixture.fixture_id;
+    const issueId = createdPayload.demo_fixture.issue.id;
+    const diagnosis = new CheckoutVerificationService().runDiagnosis(issueId);
+
+    assert.ok(
+      getAgentCenterState().merchantCheckoutPaths.some(
+        (path) => path.fixture_id === fixtureId
+      )
+    );
+    assert.ok(
+      getAgentCenterState().checkoutVerificationDiagnoses.some(
+        (item) => item.id === diagnosis.id
+      )
+    );
+
+    const deleted = await handleInternalDemoFixturesRequest(
+      internalFixtureRequest(
+        `https://example.test/api/internal/agent-center/demo-fixtures/${fixtureId}`,
+        { method: "DELETE" }
+      ),
+      { fixtureId }
+    );
+    const deletedPayload = await deleted.json();
+
+    assert.equal(deleted.status, 200);
+    assert.equal(deletedPayload.demo_fixture.fixture.cleanup_status, "deleted");
+    assert.equal(
+      getAgentCenterState().merchantCheckoutPaths.some(
+        (path) => path.fixture_id === fixtureId
+      ),
+      false
+    );
+    assert.equal(
+      getAgentCenterState().pivotaCheckoutPaths.some(
+        (path) => path.fixture_id === fixtureId
+      ),
+      false
+    );
+    assert.equal(
+      getAgentCenterState().checkoutVerificationDiagnoses.some(
+        (item) => item.issue_id === issueId
+      ),
+      false
+    );
+  });
+});
+
 test("cleanupExpiredDemoFixtures expires stale internal fixtures", () => {
   resetAgentCenterState();
   const created = new DemoFixtureService().create({
@@ -2619,6 +3048,21 @@ test("Issue Detail renders Offer Execution Diagnosis controls", async () => {
   assert.match(source, /offer-diagnosis/);
   assert.match(source, /regenerate-offer-patch/);
   assert.match(source, /attach-offer-diagnosis-to-retest/);
+});
+
+test("Issue Detail renders Checkout Verification Diagnosis controls", async () => {
+  const source = await readFile(
+    new URL("../../app/agent-center/issues/[issueId]/page.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(source, /Checkout Verification Diagnosis/);
+  assert.match(source, /Run Checkout Diagnosis/);
+  assert.match(source, /Regenerate Checkout Patch/);
+  assert.match(source, /Attach to Retest Plan/);
+  assert.match(source, /checkout-diagnosis/);
+  assert.match(source, /regenerate-checkout-patch/);
+  assert.match(source, /attach-checkout-diagnosis-to-retest/);
 });
 
 test("issue debug view and retest preparation expose internal validation evidence", () => {
