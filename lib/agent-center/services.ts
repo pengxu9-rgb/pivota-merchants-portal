@@ -7832,6 +7832,9 @@ export class ProductionValidationRunService {
         !run.product_diagnosis_ids.includes(diagnosis.id) &&
         !issueIds.has(diagnosis.issue_id)
     );
+    state.issueResolutionPlans = state.issueResolutionPlans.filter(
+      (plan) => !issueIds.has(plan.issue_id)
+    );
     state.gmvAssuranceSnapshots = state.gmvAssuranceSnapshots.filter(
       (snapshot) =>
         snapshot.id !== run.gmv_assurance_snapshot_id &&
@@ -8596,6 +8599,9 @@ export class DemoFixtureService {
     );
     state.retestPreparations = state.retestPreparations.filter(
       (item) => !issueIds.includes(item.issue_id) && !targetIds.includes(item.scan_target_id)
+    );
+    state.issueResolutionPlans = state.issueResolutionPlans.filter(
+      (item) => !issueIds.includes(item.issue_id)
     );
     state.issues = state.issues.filter((item) => !issueIds.includes(item.id));
     state.scores = state.scores.filter(

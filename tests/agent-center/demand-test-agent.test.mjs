@@ -948,6 +948,10 @@ test("production validation run survives fetch and delete across persistent repo
       const completed = await new ProductionValidationRunService().run(run.id);
       assert.equal(completed.status, "completed");
       assert.ok(completed.scan_target_id);
+      assert.ok(completed.issue_ids.length > 0);
+
+      const plan = new IssueResolutionService().generate(completed.issue_ids[0]);
+      assert.equal(plan.issue_id, completed.issue_ids[0]);
 
       setAgentCenterRepositoryForTests(new FileBackedAgentCenterRepository(filePath));
       const deleted = new ProductionValidationRunService().delete(run.id);
@@ -958,6 +962,12 @@ test("production validation run survives fetch and delete across persistent repo
       assert.equal(
         getAgentCenterState().scanTargets.some(
           (target) => target.id === completed.scan_target_id
+        ),
+        false
+      );
+      assert.equal(
+        getAgentCenterState().issueResolutionPlans.some(
+          (item) => item.issue_id === completed.issue_ids[0]
         ),
         false
       );
