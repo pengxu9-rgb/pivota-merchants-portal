@@ -16,10 +16,13 @@ import {
 import type {
   AgenticGMVIssue,
   AgenticGMVIssueType,
+  AttributeGap,
+  CompetitorMappingFinding,
   DemandTestInput,
   DemandTestJob,
   DemandTestJobStatus,
   DemandVisibilityScore,
+  EntityMappingFinding,
   FixTarget,
   InputReadinessSnapshot,
   LLMSurfaceResult,
@@ -27,17 +30,22 @@ import type {
   MerchantStore,
   MatchConfidence,
   ParsedRecommendation,
+  ProductLayerComparison,
   ProductMatchLevel,
   ProductMatchResult,
+  ProductPatchRecommendation,
   ProductRecord,
+  ProductUnderstandingDiagnosis,
   ProviderName,
   QueryCluster,
+  QueryMappingFinding,
   QueryIntentType,
   RetestPreparation,
   ScanMode,
   ScanTarget,
   UsageEstimate,
   UsageEvent,
+  VariantMappingFinding,
   VisibilityScoreValue,
   VerificationRun,
 } from "./types";
@@ -566,9 +574,30 @@ function findScanTarget(scanTargetId: string) {
   return target;
 }
 
+function findIssue(issueId: string) {
+  const issue = getAgentCenterState().issues.find((item) => item.id === issueId);
+  if (!issue) throw new Error(`Issue not found: ${issueId}`);
+  return issue;
+}
+
 function findProduct(store: MerchantStore, productId?: string) {
   if (!productId) return store.products?.[0];
   return store.products?.find((product) => product.id === productId);
+}
+
+function findProductForIssue(
+  store: MerchantStore,
+  issue: AgenticGMVIssue,
+  clusters: QueryCluster[] = []
+) {
+  return (
+    store.products?.find(
+      (product) =>
+        issue.affected_product_entities.includes(product.product_entity_id) ||
+        issue.affected_skus.includes(product.sku) ||
+        clusters.some((cluster) => cluster.product_id === product.id)
+    ) || store.products?.[0]
+  );
 }
 
 function applyQueryClusterScope(
@@ -1088,6 +1117,8 @@ export class UsageMeteringService {
       event_type: "ai_test_credit",
       quantity: input.quantity || 1,
       source_agent: "demand_test_agent",
+      agent_type: "demand_test_agent",
+      workflow_type: input.job.job_type === "retest" ? "retest" : "demand_scan",
       scan_mode: input.job.scan_mode,
       provider: input.run.provider,
       model: input.run.model,
@@ -1096,6 +1127,46 @@ export class UsageMeteringService {
       input_tokens: input.result.input_tokens,
       output_tokens: input.result.output_tokens,
       billable: input.billable ?? true,
+      billing_mode: "preview_only",
+      billing_status: "not_invoiced",
+      created_at: now,
+      updated_at: now,
+    };
+    state.usageEvents.push(event);
+    return event;
+  }
+
+  recordProductUnderstanding(input: {
+    issue: AgenticGMVIssue;
+    diagnosisId?: string;
+    quantity?: number;
+  }) {
+    const key = `product_understanding:${input.issue.id}:product_diagnosis:v1`;
+    const state = getAgentCenterState();
+    const existing = state.usageEvents.find((event) => event.idempotency_key === key);
+    if (existing) return existing;
+
+    const target = findScanTarget(input.issue.scan_target_id);
+    const now = nowIso();
+    const event: UsageEvent = {
+      id: nextId("usage"),
+      idempotency_key: key,
+      merchant_id: input.issue.merchant_id,
+      store_id: input.issue.store_id,
+      scan_target_id: input.issue.scan_target_id,
+      event_type: "product_understanding_credit",
+      quantity: input.quantity || 1,
+      source_agent: "product_understanding_agent",
+      agent_type: "product_understanding_agent",
+      workflow_type: "product_diagnosis",
+      scan_mode: target.scan_mode,
+      provider: "internal",
+      model: "product-understanding-deterministic-v1",
+      query_cluster_id: input.issue.affected_query_clusters[0] || "none",
+      prompt_template_id: "product_understanding_diagnosis_v1",
+      input_tokens: 0,
+      output_tokens: 0,
+      billable: true,
       billing_mode: "preview_only",
       billing_status: "not_invoiced",
       created_at: now,
@@ -1264,6 +1335,24 @@ export class ProductMatchService {
 
     if (!candidates.length || evaluation.match_level === "sku_match") {
       return evaluation;
+    }
+
+    const sameEntityVariants = candidates.every(
+      (candidate) =>
+        candidate.product.product_entity_id === evaluation.product.product_entity_id
+    );
+
+    if (sameEntityVariants) {
+      return {
+        ...evaluation,
+        ambiguous_match: true,
+        match_level: "canonical_product_match" as const,
+        match_confidence_score: 0.82,
+        counts_for_visibility: true,
+        counts_for_sku_exact_match: false,
+        match_reason:
+          "Brand and core product name matched the canonical ProductEntity, but multiple same-entity SKU variants had similar confidence and the model omitted SKU/variant suffix terms.",
+      };
     }
 
     return {
@@ -2925,6 +3014,792 @@ export class VerificationService {
         : "failed_verification";
     touch(issue);
     return verification;
+  }
+}
+
+function presentAttributeKeys(attributes: Record<string, unknown>) {
+  return Object.entries(attributes)
+    .filter(([, value]) => isAttributePresent(value))
+    .map(([key]) => key);
+}
+
+function expectedAttributeLabel(attribute: string) {
+  return `Query cluster requires ${titleCase(attribute)} evidence.`;
+}
+
+function attributeGaps(input: {
+  attributes: string[];
+  layer: AttributeGap["layer"];
+  fixTarget: FixTarget;
+  severity?: AttributeGap["severity"];
+}) {
+  return input.attributes.map<AttributeGap>((attribute) => ({
+    attribute,
+    layer: input.layer,
+    expected: expectedAttributeLabel(attribute),
+    severity: input.severity || "medium",
+    fix_target: input.fixTarget,
+    recommendation:
+      input.layer === "merchant_source"
+        ? `Add ${titleCase(attribute)} to merchant PDP/catalog source data.`
+        : input.layer === "pivota_unified_pdp"
+          ? `Normalize ${titleCase(attribute)} on the Pivota unified PDP.`
+          : `Add ${titleCase(attribute)} in merchant source data and sync it into Pivota.`,
+  }));
+}
+
+function layerComparison(input: {
+  layer: ProductLayerComparison["layer"];
+  product?: ProductRecord;
+  missingAttributes: string[];
+  gaps: AttributeGap[];
+}) {
+  const attributes =
+    input.layer === "merchant_source"
+      ? input.product?.attributes || {}
+      : input.product?.pivota_attributes || {};
+
+  return {
+    layer: input.layer,
+    product_title: input.product?.title,
+    product_entity_id: input.product?.product_entity_id,
+    sku: input.product?.sku,
+    present_attributes: presentAttributeKeys(attributes),
+    missing_attributes: input.missingAttributes,
+    pdp_url_present:
+      input.layer === "merchant_source"
+        ? Boolean(input.product?.pdp_url)
+        : Boolean(input.product?.pivota_attributes?.pivota_pdp_url),
+    agent_summary_present:
+      input.layer === "merchant_source"
+        ? Boolean(input.product?.agent_summary)
+        : Boolean(input.product?.pivota_attributes?.agent_summary || input.product?.agent_summary),
+    findings: input.gaps,
+  } satisfies ProductLayerComparison;
+}
+
+function productUnderstandingRootCause(input: {
+  merchantMissing: string[];
+  pivotaMissing: string[];
+  entityFindings: EntityMappingFinding[];
+  variantFindings: VariantMappingFinding[];
+  queryFindings: QueryMappingFinding[];
+  competitorFindings: CompetitorMappingFinding[];
+}) {
+  if (
+    input.entityFindings.some((finding) =>
+      ["product_entity_mapping_issue", "wrong_product_family", "ambiguous_product_match"].includes(
+        finding.finding_type
+      )
+    )
+  ) {
+    return "The Demand Test issue is likely driven by product/entity mapping ambiguity: model output matched the brand but did not reliably match the canonical product family or ProductEntity.";
+  }
+
+  if (input.merchantMissing.length && input.pivotaMissing.length) {
+    return `Merchant PDP/catalog source data is missing ${input.merchantMissing.map(titleCase).join(", ")}, and Pivota does not have normalized values for the same demand attributes.`;
+  }
+
+  if (!input.merchantMissing.length && input.pivotaMissing.length) {
+    return `Merchant source data is complete for the tested attributes, but the Pivota unified PDP is missing normalized ${input.pivotaMissing.map(titleCase).join(", ")} values.`;
+  }
+
+  if (input.merchantMissing.length) {
+    return `Merchant PDP/catalog source data is missing ${input.merchantMissing.map(titleCase).join(", ")}, which weakens downstream product understanding.`;
+  }
+
+  if (
+    input.variantFindings.some((finding) => finding.finding_type !== "no_issue")
+  ) {
+    return "The product entity is visible, but the model output does not resolve cleanly to an exact SKU or variant. The merchant variant map should be clarified before SKU-level verification.";
+  }
+
+  if (input.queryFindings.some((finding) => finding.finding_type !== "no_issue")) {
+    return "The product appears eligible for the query, but the Pivota query mapping is missing or weak for this demand cluster.";
+  }
+
+  if (
+    input.competitorFindings.some((finding) => finding.finding_type !== "no_issue")
+  ) {
+    return "Competitor/substitute evidence is present, but Pivota does not have enough substitute mapping context to explain or counter-position the merchant product.";
+  }
+
+  return "No deterministic product-layer root cause was isolated. Human review should inspect the product graph, parser evidence, and query mapping.";
+}
+
+function patchByType(
+  recommendations: ProductPatchRecommendation[],
+  patchType: ProductPatchRecommendation["patch_type"]
+) {
+  return recommendations.find((recommendation) => recommendation.patch_type === patchType);
+}
+
+function evidenceStringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter(Boolean).map(String) : [];
+}
+
+export class ProductUnderstandingService {
+  latest(issueId: string) {
+    return [...getAgentCenterState().productUnderstandingDiagnoses]
+      .reverse()
+      .find((diagnosis) => diagnosis.issue_id === issueId) || null;
+  }
+
+  debugPayload(issueId: string) {
+    const state = getAgentCenterState();
+    const issue = findIssue(issueId);
+    const diagnosis = this.latest(issueId);
+    const store = findStore(issue.store_id);
+    const clusters = state.queryClusters.filter((cluster) =>
+      issue.affected_query_clusters.includes(cluster.id)
+    );
+    const product = findProductForIssue(store, issue, clusters);
+    const usageEvents = diagnosis
+      ? state.usageEvents.filter((event) =>
+          diagnosis.usage_event_ids.includes(event.id)
+        )
+      : [];
+
+    return {
+      source_issue_summary: {
+        issue_id: issue.id,
+        issue_type: issue.issue_type,
+        severity: issue.severity,
+        status: issue.status,
+        affected_product_entities: issue.affected_product_entities,
+        affected_skus: issue.affected_skus,
+        affected_query_clusters: issue.affected_query_clusters,
+        root_cause: issue.root_cause,
+        fix_targets: issue.fix_targets,
+      },
+      merchant_layer_inputs_used: {
+        store_id: store.id,
+        store_name: store.store_name,
+        store_url: store.store_url,
+        product_id: product?.id,
+        product_title: product?.title,
+        product_entity_id: product?.product_entity_id,
+        sku: product?.sku,
+        pdp_url: product?.pdp_url,
+        attributes: product?.attributes || {},
+      },
+      pivota_layer_inputs_used: {
+        product_entity_id: product?.product_entity_id,
+        unified_pdp_attributes: product?.pivota_attributes || {},
+        agent_summary: product?.agent_summary,
+      },
+      findings: diagnosis
+        ? {
+            merchant_layer_findings: diagnosis.merchant_layer_findings,
+            pivota_layer_findings: diagnosis.pivota_layer_findings,
+            sku_variant_findings: diagnosis.sku_variant_findings,
+            entity_mapping_findings: diagnosis.entity_mapping_findings,
+            query_mapping_findings: diagnosis.query_mapping_findings,
+            competitor_mapping_findings: diagnosis.competitor_mapping_findings,
+          }
+        : null,
+      refined_fix_targets: diagnosis?.refined_fix_targets || [],
+      patch_recommendations: diagnosis?.patch_recommendations || [],
+      confidence: diagnosis?.confidence || null,
+      usage_event_ids: diagnosis?.usage_event_ids || [],
+      usage_events: usageEvents,
+    };
+  }
+
+  runDiagnosis(
+    issueId: string,
+    options?: { regeneratePatch?: boolean; attachToRetestPlan?: boolean }
+  ) {
+    const existing = this.latest(issueId);
+    if (existing && !options?.regeneratePatch && !options?.attachToRetestPlan) {
+      return existing;
+    }
+
+    const state = getAgentCenterState();
+    const issue = findIssue(issueId);
+    const target = findScanTarget(issue.scan_target_id);
+    const store = findStore(issue.store_id);
+    const clusters = state.queryClusters.filter((cluster) =>
+      issue.affected_query_clusters.includes(cluster.id)
+    );
+    const product = findProductForIssue(store, issue, clusters);
+    const runIds = new Set(
+      state.testRuns
+        .filter(
+          (run) =>
+            run.scan_target_id === issue.scan_target_id &&
+            issue.affected_query_clusters.includes(run.query_cluster_id)
+        )
+        .map((run) => run.id)
+    );
+    const parsed = state.parsedRecommendations.filter((item) =>
+      runIds.has(item.test_run_id)
+    );
+    const parsedIds = new Set(parsed.map((item) => item.id));
+    const matches = state.matches.filter((match) =>
+      parsedIds.has(match.parsed_recommendation_id)
+    );
+
+    const merchantMissing = unique(
+      clusters.flatMap((cluster) => missingAttributesForLayer(product, cluster, "merchant"))
+    );
+    const pivotaMissing = unique(
+      clusters.flatMap((cluster) => missingAttributesForLayer(product, cluster, "pivota"))
+    );
+    const sharedMissing = merchantMissing.filter((attribute) =>
+      pivotaMissing.includes(attribute)
+    );
+    const merchantOnlyMissing = merchantMissing.filter(
+      (attribute) => !sharedMissing.includes(attribute)
+    );
+    const pivotaOnlyMissing = pivotaMissing.filter(
+      (attribute) => !sharedMissing.includes(attribute)
+    );
+    const merchantGaps = [
+      ...attributeGaps({
+        attributes: sharedMissing,
+        layer: "both",
+        fixTarget: "both_merchant_and_pivota",
+      }),
+      ...attributeGaps({
+        attributes: merchantOnlyMissing,
+        layer: "merchant_source",
+        fixTarget: "merchant_pdp",
+      }),
+    ];
+    const pivotaGaps = [
+      ...attributeGaps({
+        attributes: sharedMissing,
+        layer: "both",
+        fixTarget: "both_merchant_and_pivota",
+      }),
+      ...attributeGaps({
+        attributes: pivotaOnlyMissing,
+        layer: "pivota_unified_pdp",
+        fixTarget: "pivota_unified_pdp",
+      }),
+    ];
+
+    const entityFindings = this.entityMappingFindings(issue, product, matches);
+    const variantFindings = this.variantMappingFindings(product, matches);
+    const queryFindings = this.queryMappingFindings({
+      issue,
+      clusters,
+      product,
+      merchantMissing,
+      pivotaMissing,
+    });
+    const competitorFindings = this.competitorMappingFindings(issue, matches);
+    const refinedFixTargets = this.refinedFixTargets({
+      issue,
+      merchantGaps,
+      pivotaGaps,
+      entityFindings,
+      variantFindings,
+      queryFindings,
+      competitorFindings,
+    });
+    const rootCauseSummary = productUnderstandingRootCause({
+      merchantMissing,
+      pivotaMissing,
+      entityFindings,
+      variantFindings,
+      queryFindings,
+      competitorFindings,
+    });
+    const patchRecommendations = this.patchRecommendations({
+      issue,
+      target,
+      product,
+      clusters,
+      merchantMissing,
+      pivotaMissing,
+      entityFindings,
+      variantFindings,
+      queryFindings,
+      competitorFindings,
+    });
+    const now = nowIso();
+    const diagnosisId = nextId("product_diag");
+    const usageEvent = new UsageMeteringService().recordProductUnderstanding({
+      issue,
+      diagnosisId,
+    });
+    const diagnosis: ProductUnderstandingDiagnosis = {
+      id: diagnosisId,
+      merchant_id: issue.merchant_id,
+      store_id: issue.store_id,
+      scan_target_id: issue.scan_target_id,
+      issue_id: issue.id,
+      source_agent: "product_understanding_agent",
+      affected_product_entity_id:
+        product?.product_entity_id || issue.affected_product_entities[0],
+      affected_sku_ids: issue.affected_skus.length
+        ? issue.affected_skus
+        : product?.sku
+          ? [product.sku]
+          : [],
+      affected_query_cluster_ids: issue.affected_query_clusters,
+      merchant_layer_findings: [
+        layerComparison({
+          layer: "merchant_source",
+          product,
+          missingAttributes: merchantMissing,
+          gaps: merchantGaps,
+        }),
+      ],
+      pivota_layer_findings: [
+        layerComparison({
+          layer: "pivota_unified_pdp",
+          product,
+          missingAttributes: pivotaMissing,
+          gaps: pivotaGaps,
+        }),
+      ],
+      sku_variant_findings: variantFindings,
+      query_mapping_findings: queryFindings,
+      competitor_mapping_findings: competitorFindings,
+      entity_mapping_findings: entityFindings,
+      root_cause_summary: rootCauseSummary,
+      refined_fix_targets: refinedFixTargets,
+      patch_recommendations: patchRecommendations,
+      confidence: this.confidence({
+        product,
+        clusters,
+        entityFindings,
+        variantFindings,
+        queryFindings,
+      }),
+      usage_event_ids: [usageEvent.id],
+      created_at: now,
+      updated_at: now,
+    };
+
+    state.productUnderstandingDiagnoses.push(diagnosis);
+    this.attachDiagnosisToIssue(issue, diagnosis);
+    if (options?.attachToRetestPlan) {
+      this.attachDiagnosisToRetestPlan(issue, diagnosis);
+    }
+    return diagnosis;
+  }
+
+  regeneratePatch(issueId: string) {
+    return this.runDiagnosis(issueId, { regeneratePatch: true });
+  }
+
+  attachToRetestPlan(issueId: string) {
+    const diagnosis = this.runDiagnosis(issueId, { attachToRetestPlan: true });
+    return diagnosis;
+  }
+
+  private entityMappingFindings(
+    issue: AgenticGMVIssue,
+    product: ProductRecord | undefined,
+    matches: ProductMatchResult[]
+  ): EntityMappingFinding[] {
+    const findings: EntityMappingFinding[] = [];
+    for (const match of matches) {
+      if (match.ambiguous_match) {
+        findings.push({
+          finding_type: "ambiguous_product_match",
+          raw_model_product_name: match.raw_model_product_name,
+          canonical_product_name: match.canonical_product_name,
+          product_entity_id: match.product_entity_id,
+          match_level: match.match_level,
+          match_confidence: match.match_confidence,
+          evidence: match.match_reason,
+          fix_target: "human_review",
+        });
+      } else if (match.brand_match && !match.core_product_match) {
+        findings.push({
+          finding_type:
+            match.match_level === "product_family_match"
+              ? "product_entity_mapping_issue"
+              : "wrong_product_family",
+          raw_model_product_name: match.raw_model_product_name,
+          canonical_product_name: match.canonical_product_name,
+          product_entity_id: match.product_entity_id,
+          match_level: match.match_level,
+          match_confidence: match.match_confidence,
+          evidence: match.match_reason,
+          fix_target: "human_review",
+        });
+      }
+    }
+
+    if (
+      !findings.length &&
+      ["product_entity_mapping_issue", "wrong_product_family", "human_review_required"].includes(
+        issue.issue_type
+      )
+    ) {
+      findings.push({
+        finding_type:
+          issue.issue_type === "wrong_product_family"
+            ? "wrong_product_family"
+            : issue.issue_type === "product_entity_mapping_issue"
+              ? "product_entity_mapping_issue"
+              : "human_review_required",
+        canonical_product_name: product?.title,
+        product_entity_id: product?.product_entity_id,
+        evidence: issue.root_cause,
+        fix_target: "human_review",
+      });
+    }
+
+    return findings;
+  }
+
+  private variantMappingFindings(
+    product: ProductRecord | undefined,
+    matches: ProductMatchResult[]
+  ): VariantMappingFinding[] {
+    return matches
+      .filter(
+        (match) =>
+          match.ambiguous_match ||
+          match.suffix_terms_missing.length > 0 ||
+          (match.counts_for_visibility && !match.counts_for_sku_exact_match)
+      )
+      .map((match) => ({
+        finding_type: match.ambiguous_match
+          ? ("ambiguous_variant_match" as const)
+          : match.suffix_terms_missing.length > 0
+            ? ("sku_variant_suffix_gap" as const)
+            : ("variant_size_mismatch" as const),
+        sku: product?.sku,
+        raw_model_product_name: match.raw_model_product_name,
+        canonical_product_name: match.canonical_product_name,
+        suffix_terms_missing: match.suffix_terms_missing,
+        counts_for_visibility: match.counts_for_visibility,
+        counts_for_sku_exact_match: match.counts_for_sku_exact_match,
+        evidence: match.match_reason,
+        fix_target: "merchant_variant_map" as const,
+      }));
+  }
+
+  private queryMappingFindings(input: {
+    issue: AgenticGMVIssue;
+    clusters: QueryCluster[];
+    product?: ProductRecord;
+    merchantMissing: string[];
+    pivotaMissing: string[];
+  }): QueryMappingFinding[] {
+    const queryMappingLikelyMissing =
+      input.issue.fix_targets.includes("pivota_query_mapping") ||
+      ["pivota_pdp_attribution_gap", "unverified_pivota_attribution"].includes(
+        input.issue.issue_type
+      ) ||
+      (["competitor_substitution", "ai_visibility_loss"].includes(
+        input.issue.issue_type
+      ) &&
+        input.merchantMissing.length === 0 &&
+        input.pivotaMissing.length === 0);
+
+    if (!queryMappingLikelyMissing) return [];
+
+    return input.clusters.map((cluster) => ({
+      finding_type: "missing_query_mapping" as const,
+      query_cluster_id: cluster.id,
+      cluster_name: cluster.cluster_name,
+      product_entity_id: input.product?.product_entity_id || cluster.product_entity_id,
+      evidence:
+        "The product should be eligible for this query cluster, but Demand Test evidence points to missing or weak Pivota query/product mapping.",
+      fix_target: "pivota_query_mapping" as const,
+    }));
+  }
+
+  private competitorMappingFindings(
+    issue: AgenticGMVIssue,
+    matches: ProductMatchResult[]
+  ): CompetitorMappingFinding[] {
+    if (issue.issue_type !== "competitor_substitution") return [];
+    const fromIssue = evidenceStringArray(issue.evidence.top_competitor_recommendations);
+    const fromMatches = matches.flatMap((match) =>
+      match.competitor_matches.map(
+        (competitor) => `${competitor.competitor_name} ${competitor.product_name}`
+      )
+    );
+    const competitorProducts = unique([...fromIssue, ...fromMatches]);
+    return competitorProducts.map((competitorProduct) => ({
+      finding_type: "missing_substitute_mapping" as const,
+      competitor_product: competitorProduct,
+      evidence:
+        "A competitor/substitute appeared while the merchant product was absent, so Pivota should record substitute and comparison mappings for this demand cluster.",
+      fix_target: "pivota_product_graph" as const,
+    }));
+  }
+
+  private refinedFixTargets(input: {
+    issue: AgenticGMVIssue;
+    merchantGaps: AttributeGap[];
+    pivotaGaps: AttributeGap[];
+    entityFindings: EntityMappingFinding[];
+    variantFindings: VariantMappingFinding[];
+    queryFindings: QueryMappingFinding[];
+    competitorFindings: CompetitorMappingFinding[];
+  }) {
+    const targets = new Set<FixTarget>();
+    if (input.merchantGaps.some((gap) => gap.layer === "both")) {
+      targets.add("both_merchant_and_pivota");
+    }
+    for (const gap of input.merchantGaps) {
+      targets.add(gap.fix_target);
+      if (gap.fix_target === "merchant_pdp") targets.add("merchant_catalog");
+    }
+    for (const gap of input.pivotaGaps) {
+      targets.add(gap.fix_target);
+    }
+    for (const finding of input.variantFindings) {
+      if (finding.finding_type !== "no_issue") targets.add(finding.fix_target);
+    }
+    for (const finding of input.entityFindings) {
+      if (finding.finding_type !== "no_issue") {
+        targets.add("pivota_product_graph");
+        targets.add(finding.fix_target);
+      }
+    }
+    for (const finding of input.queryFindings) {
+      if (finding.finding_type !== "no_issue") targets.add(finding.fix_target);
+    }
+    for (const finding of input.competitorFindings) {
+      if (finding.finding_type !== "no_issue") targets.add(finding.fix_target);
+    }
+    if (!targets.size) {
+      for (const target of input.issue.fix_targets) targets.add(target);
+    }
+    return [...targets];
+  }
+
+  private patchRecommendations(input: {
+    issue: AgenticGMVIssue;
+    target: ScanTarget;
+    product?: ProductRecord;
+    clusters: QueryCluster[];
+    merchantMissing: string[];
+    pivotaMissing: string[];
+    entityFindings: EntityMappingFinding[];
+    variantFindings: VariantMappingFinding[];
+    queryFindings: QueryMappingFinding[];
+    competitorFindings: CompetitorMappingFinding[];
+  }) {
+    const recommendations: ProductPatchRecommendation[] = [];
+    if (input.merchantMissing.length) {
+      recommendations.push({
+        patch_type: "merchant_source_patch",
+        target: "merchant_pdp",
+        patch: {
+          product_id: input.product?.id,
+          product_entity_id: input.product?.product_entity_id,
+          attributes: Object.fromEntries(
+            input.merchantMissing.map((attribute) => [
+              attribute,
+              {
+                status: "missing",
+                action: `Add ${titleCase(attribute)} to merchant PDP/catalog source data.`,
+              },
+            ])
+          ),
+          pdp_copy_suggestion: `Clarify ${input.merchantMissing
+            .map(titleCase)
+            .join(", ")} on the merchant PDP and structured catalog feed.`,
+        },
+        rationale:
+          "Merchant source data is the source of truth for PDP/catalog attributes.",
+      });
+    }
+
+    if (input.variantFindings.some((finding) => finding.finding_type !== "no_issue")) {
+      recommendations.push({
+        patch_type: "merchant_variant_map_patch",
+        target: "merchant_variant_map",
+        patch: {
+          sku: input.product?.sku,
+          canonical_product_name: input.product?.title,
+          product_entity_id: input.product?.product_entity_id,
+          aliases: unique(
+            input.variantFindings
+              .map((finding) => finding.raw_model_product_name)
+              .filter((value): value is string => Boolean(value))
+          ),
+          suffix_terms_required: unique(
+            input.variantFindings.flatMap((finding) => finding.suffix_terms_missing)
+          ),
+        },
+        rationale:
+          "The product can count for entity visibility while still failing exact SKU or variant attribution.",
+      });
+    }
+
+    if (input.pivotaMissing.length) {
+      recommendations.push({
+        patch_type: "pivota_unified_pdp_patch",
+        target: "pivota_unified_pdp",
+        patch: {
+          product_entity_id: input.product?.product_entity_id,
+          normalized_attributes: Object.fromEntries(
+            input.pivotaMissing.map((attribute) => [
+              attribute,
+              input.product?.attributes?.[attribute] || {
+                status: "missing_from_pivota",
+                source_required: input.merchantMissing.includes(attribute),
+              },
+            ])
+          ),
+          agent_summary_update: input.product?.title
+            ? `${input.product.title} should expose ${input.pivotaMissing
+                .map(titleCase)
+                .join(", ")} as normalized agent-facing attributes.`
+            : "Refresh normalized product attributes for the affected query clusters.",
+        },
+        rationale:
+          "The Pivota unified PDP is the agent-facing product layer and needs normalized query attributes.",
+      });
+    }
+
+    if (
+      input.entityFindings.some((finding) => finding.finding_type !== "no_issue") ||
+      input.competitorFindings.some((finding) => finding.finding_type !== "no_issue")
+    ) {
+      recommendations.push({
+        patch_type: "pivota_product_graph_patch",
+        target: "pivota_product_graph",
+        patch: {
+          product_entity_id: input.product?.product_entity_id,
+          canonical_product_name: input.product?.title,
+          entity_mapping_findings: input.entityFindings,
+          substitute_edges: input.competitorFindings.map((finding) => ({
+            competitor_product: finding.competitor_product,
+            relation: "substitute_or_comparison_candidate",
+          })),
+        },
+        rationale:
+          "Product graph mappings should separate wrong-family mentions from true substitutes and canonical entity matches.",
+      });
+    }
+
+    if (input.queryFindings.some((finding) => finding.finding_type !== "no_issue")) {
+      recommendations.push({
+        patch_type: "pivota_query_mapping_patch",
+        target: "pivota_query_mapping",
+        patch: {
+          product_entity_id: input.product?.product_entity_id,
+          scan_mode: input.target.scan_mode,
+          query_cluster_ids: input.clusters.map((cluster) => cluster.id),
+          query_intents: unique(input.clusters.map((cluster) => cluster.intent_type)),
+          action: "Attach affected query clusters to the canonical ProductEntity and supported substitute/comparison edges.",
+        },
+        rationale:
+          "The tested query cluster should resolve to the affected ProductEntity before attribution retests.",
+      });
+    }
+
+    if (!recommendations.length) {
+      recommendations.push({
+        patch_type: "pivota_product_graph_patch",
+        target: "human_review",
+        patch: {
+          issue_id: input.issue.id,
+          action: "Review parser output, product graph, and query mappings manually.",
+        },
+        rationale:
+          "No deterministic source-layer patch was isolated.",
+      });
+    }
+
+    return recommendations;
+  }
+
+  private confidence(input: {
+    product?: ProductRecord;
+    clusters: QueryCluster[];
+    entityFindings: EntityMappingFinding[];
+    variantFindings: VariantMappingFinding[];
+    queryFindings: QueryMappingFinding[];
+  }): ProductUnderstandingDiagnosis["confidence"] {
+    if (!input.product || !input.clusters.length) return "low";
+    if (
+      input.entityFindings.some(
+        (finding) =>
+          finding.finding_type === "ambiguous_product_match" ||
+          finding.finding_type === "human_review_required"
+      )
+    ) {
+      return "low";
+    }
+    if (
+      input.variantFindings.length ||
+      input.entityFindings.length ||
+      input.queryFindings.length
+    ) {
+      return "medium";
+    }
+    return "high";
+  }
+
+  private attachDiagnosisToIssue(
+    issue: AgenticGMVIssue,
+    diagnosis: ProductUnderstandingDiagnosis
+  ) {
+    const merchantPatch = patchByType(
+      diagnosis.patch_recommendations,
+      "merchant_source_patch"
+    );
+    const variantPatch = patchByType(
+      diagnosis.patch_recommendations,
+      "merchant_variant_map_patch"
+    );
+    const pivotaPdpPatch = patchByType(
+      diagnosis.patch_recommendations,
+      "pivota_unified_pdp_patch"
+    );
+    const graphPatch = patchByType(
+      diagnosis.patch_recommendations,
+      "pivota_product_graph_patch"
+    );
+    const queryPatch = patchByType(
+      diagnosis.patch_recommendations,
+      "pivota_query_mapping_patch"
+    );
+
+    issue.merchant_source_patch = merchantPatch?.patch || {};
+    issue.merchant_variant_map_patch = variantPatch?.patch;
+    issue.pivota_unified_pdp_patch = pivotaPdpPatch?.patch || {};
+    issue.pivota_product_graph_patch = graphPatch?.patch;
+    issue.pivota_query_mapping_patch = queryPatch?.patch;
+
+    issue.root_cause = diagnosis.root_cause_summary;
+    issue.fix_targets = diagnosis.refined_fix_targets;
+    issue.recommended_action =
+      "Apply the Product Understanding diagnosis patches, then retest the same Demand Test query cluster.";
+    issue.product_understanding_diagnosis_id = diagnosis.id;
+    issue.product_understanding_diagnosis_ids = unique([
+      ...(issue.product_understanding_diagnosis_ids || []),
+      diagnosis.id,
+    ]);
+    issue.evidence = {
+      ...issue.evidence,
+      product_understanding_diagnosis_id: diagnosis.id,
+      product_understanding_confidence: diagnosis.confidence,
+      product_understanding_root_cause_summary: diagnosis.root_cause_summary,
+    };
+    issue.status = "diagnosed";
+    touch(issue);
+  }
+
+  private attachDiagnosisToRetestPlan(
+    issue: AgenticGMVIssue,
+    diagnosis: ProductUnderstandingDiagnosis
+  ) {
+    issue.verification_plan = {
+      ...issue.verification_plan,
+      target_improvement: `${issue.verification_plan.target_improvement}; verify Product Understanding diagnosis ${diagnosis.id} patches before before/after comparison.`,
+    };
+    issue.evidence = {
+      ...issue.evidence,
+      product_understanding_attached_to_retest_plan: diagnosis.id,
+    };
+    touch(issue);
   }
 }
 

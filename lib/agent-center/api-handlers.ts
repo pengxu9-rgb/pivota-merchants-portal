@@ -9,6 +9,7 @@ import {
   getUsageSummary,
   InputReadinessService,
   MerchantStoreService,
+  ProductUnderstandingService,
   ScanTargetService,
   UsageMeteringService,
   VerificationService,
@@ -219,6 +220,13 @@ export async function handleAgentCenterRequest(
             .find((item) => item.issue_id === id);
           return json({ verification: verification || null });
         }
+        if (action === "product-diagnosis") {
+          const service = new ProductUnderstandingService();
+          return json({
+            diagnosis: service.latest(id),
+            debug: service.debugPayload(id),
+          });
+        }
         const issue = state.issues.find((item) => item.id === id);
         return issue ? json({ issue }) : json({ error: "Issue not found" }, 404);
       }
@@ -241,6 +249,25 @@ export async function handleAgentCenterRequest(
         if (action === "assign") issue.status = "approval_required";
         issue.updated_at = new Date().toISOString();
         return json({ issue });
+      }
+      if (req.method === "POST" && id && action === "product-diagnosis") {
+        const diagnosis = new ProductUnderstandingService().runDiagnosis(id);
+        const issue = state.issues.find((item) => item.id === id);
+        return json({ diagnosis, issue }, 201);
+      }
+      if (req.method === "POST" && id && action === "regenerate-product-patch") {
+        const diagnosis = new ProductUnderstandingService().regeneratePatch(id);
+        const issue = state.issues.find((item) => item.id === id);
+        return json({ diagnosis, issue }, 201);
+      }
+      if (
+        req.method === "POST" &&
+        id &&
+        action === "attach-product-diagnosis-to-retest"
+      ) {
+        const diagnosis = new ProductUnderstandingService().attachToRetestPlan(id);
+        const issue = state.issues.find((item) => item.id === id);
+        return json({ diagnosis, issue });
       }
       if (req.method === "POST" && id && action === "retest") {
         const verification = await new VerificationService().retestIssue(id);

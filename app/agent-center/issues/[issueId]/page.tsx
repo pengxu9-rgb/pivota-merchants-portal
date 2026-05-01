@@ -32,6 +32,28 @@ function listItems(value: unknown) {
   return Array.isArray(value) ? value.filter(Boolean).map(String) : [];
 }
 
+function patchByType(diagnosis: any, patchType: string) {
+  return diagnosis?.patch_recommendations?.find(
+    (recommendation: any) => recommendation.patch_type === patchType
+  )?.patch;
+}
+
+function attributeGapLabels(comparisons: any[]) {
+  return (comparisons || []).flatMap((comparison) =>
+    (comparison.findings || []).map(
+      (finding: any) =>
+        `${label(finding.attribute)}: ${finding.recommendation || finding.expected}`
+    )
+  );
+}
+
+function findingEvidence(findings: any[], emptyText: string) {
+  const items = (findings || [])
+    .filter((finding) => finding.finding_type !== "no_issue")
+    .map((finding) => finding.evidence || label(finding.finding_type));
+  return items.length ? items : [emptyText];
+}
+
 function estimatedRetestCredits(issue: any, preparation: any) {
   if (preparation?.estimated_credits !== undefined) return preparation.estimated_credits;
   const clusters = issue?.affected_query_clusters?.length || 1;
@@ -101,9 +123,11 @@ export default function IssueDetailPage() {
   const params = useParams<{ issueId: string }>();
   const [issue, setIssue] = useState<any>(null);
   const [verification, setVerification] = useState<any>(null);
+  const [diagnosis, setDiagnosis] = useState<any>(null);
   const [retestPreparation, setRetestPreparation] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [retestState, setRetestState] = useState("idle");
+  const [diagnosisState, setDiagnosisState] = useState("idle");
 
   async function loadIssue(issueId: string) {
     const payload = await agentFetch<{ issue: any }>(`/api/agent-center/issues/${issueId}`);
@@ -112,6 +136,10 @@ export default function IssueDetailPage() {
       `/api/agent-center/issues/${issueId}/verification`
     );
     setVerification(verificationPayload.verification);
+    const diagnosisPayload = await agentFetch<{ diagnosis: any }>(
+      `/api/agent-center/issues/${issueId}/product-diagnosis`
+    );
+    setDiagnosis(diagnosisPayload.diagnosis);
   }
 
   useEffect(() => {
@@ -168,10 +196,32 @@ export default function IssueDetailPage() {
     }
   }
 
+  async function runProductDiagnosis(action = "product-diagnosis") {
+    if (!issue) return;
+    setLoading(true);
+    setDiagnosisState(action === "product-diagnosis" ? "running" : "updating");
+    try {
+      const payload = await agentFetch<{ diagnosis: any; issue: any }>(
+        `/api/agent-center/issues/${issue.id}/${action}`,
+        { method: "POST" }
+      );
+      setDiagnosis(payload.diagnosis);
+      if (payload.issue) setIssue(payload.issue);
+      setDiagnosisState("completed");
+      await loadIssue(issue.id);
+    } catch {
+      setDiagnosisState("failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const narrative = issue?.merchant_facing_narrative || {};
   const beforeScores = verification?.before_scores?.aggregate_scores;
   const afterScores = verification?.after_scores?.aggregate_scores;
   const scoreDelta = verification?.score_delta || {};
+  const merchantGapLabels = attributeGapLabels(diagnosis?.merchant_layer_findings || []);
+  const pivotaGapLabels = attributeGapLabels(diagnosis?.pivota_layer_findings || []);
 
   return (
     <main className="merchant-page space-y-6 py-6">
@@ -277,6 +327,132 @@ export default function IssueDetailPage() {
               {narrative.how_pivota_will_verify_the_fix ||
                 "Pivota will retest the same query clusters and compare before/after scores."}
             </NarrativeSection>
+          </div>
+        </div>
+      </SurfaceCard>
+
+      <SurfaceCard title="Product Understanding Diagnosis">
+        <div className="space-y-5 px-5 py-5">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <MetricTile
+              label="Confidence"
+              value={diagnosis?.confidence || "not run"}
+              tone={diagnosis?.confidence === "high" ? "success" : "neutral"}
+            />
+            <MetricTile
+              label="Last diagnosis run"
+              value={diagnosis?.created_at ? new Date(diagnosis.created_at).toLocaleString() : "not run"}
+            />
+            <MetricTile label="Diagnosis state" value={label(diagnosisState)} />
+          </div>
+
+          <NarrativeSection title="Root cause summary">
+            {diagnosis?.root_cause_summary ||
+              "Run Product Diagnosis to compare merchant source data, SKU mapping, Pivota unified PDP data, query mapping, and competitor context."}
+          </NarrativeSection>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <NarrativeSection title="Merchant PDP/catalog gaps">
+              <ul className="list-disc space-y-1 pl-5">
+                {(merchantGapLabels.length ? merchantGapLabels : ["No merchant source gap diagnosed yet."]).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </NarrativeSection>
+            <NarrativeSection title="Pivota unified PDP gaps">
+              <ul className="list-disc space-y-1 pl-5">
+                {(pivotaGapLabels.length ? pivotaGapLabels : ["No Pivota unified PDP gap diagnosed yet."]).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </NarrativeSection>
+            <NarrativeSection title="SKU / variant mapping gaps">
+              <ul className="list-disc space-y-1 pl-5">
+                {findingEvidence(
+                  diagnosis?.sku_variant_findings || [],
+                  "No SKU or variant mapping gap diagnosed yet."
+                ).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </NarrativeSection>
+            <NarrativeSection title="Product graph / query mapping gaps">
+              <ul className="list-disc space-y-1 pl-5">
+                {[
+                  ...findingEvidence(
+                    diagnosis?.entity_mapping_findings || [],
+                    "No product entity mapping gap diagnosed yet."
+                  ),
+                  ...findingEvidence(
+                    diagnosis?.query_mapping_findings || [],
+                    "No query mapping gap diagnosed yet."
+                  ),
+                  ...findingEvidence(
+                    diagnosis?.competitor_mapping_findings || [],
+                    "No competitor/substitute mapping gap diagnosed yet."
+                  ),
+                ].map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </NarrativeSection>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {(diagnosis?.refined_fix_targets || issue?.fix_targets || []).map((target: string) => (
+              <FixTargetBadge key={target} target={target} />
+            ))}
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-2">
+            <div>
+              <p className="merchant-overline mb-2">Recommended merchant source patch</p>
+              <JsonBlock
+                value={
+                  patchByType(diagnosis, "merchant_source_patch") ||
+                  patchByType(diagnosis, "merchant_variant_map_patch") ||
+                  {}
+                }
+              />
+            </div>
+            <div>
+              <p className="merchant-overline mb-2">Recommended Pivota product graph patch</p>
+              <JsonBlock
+                value={
+                  patchByType(diagnosis, "pivota_product_graph_patch") ||
+                  patchByType(diagnosis, "pivota_query_mapping_patch") ||
+                  patchByType(diagnosis, "pivota_unified_pdp_patch") ||
+                  {}
+                }
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <MerchantButton
+              icon={ClipboardList}
+              variant="secondary"
+              onClick={() => runProductDiagnosis("product-diagnosis")}
+              disabled={loading}
+            >
+              Run Product Diagnosis
+            </MerchantButton>
+            <MerchantButton
+              icon={RotateCcw}
+              variant="secondary"
+              onClick={() => runProductDiagnosis("regenerate-product-patch")}
+              disabled={loading}
+            >
+              Regenerate Patch
+            </MerchantButton>
+            <MerchantButton
+              icon={Send}
+              variant="secondary"
+              onClick={() => runProductDiagnosis("attach-product-diagnosis-to-retest")}
+              disabled={loading}
+            >
+              Attach to Retest Plan
+            </MerchantButton>
           </div>
         </div>
       </SurfaceCard>

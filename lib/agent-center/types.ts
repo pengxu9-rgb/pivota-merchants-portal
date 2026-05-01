@@ -26,6 +26,8 @@ export type ProviderName =
   | "perplexity"
   | "copilot";
 
+export type UsageProviderName = ProviderName | "internal";
+
 export type PromptTemplateType =
   | "general_recommendation"
   | "purchase_ready"
@@ -556,7 +558,12 @@ export type AgenticGMVIssue = Timestamped & {
   fix_targets: FixTarget[];
   recommended_action: string;
   merchant_source_patch: Record<string, unknown>;
+  merchant_variant_map_patch?: Record<string, unknown>;
   pivota_unified_pdp_patch: Record<string, unknown>;
+  pivota_product_graph_patch?: Record<string, unknown>;
+  pivota_query_mapping_patch?: Record<string, unknown>;
+  product_understanding_diagnosis_id?: string;
+  product_understanding_diagnosis_ids?: string[];
   estimated_gmv_at_risk: number;
   gmv_estimation_method: string;
   estimated_gmv_at_risk_confidence: "low" | "medium" | "high";
@@ -570,6 +577,115 @@ export type AgenticGMVIssue = Timestamped & {
     success_metric: "visibility_rate" | "attribute_readiness_score";
     target_improvement: string;
   };
+};
+
+export type ProductLayerComparison = {
+  layer: "merchant_source" | "pivota_unified_pdp";
+  product_title?: string;
+  product_entity_id?: string;
+  sku?: string;
+  present_attributes: string[];
+  missing_attributes: string[];
+  pdp_url_present: boolean;
+  agent_summary_present: boolean;
+  findings: AttributeGap[];
+};
+
+export type AttributeGap = {
+  attribute: string;
+  layer: "merchant_source" | "pivota_unified_pdp" | "both";
+  expected: string;
+  observed?: unknown;
+  severity: Severity;
+  fix_target: FixTarget;
+  recommendation: string;
+};
+
+export type EntityMappingFinding = {
+  finding_type:
+    | "no_issue"
+    | "product_entity_mapping_issue"
+    | "wrong_product_family"
+    | "ambiguous_product_match"
+    | "human_review_required";
+  raw_model_product_name?: string;
+  canonical_product_name?: string;
+  product_entity_id?: string;
+  match_level?: ProductMatchLevel;
+  match_confidence?: MatchConfidence;
+  evidence: string;
+  fix_target: FixTarget;
+};
+
+export type VariantMappingFinding = {
+  finding_type:
+    | "no_issue"
+    | "sku_variant_suffix_gap"
+    | "variant_size_mismatch"
+    | "ambiguous_variant_match";
+  sku?: string;
+  raw_model_product_name?: string;
+  canonical_product_name?: string;
+  suffix_terms_missing: string[];
+  counts_for_visibility: boolean;
+  counts_for_sku_exact_match: boolean;
+  evidence: string;
+  fix_target: FixTarget;
+};
+
+export type QueryMappingFinding = {
+  finding_type: "no_issue" | "missing_query_mapping" | "weak_query_mapping";
+  query_cluster_id: string;
+  cluster_name: string;
+  product_entity_id?: string;
+  evidence: string;
+  fix_target: FixTarget;
+};
+
+export type CompetitorMappingFinding = {
+  finding_type:
+    | "no_issue"
+    | "missing_competitor_mapping"
+    | "missing_substitute_mapping";
+  competitor_name?: string;
+  competitor_product?: string;
+  evidence: string;
+  fix_target: FixTarget;
+};
+
+export type ProductPatchRecommendation = {
+  patch_type:
+    | "merchant_source_patch"
+    | "merchant_variant_map_patch"
+    | "pivota_unified_pdp_patch"
+    | "pivota_product_graph_patch"
+    | "pivota_query_mapping_patch";
+  target: FixTarget;
+  patch: Record<string, unknown>;
+  rationale: string;
+};
+
+export type ProductUnderstandingDiagnosis = Timestamped & {
+  id: string;
+  merchant_id: string;
+  store_id: string;
+  scan_target_id: string;
+  issue_id: string;
+  source_agent: "product_understanding_agent";
+  affected_product_entity_id?: string;
+  affected_sku_ids: string[];
+  affected_query_cluster_ids: string[];
+  merchant_layer_findings: ProductLayerComparison[];
+  pivota_layer_findings: ProductLayerComparison[];
+  sku_variant_findings: VariantMappingFinding[];
+  query_mapping_findings: QueryMappingFinding[];
+  competitor_mapping_findings: CompetitorMappingFinding[];
+  entity_mapping_findings: EntityMappingFinding[];
+  root_cause_summary: string;
+  refined_fix_targets: FixTarget[];
+  patch_recommendations: ProductPatchRecommendation[];
+  confidence: "low" | "medium" | "high";
+  usage_event_ids: string[];
 };
 
 export type RetestPreparation = Timestamped & {
@@ -640,11 +756,13 @@ export type UsageEvent = Timestamped & {
   merchant_id: string;
   store_id: string;
   scan_target_id: string;
-  event_type: "ai_test_credit";
+  event_type: "ai_test_credit" | "product_understanding_credit";
   quantity: number;
-  source_agent: "demand_test_agent";
+  source_agent: "demand_test_agent" | "product_understanding_agent";
+  agent_type: "demand_test_agent" | "product_understanding_agent";
+  workflow_type: "demand_scan" | "retest" | "product_diagnosis";
   scan_mode: ScanMode;
-  provider: ProviderName;
+  provider: UsageProviderName;
   model: string;
   query_cluster_id: string;
   prompt_template_id: string;
@@ -690,6 +808,7 @@ export type AgentCenterState = {
   issues: AgenticGMVIssue[];
   retestPreparations: RetestPreparation[];
   verificationRuns: VerificationRun[];
+  productUnderstandingDiagnoses: ProductUnderstandingDiagnosis[];
   usageEvents: UsageEvent[];
   usagePlan: {
     included_credits: number;

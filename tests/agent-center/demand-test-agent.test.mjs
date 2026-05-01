@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 process.env.PIVOTA_AGENT_CENTER_MOCK_GEMINI = "true";
 
@@ -30,6 +31,7 @@ const {
   MerchantStoreService,
   ProductNameNormalizer,
   ProductMatchService,
+  ProductUnderstandingService,
   QueryClusterService,
   ScanTargetService,
   ScoringService,
@@ -102,6 +104,179 @@ const sunscreenRequiredAttributes = [
   "finish",
   "active_ingredients",
 ];
+
+const isntreeStrongMerchantAttributes = {
+  spf_level: "SPF50+",
+  pa_rating: "PA++++",
+  skin_type: "dehydrated, normal, and combination skin",
+  finish: "lightweight watery gel finish",
+  active_ingredients: "UV filters plus hyaluronic acid hydration complex",
+  hyaluronic_acid: true,
+  texture: "watery gel",
+  use_case: "daily sunscreen",
+  skin_benefit: "skin hydration",
+};
+
+function createIsntreeProductUnderstandingTarget({
+  merchantAttributes = isntreeStrongMerchantAttributes,
+  pivotaAttributes = {},
+  extraProducts = [],
+} = {}) {
+  resetAgentCenterState();
+  const product = {
+    id: "prod_isntree_pu_watery_sun_gel_50ml",
+    product_entity_id: "pe_isntree_pu_watery_sun_gel",
+    sku: "ISNTREE-PU-WATERY-SUN-GEL-SPF50-PA4-50ML",
+    title: "Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml",
+    brand: "Isntree",
+    category: "skincare sunscreen",
+    price: 26,
+    currency: "USD",
+    pdp_url:
+      "https://isntree-global.com/products/isntree-hyaluronic-acid-watery-sun-gel-50ml",
+    attributes: merchantAttributes,
+    pivota_attributes: pivotaAttributes,
+    agent_summary:
+      "A lightweight watery Korean sunscreen gel with SPF50+ PA++++ and hyaluronic acid hydration.",
+    priority: "high",
+  };
+  const store = new MerchantStoreService().create({
+    store_name: "Isntree Product Understanding Acceptance",
+    store_url: "https://isntree-global.com",
+    platform: "shopify",
+    integration_status: "connected",
+    primary_category: "skincare sunscreen",
+    competitor_brands: ["Beauty of Joseon", "COSRX", "Laneige", "Anua"],
+    competitor_products: [
+      "Relief Sun: Rice + Probiotics SPF50+ PA++++",
+      "Aloe Soothing Sun Cream SPF50+ PA+++",
+      "Hydro UV Defense Sunscreen",
+      "Heartleaf Silky Moisture Sun Cream SPF50+ PA++++",
+    ],
+    products: [product, ...extraProducts],
+  });
+  const target = new ScanTargetService().create({
+    store_id: store.id,
+    selected_product_ids: [product.id],
+  });
+  const cluster = new QueryClusterService()
+    .generateForScanTarget(target.id, [product.id])
+    .find((item) => item.intent_type === "category_recommendation");
+
+  return { store, target, product, cluster };
+}
+
+function runIsntreeProductUnderstandingCase({
+  merchantAttributes = isntreeStrongMerchantAttributes,
+  pivotaAttributes = {},
+  extraProducts = [],
+  modelProductName = "Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml",
+  issueType,
+} = {}) {
+  const { store, target, product, cluster } = createIsntreeProductUnderstandingTarget({
+    merchantAttributes,
+    pivotaAttributes,
+    extraProducts,
+  });
+  const jobService = new DemandTestJobService();
+  const job = jobService.create({
+    scan_target_id: target.id,
+    query_cluster_ids: [cluster.id],
+    providers: ["gemini"],
+    prompt_template_ids: ["general_recommendation_v1"],
+    repetitions: 3,
+  });
+
+  for (let index = 0; index < 3; index += 1) {
+    const input = {
+      ...demandInput(store, target, cluster, product),
+      query: cluster.queries[index % cluster.queries.length],
+      repetitionIndex: index + 1,
+    };
+    const run = jobService.createRun(
+      job,
+      cluster,
+      input.query,
+      "gemini",
+      DEFAULT_GEMINI_MODEL,
+      "general_recommendation_v1",
+      input
+    );
+    const output = {
+      mentioned_brands: ["Isntree"],
+      mentioned_products: [
+        {
+          name: modelProductName,
+          brand: "Isntree",
+          rank: 1,
+          reason: "Recommended as a hydrating lightweight daily sunscreen.",
+          purchase_path_present: true,
+        },
+      ],
+      missing_attributes_identified: [],
+      reasoning_summary: "Semi-real Isntree acceptance fixture.",
+    };
+    const raw = {
+      provider: "gemini",
+      model: DEFAULT_GEMINI_MODEL,
+      raw_output: output,
+      normalized_output: output,
+      input_tokens: 110,
+      output_tokens: 150,
+      tool_calls: 0,
+      provider_request_id: `isntree_acceptance_${index + 1}`,
+    };
+    const result = jobService.createResult(run, raw);
+    const parsed = parseProviderOutput(raw, input);
+    parsed.test_run_id = run.id;
+    parsed.query_cluster_id = cluster.id;
+    getAgentCenterState().parsedRecommendations.push(parsed);
+    run.status = "completed";
+    run.raw_output_id = result.id;
+    new UsageMeteringService().record({ job, run, result });
+  }
+
+  const parsed = getAgentCenterState().parsedRecommendations.filter(
+    (item) => item.query_cluster_id === cluster.id
+  );
+  const matches = parsed.map((item) =>
+    new ProductMatchService().match(item, store, cluster)
+  );
+  const score = new ScoringService().scoreCluster({
+    jobId: job.id,
+    scanTarget: target,
+    cluster,
+    parsed,
+    matches,
+  });
+  const generatedIssues = new IssueEngine().generateForScore({
+    scanTarget: target,
+    score,
+    cluster,
+    parsed,
+    matches,
+  });
+  let issue = issueType
+    ? generatedIssues.find((item) => item.issue_type === issueType)
+    : generatedIssues[0];
+
+  if (!issue && issueType) {
+    issue = new IssueEngine().createIssue({
+      issueType,
+      severity: "medium",
+      rootCause: "Acceptance fixture requires Product Understanding diagnosis.",
+      recommendedAction: "Run Product Understanding diagnosis.",
+      input: { scanTarget: target, score, cluster, parsed, matches },
+      product,
+      missingAttributes: [],
+      parserConfidence: Math.min(...parsed.map((item) => item.parser_confidence), 1),
+      matchConfidence: Math.min(...matches.map((item) => item.match_confidence_score), 1),
+    });
+    getAgentCenterState().issues.push(issue);
+  }
+
+  return { store, target, product, cluster, job, parsed, matches, score, issues: generatedIssues, issue };
+}
 
 function createControlledSunscreenTarget({ attributes = {}, pivotaAttributes = {} } = {}) {
   resetAgentCenterState();
@@ -1309,6 +1484,528 @@ test("controlled sunscreen case C routes complete merchant PDP but incomplete Pi
   assert.deepEqual(pivotaIssue.fix_targets, ["pivota_unified_pdp"]);
   assert.equal(result.score.aggregate_scores.attribute_readiness_score, 100);
   assert.ok(result.score.aggregate_scores.pivota_pdp_readiness_score < 70);
+});
+
+test("product understanding diagnosis attaches merchant and Pivota patches to a Demand Test issue", () => {
+  const result = runControlledSunscreenCase({
+    attributes: {},
+    pivotaAttributes: {},
+    outputs: [merchantRecommendation(), merchantRecommendation(), merchantRecommendation()],
+  });
+  const issue = result.issues.find((item) => item.issue_type === "missing_attribute");
+  const diagnosis = new ProductUnderstandingService().runDiagnosis(issue.id);
+  const updatedIssue = getAgentCenterState().issues.find((item) => item.id === issue.id);
+  const usageEvent = getAgentCenterState().usageEvents.find(
+    (event) => event.id === diagnosis.usage_event_ids[0]
+  );
+
+  assert.equal(diagnosis.issue_id, issue.id);
+  assert.equal(diagnosis.source_agent, "product_understanding_agent");
+  assert.deepEqual(
+    diagnosis.merchant_layer_findings[0].missing_attributes.slice().sort(),
+    sunscreenRequiredAttributes.slice().sort()
+  );
+  assert.deepEqual(
+    diagnosis.pivota_layer_findings[0].missing_attributes.slice().sort(),
+    sunscreenRequiredAttributes.slice().sort()
+  );
+  assert.ok(
+    diagnosis.patch_recommendations.some(
+      (patch) => patch.patch_type === "merchant_source_patch"
+    )
+  );
+  assert.ok(
+    diagnosis.patch_recommendations.some(
+      (patch) => patch.patch_type === "pivota_unified_pdp_patch"
+    )
+  );
+  assert.ok(diagnosis.refined_fix_targets.includes("both_merchant_and_pivota"));
+  assert.equal(updatedIssue.product_understanding_diagnosis_id, diagnosis.id);
+  assert.equal(updatedIssue.status, "diagnosed");
+  assert.equal(usageEvent.event_type, "product_understanding_credit");
+  assert.equal(usageEvent.agent_type, "product_understanding_agent");
+  assert.equal(usageEvent.workflow_type, "product_diagnosis");
+  assert.equal(usageEvent.billing_mode, "preview_only");
+  assert.equal(usageEvent.billing_status, "not_invoiced");
+});
+
+test("product understanding diagnosis detects Pivota-only PDP gaps", () => {
+  const completeMerchantAttributes = {
+    spf_level: "SPF 50",
+    pa_rating: "PA++++",
+    skin_type: "sensitive and combination",
+    finish: "dewy",
+    active_ingredients: "chemical UV filters",
+  };
+  const result = runControlledSunscreenCase({
+    attributes: completeMerchantAttributes,
+    pivotaAttributes: {},
+    outputs: [merchantRecommendation(), merchantRecommendation(), merchantRecommendation()],
+  });
+  const issue = result.issues.find(
+    (item) => item.issue_type === "pivota_pdp_readiness_gap"
+  );
+  const diagnosis = new ProductUnderstandingService().runDiagnosis(issue.id);
+
+  assert.deepEqual(diagnosis.merchant_layer_findings[0].missing_attributes, []);
+  assert.deepEqual(
+    diagnosis.pivota_layer_findings[0].missing_attributes.slice().sort(),
+    sunscreenRequiredAttributes.slice().sort()
+  );
+  assert.ok(
+    diagnosis.patch_recommendations.some(
+      (patch) => patch.patch_type === "pivota_unified_pdp_patch"
+    )
+  );
+  assert.equal(
+    diagnosis.patch_recommendations.some(
+      (patch) => patch.patch_type === "merchant_source_patch"
+    ),
+    false
+  );
+  assert.deepEqual(diagnosis.refined_fix_targets, ["pivota_unified_pdp"]);
+  assert.match(diagnosis.root_cause_summary, /Merchant source data is complete/);
+});
+
+test("product understanding diagnosis flags brand match with wrong product family", () => {
+  const completeAttributes = {
+    spf_level: "SPF 50",
+    pa_rating: "PA++++",
+    skin_type: "sensitive and combination",
+    finish: "dewy",
+    active_ingredients: "chemical UV filters",
+  };
+  const result = runControlledSunscreenCase({
+    attributes: completeAttributes,
+    pivotaAttributes: completeAttributes,
+    outputs: [
+      {
+        mentioned_brands: ["Seoul Shield"],
+        mentioned_products: [
+          {
+            name: "Seoul Shield Daily Rice Sun Stick",
+            brand: "Seoul Shield",
+            rank: 1,
+            reason: "Same brand, different product family.",
+            purchase_path_present: false,
+          },
+        ],
+        missing_attributes_identified: [],
+        reasoning_summary: "The model returned the brand but not the canonical product.",
+      },
+      {
+        mentioned_brands: ["Seoul Shield"],
+        mentioned_products: [
+          {
+            name: "Seoul Shield Daily Rice Sun Stick",
+            brand: "Seoul Shield",
+            rank: 1,
+            reason: "Same brand, different product family.",
+            purchase_path_present: false,
+          },
+        ],
+        missing_attributes_identified: [],
+        reasoning_summary: "The model returned the brand but not the canonical product.",
+      },
+      {
+        mentioned_brands: ["Seoul Shield"],
+        mentioned_products: [
+          {
+            name: "Seoul Shield Daily Rice Sun Stick",
+            brand: "Seoul Shield",
+            rank: 1,
+            reason: "Same brand, different product family.",
+            purchase_path_present: false,
+          },
+        ],
+        missing_attributes_identified: [],
+        reasoning_summary: "The model returned the brand but not the canonical product.",
+      },
+    ],
+  });
+  const issue = result.issues.find((item) => item.issue_type === "ai_visibility_loss");
+  const diagnosis = new ProductUnderstandingService().runDiagnosis(issue.id);
+
+  assert.ok(
+    diagnosis.entity_mapping_findings.some((finding) =>
+      ["product_entity_mapping_issue", "wrong_product_family"].includes(
+        finding.finding_type
+      )
+    )
+  );
+  assert.ok(diagnosis.refined_fix_targets.includes("human_review"));
+  assert.ok(diagnosis.refined_fix_targets.includes("pivota_product_graph"));
+  assert.match(diagnosis.root_cause_summary, /product\/entity mapping ambiguity/);
+});
+
+test("product understanding diagnosis generates Pivota query mapping patch", () => {
+  const completeAttributes = {
+    spf_level: "SPF 50",
+    pa_rating: "PA++++",
+    skin_type: "sensitive and combination",
+    finish: "dewy",
+    active_ingredients: "chemical UV filters",
+  };
+  const result = runControlledSunscreenCase({
+    attributes: completeAttributes,
+    pivotaAttributes: completeAttributes,
+    outputs: [
+      competitorOnlyRecommendation([]),
+      competitorOnlyRecommendation([]),
+      competitorOnlyRecommendation([]),
+    ],
+  });
+  const issue = result.issues.find(
+    (item) => item.issue_type === "competitor_substitution"
+  );
+  const diagnosis = new ProductUnderstandingService().runDiagnosis(issue.id);
+
+  assert.ok(
+    diagnosis.query_mapping_findings.some(
+      (finding) => finding.finding_type === "missing_query_mapping"
+    )
+  );
+  assert.ok(
+    diagnosis.patch_recommendations.some(
+      (patch) => patch.patch_type === "pivota_query_mapping_patch"
+    )
+  );
+  assert.ok(
+    diagnosis.patch_recommendations.some(
+      (patch) => patch.patch_type === "pivota_product_graph_patch"
+    )
+  );
+  assert.ok(diagnosis.refined_fix_targets.includes("pivota_query_mapping"));
+});
+
+test("product understanding diagnosis detects SKU variant suffix mismatch", () => {
+  const { store, target, product, cluster } = createIsntreeSunscreenTarget();
+  const jobService = new DemandTestJobService();
+  const job = jobService.create({
+    scan_target_id: target.id,
+    query_cluster_ids: [cluster.id],
+    providers: ["gemini"],
+    prompt_template_ids: ["general_recommendation_v1"],
+    repetitions: 1,
+  });
+  const input = demandInput(store, target, cluster, product);
+  const run = jobService.createRun(
+    job,
+    cluster,
+    input.query,
+    "gemini",
+    DEFAULT_GEMINI_MODEL,
+    "general_recommendation_v1",
+    input
+  );
+  const output = {
+    mentioned_brands: ["Isntree"],
+    mentioned_products: [
+      {
+        name: "Isntree Hyaluronic Acid Watery Sun Gel",
+        brand: "Isntree",
+        rank: 1,
+        reason: "The model omitted SPF, PA, and size suffixes.",
+        purchase_path_present: true,
+      },
+    ],
+    missing_attributes_identified: [],
+    reasoning_summary: "Entity-level mention without exact SKU.",
+  };
+  const raw = {
+    provider: "gemini",
+    model: DEFAULT_GEMINI_MODEL,
+    raw_output: output,
+    normalized_output: output,
+    input_tokens: 90,
+    output_tokens: 110,
+    tool_calls: 0,
+    provider_request_id: "variant_suffix_fixture",
+  };
+  const result = jobService.createResult(run, raw);
+  const parsed = parseProviderOutput(raw, input);
+  parsed.test_run_id = run.id;
+  parsed.query_cluster_id = cluster.id;
+  getAgentCenterState().parsedRecommendations.push(parsed);
+  run.status = "completed";
+  run.raw_output_id = result.id;
+  new UsageMeteringService().record({ job, run, result });
+  const match = new ProductMatchService().match(parsed, store, cluster);
+  const score = new ScoringService().scoreCluster({
+    jobId: job.id,
+    scanTarget: target,
+    cluster,
+    parsed: [parsed],
+    matches: [match],
+  });
+  const issue = new IssueEngine().createIssue({
+    issueType: "human_review_required",
+    severity: "medium",
+    rootCause: "Entity-level product visibility needs SKU/variant diagnosis.",
+    recommendedAction: "Clarify variant suffixes and SKU aliases.",
+    input: { scanTarget: target, score, cluster, parsed: [parsed], matches: [match] },
+    product,
+    missingAttributes: [],
+    parserConfidence: parsed.parser_confidence,
+    matchConfidence: match.match_confidence_score,
+  });
+  getAgentCenterState().issues.push(issue);
+
+  const diagnosis = new ProductUnderstandingService().runDiagnosis(issue.id);
+
+  assert.ok(
+    diagnosis.sku_variant_findings.some(
+      (finding) => finding.finding_type === "sku_variant_suffix_gap"
+    )
+  );
+  assert.ok(
+    diagnosis.patch_recommendations.some(
+      (patch) => patch.patch_type === "merchant_variant_map_patch"
+    )
+  );
+  assert.ok(diagnosis.refined_fix_targets.includes("merchant_variant_map"));
+});
+
+test("acceptance Scenario A: Isntree merchant PDP strong and Pivota unified PDP weak", () => {
+  const result = runIsntreeProductUnderstandingCase({
+    merchantAttributes: isntreeStrongMerchantAttributes,
+    pivotaAttributes: {
+      spf_level: "SPF50+",
+      agent_summary: "Hydrating Korean sun gel.",
+    },
+    issueType: "pivota_pdp_readiness_gap",
+  });
+  const diagnosis = new ProductUnderstandingService().runDiagnosis(result.issue.id);
+  const updatedIssue = getAgentCenterState().issues.find(
+    (item) => item.id === result.issue.id
+  );
+  const pivotaPatch = diagnosis.patch_recommendations.find(
+    (patch) => patch.patch_type === "pivota_unified_pdp_patch"
+  );
+
+  assert.equal(result.score.aggregate_scores.attribute_readiness_score, 100);
+  assert.deepEqual(diagnosis.merchant_layer_findings[0].missing_attributes, []);
+  assert.ok(diagnosis.pivota_layer_findings[0].missing_attributes.includes("pa_rating"));
+  assert.ok(diagnosis.pivota_layer_findings[0].missing_attributes.includes("finish"));
+  assert.ok(diagnosis.refined_fix_targets.includes("pivota_unified_pdp"));
+  assert.equal(
+    diagnosis.patch_recommendations.some(
+      (patch) => patch.patch_type === "merchant_source_patch"
+    ),
+    false
+  );
+  assert.deepEqual(updatedIssue.merchant_source_patch, {});
+  assert.ok(pivotaPatch);
+  assert.equal(
+    pivotaPatch.patch.normalized_attributes.pa_rating,
+    isntreeStrongMerchantAttributes.pa_rating
+  );
+  assert.equal(
+    pivotaPatch.patch.normalized_attributes.finish,
+    isntreeStrongMerchantAttributes.finish
+  );
+});
+
+test("acceptance Scenario B: Isntree merchant PDP weak and Pivota unified PDP weak", () => {
+  const result = runIsntreeProductUnderstandingCase({
+    merchantAttributes: {},
+    pivotaAttributes: {},
+    issueType: "missing_attribute",
+  });
+  const diagnosis = new ProductUnderstandingService().runDiagnosis(result.issue.id);
+
+  assert.deepEqual(
+    diagnosis.merchant_layer_findings[0].missing_attributes.slice().sort(),
+    sunscreenRequiredAttributes.slice().sort()
+  );
+  assert.deepEqual(
+    diagnosis.pivota_layer_findings[0].missing_attributes.slice().sort(),
+    sunscreenRequiredAttributes.slice().sort()
+  );
+  assert.ok(diagnosis.refined_fix_targets.includes("both_merchant_and_pivota"));
+  assert.ok(
+    diagnosis.patch_recommendations.some(
+      (patch) => patch.patch_type === "merchant_source_patch"
+    )
+  );
+  assert.ok(
+    diagnosis.patch_recommendations.some(
+      (patch) => patch.patch_type === "pivota_unified_pdp_patch"
+    )
+  );
+});
+
+test("acceptance Scenario C: Isntree same-entity SKU variants stay visible but not SKU-exact", () => {
+  const sameEntityId = "pe_isntree_pu_watery_sun_gel";
+  const variants = [
+    {
+      id: "prod_isntree_pu_watery_sun_gel_2pack",
+      product_entity_id: sameEntityId,
+      sku: "ISNTREE-PU-WATERY-SUN-GEL-SPF50-PA4-50ML-2PACK",
+      title: "Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml 2-pack",
+      brand: "Isntree",
+      category: "skincare sunscreen",
+      currency: "USD",
+      attributes: isntreeStrongMerchantAttributes,
+      pivota_attributes: isntreeStrongMerchantAttributes,
+    },
+    {
+      id: "prod_isntree_pu_watery_sun_gel_old_packaging",
+      product_entity_id: sameEntityId,
+      sku: "ISNTREE-PU-WATERY-SUN-GEL-SPF50-PA4-50ML-OLD-PACKAGING",
+      title:
+        "Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml older packaging",
+      brand: "Isntree",
+      category: "skincare sunscreen",
+      currency: "USD",
+      attributes: isntreeStrongMerchantAttributes,
+      pivota_attributes: isntreeStrongMerchantAttributes,
+    },
+    {
+      id: "prod_isntree_pu_watery_sun_gel_travel",
+      product_entity_id: sameEntityId,
+      sku: "ISNTREE-PU-WATERY-SUN-GEL-SPF50-PA4-TRAVEL-20ML",
+      title:
+        "Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ travel size 20ml",
+      brand: "Isntree",
+      category: "skincare sunscreen",
+      currency: "USD",
+      attributes: isntreeStrongMerchantAttributes,
+      pivota_attributes: isntreeStrongMerchantAttributes,
+    },
+  ];
+  const result = runIsntreeProductUnderstandingCase({
+    merchantAttributes: isntreeStrongMerchantAttributes,
+    pivotaAttributes: isntreeStrongMerchantAttributes,
+    extraProducts: variants,
+    modelProductName: "Isntree Hyaluronic Acid Watery Sun Gel",
+    issueType: "human_review_required",
+  });
+  const diagnosis = new ProductUnderstandingService().runDiagnosis(result.issue.id);
+
+  assert.ok(result.matches.every((match) => match.counts_for_visibility));
+  assert.ok(result.matches.every((match) => !match.counts_for_sku_exact_match));
+  assert.ok(result.matches.every((match) => match.ambiguous_match));
+  assert.ok(result.matches.every((match) => match.match_confidence !== "high"));
+  assert.ok(
+    diagnosis.sku_variant_findings.some(
+      (finding) =>
+        finding.finding_type === "ambiguous_variant_match" ||
+        finding.finding_type === "sku_variant_suffix_gap"
+    )
+  );
+  assert.ok(
+    diagnosis.refined_fix_targets.includes("merchant_variant_map") ||
+      diagnosis.refined_fix_targets.includes("human_review")
+  );
+});
+
+test("product understanding usage events are idempotent", () => {
+  const result = runControlledSunscreenCase({
+    attributes: {},
+    pivotaAttributes: {},
+    outputs: [merchantRecommendation(), merchantRecommendation(), merchantRecommendation()],
+  });
+  const issue = result.issues.find((item) => item.issue_type === "missing_attribute");
+  const service = new ProductUnderstandingService();
+  const first = service.runDiagnosis(issue.id);
+  const usageCount = getAgentCenterState().usageEvents.length;
+  const second = service.runDiagnosis(issue.id);
+  const regenerated = service.regeneratePatch(issue.id);
+
+  assert.equal(first.id, second.id);
+  assert.notEqual(first.id, regenerated.id);
+  assert.equal(getAgentCenterState().usageEvents.length, usageCount);
+  assert.deepEqual(first.usage_event_ids, second.usage_event_ids);
+  assert.deepEqual(first.usage_event_ids, regenerated.usage_event_ids);
+  assert.ok(
+    getAgentCenterState()
+      .issues.find((item) => item.id === issue.id)
+      .product_understanding_diagnosis_ids.includes(regenerated.id)
+  );
+});
+
+test("product understanding API returns debug payload and can attach diagnosis to retest plan", async () => {
+  const result = runControlledSunscreenCase({
+    attributes: {},
+    pivotaAttributes: {},
+    outputs: [merchantRecommendation(), merchantRecommendation(), merchantRecommendation()],
+  });
+  const issue = result.issues.find((item) => item.issue_type === "missing_attribute");
+  const created = await handleAgentCenterRequest(
+    new NextRequest(
+      `https://example.test/api/agent-center/issues/${issue.id}/product-diagnosis`,
+      { method: "POST" }
+    ),
+    { path: ["issues", issue.id, "product-diagnosis"] }
+  );
+  const createdPayload = await created.json();
+  const attached = await handleAgentCenterRequest(
+    new NextRequest(
+      `https://example.test/api/agent-center/issues/${issue.id}/attach-product-diagnosis-to-retest`,
+      { method: "POST" }
+    ),
+    { path: ["issues", issue.id, "attach-product-diagnosis-to-retest"] }
+  );
+  const attachedPayload = await attached.json();
+
+  assert.equal(created.status, 201);
+  assert.equal(createdPayload.diagnosis.issue_id, issue.id);
+  const fetched = await handleAgentCenterRequest(
+    new NextRequest(
+      `https://example.test/api/agent-center/issues/${issue.id}/product-diagnosis`
+    ),
+    { path: ["issues", issue.id, "product-diagnosis"] }
+  );
+  const fetchedPayload = await fetched.json();
+
+  assert.equal(fetched.status, 200);
+  assert.equal(fetchedPayload.diagnosis.id, attachedPayload.diagnosis.id);
+  assert.notEqual(createdPayload.diagnosis.id, attachedPayload.diagnosis.id);
+  assert.equal(fetchedPayload.debug.source_issue_summary.issue_id, issue.id);
+  assert.equal(
+    fetchedPayload.debug.merchant_layer_inputs_used.product_title,
+    result.product.title
+  );
+  assert.ok(fetchedPayload.debug.pivota_layer_inputs_used);
+  assert.ok(fetchedPayload.debug.findings.merchant_layer_findings.length);
+  assert.deepEqual(
+    fetchedPayload.debug.refined_fix_targets,
+    fetchedPayload.diagnosis.refined_fix_targets
+  );
+  assert.deepEqual(
+    fetchedPayload.debug.usage_event_ids,
+    fetchedPayload.diagnosis.usage_event_ids
+  );
+  assert.ok(
+    fetchedPayload.debug.usage_events.every(
+      (event) =>
+        event.billing_mode === "preview_only" &&
+        event.billing_status === "not_invoiced"
+    )
+  );
+  assert.equal(attached.status, 200);
+  assert.equal(
+    attachedPayload.issue.evidence.product_understanding_attached_to_retest_plan,
+    attachedPayload.diagnosis.id
+  );
+  assert.match(
+    attachedPayload.issue.verification_plan.target_improvement,
+    /Product Understanding diagnosis/
+  );
+});
+
+test("Issue Detail renders Product Understanding Diagnosis controls", async () => {
+  const source = await readFile(
+    new URL("../../app/agent-center/issues/[issueId]/page.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(source, /Product Understanding Diagnosis/);
+  assert.match(source, /Run Product Diagnosis/);
+  assert.match(source, /Regenerate Patch/);
+  assert.match(source, /Attach to Retest Plan/);
+  assert.match(source, /product-diagnosis/);
 });
 
 test("issue debug view and retest preparation expose internal validation evidence", () => {
