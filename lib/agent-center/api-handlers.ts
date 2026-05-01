@@ -9,6 +9,7 @@ import {
   getUsageSummary,
   InputReadinessService,
   MerchantStoreService,
+  OfferExecutionService,
   ProductUnderstandingService,
   ScanTargetService,
   UsageMeteringService,
@@ -227,6 +228,13 @@ export async function handleAgentCenterRequest(
             debug: service.debugPayload(id),
           });
         }
+        if (action === "offer-diagnosis") {
+          const service = new OfferExecutionService();
+          return json({
+            diagnosis: service.latest(id),
+            debug: service.debugPayload(id),
+          });
+        }
         const issue = state.issues.find((item) => item.id === id);
         return issue ? json({ issue }) : json({ error: "Issue not found" }, 404);
       }
@@ -266,6 +274,25 @@ export async function handleAgentCenterRequest(
         action === "attach-product-diagnosis-to-retest"
       ) {
         const diagnosis = new ProductUnderstandingService().attachToRetestPlan(id);
+        const issue = state.issues.find((item) => item.id === id);
+        return json({ diagnosis, issue });
+      }
+      if (req.method === "POST" && id && action === "offer-diagnosis") {
+        const diagnosis = new OfferExecutionService().runDiagnosis(id);
+        const issue = state.issues.find((item) => item.id === id);
+        return json({ diagnosis, issue }, 201);
+      }
+      if (req.method === "POST" && id && action === "regenerate-offer-patch") {
+        const diagnosis = new OfferExecutionService().regeneratePatch(id);
+        const issue = state.issues.find((item) => item.id === id);
+        return json({ diagnosis, issue }, 201);
+      }
+      if (
+        req.method === "POST" &&
+        id &&
+        action === "attach-offer-diagnosis-to-retest"
+      ) {
+        const diagnosis = new OfferExecutionService().attachToRetestPlan(id);
         const issue = state.issues.find((item) => item.id === id);
         return json({ diagnosis, issue });
       }

@@ -29,6 +29,7 @@ const {
   InputReadinessService,
   IssueEngine,
   MerchantStoreService,
+  OfferExecutionService,
   ProductNameNormalizer,
   ProductMatchService,
   ProductUnderstandingService,
@@ -495,6 +496,77 @@ function runControlledSunscreenCase({ attributes, pivotaAttributes, outputs }) {
   });
 
   return { store, target, product, cluster, job, parsed, matches, score, issues };
+}
+
+function createOfferExecutionFixture({
+  merchantOfferPatch = {},
+  pivotaOfferPatch,
+  issueType = "pivota_pdp_readiness_gap",
+} = {}) {
+  const result = runIsntreeProductUnderstandingCase({
+    merchantAttributes: isntreeStrongMerchantAttributes,
+    pivotaAttributes: {
+      spf_level: "SPF50+",
+      agent_summary: "Hydrating Korean sun gel.",
+    },
+    issueType,
+  });
+  const issue = result.issue;
+  const now = new Date("2026-05-01T12:00:00.000Z").toISOString();
+  const merchantOffer = {
+    id: "merchant_offer_isntree_50ml",
+    merchant_id: result.store.merchant_id,
+    store_id: result.store.id,
+    product_id: result.product.id,
+    sku_id: result.product.sku,
+    price: 18.99,
+    currency: "USD",
+    promo_price: null,
+    coupon_code: null,
+    coupon_status: "none",
+    inventory_status: "in_stock",
+    inventory_quantity: 24,
+    expires_at: null,
+    source_url: result.product.pdp_url,
+    last_synced_at: now,
+    created_at: now,
+    updated_at: now,
+    ...merchantOfferPatch,
+  };
+  const defaultPivotaOffer =
+    pivotaOfferPatch === null
+      ? null
+      : {
+          id: "pivota_offer_isntree_50ml",
+          product_entity_id: result.product.product_entity_id,
+          pivota_unified_pdp_id: `pdp_${result.product.product_entity_id}`,
+          merchant_id: result.store.merchant_id,
+          store_id: result.store.id,
+          sku_id: result.product.sku,
+          price: 18.99,
+          currency: "USD",
+          promo_price: null,
+          coupon_code: null,
+          coupon_status: "none",
+          inventory_status: "in_stock",
+          execution_status: "ready",
+          attached_to_pivota_pdp: true,
+          last_verified_at: now,
+          created_at: now,
+          updated_at: now,
+          ...(pivotaOfferPatch || {}),
+        };
+
+  getAgentCenterState().merchantOffers.push(merchantOffer);
+  if (defaultPivotaOffer) getAgentCenterState().pivotaOffers.push(defaultPivotaOffer);
+
+  return { ...result, issue, merchantOffer, pivotaOffer: defaultPivotaOffer };
+}
+
+function offerFindingTypes(diagnosis) {
+  return diagnosis.offer_layer_findings.flatMap((comparison) =>
+    comparison.findings.map((finding) => finding.finding_type)
+  );
 }
 
 test("scan target creation requires a store and preserves scan scope", () => {
@@ -1995,6 +2067,218 @@ test("product understanding API returns debug payload and can attach diagnosis t
   );
 });
 
+test("offer execution diagnosis detects missing Pivota offer", () => {
+  const fixture = createOfferExecutionFixture({ pivotaOfferPatch: null });
+  const diagnosis = new OfferExecutionService().runDiagnosis(fixture.issue.id);
+  const updatedIssue = getAgentCenterState().issues.find(
+    (item) => item.id === fixture.issue.id
+  );
+  const usageEvent = getAgentCenterState().usageEvents.find(
+    (event) => event.id === diagnosis.usage_event_ids[0]
+  );
+
+  assert.ok(offerFindingTypes(diagnosis).includes("missing_offer"));
+  assert.ok(diagnosis.refined_fix_targets.includes("pivota_offer_layer"));
+  assert.ok(
+    diagnosis.patch_recommendations.some(
+      (patch) => patch.patch_type === "pivota_offer_patch"
+    )
+  );
+  assert.equal(updatedIssue.offer_execution_diagnosis_id, diagnosis.id);
+  assert.equal(updatedIssue.status, "diagnosed");
+  assert.equal(usageEvent.event_type, "offer_verification_credit");
+  assert.equal(usageEvent.agent_type, "offer_execution_agent");
+  assert.equal(usageEvent.workflow_type, "offer_readiness");
+  assert.equal(usageEvent.billing_mode, "preview_only");
+  assert.equal(usageEvent.billing_status, "not_invoiced");
+});
+
+test("offer execution diagnosis detects price mismatch", () => {
+  const fixture = createOfferExecutionFixture({
+    pivotaOfferPatch: { price: 21.99 },
+  });
+  const diagnosis = new OfferExecutionService().runDiagnosis(fixture.issue.id);
+  const finding = diagnosis.offer_layer_findings[0].findings.find(
+    (item) => item.finding_type === "price_mismatch"
+  );
+  const pivotaPatch = diagnosis.patch_recommendations.find(
+    (patch) => patch.patch_type === "pivota_offer_patch"
+  );
+
+  assert.ok(finding, "expected price_mismatch");
+  assert.ok(
+    diagnosis.refined_fix_targets.includes("pivota_offer_layer") ||
+      diagnosis.refined_fix_targets.includes("both_merchant_and_pivota")
+  );
+  assert.equal(pivotaPatch.patch.price, 18.99);
+  assert.equal(pivotaPatch.patch.currency, "USD");
+});
+
+test("offer execution diagnosis detects expired coupon and promo mismatch", () => {
+  const fixture = createOfferExecutionFixture({
+    merchantOfferPatch: {
+      promo_price: 16.99,
+      coupon_code: "SUN10",
+      coupon_status: "expired",
+      expires_at: "2026-04-01T00:00:00.000Z",
+    },
+    pivotaOfferPatch: {
+      promo_price: 16.99,
+      coupon_code: "SUN10",
+      coupon_status: "active",
+    },
+  });
+  const diagnosis = new OfferExecutionService().runDiagnosis(fixture.issue.id);
+  const promoPatch = diagnosis.patch_recommendations.find(
+    (patch) => patch.patch_type === "promo_state_patch"
+  );
+
+  assert.ok(offerFindingTypes(diagnosis).includes("expired_coupon"));
+  assert.ok(diagnosis.refined_fix_targets.includes("pivota_offer_layer"));
+  assert.ok(diagnosis.refined_fix_targets.includes("merchant_promo_source"));
+  assert.equal(promoPatch.patch.coupon_status, "expired");
+  assert.equal(promoPatch.patch.coupon_code, "SUN10");
+});
+
+test("offer execution diagnosis detects inventory mismatch", () => {
+  const fixture = createOfferExecutionFixture({
+    merchantOfferPatch: {
+      inventory_status: "out_of_stock",
+      inventory_quantity: 0,
+    },
+    pivotaOfferPatch: {
+      inventory_status: "in_stock",
+    },
+  });
+  const diagnosis = new OfferExecutionService().runDiagnosis(fixture.issue.id);
+  const inventoryPatch = diagnosis.patch_recommendations.find(
+    (patch) => patch.patch_type === "inventory_sync_patch"
+  );
+
+  assert.ok(offerFindingTypes(diagnosis).includes("inventory_mismatch"));
+  assert.ok(diagnosis.refined_fix_targets.includes("pivota_offer_layer"));
+  assert.ok(diagnosis.refined_fix_targets.includes("merchant_inventory_source"));
+  assert.equal(inventoryPatch.patch.source_inventory_status, "out_of_stock");
+  assert.equal(inventoryPatch.patch.source_inventory_quantity, 0);
+});
+
+test("offer execution diagnosis detects wrong SKU or variant attachment", () => {
+  const fixture = createOfferExecutionFixture({
+    pivotaOfferPatch: {
+      sku_id: "ISNTREE-PU-WATERY-SUN-GEL-SPF50-PA4-50ML-2PACK",
+      attached_to_pivota_pdp: true,
+    },
+  });
+  const diagnosis = new OfferExecutionService().runDiagnosis(fixture.issue.id);
+  const attachmentPatch = diagnosis.patch_recommendations.find(
+    (patch) => patch.patch_type === "offer_attachment_patch"
+  );
+
+  assert.ok(offerFindingTypes(diagnosis).includes("offer_sku_variant_mismatch"));
+  assert.ok(diagnosis.refined_fix_targets.includes("pivota_product_graph"));
+  assert.equal(attachmentPatch.target, "pivota_product_graph");
+  assert.equal(attachmentPatch.patch.expected_sku_id, fixture.product.sku);
+  assert.equal(
+    attachmentPatch.patch.current_pivota_sku_id,
+    "ISNTREE-PU-WATERY-SUN-GEL-SPF50-PA4-50ML-2PACK"
+  );
+});
+
+test("offer execution diagnosis treats clean offer as high readiness without a new offer issue", () => {
+  const fixture = createOfferExecutionFixture();
+  const issueCountBefore = getAgentCenterState().issues.length;
+  const diagnosis = new OfferExecutionService().runDiagnosis(fixture.issue.id);
+  const updatedIssue = getAgentCenterState().issues.find(
+    (item) => item.id === fixture.issue.id
+  );
+
+  assert.deepEqual(offerFindingTypes(diagnosis), ["clean_offer"]);
+  assert.equal(diagnosis.offer_readiness_score, 100);
+  assert.equal(diagnosis.confidence, "high");
+  assert.equal(getAgentCenterState().issues.length, issueCountBefore);
+  assert.equal(
+    getAgentCenterState().issues.some(
+      (item) => item.issue_type === "offer_execution_issue"
+    ),
+    false
+  );
+  assert.equal(updatedIssue.offer_execution_diagnosis_id, diagnosis.id);
+});
+
+test("offer execution usage events are idempotent across reruns and patch regeneration", () => {
+  const fixture = createOfferExecutionFixture({ pivotaOfferPatch: null });
+  const service = new OfferExecutionService();
+  const first = service.runDiagnosis(fixture.issue.id);
+  const usageCount = getAgentCenterState().usageEvents.length;
+  const second = service.runDiagnosis(fixture.issue.id);
+  const regenerated = service.regeneratePatch(fixture.issue.id);
+
+  assert.equal(first.id, second.id);
+  assert.notEqual(first.id, regenerated.id);
+  assert.equal(getAgentCenterState().usageEvents.length, usageCount);
+  assert.deepEqual(first.usage_event_ids, second.usage_event_ids);
+  assert.deepEqual(first.usage_event_ids, regenerated.usage_event_ids);
+  assert.ok(
+    getAgentCenterState()
+      .issues.find((item) => item.id === fixture.issue.id)
+      .offer_execution_diagnosis_ids.includes(regenerated.id)
+  );
+});
+
+test("offer execution API returns debug payload and can attach diagnosis to retest plan", async () => {
+  const fixture = createOfferExecutionFixture({ pivotaOfferPatch: null });
+  const created = await handleAgentCenterRequest(
+    new NextRequest(
+      `https://example.test/api/agent-center/issues/${fixture.issue.id}/offer-diagnosis`,
+      { method: "POST" }
+    ),
+    { path: ["issues", fixture.issue.id, "offer-diagnosis"] }
+  );
+  const createdPayload = await created.json();
+  const attached = await handleAgentCenterRequest(
+    new NextRequest(
+      `https://example.test/api/agent-center/issues/${fixture.issue.id}/attach-offer-diagnosis-to-retest`,
+      { method: "POST" }
+    ),
+    { path: ["issues", fixture.issue.id, "attach-offer-diagnosis-to-retest"] }
+  );
+  const attachedPayload = await attached.json();
+  const fetched = await handleAgentCenterRequest(
+    new NextRequest(
+      `https://example.test/api/agent-center/issues/${fixture.issue.id}/offer-diagnosis`
+    ),
+    { path: ["issues", fixture.issue.id, "offer-diagnosis"] }
+  );
+  const fetchedPayload = await fetched.json();
+
+  assert.equal(created.status, 201);
+  assert.equal(createdPayload.diagnosis.issue_id, fixture.issue.id);
+  assert.equal(attached.status, 200);
+  assert.equal(
+    attachedPayload.issue.evidence.offer_execution_attached_to_retest_plan,
+    attachedPayload.diagnosis.id
+  );
+  assert.match(
+    attachedPayload.issue.verification_plan.target_improvement,
+    /Offer Execution diagnosis/
+  );
+  assert.equal(fetched.status, 200);
+  assert.equal(fetchedPayload.debug.source_issue_summary.issue_id, fixture.issue.id);
+  assert.equal(fetchedPayload.debug.merchant_offer_source.id, fixture.merchantOffer.id);
+  assert.equal(fetchedPayload.debug.pivota_offer_state, null);
+  assert.deepEqual(
+    fetchedPayload.debug.refined_fix_targets,
+    fetchedPayload.diagnosis.refined_fix_targets
+  );
+  assert.ok(
+    fetchedPayload.debug.usage_events.every(
+      (event) =>
+        event.billing_mode === "preview_only" &&
+        event.billing_status === "not_invoiced"
+    )
+  );
+});
+
 test("Issue Detail renders Product Understanding Diagnosis controls", async () => {
   const source = await readFile(
     new URL("../../app/agent-center/issues/[issueId]/page.tsx", import.meta.url),
@@ -2006,6 +2290,21 @@ test("Issue Detail renders Product Understanding Diagnosis controls", async () =
   assert.match(source, /Regenerate Patch/);
   assert.match(source, /Attach to Retest Plan/);
   assert.match(source, /product-diagnosis/);
+});
+
+test("Issue Detail renders Offer Execution Diagnosis controls", async () => {
+  const source = await readFile(
+    new URL("../../app/agent-center/issues/[issueId]/page.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(source, /Offer Execution Diagnosis/);
+  assert.match(source, /Run Offer Diagnosis/);
+  assert.match(source, /Regenerate Offer Patch/);
+  assert.match(source, /Attach to Retest Plan/);
+  assert.match(source, /offer-diagnosis/);
+  assert.match(source, /regenerate-offer-patch/);
+  assert.match(source, /attach-offer-diagnosis-to-retest/);
 });
 
 test("issue debug view and retest preparation expose internal validation evidence", () => {

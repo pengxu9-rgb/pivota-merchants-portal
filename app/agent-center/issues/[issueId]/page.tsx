@@ -2,7 +2,14 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { CheckCircle2, ClipboardList, RotateCcw, Send, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  ClipboardList,
+  RotateCcw,
+  Send,
+  ShoppingCart,
+  XCircle,
+} from "lucide-react";
 import {
   MerchantButton,
   PageHeader,
@@ -52,6 +59,26 @@ function findingEvidence(findings: any[], emptyText: string) {
     .filter((finding) => finding.finding_type !== "no_issue")
     .map((finding) => finding.evidence || label(finding.finding_type));
   return items.length ? items : [emptyText];
+}
+
+function offerPatchByType(diagnosis: any, patchType: string) {
+  return diagnosis?.patch_recommendations?.find(
+    (recommendation: any) => recommendation.patch_type === patchType
+  )?.patch;
+}
+
+function offerFindingEvidence(diagnosis: any, findingTypes: string[], emptyText: string) {
+  const findings = (diagnosis?.offer_layer_findings || []).flatMap(
+    (comparison: any) => comparison.findings || []
+  );
+  const items = findings
+    .filter((finding: any) => findingTypes.includes(finding.finding_type))
+    .map((finding: any) => finding.evidence || label(finding.finding_type));
+  return items.length ? items : [emptyText];
+}
+
+function latestOfferComparison(diagnosis: any) {
+  return diagnosis?.offer_layer_findings?.[0] || {};
 }
 
 function estimatedRetestCredits(issue: any, preparation: any) {
@@ -124,10 +151,12 @@ export default function IssueDetailPage() {
   const [issue, setIssue] = useState<any>(null);
   const [verification, setVerification] = useState<any>(null);
   const [diagnosis, setDiagnosis] = useState<any>(null);
+  const [offerDiagnosis, setOfferDiagnosis] = useState<any>(null);
   const [retestPreparation, setRetestPreparation] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [retestState, setRetestState] = useState("idle");
   const [diagnosisState, setDiagnosisState] = useState("idle");
+  const [offerDiagnosisState, setOfferDiagnosisState] = useState("idle");
 
   async function loadIssue(issueId: string) {
     const payload = await agentFetch<{ issue: any }>(`/api/agent-center/issues/${issueId}`);
@@ -140,6 +169,10 @@ export default function IssueDetailPage() {
       `/api/agent-center/issues/${issueId}/product-diagnosis`
     );
     setDiagnosis(diagnosisPayload.diagnosis);
+    const offerDiagnosisPayload = await agentFetch<{ diagnosis: any }>(
+      `/api/agent-center/issues/${issueId}/offer-diagnosis`
+    );
+    setOfferDiagnosis(offerDiagnosisPayload.diagnosis);
   }
 
   useEffect(() => {
@@ -216,12 +249,35 @@ export default function IssueDetailPage() {
     }
   }
 
+  async function runOfferDiagnosis(action = "offer-diagnosis") {
+    if (!issue) return;
+    setLoading(true);
+    setOfferDiagnosisState(action === "offer-diagnosis" ? "running" : "updating");
+    try {
+      const payload = await agentFetch<{ diagnosis: any; issue: any }>(
+        `/api/agent-center/issues/${issue.id}/${action}`,
+        { method: "POST" }
+      );
+      setOfferDiagnosis(payload.diagnosis);
+      if (payload.issue) setIssue(payload.issue);
+      setOfferDiagnosisState("completed");
+      await loadIssue(issue.id);
+    } catch {
+      setOfferDiagnosisState("failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const narrative = issue?.merchant_facing_narrative || {};
   const beforeScores = verification?.before_scores?.aggregate_scores;
   const afterScores = verification?.after_scores?.aggregate_scores;
   const scoreDelta = verification?.score_delta || {};
   const merchantGapLabels = attributeGapLabels(diagnosis?.merchant_layer_findings || []);
   const pivotaGapLabels = attributeGapLabels(diagnosis?.pivota_layer_findings || []);
+  const offerComparison = latestOfferComparison(offerDiagnosis);
+  const merchantOffer = offerComparison.merchant_offer;
+  const pivotaOffer = offerComparison.pivota_offer;
 
   return (
     <main className="merchant-page space-y-6 py-6">
@@ -454,6 +510,195 @@ export default function IssueDetailPage() {
               Attach to Retest Plan
             </MerchantButton>
           </div>
+        </div>
+      </SurfaceCard>
+
+      <SurfaceCard title="Offer Execution Diagnosis">
+        <div className="space-y-5 px-5 py-5">
+          <div className="grid gap-3 sm:grid-cols-4">
+            <MetricTile
+              label="Offer readiness"
+              value={
+                offerDiagnosis?.offer_readiness_score !== undefined
+                  ? `${offerDiagnosis.offer_readiness_score}%`
+                  : "not run"
+              }
+              tone={
+                (offerDiagnosis?.offer_readiness_score || 0) >= 80 ? "success" : "warning"
+              }
+            />
+            <MetricTile
+              label="Confidence"
+              value={offerDiagnosis?.confidence || "not run"}
+              tone={offerDiagnosis?.confidence === "high" ? "success" : "neutral"}
+            />
+            <MetricTile
+              label="Last diagnosis run"
+              value={
+                offerDiagnosis?.created_at
+                  ? new Date(offerDiagnosis.created_at).toLocaleString()
+                  : "not run"
+              }
+            />
+            <MetricTile label="Usage status" value="preview only" />
+          </div>
+
+          <NarrativeSection title="Root cause">
+            {offerDiagnosis?.root_cause_summary ||
+              "Run Offer Diagnosis to compare merchant offer source data with Pivota offer state. V1 checks readiness and consistency only; it does not execute checkout or payment."}
+          </NarrativeSection>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <NarrativeSection title="Merchant offer source">
+              <div className="space-y-1">
+                <p>ID: {merchantOffer?.id || "not found"}</p>
+                <p>
+                  Price:{" "}
+                  {merchantOffer
+                    ? `${merchantOffer.currency} ${merchantOffer.price}`
+                    : "not available"}
+                </p>
+                <p>
+                  Promo/coupon:{" "}
+                  {merchantOffer?.coupon_code || merchantOffer?.coupon_status || "none"}
+                </p>
+                <p>
+                  Inventory:{" "}
+                  {merchantOffer
+                    ? `${label(merchantOffer.inventory_status)} (${merchantOffer.inventory_quantity ?? "unknown"})`
+                    : "not available"}
+                </p>
+              </div>
+            </NarrativeSection>
+            <NarrativeSection title="Pivota offer state">
+              <div className="space-y-1">
+                <p>ID: {pivotaOffer?.id || "not found"}</p>
+                <p>
+                  Price:{" "}
+                  {pivotaOffer
+                    ? `${pivotaOffer.currency} ${pivotaOffer.price}`
+                    : "not available"}
+                </p>
+                <p>
+                  Execution state:{" "}
+                  {pivotaOffer?.execution_status ? label(pivotaOffer.execution_status) : "not available"}
+                </p>
+                <p>
+                  Attached to PDP:{" "}
+                  {pivotaOffer ? (pivotaOffer.attached_to_pivota_pdp ? "yes" : "no") : "not available"}
+                </p>
+              </div>
+            </NarrativeSection>
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <NarrativeSection title="Price mismatch">
+              <ul className="list-disc space-y-1 pl-5">
+                {offerFindingEvidence(
+                  offerDiagnosis,
+                  ["price_mismatch", "stale_offer", "missing_offer"],
+                  "No price or freshness mismatch diagnosed yet."
+                ).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </NarrativeSection>
+            <NarrativeSection title="Promo / coupon mismatch">
+              <ul className="list-disc space-y-1 pl-5">
+                {offerFindingEvidence(
+                  offerDiagnosis,
+                  ["promo_mismatch", "expired_coupon"],
+                  "No promo or coupon mismatch diagnosed yet."
+                ).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </NarrativeSection>
+            <NarrativeSection title="Inventory mismatch">
+              <ul className="list-disc space-y-1 pl-5">
+                {offerFindingEvidence(
+                  offerDiagnosis,
+                  ["inventory_mismatch"],
+                  "No inventory mismatch diagnosed yet."
+                ).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </NarrativeSection>
+            <NarrativeSection title="Offer attachment status">
+              <ul className="list-disc space-y-1 pl-5">
+                {offerFindingEvidence(
+                  offerDiagnosis,
+                  ["offer_not_attached_to_pivota_pdp", "offer_sku_variant_mismatch"],
+                  "No PDP attachment or SKU/variant mismatch diagnosed yet."
+                ).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </NarrativeSection>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {(offerDiagnosis?.refined_fix_targets || []).map((target: string) => (
+              <FixTargetBadge key={target} target={target} />
+            ))}
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-2">
+            <div>
+              <p className="merchant-overline mb-2">Recommended merchant offer patch</p>
+              <JsonBlock
+                value={
+                  offerPatchByType(offerDiagnosis, "merchant_offer_patch") ||
+                  offerPatchByType(offerDiagnosis, "inventory_sync_patch") ||
+                  offerPatchByType(offerDiagnosis, "promo_state_patch") ||
+                  {}
+                }
+              />
+            </div>
+            <div>
+              <p className="merchant-overline mb-2">Recommended Pivota offer patch</p>
+              <JsonBlock
+                value={
+                  offerPatchByType(offerDiagnosis, "pivota_offer_patch") ||
+                  offerPatchByType(offerDiagnosis, "offer_attachment_patch") ||
+                  {}
+                }
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <MerchantButton
+              icon={ShoppingCart}
+              variant="secondary"
+              onClick={() => runOfferDiagnosis("offer-diagnosis")}
+              disabled={loading}
+            >
+              Run Offer Diagnosis
+            </MerchantButton>
+            <MerchantButton
+              icon={RotateCcw}
+              variant="secondary"
+              onClick={() => runOfferDiagnosis("regenerate-offer-patch")}
+              disabled={loading}
+            >
+              Regenerate Offer Patch
+            </MerchantButton>
+            <MerchantButton
+              icon={Send}
+              variant="secondary"
+              onClick={() => runOfferDiagnosis("attach-offer-diagnosis-to-retest")}
+              disabled={loading}
+            >
+              Attach to Retest Plan
+            </MerchantButton>
+          </div>
+
+          <p className="text-sm text-[color:var(--merchant-muted)]">
+            Offer Execution V1 verifies offer readiness signals only. Checkout, payment,
+            authorization, settlement, refunds, and order write-back are out of scope.
+          </p>
         </div>
       </SurfaceCard>
 

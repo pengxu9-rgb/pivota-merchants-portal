@@ -18,6 +18,7 @@ import type {
   AgenticGMVIssueType,
   AttributeGap,
   CompetitorMappingFinding,
+  CouponStatus,
   DemandTestInput,
   DemandTestJob,
   DemandTestJobStatus,
@@ -29,7 +30,14 @@ import type {
   LLMSurfaceTestRun,
   MerchantStore,
   MatchConfidence,
+  MerchantOffer,
   ParsedRecommendation,
+  OfferExecutionDiagnosis,
+  OfferIssueType,
+  OfferLayerComparison,
+  OfferMismatchFinding,
+  OfferPatchRecommendation,
+  PivotaOffer,
   ProductLayerComparison,
   ProductMatchLevel,
   ProductMatchResult,
@@ -411,6 +419,10 @@ function formatFixTarget(target: FixTarget) {
     pivota_unified_pdp: "Pivota unified PDP",
     pivota_product_graph: "Pivota product graph",
     pivota_query_mapping: "Pivota query mapping",
+    merchant_offer_source: "merchant offer source",
+    pivota_offer_layer: "Pivota offer layer",
+    merchant_inventory_source: "merchant inventory source",
+    merchant_promo_source: "merchant promo source",
     both_merchant_and_pivota: "merchant PDP and Pivota unified PDP",
     human_review: "human review",
   };
@@ -1164,6 +1176,46 @@ export class UsageMeteringService {
       model: "product-understanding-deterministic-v1",
       query_cluster_id: input.issue.affected_query_clusters[0] || "none",
       prompt_template_id: "product_understanding_diagnosis_v1",
+      input_tokens: 0,
+      output_tokens: 0,
+      billable: true,
+      billing_mode: "preview_only",
+      billing_status: "not_invoiced",
+      created_at: now,
+      updated_at: now,
+    };
+    state.usageEvents.push(event);
+    return event;
+  }
+
+  recordOfferExecution(input: {
+    issue: AgenticGMVIssue;
+    diagnosisId?: string;
+    quantity?: number;
+  }) {
+    const key = `offer_execution:${input.issue.id}:offer_readiness:v1`;
+    const state = getAgentCenterState();
+    const existing = state.usageEvents.find((event) => event.idempotency_key === key);
+    if (existing) return existing;
+
+    const target = findScanTarget(input.issue.scan_target_id);
+    const now = nowIso();
+    const event: UsageEvent = {
+      id: nextId("usage"),
+      idempotency_key: key,
+      merchant_id: input.issue.merchant_id,
+      store_id: input.issue.store_id,
+      scan_target_id: input.issue.scan_target_id,
+      event_type: "offer_verification_credit",
+      quantity: input.quantity || 1,
+      source_agent: "offer_execution_agent",
+      agent_type: "offer_execution_agent",
+      workflow_type: "offer_readiness",
+      scan_mode: target.scan_mode,
+      provider: "internal",
+      model: "offer-execution-deterministic-v1",
+      query_cluster_id: input.issue.affected_query_clusters[0] || "none",
+      prompt_template_id: "offer_execution_readiness_v1",
       input_tokens: 0,
       output_tokens: 0,
       billable: true,
@@ -3798,6 +3850,682 @@ export class ProductUnderstandingService {
     issue.evidence = {
       ...issue.evidence,
       product_understanding_attached_to_retest_plan: diagnosis.id,
+    };
+    touch(issue);
+  }
+}
+
+function sameMoney(left?: number | null, right?: number | null) {
+  if (left === undefined || left === null || right === undefined || right === null) {
+    return left === right;
+  }
+  return Math.abs(Number(left) - Number(right)) < 0.01;
+}
+
+function isExpired(value?: string | null) {
+  return Boolean(value && new Date(value).getTime() < Date.now());
+}
+
+function staleRelativeToMerchant(
+  merchantOffer?: MerchantOffer | null,
+  pivotaOffer?: PivotaOffer | null
+) {
+  if (!merchantOffer?.last_synced_at || !pivotaOffer?.last_verified_at) return false;
+  return new Date(merchantOffer.last_synced_at).getTime() >
+    new Date(pivotaOffer.last_verified_at).getTime();
+}
+
+function offerFinding(input: {
+  findingType: OfferIssueType | "clean_offer";
+  severity?: OfferMismatchFinding["severity"];
+  field: OfferMismatchFinding["field"];
+  merchantValue?: unknown;
+  pivotaValue?: unknown;
+  evidence: string;
+  fixTarget: FixTarget;
+}): OfferMismatchFinding {
+  return {
+    finding_type: input.findingType,
+    severity: input.severity || "medium",
+    field: input.field,
+    merchant_value: input.merchantValue,
+    pivota_value: input.pivotaValue,
+    evidence: input.evidence,
+    fix_target: input.fixTarget,
+  };
+}
+
+function offerRootCause(findings: OfferMismatchFinding[]) {
+  const actionable = findings.filter((finding) => finding.finding_type !== "clean_offer");
+  if (!actionable.length) {
+    return "Merchant offer source and Pivota offer state are consistent for V1 readiness checks.";
+  }
+
+  const first = actionable[0];
+  const labels: Record<OfferIssueType, string> = {
+    missing_offer:
+      "Pivota does not have an executable offer state for a merchant offer that exists in source data.",
+    stale_offer:
+      "Pivota offer state appears stale compared with the merchant source timestamp.",
+    price_mismatch:
+      "Merchant source price and Pivota offer price do not match.",
+    promo_mismatch:
+      "Merchant promo/coupon state and Pivota promo state do not match.",
+    expired_coupon:
+      "Merchant coupon state is expired, but Pivota still exposes active promo state.",
+    inventory_mismatch:
+      "Merchant inventory state and Pivota inventory state do not match.",
+    offer_not_attached_to_pivota_pdp:
+      "Pivota offer exists but is not attached to the unified PDP.",
+    offer_sku_variant_mismatch:
+      "Offer SKU or variant mapping does not match the affected product SKU.",
+    human_review_required:
+      "Offer readiness evidence is incomplete or ambiguous and needs human review.",
+  };
+  return labels[first.finding_type as OfferIssueType] || first.evidence;
+}
+
+function offerReadinessScore(findings: OfferMismatchFinding[]) {
+  const penalties: Record<OfferMismatchFinding["severity"], number> = {
+    low: 10,
+    medium: 20,
+    high: 35,
+    critical: 50,
+  };
+  const totalPenalty = findings
+    .filter((finding) => finding.finding_type !== "clean_offer")
+    .reduce((sum, finding) => sum + penalties[finding.severity], 0);
+  return clampScore(100 - totalPenalty);
+}
+
+function offerConfidence(input: {
+  merchantOffer?: MerchantOffer | null;
+  pivotaOffer?: PivotaOffer | null;
+  findings: OfferMismatchFinding[];
+}): OfferExecutionDiagnosis["confidence"] {
+  if (!input.merchantOffer && !input.pivotaOffer) return "low";
+  if (
+    input.findings.some((finding) =>
+      ["human_review_required", "offer_sku_variant_mismatch"].includes(
+        finding.finding_type
+      )
+    )
+  ) {
+    return "medium";
+  }
+  return input.merchantOffer && input.pivotaOffer ? "high" : "medium";
+}
+
+function cleanOfferComparison(
+  merchantOffer?: MerchantOffer | null,
+  pivotaOffer?: PivotaOffer | null
+): OfferLayerComparison {
+  return {
+    merchant_offer: merchantOffer || null,
+    pivota_offer: pivotaOffer || null,
+    price_consistent: true,
+    promo_consistent: true,
+    coupon_consistent: true,
+    inventory_consistent: true,
+    expiration_valid: true,
+    attached_to_pivota_pdp: Boolean(pivotaOffer?.attached_to_pivota_pdp),
+    sku_variant_consistent: true,
+    findings: [
+      offerFinding({
+        findingType: "clean_offer",
+        severity: "low",
+        field: "offer",
+        evidence:
+          "Merchant offer source and Pivota offer state are consistent for V1 checks.",
+        fixTarget: "pivota_offer_layer",
+      }),
+    ],
+  };
+}
+
+export class OfferExecutionService {
+  latest(issueId: string) {
+    return [...getAgentCenterState().offerExecutionDiagnoses]
+      .reverse()
+      .find((diagnosis) => diagnosis.issue_id === issueId) || null;
+  }
+
+  debugPayload(issueId: string) {
+    const state = getAgentCenterState();
+    const issue = findIssue(issueId);
+    const store = findStore(issue.store_id);
+    const clusters = state.queryClusters.filter((cluster) =>
+      issue.affected_query_clusters.includes(cluster.id)
+    );
+    const product = findProductForIssue(store, issue, clusters);
+    const diagnosis = this.latest(issueId);
+    const merchantOffer = diagnosis?.merchant_offer_id
+      ? state.merchantOffers.find((offer) => offer.id === diagnosis.merchant_offer_id)
+      : this.findMerchantOffer(issue, product);
+    const pivotaOffer = diagnosis?.pivota_offer_id
+      ? state.pivotaOffers.find((offer) => offer.id === diagnosis.pivota_offer_id)
+      : this.findPivotaOffer(issue, product, merchantOffer);
+    const productDiagnosis =
+      issue.product_understanding_diagnosis_id
+        ? state.productUnderstandingDiagnoses.find(
+            (item) => item.id === issue.product_understanding_diagnosis_id
+          )
+        : new ProductUnderstandingService().latest(issueId);
+    const usageEvents = diagnosis
+      ? state.usageEvents.filter((event) =>
+          diagnosis.usage_event_ids.includes(event.id)
+        )
+      : [];
+
+    return {
+      source_issue_summary: {
+        issue_id: issue.id,
+        issue_type: issue.issue_type,
+        severity: issue.severity,
+        status: issue.status,
+        affected_product_entities: issue.affected_product_entities,
+        affected_skus: issue.affected_skus,
+        fix_targets: issue.fix_targets,
+      },
+      product_understanding_diagnosis: productDiagnosis || null,
+      merchant_offer_source: merchantOffer || null,
+      pivota_offer_state: pivotaOffer || null,
+      findings: diagnosis?.offer_layer_findings || [],
+      refined_fix_targets: diagnosis?.refined_fix_targets || [],
+      patch_recommendations: diagnosis?.patch_recommendations || [],
+      offer_readiness_score: diagnosis?.offer_readiness_score ?? null,
+      confidence: diagnosis?.confidence || null,
+      usage_event_ids: diagnosis?.usage_event_ids || [],
+      usage_events: usageEvents,
+    };
+  }
+
+  runDiagnosis(
+    issueId: string,
+    options?: { regeneratePatch?: boolean; attachToRetestPlan?: boolean }
+  ) {
+    const existing = this.latest(issueId);
+    if (existing && !options?.regeneratePatch && !options?.attachToRetestPlan) {
+      return existing;
+    }
+
+    const state = getAgentCenterState();
+    const issue = findIssue(issueId);
+    const store = findStore(issue.store_id);
+    const clusters = state.queryClusters.filter((cluster) =>
+      issue.affected_query_clusters.includes(cluster.id)
+    );
+    const product = findProductForIssue(store, issue, clusters);
+    const merchantOffer = this.findMerchantOffer(issue, product);
+    const pivotaOffer = this.findPivotaOffer(issue, product, merchantOffer);
+    const comparison = this.compareOffers({
+      issue,
+      product,
+      merchantOffer,
+      pivotaOffer,
+    });
+    const actionable = comparison.findings.filter(
+      (finding) => finding.finding_type !== "clean_offer"
+    );
+    const refinedFixTargets = this.refinedFixTargets(actionable);
+    const patchRecommendations = this.patchRecommendations({
+      issue,
+      product,
+      merchantOffer,
+      pivotaOffer,
+      findings: actionable,
+    });
+    const now = nowIso();
+    const diagnosisId = nextId("offer_diag");
+    const usageEvent = new UsageMeteringService().recordOfferExecution({
+      issue,
+      diagnosisId,
+    });
+    const diagnosis: OfferExecutionDiagnosis = {
+      id: diagnosisId,
+      merchant_id: issue.merchant_id,
+      store_id: issue.store_id,
+      issue_id: issue.id,
+      product_entity_id: product?.product_entity_id || issue.affected_product_entities[0],
+      sku_id: product?.sku || issue.affected_skus[0],
+      merchant_offer_id: merchantOffer?.id,
+      pivota_offer_id: pivotaOffer?.id,
+      source_agent: "offer_execution_agent",
+      offer_layer_findings: [comparison],
+      root_cause_summary: offerRootCause(comparison.findings),
+      refined_fix_targets: refinedFixTargets.length
+        ? refinedFixTargets
+        : ["pivota_offer_layer"],
+      patch_recommendations: patchRecommendations,
+      offer_readiness_score: offerReadinessScore(comparison.findings),
+      confidence: offerConfidence({
+        merchantOffer,
+        pivotaOffer,
+        findings: comparison.findings,
+      }),
+      usage_event_ids: [usageEvent.id],
+      created_at: now,
+      updated_at: now,
+    };
+
+    state.offerExecutionDiagnoses.push(diagnosis);
+    this.attachDiagnosisToIssue(issue, diagnosis);
+    if (options?.attachToRetestPlan) {
+      this.attachDiagnosisToRetestPlan(issue, diagnosis);
+    }
+    return diagnosis;
+  }
+
+  regeneratePatch(issueId: string) {
+    return this.runDiagnosis(issueId, { regeneratePatch: true });
+  }
+
+  attachToRetestPlan(issueId: string) {
+    return this.runDiagnosis(issueId, { attachToRetestPlan: true });
+  }
+
+  private findMerchantOffer(issue: AgenticGMVIssue, product?: ProductRecord) {
+    return getAgentCenterState().merchantOffers.find(
+      (offer) =>
+        offer.merchant_id === issue.merchant_id &&
+        offer.store_id === issue.store_id &&
+        (offer.product_id === product?.id ||
+          offer.sku_id === product?.sku ||
+          issue.affected_skus.includes(offer.sku_id))
+    );
+  }
+
+  private findPivotaOffer(
+    issue: AgenticGMVIssue,
+    product?: ProductRecord,
+    merchantOffer?: MerchantOffer
+  ) {
+    const productEntityId = product?.product_entity_id || issue.affected_product_entities[0];
+    return getAgentCenterState().pivotaOffers.find(
+      (offer) =>
+        offer.merchant_id === issue.merchant_id &&
+        offer.store_id === issue.store_id &&
+        offer.product_entity_id === productEntityId &&
+        (!merchantOffer || offer.sku_id === merchantOffer.sku_id)
+    ) ||
+      getAgentCenterState().pivotaOffers.find(
+        (offer) =>
+          offer.merchant_id === issue.merchant_id &&
+          offer.store_id === issue.store_id &&
+          offer.product_entity_id === productEntityId
+      );
+  }
+
+  private compareOffers(input: {
+    issue: AgenticGMVIssue;
+    product?: ProductRecord;
+    merchantOffer?: MerchantOffer;
+    pivotaOffer?: PivotaOffer;
+  }): OfferLayerComparison {
+    const { product, merchantOffer, pivotaOffer } = input;
+    const findings: OfferMismatchFinding[] = [];
+
+    if (!merchantOffer && !pivotaOffer) {
+      findings.push(
+        offerFinding({
+          findingType: "human_review_required",
+          severity: "medium",
+          field: "offer",
+          evidence:
+            "No merchant offer source or Pivota offer state was found for the affected product.",
+          fixTarget: "human_review",
+        })
+      );
+    } else if (merchantOffer && !pivotaOffer) {
+      findings.push(
+        offerFinding({
+          findingType: "missing_offer",
+          severity: "high",
+          field: "offer",
+          merchantValue: merchantOffer.id,
+          evidence:
+            "Merchant offer exists, but no matching Pivota offer state is attached to the ProductEntity.",
+          fixTarget: "pivota_offer_layer",
+        })
+      );
+    }
+
+    if (merchantOffer && pivotaOffer) {
+      if (
+        merchantOffer.currency !== pivotaOffer.currency ||
+        !sameMoney(merchantOffer.price, pivotaOffer.price)
+      ) {
+        findings.push(
+          offerFinding({
+            findingType: "price_mismatch",
+            severity: "high",
+            field: "price",
+            merchantValue: `${merchantOffer.currency} ${merchantOffer.price}`,
+            pivotaValue: `${pivotaOffer.currency} ${pivotaOffer.price}`,
+            evidence:
+              "Merchant source price and Pivota offer price are inconsistent.",
+            fixTarget: staleRelativeToMerchant(merchantOffer, pivotaOffer)
+              ? "pivota_offer_layer"
+              : "both_merchant_and_pivota",
+          })
+        );
+      }
+
+      const promoMismatch =
+        !sameMoney(merchantOffer.promo_price, pivotaOffer.promo_price) ||
+        (merchantOffer.coupon_code || "") !== (pivotaOffer.coupon_code || "");
+      if (promoMismatch) {
+        findings.push(
+          offerFinding({
+            findingType: "promo_mismatch",
+            severity: "medium",
+            field: "promo",
+            merchantValue: {
+              promo_price: merchantOffer.promo_price,
+              coupon_code: merchantOffer.coupon_code,
+            },
+            pivotaValue: {
+              promo_price: pivotaOffer.promo_price,
+              coupon_code: pivotaOffer.coupon_code,
+            },
+            evidence:
+              "Merchant promo price or coupon code does not match Pivota offer state.",
+            fixTarget: "pivota_offer_layer",
+          })
+        );
+      }
+
+      const merchantCouponExpired =
+        merchantOffer.coupon_status === "expired" || isExpired(merchantOffer.expires_at);
+      if (
+        merchantCouponExpired &&
+        ["active", "unknown"].includes(pivotaOffer.coupon_status as CouponStatus)
+      ) {
+        findings.push(
+          offerFinding({
+            findingType: "expired_coupon",
+            severity: "high",
+            field: "coupon",
+            merchantValue: merchantOffer.coupon_status,
+            pivotaValue: pivotaOffer.coupon_status,
+            evidence:
+              "Merchant coupon is expired, but Pivota offer still exposes active or unknown coupon state.",
+            fixTarget: "pivota_offer_layer",
+          })
+        );
+      } else if (merchantOffer.coupon_status !== pivotaOffer.coupon_status) {
+        findings.push(
+          offerFinding({
+            findingType: "promo_mismatch",
+            severity: "medium",
+            field: "coupon",
+            merchantValue: merchantOffer.coupon_status,
+            pivotaValue: pivotaOffer.coupon_status,
+            evidence:
+              "Merchant coupon status and Pivota coupon status are inconsistent.",
+            fixTarget: "pivota_offer_layer",
+          })
+        );
+      }
+
+      if (merchantOffer.inventory_status !== pivotaOffer.inventory_status) {
+        findings.push(
+          offerFinding({
+            findingType: "inventory_mismatch",
+            severity: "high",
+            field: "inventory",
+            merchantValue: merchantOffer.inventory_status,
+            pivotaValue: pivotaOffer.inventory_status,
+            evidence:
+              "Merchant inventory state and Pivota offer inventory state are inconsistent.",
+            fixTarget: "pivota_offer_layer",
+          })
+        );
+      }
+
+      if (!pivotaOffer.attached_to_pivota_pdp) {
+        findings.push(
+          offerFinding({
+            findingType: "offer_not_attached_to_pivota_pdp",
+            severity: "high",
+            field: "attachment",
+            merchantValue: merchantOffer.id,
+            pivotaValue: pivotaOffer.id,
+            evidence:
+              "Pivota offer exists, but it is not attached to the unified PDP.",
+            fixTarget: "pivota_offer_layer",
+          })
+        );
+      }
+
+      if (
+        merchantOffer.sku_id !== pivotaOffer.sku_id ||
+        (product?.sku && merchantOffer.sku_id !== product.sku)
+      ) {
+        findings.push(
+          offerFinding({
+            findingType: "offer_sku_variant_mismatch",
+            severity: "high",
+            field: "sku_variant",
+            merchantValue: merchantOffer.sku_id,
+            pivotaValue: pivotaOffer.sku_id,
+            evidence:
+              "Offer SKU/variant mapping does not match the affected merchant product SKU.",
+            fixTarget: "pivota_product_graph",
+          })
+        );
+      }
+
+      if (staleRelativeToMerchant(merchantOffer, pivotaOffer)) {
+        findings.push(
+          offerFinding({
+            findingType: "stale_offer",
+            severity: "medium",
+            field: "freshness",
+            merchantValue: merchantOffer.last_synced_at,
+            pivotaValue: pivotaOffer.last_verified_at,
+            evidence:
+              "Merchant offer source was synced after the Pivota offer was last verified.",
+            fixTarget: "pivota_offer_layer",
+          })
+        );
+      }
+    }
+
+    if (!findings.length) return cleanOfferComparison(merchantOffer, pivotaOffer);
+
+    return {
+      merchant_offer: merchantOffer || null,
+      pivota_offer: pivotaOffer || null,
+      price_consistent: !findings.some((finding) => finding.field === "price"),
+      promo_consistent: !findings.some((finding) => finding.field === "promo"),
+      coupon_consistent: !findings.some((finding) => finding.field === "coupon"),
+      inventory_consistent: !findings.some((finding) => finding.field === "inventory"),
+      expiration_valid: !findings.some((finding) => finding.finding_type === "expired_coupon"),
+      attached_to_pivota_pdp: Boolean(pivotaOffer?.attached_to_pivota_pdp),
+      sku_variant_consistent: !findings.some(
+        (finding) => finding.field === "sku_variant"
+      ),
+      findings,
+    };
+  }
+
+  private refinedFixTargets(findings: OfferMismatchFinding[]) {
+    const targets = new Set<FixTarget>();
+    for (const finding of findings) {
+      targets.add(finding.fix_target);
+      if (finding.finding_type === "inventory_mismatch") {
+        targets.add("merchant_inventory_source");
+      }
+      if (
+        finding.finding_type === "promo_mismatch" ||
+        finding.finding_type === "expired_coupon"
+      ) {
+        targets.add("merchant_promo_source");
+      }
+      if (finding.finding_type === "missing_offer") {
+        targets.add("pivota_offer_layer");
+      }
+    }
+    return [...targets];
+  }
+
+  private patchRecommendations(input: {
+    issue: AgenticGMVIssue;
+    product?: ProductRecord;
+    merchantOffer?: MerchantOffer;
+    pivotaOffer?: PivotaOffer;
+    findings: OfferMismatchFinding[];
+  }) {
+    const recommendations: OfferPatchRecommendation[] = [];
+    const has = (type: OfferIssueType) =>
+      input.findings.some((finding) => finding.finding_type === type);
+    const hasField = (field: OfferMismatchFinding["field"]) =>
+      input.findings.some((finding) => finding.field === field);
+
+    if (has("missing_offer") || has("price_mismatch") || has("stale_offer")) {
+      recommendations.push({
+        patch_type: "pivota_offer_patch",
+        target: "pivota_offer_layer",
+        patch: {
+          product_entity_id: input.product?.product_entity_id || input.issue.affected_product_entities[0],
+          merchant_offer_id: input.merchantOffer?.id,
+          pivota_offer_id: input.pivotaOffer?.id,
+          sku_id: input.merchantOffer?.sku_id || input.product?.sku,
+          price: input.merchantOffer?.price,
+          currency: input.merchantOffer?.currency,
+          promo_price: input.merchantOffer?.promo_price,
+          coupon_code: input.merchantOffer?.coupon_code,
+          coupon_status: input.merchantOffer?.coupon_status,
+          inventory_status: input.merchantOffer?.inventory_status,
+          execution_status: "needs_sync",
+        },
+        rationale:
+          "Pivota offer state should mirror the current merchant offer source before offer readiness is counted.",
+      });
+    }
+
+    if (hasField("inventory")) {
+      recommendations.push({
+        patch_type: "inventory_sync_patch",
+        target: "merchant_inventory_source",
+        patch: {
+          merchant_offer_id: input.merchantOffer?.id,
+          pivota_offer_id: input.pivotaOffer?.id,
+          sku_id: input.merchantOffer?.sku_id || input.product?.sku,
+          source_inventory_status: input.merchantOffer?.inventory_status,
+          source_inventory_quantity: input.merchantOffer?.inventory_quantity,
+          action: "Sync Pivota offer inventory state from merchant inventory source.",
+        },
+        rationale:
+          "Agent-facing offer readiness must not show an in-stock path when merchant source says unavailable.",
+      });
+    }
+
+    if (hasField("promo") || hasField("coupon")) {
+      recommendations.push({
+        patch_type: "promo_state_patch",
+        target: "merchant_promo_source",
+        patch: {
+          merchant_offer_id: input.merchantOffer?.id,
+          pivota_offer_id: input.pivotaOffer?.id,
+          coupon_code: input.merchantOffer?.coupon_code,
+          coupon_status: input.merchantOffer?.coupon_status,
+          promo_price: input.merchantOffer?.promo_price,
+          expires_at: input.merchantOffer?.expires_at,
+          action: "Refresh Pivota promo/coupon state from merchant promo source.",
+        },
+        rationale:
+          "Expired or mismatched promo state should not appear as executable offer evidence.",
+      });
+    }
+
+    if (has("offer_not_attached_to_pivota_pdp") || has("offer_sku_variant_mismatch")) {
+      recommendations.push({
+        patch_type: "offer_attachment_patch",
+        target: has("offer_sku_variant_mismatch")
+          ? "pivota_product_graph"
+          : "pivota_offer_layer",
+        patch: {
+          product_entity_id: input.product?.product_entity_id || input.issue.affected_product_entities[0],
+          pivota_unified_pdp_id: input.pivotaOffer?.pivota_unified_pdp_id,
+          merchant_offer_id: input.merchantOffer?.id,
+          pivota_offer_id: input.pivotaOffer?.id,
+          expected_sku_id: input.product?.sku || input.merchantOffer?.sku_id,
+          current_pivota_sku_id: input.pivotaOffer?.sku_id,
+          attached_to_pivota_pdp: true,
+        },
+        rationale:
+          "The offer must attach to the correct Pivota PDP and SKU/variant before it can be treated as executable.",
+      });
+    }
+
+    if (!recommendations.length && input.findings.length) {
+      recommendations.push({
+        patch_type: "merchant_offer_patch",
+        target: "human_review",
+        patch: {
+          issue_id: input.issue.id,
+          action: "Review merchant offer source and Pivota offer state manually.",
+        },
+        rationale: "Offer readiness evidence was incomplete or ambiguous.",
+      });
+    }
+
+    return recommendations;
+  }
+
+  private attachDiagnosisToIssue(
+    issue: AgenticGMVIssue,
+    diagnosis: OfferExecutionDiagnosis
+  ) {
+    const byType = (patchType: OfferPatchRecommendation["patch_type"]) =>
+      diagnosis.patch_recommendations.find(
+        (recommendation) => recommendation.patch_type === patchType
+      )?.patch;
+
+    issue.offer_execution_diagnosis_id = diagnosis.id;
+    issue.offer_execution_diagnosis_ids = unique([
+      ...(issue.offer_execution_diagnosis_ids || []),
+      diagnosis.id,
+    ]);
+    issue.merchant_offer_patch = byType("merchant_offer_patch");
+    issue.pivota_offer_patch = byType("pivota_offer_patch");
+    issue.inventory_sync_patch = byType("inventory_sync_patch");
+    issue.promo_state_patch = byType("promo_state_patch");
+    issue.offer_attachment_patch = byType("offer_attachment_patch");
+    issue.evidence = {
+      ...issue.evidence,
+      offer_execution_diagnosis_id: diagnosis.id,
+      offer_readiness_score: diagnosis.offer_readiness_score,
+      offer_execution_confidence: diagnosis.confidence,
+      offer_execution_root_cause_summary: diagnosis.root_cause_summary,
+    };
+    if (
+      diagnosis.offer_layer_findings.some((comparison) =>
+        comparison.findings.some((finding) => finding.finding_type !== "clean_offer")
+      )
+    ) {
+      issue.fix_targets = unique([...issue.fix_targets, ...diagnosis.refined_fix_targets]);
+      issue.root_cause = `${issue.root_cause} Offer readiness: ${diagnosis.root_cause_summary}`;
+      issue.recommended_action =
+        "Apply Product Understanding and Offer Execution readiness patches, then retest the same Demand Test query cluster.";
+      issue.status = "diagnosed";
+    }
+    touch(issue);
+  }
+
+  private attachDiagnosisToRetestPlan(
+    issue: AgenticGMVIssue,
+    diagnosis: OfferExecutionDiagnosis
+  ) {
+    issue.verification_plan = {
+      ...issue.verification_plan,
+      target_improvement: `${issue.verification_plan.target_improvement}; verify Offer Execution diagnosis ${diagnosis.id} before before/after comparison.`,
+    };
+    issue.evidence = {
+      ...issue.evidence,
+      offer_execution_attached_to_retest_plan: diagnosis.id,
     };
     touch(issue);
   }

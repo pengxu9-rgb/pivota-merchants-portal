@@ -282,9 +282,12 @@ function createInitialState(): AgentCenterState {
     matches: [],
     scores: [],
     issues: [],
+    merchantOffers: [],
+    pivotaOffers: [],
     retestPreparations: [],
     verificationRuns: [],
     productUnderstandingDiagnoses: [],
+    offerExecutionDiagnoses: [],
     usageEvents: [],
     usagePlan: {
       included_credits: 1000,

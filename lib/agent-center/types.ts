@@ -95,6 +95,7 @@ export type AgenticGMVIssueType =
   | "product_entity_mapping_issue"
   | "wrong_product_family"
   | "no_purchase_path"
+  | "offer_execution_issue"
   | "human_review_required";
 
 export type FixTarget =
@@ -105,6 +106,10 @@ export type FixTarget =
   | "pivota_unified_pdp"
   | "pivota_product_graph"
   | "pivota_query_mapping"
+  | "merchant_offer_source"
+  | "pivota_offer_layer"
+  | "merchant_inventory_source"
+  | "merchant_promo_source"
   | "both_merchant_and_pivota"
   | "human_review";
 
@@ -564,6 +569,13 @@ export type AgenticGMVIssue = Timestamped & {
   pivota_query_mapping_patch?: Record<string, unknown>;
   product_understanding_diagnosis_id?: string;
   product_understanding_diagnosis_ids?: string[];
+  offer_execution_diagnosis_id?: string;
+  offer_execution_diagnosis_ids?: string[];
+  merchant_offer_patch?: Record<string, unknown>;
+  pivota_offer_patch?: Record<string, unknown>;
+  inventory_sync_patch?: Record<string, unknown>;
+  promo_state_patch?: Record<string, unknown>;
+  offer_attachment_patch?: Record<string, unknown>;
   estimated_gmv_at_risk: number;
   gmv_estimation_method: string;
   estimated_gmv_at_risk_confidence: "low" | "medium" | "high";
@@ -688,6 +700,125 @@ export type ProductUnderstandingDiagnosis = Timestamped & {
   usage_event_ids: string[];
 };
 
+export type CouponStatus = "none" | "active" | "expired" | "disabled" | "unknown";
+export type InventoryStatus = "in_stock" | "out_of_stock" | "low_stock" | "unknown";
+export type OfferExecutionStatus =
+  | "not_tested"
+  | "ready"
+  | "blocked"
+  | "needs_sync"
+  | "human_review";
+
+export type MerchantOffer = Timestamped & {
+  id: string;
+  merchant_id: string;
+  store_id: string;
+  product_id: string;
+  sku_id: string;
+  price: number;
+  currency: string;
+  promo_price?: number | null;
+  coupon_code?: string | null;
+  coupon_status: CouponStatus;
+  inventory_status: InventoryStatus;
+  inventory_quantity?: number | null;
+  expires_at?: string | null;
+  source_url?: string;
+  last_synced_at?: string | null;
+};
+
+export type PivotaOffer = Timestamped & {
+  id: string;
+  product_entity_id: string;
+  pivota_unified_pdp_id: string;
+  merchant_id: string;
+  store_id: string;
+  sku_id: string;
+  price: number;
+  currency: string;
+  promo_price?: number | null;
+  coupon_code?: string | null;
+  coupon_status: CouponStatus;
+  inventory_status: InventoryStatus;
+  execution_status: OfferExecutionStatus;
+  attached_to_pivota_pdp: boolean;
+  last_verified_at?: string | null;
+};
+
+export type OfferIssueType =
+  | "missing_offer"
+  | "stale_offer"
+  | "price_mismatch"
+  | "promo_mismatch"
+  | "expired_coupon"
+  | "inventory_mismatch"
+  | "offer_not_attached_to_pivota_pdp"
+  | "offer_sku_variant_mismatch"
+  | "human_review_required";
+
+export type OfferMismatchFinding = {
+  finding_type: OfferIssueType | "clean_offer";
+  severity: Severity;
+  field:
+    | "offer"
+    | "price"
+    | "promo"
+    | "coupon"
+    | "inventory"
+    | "expiration"
+    | "attachment"
+    | "sku_variant"
+    | "freshness";
+  merchant_value?: unknown;
+  pivota_value?: unknown;
+  evidence: string;
+  fix_target: FixTarget;
+};
+
+export type OfferLayerComparison = {
+  merchant_offer?: MerchantOffer | null;
+  pivota_offer?: PivotaOffer | null;
+  price_consistent: boolean;
+  promo_consistent: boolean;
+  coupon_consistent: boolean;
+  inventory_consistent: boolean;
+  expiration_valid: boolean;
+  attached_to_pivota_pdp: boolean;
+  sku_variant_consistent: boolean;
+  findings: OfferMismatchFinding[];
+};
+
+export type OfferPatchRecommendation = {
+  patch_type:
+    | "merchant_offer_patch"
+    | "pivota_offer_patch"
+    | "inventory_sync_patch"
+    | "promo_state_patch"
+    | "offer_attachment_patch";
+  target: FixTarget;
+  patch: Record<string, unknown>;
+  rationale: string;
+};
+
+export type OfferExecutionDiagnosis = Timestamped & {
+  id: string;
+  merchant_id: string;
+  store_id: string;
+  issue_id: string;
+  product_entity_id?: string;
+  sku_id?: string;
+  merchant_offer_id?: string;
+  pivota_offer_id?: string;
+  source_agent: "offer_execution_agent";
+  offer_layer_findings: OfferLayerComparison[];
+  root_cause_summary: string;
+  refined_fix_targets: FixTarget[];
+  patch_recommendations: OfferPatchRecommendation[];
+  offer_readiness_score: number;
+  confidence: "low" | "medium" | "high";
+  usage_event_ids: string[];
+};
+
 export type RetestPreparation = Timestamped & {
   id: string;
   merchant_id: string;
@@ -756,11 +887,24 @@ export type UsageEvent = Timestamped & {
   merchant_id: string;
   store_id: string;
   scan_target_id: string;
-  event_type: "ai_test_credit" | "product_understanding_credit";
+  event_type:
+    | "ai_test_credit"
+    | "product_understanding_credit"
+    | "offer_verification_credit";
   quantity: number;
-  source_agent: "demand_test_agent" | "product_understanding_agent";
-  agent_type: "demand_test_agent" | "product_understanding_agent";
-  workflow_type: "demand_scan" | "retest" | "product_diagnosis";
+  source_agent:
+    | "demand_test_agent"
+    | "product_understanding_agent"
+    | "offer_execution_agent";
+  agent_type:
+    | "demand_test_agent"
+    | "product_understanding_agent"
+    | "offer_execution_agent";
+  workflow_type:
+    | "demand_scan"
+    | "retest"
+    | "product_diagnosis"
+    | "offer_readiness";
   scan_mode: ScanMode;
   provider: UsageProviderName;
   model: string;
@@ -806,9 +950,12 @@ export type AgentCenterState = {
   matches: ProductMatchResult[];
   scores: DemandVisibilityScore[];
   issues: AgenticGMVIssue[];
+  merchantOffers: MerchantOffer[];
+  pivotaOffers: PivotaOffer[];
   retestPreparations: RetestPreparation[];
   verificationRuns: VerificationRun[];
   productUnderstandingDiagnoses: ProductUnderstandingDiagnosis[];
+  offerExecutionDiagnoses: OfferExecutionDiagnosis[];
   usageEvents: UsageEvent[];
   usagePlan: {
     included_credits: number;
