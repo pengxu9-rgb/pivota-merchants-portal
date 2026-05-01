@@ -8,7 +8,7 @@ import type {
 } from "./types";
 
 const DEMO_MERCHANT_ID = "merchant_demo";
-const DEFAULT_GEMINI_MODEL = "gemini-3.0-flash-preview";
+const DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview";
 
 function nowIso() {
   return new Date().toISOString();
@@ -23,7 +23,11 @@ function configuredGeminiModel() {
     .trim()
     .replace(/^models\//, "");
 
-  if (!configured || /^gemini-[12]\./.test(configured)) {
+  if (
+    !configured ||
+    configured === "gemini-3.0-flash-preview" ||
+    /^gemini-[12]\./.test(configured)
+  ) {
     return DEFAULT_GEMINI_MODEL;
   }
 
