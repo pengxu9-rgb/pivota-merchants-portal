@@ -8,6 +8,7 @@ const provider = await import("../../lib/agent-center/provider.ts");
 const services = await import("../../lib/agent-center/services.ts");
 
 const {
+  DEFAULT_GEMINI_MODEL,
   getAgentCenterState,
   resetAgentCenterState,
 } = repository;
@@ -49,7 +50,7 @@ function demandInput(store, target, cluster, product) {
     promptTemplateId: "general_recommendation_v1",
     prompt: `User query: ${cluster.queries[0]}`,
     provider: "gemini",
-    model: "gemini-2.0-flash",
+    model: DEFAULT_GEMINI_MODEL,
     language: "en",
     market: "US",
     currency: "USD",
@@ -126,6 +127,29 @@ test("usage estimate and job creation can scope to selected query clusters", () 
   assert.equal(job.estimated_credits, 1);
 });
 
+test("Gemini provider registry enforces the V1 minimum model", () => {
+  const originalGeminiModel = process.env.GEMINI_MODEL;
+  const originalPublicGeminiModel = process.env.NEXT_PUBLIC_GEMINI_MODEL;
+
+  process.env.GEMINI_MODEL = "gemini-2.0-flash";
+  delete process.env.NEXT_PUBLIC_GEMINI_MODEL;
+  resetAgentCenterState();
+
+  const gemini = getAgentCenterState().providers.find(
+    (item) => item.provider === "gemini"
+  );
+  assert.equal(gemini?.default_model, DEFAULT_GEMINI_MODEL);
+
+  if (originalGeminiModel === undefined) delete process.env.GEMINI_MODEL;
+  else process.env.GEMINI_MODEL = originalGeminiModel;
+  if (originalPublicGeminiModel === undefined) {
+    delete process.env.NEXT_PUBLIC_GEMINI_MODEL;
+  } else {
+    process.env.NEXT_PUBLIC_GEMINI_MODEL = originalPublicGeminiModel;
+  }
+  resetAgentCenterState();
+});
+
 test("GeminiProviderAdapter uses deterministic mock results when configured", async () => {
   const { store, target } = createConnectedTarget();
   const cluster = new QueryClusterService().generateForScanTarget(target.id)[0];
@@ -147,7 +171,7 @@ test("parser schema validation marks invalid raw output", () => {
   const parsed = parseProviderOutput(
     {
       provider: "gemini",
-      model: "gemini-2.0-flash",
+      model: DEFAULT_GEMINI_MODEL,
       raw_output: "{}",
       normalized_output: {},
       input_tokens: 1,
@@ -169,7 +193,7 @@ test("parser schema validation handles malformed JSON as parse evidence", () => 
   const parsed = parseProviderOutput(
     {
       provider: "gemini",
-      model: "gemini-2.0-flash",
+      model: DEFAULT_GEMINI_MODEL,
       raw_output: "not-json",
       normalized_output: {},
       input_tokens: 1,

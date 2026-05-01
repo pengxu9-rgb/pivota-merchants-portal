@@ -8,9 +8,26 @@ import type {
 } from "./types";
 
 const DEMO_MERCHANT_ID = "merchant_demo";
+const DEFAULT_GEMINI_MODEL = "gemini-3.0-flash-preview";
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function configuredGeminiModel() {
+  const configured = (
+    process.env.NEXT_PUBLIC_GEMINI_MODEL ||
+    process.env.GEMINI_MODEL ||
+    ""
+  )
+    .trim()
+    .replace(/^models\//, "");
+
+  if (!configured || /^gemini-[12]\./.test(configured)) {
+    return DEFAULT_GEMINI_MODEL;
+  }
+
+  return configured;
 }
 
 function skincareProducts(): ProductRecord[] {
@@ -100,10 +117,7 @@ function providerRegistry(): ProviderRegistry[] {
       supports_structured_output: true,
       supports_web_grounding: true,
       supports_batch: true,
-      default_model:
-        process.env.NEXT_PUBLIC_GEMINI_MODEL ||
-        process.env.GEMINI_MODEL ||
-        "gemini-2.0-flash",
+      default_model: configuredGeminiModel(),
       enabled_for_v1: true,
       credit_multiplier: 1,
     },
@@ -309,4 +323,4 @@ export function touch<T extends { updated_at?: string }>(record: T): T {
   return record;
 }
 
-export { DEMO_MERCHANT_ID, nowIso };
+export { DEFAULT_GEMINI_MODEL, DEMO_MERCHANT_ID, nowIso };

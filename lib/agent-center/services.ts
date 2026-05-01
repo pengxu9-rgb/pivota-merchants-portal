@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { GeminiProviderAdapter, PARSED_RECOMMENDATION_SCHEMA, parseProviderOutput } from "./provider.ts";
 import {
+  DEFAULT_GEMINI_MODEL,
   DEMO_MERCHANT_ID,
   getAgentCenterState,
   nextId,
@@ -1123,7 +1124,7 @@ export class DemandTestJobService {
       for (const provider of job.scope.providers) {
         if (provider !== "gemini") continue;
         const providerRecord = state.providers.find((item) => item.provider === provider);
-        const model = providerRecord?.default_model || "gemini-2.0-flash";
+        const model = providerRecord?.default_model || DEFAULT_GEMINI_MODEL;
         for (const promptTemplateId of job.scope.prompt_templates) {
           const template = state.promptTemplates.find(
             (item) => item.id === promptTemplateId
