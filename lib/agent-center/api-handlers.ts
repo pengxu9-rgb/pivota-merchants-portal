@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server.js";
 import { getAgentCenterState, DEMO_MERCHANT_ID } from "./repository.ts";
 import {
+  DemoScenarioService,
   DemandTestJobService,
   getAgentCenterOverview,
   getIssueDebugView,
@@ -31,6 +32,20 @@ async function requestBody(req: NextRequest) {
 
 function pathSegments(params?: { path?: string[] }) {
   return params?.path || [];
+}
+
+function internalDebugAllowed(_req: NextRequest) {
+  return (
+    process.env.NODE_ENV !== "production" ||
+    process.env.PIVOTA_AGENT_CENTER_INTERNAL_DEBUG === "true"
+  );
+}
+
+function demoScenarioAllowed(_req: NextRequest) {
+  return (
+    process.env.NODE_ENV !== "production" ||
+    process.env.PIVOTA_AGENT_CENTER_DEMO_MODE === "true"
+  );
 }
 
 function routeError(error: unknown) {
@@ -94,6 +109,31 @@ export async function handleAgentCenterRequest(
 
     if (resource === "providers" && req.method === "GET") {
       return json({ providers: state.providers });
+    }
+
+    if (resource === "demo-scenarios") {
+      if (!demoScenarioAllowed(req)) {
+        return json({ error: "Demo scenario seeding is not enabled" }, 403);
+      }
+      if (req.method === "POST" && (!id || id === "seed")) {
+        const body = await requestBody(req);
+        return json(
+          new DemoScenarioService().seed({
+            scenario: body.scenario || "all",
+            merchantId,
+          }),
+          201
+        );
+      }
+      if (req.method === "GET") {
+        return json({
+          scenarios: [
+            "competitor_substitution",
+            "missing_merchant_pdp_attributes",
+            "pivota_pdp_readiness_gap",
+          ],
+        });
+      }
     }
 
     if (resource === "scan-targets") {
@@ -168,7 +208,16 @@ export async function handleAgentCenterRequest(
     if (resource === "issues") {
       if (req.method === "GET" && id) {
         if (action === "debug") {
+          if (!internalDebugAllowed(req)) {
+            return json({ error: "Issue debug view is internal-only" }, 403);
+          }
           return json({ debug: getIssueDebugView(id) });
+        }
+        if (action === "verification") {
+          const verification = [...state.verificationRuns]
+            .reverse()
+            .find((item) => item.issue_id === id);
+          return json({ verification: verification || null });
         }
         const issue = state.issues.find((item) => item.id === id);
         return issue ? json({ issue }) : json({ error: "Issue not found" }, 404);

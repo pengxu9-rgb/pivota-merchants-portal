@@ -413,6 +413,16 @@ export type DemandVisibilityScore = Timestamped & {
   >;
 };
 
+export type MerchantFacingIssueNarrative = {
+  what_happened: string;
+  what_ai_recommended_instead: string;
+  why_this_likely_happened: string;
+  where_to_fix: string;
+  recommended_merchant_pdp_changes: string[];
+  recommended_pivota_pdp_changes: string[];
+  how_pivota_will_verify_the_fix: string;
+};
+
 export type AgenticGMVIssue = Timestamped & {
   id: string;
   merchant_id: string;
@@ -437,6 +447,7 @@ export type AgenticGMVIssue = Timestamped & {
   gmv_estimation_method: string;
   estimated_gmv_at_risk_confidence: "low" | "medium" | "high";
   merchant_facing_summary: string;
+  merchant_facing_narrative: MerchantFacingIssueNarrative;
   approval_required: boolean;
   verification_plan: {
     retest_query_clusters: string[];
@@ -460,7 +471,24 @@ export type RetestPreparation = Timestamped & {
   repetitions: number;
   source_job_id?: string;
   planned_job_type: "retest";
+  estimated_credits: number;
+  credits_remaining_before_retest: number;
+  estimated_overage_credits: number;
+  billing_mode: "preview_only";
+  billing_status: "not_invoiced";
 };
+
+export type VerificationScoreSnapshot = {
+  score_ids: string[];
+  aggregate_scores: DemandVisibilityScore["aggregate_scores"];
+  estimated_gmv_at_risk: number;
+  gmv_estimation_method: string;
+  estimated_gmv_at_risk_confidence: "low" | "medium" | "high";
+};
+
+export type VerificationScoreDelta = Partial<
+  Record<keyof DemandVisibilityScore["aggregate_scores"] | "estimated_gmv_at_risk", number>
+>;
 
 export type VerificationRun = Timestamped & {
   id: string;
@@ -468,16 +496,28 @@ export type VerificationRun = Timestamped & {
   store_id: string;
   scan_target_id: string;
   issue_id: string;
-  before_score_id: string;
-  after_score_id: string;
+  source_agent: "demand_test_agent";
+  query_cluster_ids: string[];
+  provider_set: ProviderName[];
+  prompt_template_ids: string[];
+  repetition_count: number;
+  before_scores: VerificationScoreSnapshot;
+  after_scores: VerificationScoreSnapshot;
+  score_delta: VerificationScoreDelta;
+  before_issue_snapshot: AgenticGMVIssue;
+  after_result_snapshot: Record<string, unknown>;
   status: "queued" | "running" | "completed" | "failed";
-  result: {
+  usage_event_ids: string[];
+  completed_at?: string;
+  retest_job_id?: string;
+  before_score_id?: string;
+  after_score_id?: string;
+  result?: {
     before_visibility_score: number;
     after_visibility_score: number;
     before_competitor_substitution_score: number;
     after_competitor_substitution_score: number;
   };
-  retest_job_id: string;
 };
 
 export type UsageEvent = Timestamped & {

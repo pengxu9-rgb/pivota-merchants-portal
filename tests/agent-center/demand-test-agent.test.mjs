@@ -6,6 +6,8 @@ process.env.PIVOTA_AGENT_CENTER_MOCK_GEMINI = "true";
 const repository = await import("../../lib/agent-center/repository.ts");
 const provider = await import("../../lib/agent-center/provider.ts");
 const services = await import("../../lib/agent-center/services.ts");
+const apiHandlers = await import("../../lib/agent-center/api-handlers.ts");
+const { NextRequest } = await import("next/server.js");
 
 const {
   DEFAULT_GEMINI_MODEL,
@@ -18,6 +20,7 @@ const {
   parseProviderOutput,
 } = provider;
 const {
+  DemoScenarioService,
   DemandTestJobService,
   FixTargetRouter,
   getIssueDebugView,
@@ -31,6 +34,7 @@ const {
   UsageMeteringService,
   VerificationService,
 } = services;
+const { handleAgentCenterRequest } = apiHandlers;
 
 function createConnectedTarget() {
   resetAgentCenterState();
@@ -432,6 +436,18 @@ test("controlled sunscreen case A detects visibility loss and competitor substit
   );
   assert.equal(result.issues[0].estimated_gmv_at_risk_confidence, "medium");
   assert.ok(result.issues[0].merchant_facing_summary.includes("Seoul Shield"));
+  assert.ok(result.issues[0].merchant_facing_narrative.what_happened);
+  assert.ok(
+    result.issues[0].merchant_facing_narrative.what_ai_recommended_instead.includes(
+      "Beauty of Joseon"
+    )
+  );
+  assert.ok(result.issues[0].merchant_facing_narrative.where_to_fix);
+  assert.ok(
+    result.issues[0].merchant_facing_narrative.how_pivota_will_verify_the_fix.includes(
+      "same query cluster"
+    )
+  );
 });
 
 test("controlled sunscreen case B routes missing merchant PDP attributes to both layers", () => {
@@ -508,6 +524,93 @@ test("issue debug view and retest preparation expose internal validation evidenc
   assert.deepEqual(preparation.providers, result.job.scope.providers);
   assert.deepEqual(preparation.prompt_templates, result.job.scope.prompt_templates);
   assert.equal(preparation.repetitions, result.job.scope.repetitions);
+  assert.equal(preparation.estimated_credits, 3);
+  assert.equal(preparation.billing_mode, "preview_only");
+  assert.equal(preparation.billing_status, "not_invoiced");
+});
+
+test("issue debug API is internal-only in production mode", async () => {
+  const result = runControlledSunscreenCase({
+    attributes: {},
+    pivotaAttributes: {},
+    outputs: [
+      competitorOnlyRecommendation(),
+      competitorOnlyRecommendation(),
+      competitorOnlyRecommendation(),
+    ],
+  });
+  const issue = result.issues.find(
+    (item) => item.issue_type === "competitor_substitution"
+  );
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalInternalDebug = process.env.PIVOTA_AGENT_CENTER_INTERNAL_DEBUG;
+  try {
+    process.env.NODE_ENV = "production";
+    delete process.env.PIVOTA_AGENT_CENTER_INTERNAL_DEBUG;
+
+    const denied = await handleAgentCenterRequest(
+      new NextRequest(
+        `https://example.test/api/agent-center/issues/${issue.id}/debug`
+      ),
+      { path: ["issues", issue.id, "debug"] }
+    );
+    assert.equal(denied.status, 403);
+
+    process.env.PIVOTA_AGENT_CENTER_INTERNAL_DEBUG = "true";
+    const allowed = await handleAgentCenterRequest(
+      new NextRequest(
+        `https://example.test/api/agent-center/issues/${issue.id}/debug`
+      ),
+      { path: ["issues", issue.id, "debug"] }
+    );
+    assert.equal(allowed.status, 200);
+    const payload = await allowed.json();
+    assert.equal(payload.debug.generated_issue_json.id, issue.id);
+  } finally {
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
+    if (originalInternalDebug === undefined) {
+      delete process.env.PIVOTA_AGENT_CENTER_INTERNAL_DEBUG;
+    } else {
+      process.env.PIVOTA_AGENT_CENTER_INTERNAL_DEBUG = originalInternalDebug;
+    }
+  }
+});
+
+test("controlled demo scenarios generate expected issue types", () => {
+  resetAgentCenterState();
+  const seeded = new DemoScenarioService().seed({ scenario: "all" });
+  const byScenario = new Map(
+    seeded.scenarios.map((scenario) => [scenario.scenario, scenario])
+  );
+
+  assert.deepEqual(
+    new Set(byScenario.get("competitor_substitution").issue_types),
+    new Set([
+      "ai_visibility_loss",
+      "competitor_substitution",
+      "missing_attribute",
+      "pivota_pdp_readiness_gap",
+    ])
+  );
+  assert.ok(
+    byScenario
+      .get("missing_merchant_pdp_attributes")
+      .issue_types.includes("missing_attribute")
+  );
+  assert.ok(
+    byScenario
+      .get("pivota_pdp_readiness_gap")
+      .issue_types.includes("pivota_pdp_readiness_gap")
+  );
+  assert.equal(getAgentCenterState().issues.length >= 6, true);
+  assert.ok(
+    getAgentCenterState().usageEvents.every(
+      (event) =>
+        event.billing_mode === "preview_only" &&
+        event.billing_status === "not_invoiced"
+    )
+  );
 });
 
 test("usage event idempotency prevents duplicate credit events", async () => {
@@ -600,9 +703,34 @@ test("retest flow stores before and after verification with improved visibility"
 
   assert.equal(verification.status, "completed");
   assert.ok(
-    verification.result.after_visibility_score >
-      verification.result.before_visibility_score
+    verification.after_scores.aggregate_scores.visibility_score >
+      verification.before_scores.aggregate_scores.visibility_score
   );
+  assert.ok(verification.score_delta.visibility_score > 0);
+  assert.deepEqual(verification.query_cluster_ids, issue.affected_query_clusters);
+  assert.deepEqual(verification.provider_set, job.scope.providers);
+  assert.deepEqual(verification.prompt_template_ids, job.scope.prompt_templates);
+  assert.equal(verification.repetition_count, job.scope.repetitions);
+  assert.equal(verification.source_agent, "demand_test_agent");
+  assert.equal(verification.before_issue_snapshot.id, issue.id);
+  assert.equal(verification.after_result_snapshot.retest_job_id, verification.retest_job_id);
+  assert.equal(
+    getAgentCenterState().retestPreparations.find(
+      (item) => item.issue_id === issue.id
+    ).status,
+    "consumed"
+  );
+  assert.ok(verification.usage_event_ids.length > 0);
+  for (const usageEventId of verification.usage_event_ids) {
+    const event = getAgentCenterState().usageEvents.find(
+      (item) => item.id === usageEventId
+    );
+    assert.ok(event, "expected retest usage event");
+    assert.equal(event.billing_mode, "preview_only");
+    assert.equal(event.billing_status, "not_invoiced");
+    assert.equal(event.provider, "gemini");
+    assert.equal(event.scan_target_id, issue.scan_target_id);
+  }
   assert.ok(afterUsage > beforeUsage);
   assert.equal(
     getAgentCenterState().issues.find((item) => item.id === issue.id).status,

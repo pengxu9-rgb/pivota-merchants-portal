@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Filter, Play } from "lucide-react";
+import { ArrowRight, DatabaseZap, Filter, Play } from "lucide-react";
 import {
+  MerchantButton,
   MerchantLinkButton,
   PageHeader,
   SurfaceCard,
@@ -18,12 +19,33 @@ import {
 export default function IssueInboxPage() {
   const [issues, setIssues] = useState<any[]>([]);
   const [filter, setFilter] = useState("all");
+  const [seeding, setSeeding] = useState(false);
+  const demoModeEnabled =
+    process.env.NODE_ENV !== "production" ||
+    process.env.NEXT_PUBLIC_PIVOTA_AGENT_CENTER_DEMO_MODE === "true";
 
-  useEffect(() => {
-    void agentFetch<{ issues: any[] }>("/api/agent-center/issues").then((payload) =>
+  async function loadIssues() {
+    await agentFetch<{ issues: any[] }>("/api/agent-center/issues").then((payload) =>
       setIssues(payload.issues)
     );
+  }
+
+  useEffect(() => {
+    void loadIssues();
   }, []);
+
+  async function seedDemoScenarios() {
+    setSeeding(true);
+    try {
+      await agentFetch("/api/agent-center/demo-scenarios/seed", {
+        method: "POST",
+        body: JSON.stringify({ scenario: "all" }),
+      });
+      await loadIssues();
+    } finally {
+      setSeeding(false);
+    }
+  }
 
   const visibleIssues = useMemo(
     () =>
@@ -40,9 +62,21 @@ export default function IssueInboxPage() {
         title="Agentic GMV Issues"
         description="Business issues generated from parsed provider output, product matching, visibility scoring, and fix target routing."
         actions={
-          <MerchantLinkButton href="/agent-center/run" icon={Play}>
-            Run Agent Scan
-          </MerchantLinkButton>
+          <>
+            {demoModeEnabled ? (
+              <MerchantButton
+                icon={DatabaseZap}
+                variant="secondary"
+                onClick={seedDemoScenarios}
+                disabled={seeding}
+              >
+                Seed Sunscreen Demo
+              </MerchantButton>
+            ) : null}
+            <MerchantLinkButton href="/agent-center/run" icon={Play}>
+              Run Agent Scan
+            </MerchantLinkButton>
+          </>
         }
       />
 

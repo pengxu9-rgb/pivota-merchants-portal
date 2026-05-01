@@ -11,6 +11,12 @@ import {
   ScoreBar,
 } from "@/components/agent-center/agent-center-ui";
 
+function deltaLabel(value: number | undefined) {
+  const delta = Number(value || 0);
+  if (delta > 0) return `+${delta}`;
+  return String(delta);
+}
+
 export default function VerificationPage() {
   const params = useParams<{ verificationId: string }>();
   const [verification, setVerification] = useState<any>(null);
@@ -22,14 +28,16 @@ export default function VerificationPage() {
     ).then((payload) => setVerification(payload.verification));
   }, [params.verificationId]);
 
-  const result = verification?.result;
+  const before = verification?.before_scores?.aggregate_scores || {};
+  const after = verification?.after_scores?.aggregate_scores || {};
+  const delta = verification?.score_delta || {};
 
   return (
     <main className="merchant-page space-y-6 py-6">
       <PageHeader
         eyebrow="Before / After Verification"
         title={verification ? `Verification ${verification.id}` : "Verification Run"}
-        description="Retests use the same query clusters, provider set, prompt templates, and model config unless changed by the merchant."
+        description="Retests use the same query clusters, provider set, prompt templates, and repetition count as the original issue scan."
         actions={
           verification ? (
             <Link
@@ -47,18 +55,18 @@ export default function VerificationPage() {
         <div className="grid sm:grid-cols-2 xl:grid-cols-4">
           <MetricTile label="Status" value={verification?.status || "..."} tone="success" />
           <MetricTile
-            label="Before visibility"
-            value={`${result?.before_visibility_score || 0}%`}
+            label="Visibility delta"
+            value={deltaLabel(delta.visibility_score)}
+            tone={(delta.visibility_score || 0) > 0 ? "success" : "neutral"}
           />
           <MetricTile
-            label="After visibility"
-            value={`${result?.after_visibility_score || 0}%`}
-            tone="success"
+            label="Substitution delta"
+            value={deltaLabel(delta.competitor_substitution_score)}
+            tone={(delta.competitor_substitution_score || 0) < 0 ? "success" : "warning"}
           />
           <MetricTile
-            label="Substitution after"
-            value={`${result?.after_competitor_substitution_score || 0}%`}
-            tone="warning"
+            label="Usage events"
+            value={verification?.usage_event_ids?.length || 0}
           />
         </div>
       </SurfaceCard>
@@ -66,35 +74,81 @@ export default function VerificationPage() {
       <div className="grid gap-5 xl:grid-cols-2">
         <SurfaceCard title="Before">
           <div className="space-y-5 px-5 py-5">
-            <ScoreBar
-              label="Visibility score"
-              value={result?.before_visibility_score || 0}
-            />
+            <ScoreBar label="Visibility score" value={before.visibility_score || 0} />
             <ScoreBar
               label="Competitor substitution"
-              value={result?.before_competitor_substitution_score || 0}
+              value={before.competitor_substitution_score || 0}
               inverse
             />
+            <ScoreBar
+              label="Attribute readiness"
+              value={before.attribute_readiness_score || 0}
+            />
+            <ScoreBar
+              label="Pivota PDP readiness"
+              value={before.pivota_pdp_readiness_score || 0}
+            />
+            <p className="text-sm text-[color:var(--merchant-muted)]">
+              GMV at risk: {verification?.before_scores?.estimated_gmv_at_risk || 0}
+            </p>
           </div>
         </SurfaceCard>
         <SurfaceCard title="After">
           <div className="space-y-5 px-5 py-5">
-            <ScoreBar
-              label="Visibility score"
-              value={result?.after_visibility_score || 0}
-            />
+            <ScoreBar label="Visibility score" value={after.visibility_score || 0} />
             <ScoreBar
               label="Competitor substitution"
-              value={result?.after_competitor_substitution_score || 0}
+              value={after.competitor_substitution_score || 0}
               inverse
             />
+            <ScoreBar
+              label="Attribute readiness"
+              value={after.attribute_readiness_score || 0}
+            />
+            <ScoreBar
+              label="Pivota PDP readiness"
+              value={after.pivota_pdp_readiness_score || 0}
+            />
+            <p className="text-sm text-[color:var(--merchant-muted)]">
+              GMV at risk: {verification?.after_scores?.estimated_gmv_at_risk || 0}. Confidence:{" "}
+              {verification?.after_scores?.estimated_gmv_at_risk_confidence || "low"}.
+            </p>
             <div className="flex items-center gap-2 rounded-2xl bg-[color:var(--merchant-success-soft)] px-4 py-3 text-sm text-[color:var(--merchant-success)]">
               <CheckCircle2 className="h-4 w-4" />
-              <span>Before/after verification stored with usage events.</span>
+              <span>Before/after verification stored with preview-only usage events.</span>
             </div>
           </div>
         </SurfaceCard>
       </div>
+
+      <SurfaceCard title="Retest Scope">
+        <div className="grid gap-3 px-5 py-5 text-sm md:grid-cols-4">
+          <div>
+            <p className="merchant-overline">Query clusters</p>
+            <p className="mt-1 font-semibold text-[color:var(--merchant-ink)]">
+              {verification?.query_cluster_ids?.length || 0}
+            </p>
+          </div>
+          <div>
+            <p className="merchant-overline">Providers</p>
+            <p className="mt-1 font-semibold text-[color:var(--merchant-ink)]">
+              {verification?.provider_set?.join(", ") || "..."}
+            </p>
+          </div>
+          <div>
+            <p className="merchant-overline">Prompt templates</p>
+            <p className="mt-1 font-semibold text-[color:var(--merchant-ink)]">
+              {verification?.prompt_template_ids?.length || 0}
+            </p>
+          </div>
+          <div>
+            <p className="merchant-overline">Repetitions</p>
+            <p className="mt-1 font-semibold text-[color:var(--merchant-ink)]">
+              {verification?.repetition_count || 0}
+            </p>
+          </div>
+        </div>
+      </SurfaceCard>
     </main>
   );
 }

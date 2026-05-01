@@ -111,6 +111,99 @@ function scoreExplanation(
   };
 }
 
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function formatFixTarget(target: FixTarget) {
+  const labels: Record<FixTarget, string> = {
+    merchant_pdp: "merchant PDP",
+    merchant_catalog: "merchant catalog",
+    merchant_variant_map: "merchant variant map",
+    pivota_unified_pdp: "Pivota unified PDP",
+    pivota_product_graph: "Pivota product graph",
+    pivota_query_mapping: "Pivota query mapping",
+    both_merchant_and_pivota: "merchant PDP and Pivota unified PDP",
+    human_review: "human review",
+  };
+  return labels[target] || titleCase(target);
+}
+
+function patchAttributeActions(attributes: string[], layer: "merchant" | "pivota") {
+  if (!attributes.length) {
+    return [
+      layer === "merchant"
+        ? "Clarify product positioning, evidence, and purchase path on the merchant PDP."
+        : "Refresh the agent summary and normalized product graph for this query intent.",
+    ];
+  }
+
+  return attributes.map((attribute) =>
+    layer === "merchant"
+      ? `Add or clarify ${titleCase(attribute)} on the merchant PDP.`
+      : `Normalize ${titleCase(attribute)} on the Pivota unified PDP.`
+  );
+}
+
+function topCompetitorRecommendations(matches: ProductMatchResult[]) {
+  return unique(
+    matches.flatMap((match) =>
+      match.competitor_matches.map(
+        (competitor) => `${competitor.competitor_name} ${competitor.product_name}`
+      )
+    )
+  ).slice(0, 5);
+}
+
+function merchantNarrative(input: {
+  issueType: AgenticGMVIssueType;
+  rootCause: string;
+  recommendedAction: string;
+  product?: ProductRecord;
+  cluster: QueryCluster;
+  parsed: ParsedRecommendation[];
+  matches: ProductMatchResult[];
+  fixTargets: FixTarget[];
+  missingAttributes: string[];
+  visibilityScore: number;
+  competitorSubstitutionScore: number;
+}) {
+  const merchantMentions = input.parsed.filter(
+    (item) => item.merchant_product_mentioned
+  ).length;
+  const competitorRecommendations = topCompetitorRecommendations(input.matches);
+  const productLabel = input.product?.title || "the merchant product";
+  const recommendedInstead = competitorRecommendations.length
+    ? competitorRecommendations.join(", ")
+    : "No competitor replacement was consistently detected.";
+
+  return {
+    what_happened:
+      `${productLabel} was tested in "${input.cluster.cluster_name}". ` +
+      `Gemini mentioned it in ${merchantMentions} of ${input.parsed.length} completed runs, producing a ${input.visibilityScore}% visibility score.`,
+    what_ai_recommended_instead: recommendedInstead,
+    why_this_likely_happened: input.rootCause,
+    where_to_fix: input.fixTargets.map(formatFixTarget).join(", "),
+    recommended_merchant_pdp_changes: input.fixTargets.some((target) =>
+      ["merchant_pdp", "merchant_catalog", "both_merchant_and_pivota"].includes(target)
+    )
+      ? patchAttributeActions(input.missingAttributes, "merchant")
+      : ["No merchant PDP change is required for this issue."],
+    recommended_pivota_pdp_changes: input.fixTargets.some((target) =>
+      [
+        "pivota_unified_pdp",
+        "pivota_product_graph",
+        "pivota_query_mapping",
+        "both_merchant_and_pivota",
+      ].includes(target)
+    )
+      ? patchAttributeActions(input.missingAttributes, "pivota")
+      : ["No Pivota unified PDP change is required for this issue."],
+    how_pivota_will_verify_the_fix:
+      `Pivota will rerun the same query cluster with the same Gemini provider set, prompt templates, and repetition count, then compare visibility and substitution scores before and after the patch.`,
+  };
+}
+
 function getMerchantId(merchantId?: string) {
   return merchantId || DEMO_MERCHANT_ID;
 }
@@ -1119,6 +1212,23 @@ export class IssueEngine {
     const merchantSummary =
       `${titleCase(input.issueType)} detected for ${input.product?.title || "this product"} in "${queryLabel}". ` +
       `${merchantMentions} of ${input.input.parsed.length} completed Gemini runs mentioned the merchant product, while ${competitorMentions} competitor recommendations were detected.`;
+    const competitorRecommendationList = topCompetitorRecommendations(
+      input.input.matches
+    );
+    const narrative = merchantNarrative({
+      issueType: input.issueType,
+      rootCause: input.rootCause,
+      recommendedAction: input.recommendedAction,
+      product: input.product,
+      cluster: input.input.cluster,
+      parsed: input.input.parsed,
+      matches: input.input.matches,
+      fixTargets,
+      missingAttributes: input.missingAttributes,
+      visibilityScore: input.input.score.aggregate_scores.visibility_score,
+      competitorSubstitutionScore:
+        input.input.score.aggregate_scores.competitor_substitution_score,
+    });
 
     return {
       id: nextId("issue"),
@@ -1137,6 +1247,7 @@ export class IssueEngine {
       affected_skus: input.product?.sku ? [input.product.sku] : [],
       affected_query_clusters: [input.input.cluster.id],
       evidence: {
+        source_job_id: input.input.score.job_id,
         query_cluster: input.input.cluster.cluster_name,
         query_cluster_id: input.input.cluster.id,
         product_entity_id: input.product?.product_entity_id,
@@ -1150,6 +1261,7 @@ export class IssueEngine {
             match.competitor_matches.map((competitor) => competitor.competitor_name)
           )
         ).slice(0, 3),
+        top_competitor_recommendations: competitorRecommendationList,
         missing_attributes: input.missingAttributes,
         aggregate_scores: input.input.score.aggregate_scores,
         score_explanations: input.input.score.score_explanations,
@@ -1176,6 +1288,7 @@ export class IssueEngine {
         "V1 estimate uses query_cluster.estimated_demand_value as directional GMV-at-risk, not transaction attribution.",
       estimated_gmv_at_risk_confidence: gmvConfidence,
       merchant_facing_summary: merchantSummary,
+      merchant_facing_narrative: narrative,
       approval_required: true,
       verification_plan: {
         retest_query_clusters: [input.input.cluster.id],
@@ -1530,22 +1643,114 @@ function aggregateScores(scores: DemandVisibilityScore[]) {
   };
 }
 
+function sourceJobForIssue(issue: AgenticGMVIssue) {
+  const state = getAgentCenterState();
+  const sourceJobId =
+    typeof issue.evidence?.source_job_id === "string"
+      ? issue.evidence.source_job_id
+      : undefined;
+  const directJob = sourceJobId
+    ? state.jobs.find((job) => job.id === sourceJobId)
+    : undefined;
+  if (directJob) return directJob;
+
+  const sourceRun = [...state.testRuns]
+    .reverse()
+    .find(
+      (run) =>
+        run.scan_target_id === issue.scan_target_id &&
+        issue.affected_query_clusters.includes(run.query_cluster_id)
+    );
+  return sourceRun ? state.jobs.find((job) => job.id === sourceRun.job_id) : undefined;
+}
+
+function scoreSnapshot(input: {
+  issue: AgenticGMVIssue;
+  scores: DemandVisibilityScore[];
+  estimatedGmvAtRisk: number;
+}) {
+  const aggregate = aggregateScores(input.scores);
+  return {
+    score_ids: input.scores.map((score) => score.id),
+    aggregate_scores: {
+      visibility_score: aggregate.visibility_score,
+      recommendation_rank_score: aggregate.recommendation_rank_score,
+      competitor_substitution_score: aggregate.competitor_substitution_score,
+      attribute_readiness_score: aggregate.attribute_readiness_score,
+      pivota_pdp_readiness_score: aggregate.pivota_pdp_readiness_score,
+    },
+    estimated_gmv_at_risk: input.estimatedGmvAtRisk,
+    gmv_estimation_method: input.issue.gmv_estimation_method,
+    estimated_gmv_at_risk_confidence:
+      input.issue.estimated_gmv_at_risk_confidence,
+  };
+}
+
+function scoreDelta(
+  before: ReturnType<typeof scoreSnapshot>,
+  after: ReturnType<typeof scoreSnapshot>
+) {
+  return {
+    visibility_score:
+      after.aggregate_scores.visibility_score -
+      before.aggregate_scores.visibility_score,
+    recommendation_rank_score:
+      after.aggregate_scores.recommendation_rank_score -
+      before.aggregate_scores.recommendation_rank_score,
+    competitor_substitution_score:
+      after.aggregate_scores.competitor_substitution_score -
+      before.aggregate_scores.competitor_substitution_score,
+    attribute_readiness_score:
+      after.aggregate_scores.attribute_readiness_score -
+      before.aggregate_scores.attribute_readiness_score,
+    pivota_pdp_readiness_score:
+      after.aggregate_scores.pivota_pdp_readiness_score -
+      before.aggregate_scores.pivota_pdp_readiness_score,
+    estimated_gmv_at_risk:
+      after.estimated_gmv_at_risk - before.estimated_gmv_at_risk,
+  };
+}
+
+function estimatedAfterGmvAtRisk(
+  issue: AgenticGMVIssue,
+  scores: DemandVisibilityScore["aggregate_scores"]
+) {
+  const resolvedByIssueType =
+    (issue.issue_type === "ai_visibility_loss" && scores.visibility_score >= 20) ||
+    (issue.issue_type === "competitor_substitution" &&
+      scores.competitor_substitution_score < 60) ||
+    (issue.issue_type === "missing_attribute" &&
+      scores.attribute_readiness_score >= 60) ||
+    (issue.issue_type === "pivota_pdp_readiness_gap" &&
+      scores.pivota_pdp_readiness_score >= 70);
+
+  return resolvedByIssueType ? 0 : issue.estimated_gmv_at_risk;
+}
+
+function retestUsageEventIds(jobId: string) {
+  return getAgentCenterState()
+    .usageEvents.filter((event) => event.idempotency_key.startsWith(`${jobId}:`))
+    .map((event) => event.id);
+}
+
 export class VerificationService {
   prepareRetestIssue(issueId: string): RetestPreparation {
     const state = getAgentCenterState();
     const issue = state.issues.find((item) => item.id === issueId);
     if (!issue) throw new Error(`Issue not found: ${issueId}`);
 
-    const sourceRun = [...state.testRuns]
-      .reverse()
-      .find(
-        (run) =>
-          run.scan_target_id === issue.scan_target_id &&
-          issue.affected_query_clusters.includes(run.query_cluster_id)
-      );
-    const sourceJob = sourceRun
-      ? state.jobs.find((job) => job.id === sourceRun.job_id)
-      : undefined;
+    const sourceJob = sourceJobForIssue(issue);
+    const providers = sourceJob?.scope.providers || issue.verification_plan.providers;
+    const promptTemplates =
+      sourceJob?.scope.prompt_templates || issue.verification_plan.prompt_templates;
+    const repetitions = sourceJob?.scope.repetitions || 2;
+    const estimate = new UsageMeteringService().estimate({
+      scan_target_id: issue.scan_target_id,
+      providers,
+      prompt_template_ids: promptTemplates,
+      query_cluster_ids: issue.affected_query_clusters,
+      repetitions,
+    });
     const now = nowIso();
     const preparation: RetestPreparation = {
       id: nextId("retest_prep"),
@@ -1555,12 +1760,16 @@ export class VerificationService {
       issue_id: issue.id,
       status: "prepared",
       query_cluster_ids: issue.affected_query_clusters,
-      providers: sourceJob?.scope.providers || issue.verification_plan.providers,
-      prompt_templates:
-        sourceJob?.scope.prompt_templates || issue.verification_plan.prompt_templates,
-      repetitions: sourceJob?.scope.repetitions || 2,
+      providers,
+      prompt_templates: promptTemplates,
+      repetitions,
       source_job_id: sourceJob?.id,
       planned_job_type: "retest",
+      estimated_credits: estimate.estimated_ai_test_credits,
+      credits_remaining_before_retest: estimate.remaining_credits,
+      estimated_overage_credits: estimate.estimated_overage_credits,
+      billing_mode: "preview_only",
+      billing_status: "not_invoiced",
       created_at: now,
       updated_at: now,
     };
@@ -1573,73 +1782,417 @@ export class VerificationService {
     const state = getAgentCenterState();
     const issue = state.issues.find((item) => item.id === issueId);
     if (!issue) throw new Error(`Issue not found: ${issueId}`);
+    const beforeIssueSnapshot = cloneJson(issue);
+    const preparation =
+      [...state.retestPreparations]
+        .reverse()
+        .find((item) => item.issue_id === issueId && item.status === "prepared") ||
+      this.prepareRetestIssue(issueId);
     issue.status = "verification_running";
     touch(issue);
 
     const target = findScanTarget(issue.scan_target_id);
-    const beforeScore = state.scores.find((score) =>
-      issue.affected_query_clusters.includes(score.query_cluster_id)
+    const beforeScores = state.scores.filter(
+      (score) =>
+        issue.affected_query_clusters.includes(score.query_cluster_id) &&
+        (!preparation.source_job_id || score.job_id === preparation.source_job_id)
     );
-    if (!beforeScore) throw new Error("Before score not found");
+    if (!beforeScores.length) throw new Error("Before score not found");
+    const beforeSnapshot = scoreSnapshot({
+      issue,
+      scores: beforeScores,
+      estimatedGmvAtRisk: issue.estimated_gmv_at_risk,
+    });
 
     const job = new DemandTestJobService().create({
       scan_target_id: target.id,
-      providers: issue.verification_plan.providers,
-      prompt_template_ids: issue.verification_plan.prompt_templates,
-      query_cluster_ids: issue.affected_query_clusters,
-      repetitions: 2,
+      providers: preparation.providers,
+      prompt_template_ids: preparation.prompt_templates,
+      query_cluster_ids: preparation.query_cluster_ids,
+      repetitions: preparation.repetitions,
       job_type: "retest",
       parent_issue_id: issue.id,
     });
-    job.estimated_credits = new UsageMeteringService().estimate({
-      scan_target_id: target.id,
-      providers: job.scope.providers,
-      prompt_template_ids: job.scope.prompt_templates,
-      query_cluster_ids: job.scope.query_cluster_ids,
-      repetitions: job.scope.repetitions,
-    }).estimated_ai_test_credits;
+    job.estimated_credits = preparation.estimated_credits;
+    preparation.status = "consumed";
+    touch(preparation);
 
-    await new DemandTestJobService().run(job.id, { retestBoost: true });
-    const afterScore = [...state.scores]
-      .reverse()
-      .find(
-        (score) =>
-          score.job_id === job.id &&
-          issue.affected_query_clusters.includes(score.query_cluster_id)
-      );
-    if (!afterScore) throw new Error("After score not found");
+    const results = await new DemandTestJobService().run(job.id, { retestBoost: true });
+    const afterScores = state.scores.filter(
+      (score) =>
+        score.job_id === job.id &&
+        preparation.query_cluster_ids.includes(score.query_cluster_id)
+    );
+    if (!afterScores.length) throw new Error("After score not found");
+    const afterAggregate = aggregateScores(afterScores);
+    const afterSnapshot = scoreSnapshot({
+      issue,
+      scores: afterScores,
+      estimatedGmvAtRisk: estimatedAfterGmvAtRisk(issue, {
+        visibility_score: afterAggregate.visibility_score,
+        recommendation_rank_score: afterAggregate.recommendation_rank_score,
+        competitor_substitution_score:
+          afterAggregate.competitor_substitution_score,
+        attribute_readiness_score: afterAggregate.attribute_readiness_score,
+        pivota_pdp_readiness_score: afterAggregate.pivota_pdp_readiness_score,
+      }),
+    });
 
     const now = nowIso();
+    const delta = scoreDelta(beforeSnapshot, afterSnapshot);
+    const usageEventIds = retestUsageEventIds(job.id);
     const verification: VerificationRun = {
       id: nextId("verification"),
       merchant_id: issue.merchant_id,
       store_id: issue.store_id,
       scan_target_id: issue.scan_target_id,
       issue_id: issue.id,
-      before_score_id: beforeScore.id,
-      after_score_id: afterScore.id,
-      status: "completed",
-      result: {
-        before_visibility_score: beforeScore.aggregate_scores.visibility_score,
-        after_visibility_score: afterScore.aggregate_scores.visibility_score,
-        before_competitor_substitution_score:
-          beforeScore.aggregate_scores.competitor_substitution_score,
-        after_competitor_substitution_score:
-          afterScore.aggregate_scores.competitor_substitution_score,
+      source_agent: "demand_test_agent",
+      query_cluster_ids: preparation.query_cluster_ids,
+      provider_set: preparation.providers,
+      prompt_template_ids: preparation.prompt_templates,
+      repetition_count: preparation.repetitions,
+      before_scores: beforeSnapshot,
+      after_scores: afterSnapshot,
+      score_delta: delta,
+      before_issue_snapshot: beforeIssueSnapshot,
+      after_result_snapshot: {
+        retest_job_id: job.id,
+        completed_runs: results.test_runs.filter((run) => run.status === "completed")
+          .length,
+        parsed_recommendations: results.parsed_recommendations.length,
+        score_ids: afterScores.map((score) => score.id),
+        aggregate_scores: afterSnapshot.aggregate_scores,
+        usage_event_ids: usageEventIds,
       },
+      status: "completed",
+      usage_event_ids: usageEventIds,
+      completed_at: now,
       retest_job_id: job.id,
+      before_score_id: beforeSnapshot.score_ids[0],
+      after_score_id: afterSnapshot.score_ids[0],
+      result: {
+        before_visibility_score: beforeSnapshot.aggregate_scores.visibility_score,
+        after_visibility_score: afterSnapshot.aggregate_scores.visibility_score,
+        before_competitor_substitution_score:
+          beforeSnapshot.aggregate_scores.competitor_substitution_score,
+        after_competitor_substitution_score:
+          afterSnapshot.aggregate_scores.competitor_substitution_score,
+      },
       created_at: now,
       updated_at: now,
     };
 
     state.verificationRuns.push(verification);
     issue.status =
-      verification.result.after_visibility_score >
-      verification.result.before_visibility_score
+      verification.after_scores.aggregate_scores.visibility_score >
+        verification.before_scores.aggregate_scores.visibility_score ||
+      verification.after_scores.estimated_gmv_at_risk <
+        verification.before_scores.estimated_gmv_at_risk
         ? "resolved"
         : "failed_verification";
     touch(issue);
     return verification;
+  }
+}
+
+const SUNSCREEN_REQUIRED_ATTRIBUTES = [
+  "spf_level",
+  "pa_rating",
+  "skin_type",
+  "finish",
+  "active_ingredients",
+];
+
+const SUNSCREEN_COMPETITOR_BRANDS = [
+  "Beauty of Joseon",
+  "COSRX",
+  "Laneige",
+  "Anua",
+];
+
+const SUNSCREEN_COMPETITOR_PRODUCTS = [
+  "Relief Sun: Rice + Probiotics",
+  "Aloe Soothing Sun Cream",
+  "Hydro UV Defense Sunscreen",
+  "Heartleaf Silky Moisture Sunscreen",
+];
+
+type DemoScenarioKey =
+  | "competitor_substitution"
+  | "missing_merchant_pdp_attributes"
+  | "pivota_pdp_readiness_gap";
+
+function controlledSunscreenProduct(input: {
+  scenario: DemoScenarioKey;
+  attributes: Record<string, unknown>;
+  pivotaAttributes: Record<string, unknown>;
+}) {
+  return {
+    id: `prod_seoul_shield_daily_rice_sun_${input.scenario}`,
+    product_entity_id: `pe_seoul_shield_daily_rice_sun_${input.scenario}`,
+    sku: `SS-RICE-SUN-${input.scenario.toUpperCase().replace(/[^A-Z0-9]/g, "-")}`,
+    title: "Seoul Shield Daily Rice Sun SPF 50",
+    brand: "Seoul Shield",
+    category: "skincare sunscreen",
+    price: 28,
+    currency: "USD",
+    pdp_url: "https://seoul-shield.example/products/daily-rice-sun-spf-50",
+    attributes: input.attributes,
+    pivota_attributes: input.pivotaAttributes,
+    agent_summary: "A lightweight daily Korean sunscreen with rice extract.",
+    priority: "high" as const,
+  };
+}
+
+function competitorOnlyDemoOutput() {
+  return {
+    mentioned_brands: SUNSCREEN_COMPETITOR_BRANDS,
+    mentioned_products: [
+      {
+        name: "Relief Sun: Rice + Probiotics",
+        brand: "Beauty of Joseon",
+        rank: 1,
+        reason: "Clear SPF, PA, texture, and sensitive-skin sunscreen evidence.",
+        purchase_path_present: false,
+      },
+      {
+        name: "Aloe Soothing Sun Cream",
+        brand: "COSRX",
+        rank: 2,
+        reason: "Known soothing sunscreen alternative with stronger public claims.",
+        purchase_path_present: false,
+      },
+    ],
+    missing_attributes_identified: SUNSCREEN_REQUIRED_ATTRIBUTES,
+    reasoning_summary:
+      "Competitor sunscreens have clearer normalized sunscreen proof points than the merchant product.",
+  };
+}
+
+function merchantDemoOutput(missingAttributes: string[] = []) {
+  return {
+    mentioned_brands: ["Seoul Shield"],
+    mentioned_products: [
+      {
+        name: "Seoul Shield Daily Rice Sun SPF 50",
+        brand: "Seoul Shield",
+        rank: 1,
+        reason: "Directly matches a daily Korean sunscreen query.",
+        purchase_path_present: true,
+      },
+    ],
+    missing_attributes_identified: missingAttributes,
+    reasoning_summary: "The merchant product is relevant when PDP evidence is available.",
+  };
+}
+
+function demoScenarioConfig(scenario: DemoScenarioKey) {
+  const completeMerchantAttributes = {
+    spf_level: "SPF 50",
+    pa_rating: "PA++++",
+    skin_type: "sensitive and combination",
+    finish: "dewy",
+    active_ingredients: "chemical UV filters",
+  };
+
+  if (scenario === "competitor_substitution") {
+    return {
+      label: "Case A: competitor substitution",
+      attributes: {},
+      pivotaAttributes: {},
+      outputs: [
+        competitorOnlyDemoOutput(),
+        competitorOnlyDemoOutput(),
+        competitorOnlyDemoOutput(),
+      ],
+    };
+  }
+
+  if (scenario === "missing_merchant_pdp_attributes") {
+    return {
+      label: "Case B: missing merchant PDP attributes",
+      attributes: {},
+      pivotaAttributes: {},
+      outputs: [merchantDemoOutput(), merchantDemoOutput(), merchantDemoOutput()],
+    };
+  }
+
+  return {
+    label: "Case C: Pivota unified PDP readiness gap",
+    attributes: completeMerchantAttributes,
+    pivotaAttributes: {},
+    outputs: [merchantDemoOutput(), merchantDemoOutput(), merchantDemoOutput()],
+  };
+}
+
+export class DemoScenarioService {
+  seed(input?: { scenario?: DemoScenarioKey | "all"; merchantId?: string }) {
+    const requested = input?.scenario || "all";
+    const scenarios: DemoScenarioKey[] =
+      requested === "all"
+        ? [
+            "competitor_substitution",
+            "missing_merchant_pdp_attributes",
+            "pivota_pdp_readiness_gap",
+          ]
+        : [requested];
+
+    return {
+      scenarios: scenarios.map((scenario) =>
+        this.seedScenario(scenario, input?.merchantId || DEMO_MERCHANT_ID)
+      ),
+    };
+  }
+
+  private seedScenario(scenario: DemoScenarioKey, merchantId: string) {
+    const config = demoScenarioConfig(scenario);
+    const product = controlledSunscreenProduct({
+      scenario,
+      attributes: config.attributes,
+      pivotaAttributes: config.pivotaAttributes,
+    });
+    const store = new MerchantStoreService().create(
+      {
+        store_name: `Seoul Shield ${config.label}`,
+        store_url: `https://${scenario}.seoul-shield.example`,
+        platform: "shopify",
+        integration_status: "connected",
+        primary_category: "skincare sunscreen",
+        competitor_brands: SUNSCREEN_COMPETITOR_BRANDS,
+        competitor_products: SUNSCREEN_COMPETITOR_PRODUCTS,
+        products: [product],
+      },
+      merchantId
+    );
+    const connection = getAgentCenterState().connections.find(
+      (item) => item.store_id === store.id
+    );
+    if (connection) {
+      connection.status = "connected";
+      connection.capabilities.catalog = true;
+      connection.capabilities.pdp_urls = true;
+      connection.capabilities.sku_variant_map = true;
+      connection.capabilities.structured_attributes = true;
+      touch(connection);
+    }
+
+    const target = new ScanTargetService().create({
+      merchant_id: merchantId,
+      store_id: store.id,
+      selected_product_ids: [product.id],
+    });
+    const cluster = new QueryClusterService()
+      .generateForScanTarget(target.id, [product.id])
+      .find((item) => item.intent_type === "category_recommendation");
+    if (!cluster) throw new Error("Controlled sunscreen query cluster not found");
+
+    const jobService = new DemandTestJobService();
+    const job = jobService.create({
+      scan_target_id: target.id,
+      query_cluster_ids: [cluster.id],
+      providers: ["gemini"],
+      prompt_template_ids: ["general_recommendation_v1"],
+      repetitions: config.outputs.length,
+    });
+
+    config.outputs.forEach((output, index) => {
+      const query = cluster.queries[index % cluster.queries.length];
+      const input: DemandTestInput = {
+        merchantId: store.merchant_id,
+        storeId: store.id,
+        scanTargetId: target.id,
+        queryClusterId: cluster.id,
+        query,
+        promptTemplateId: "general_recommendation_v1",
+        prompt: `User query: ${query}`,
+        provider: "gemini",
+        model: DEFAULT_GEMINI_MODEL,
+        language: target.language,
+        market: target.market,
+        currency: target.currency,
+        merchantContext: { store, product },
+        pivotaContext: {
+          product_entity_id: product.product_entity_id,
+          attributes: product.pivota_attributes,
+          agent_summary: product.agent_summary,
+        },
+        competitorContext: {
+          brands: store.competitor_brands || [],
+          products: store.competitor_products || [],
+        },
+        outputSchema: PARSED_RECOMMENDATION_SCHEMA,
+        repetitionIndex: index + 1,
+      };
+      const run = jobService.createRun(
+        job,
+        cluster,
+        query,
+        "gemini",
+        DEFAULT_GEMINI_MODEL,
+        "general_recommendation_v1",
+        input
+      );
+      const raw = {
+        provider: "gemini" as const,
+        model: DEFAULT_GEMINI_MODEL,
+        raw_output: output,
+        normalized_output: output,
+        input_tokens: 120,
+        output_tokens: 180,
+        tool_calls: 0,
+        provider_request_id: `controlled_${scenario}_${index + 1}`,
+      };
+      const result = jobService.createResult(run, raw);
+      const parsed = parseProviderOutput(raw, input);
+      parsed.test_run_id = run.id;
+      parsed.query_cluster_id = cluster.id;
+      getAgentCenterState().parsedRecommendations.push(parsed);
+      run.status = "completed";
+      run.raw_output_id = result.id;
+      touch(run);
+      new UsageMeteringService().record({ job, run, result });
+    });
+
+    const parsed = getAgentCenterState().parsedRecommendations.filter(
+      (item) =>
+        item.query_cluster_id === cluster.id &&
+        getAgentCenterState().testRuns.some(
+          (run) => run.id === item.test_run_id && run.job_id === job.id
+        )
+    );
+    const matches = parsed.map((item) =>
+      new ProductMatchService().match(item, store, cluster)
+    );
+    const score = new ScoringService().scoreCluster({
+      jobId: job.id,
+      scanTarget: target,
+      cluster,
+      parsed,
+      matches,
+    });
+    const issues = new IssueEngine().generateForScore({
+      scanTarget: target,
+      score,
+      cluster,
+      parsed,
+      matches,
+    });
+    pushProgress(job, "completed");
+
+    return {
+      scenario,
+      label: config.label,
+      store_id: store.id,
+      scan_target_id: target.id,
+      job_id: job.id,
+      query_cluster_ids: [cluster.id],
+      issue_ids: issues.map((issue) => issue.id),
+      issue_types: issues.map((issue) => issue.issue_type),
+      usage_event_ids: getAgentCenterState()
+        .usageEvents.filter((event) => event.idempotency_key.startsWith(`${job.id}:`))
+        .map((event) => event.id),
+    };
   }
 }
 
