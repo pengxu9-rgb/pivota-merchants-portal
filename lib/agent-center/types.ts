@@ -83,6 +83,9 @@ export type AgenticGMVIssueStatus =
 export type AgenticGMVIssueType =
   | "ai_visibility_loss"
   | "competitor_substitution"
+  | "merchant_store_attribution_gap"
+  | "pivota_pdp_attribution_gap"
+  | "pivota_offer_attribution_gap"
   | "missing_attribute"
   | "weak_recommendation_evidence"
   | "pivota_pdp_readiness_gap"
@@ -94,6 +97,7 @@ export type AgenticGMVIssueType =
 export type FixTarget =
   | "merchant_pdp"
   | "merchant_catalog"
+  | "merchant_structured_data"
   | "merchant_variant_map"
   | "pivota_unified_pdp"
   | "pivota_product_graph"
@@ -285,6 +289,7 @@ export type DemandTestInput = {
   storeId: string;
   scanTargetId: string;
   queryClusterId: string;
+  scanMode: ScanMode;
   query: string;
   promptTemplateId: string;
   prompt: string;
@@ -375,10 +380,14 @@ export type ParsedRecommendation = Timestamped & {
   pivota_product_entity_mentioned: boolean;
   merchant_store_mentioned: boolean;
   merchant_pdp_url_present: boolean;
+  merchant_pdp_url?: string;
+  merchant_store_attribution_confidence: number;
   merchant_offer_present: boolean;
   pivota_pdp_mentioned: boolean;
   pivota_pdp_url_present: boolean;
+  pivota_pdp_url?: string;
   pivota_offer_present: boolean;
+  pivota_offer_ids: string[];
   competitor_substitution_detected: boolean;
   purchase_path_present: boolean;
   purchase_path_type: PurchasePathType;

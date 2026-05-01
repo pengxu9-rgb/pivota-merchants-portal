@@ -53,6 +53,7 @@ function demandInput(store, target, cluster, product) {
     storeId: store.id,
     scanTargetId: target.id,
     queryClusterId: cluster.id,
+    scanMode: target.scan_mode || "open_product_visibility_test",
     query: cluster.queries[0],
     promptTemplateId: "general_recommendation_v1",
     prompt: `User query: ${cluster.queries[0]}`,
@@ -123,7 +124,7 @@ function createControlledSunscreenTarget({ attributes = {}, pivotaAttributes = {
   return { store, target, product, cluster };
 }
 
-function createIsntreeSunscreenTarget(extraProducts = []) {
+function createIsntreeSunscreenTarget(extraProducts = [], scanMode = "open_product_visibility_test") {
   resetAgentCenterState();
   const product = {
     id: "prod_isntree_watery_sun_gel",
@@ -150,6 +151,10 @@ function createIsntreeSunscreenTarget(extraProducts = []) {
       finish: "fresh finish",
       active_ingredients: "chemical UV filters",
       agent_summary: "A hydrating Korean sun gel with SPF50+ PA++++.",
+      pivota_pdp_url:
+        "https://pivota.cc/pdp/pe_isntree_watery_sun_gel",
+      pivota_product_object_id: "pivota_product_isntree_watery_sun_gel",
+      offer_ids: ["offer_isntree_direct_50ml"],
     },
     agent_summary: "A hydrating Korean sun gel with SPF50+ PA++++.",
     priority: "high",
@@ -172,6 +177,7 @@ function createIsntreeSunscreenTarget(extraProducts = []) {
   const target = new ScanTargetService().create({
     store_id: store.id,
     selected_product_ids: [product.id],
+    scan_mode: scanMode,
   });
   const cluster = new QueryClusterService()
     .generateForScanTarget(target.id, [product.id])
@@ -727,6 +733,221 @@ test("open product visibility test does not claim merchant or Pivota channel att
   assert.match(
     score.score_explanations.pivota_pdp_visibility_score.explanation,
     /open product recommendation does not prove Pivota PDP attribution/
+  );
+});
+
+function scoreAttributionFixture({ scanMode, output }) {
+  const { store, target, product, cluster } = createIsntreeSunscreenTarget([], scanMode);
+  const parsed = [0, 1, 2].map((_, index) => {
+    const input = {
+      ...demandInput(store, target, cluster, product),
+      query: cluster.queries[index],
+      repetitionIndex: index + 1,
+    };
+    const item = parseProviderOutput(
+      {
+        provider: "gemini",
+        model: DEFAULT_GEMINI_MODEL,
+        raw_output: output,
+        normalized_output: output,
+        input_tokens: 100,
+        output_tokens: 150,
+        tool_calls: 0,
+        provider_request_id: `${scanMode}_${index}`,
+      },
+      input
+    );
+    item.test_run_id = `run_${scanMode}_${index}`;
+    item.query_cluster_id = cluster.id;
+    return item;
+  });
+  const matches = parsed.map((item) => new ProductMatchService().match(item, store, cluster));
+  const score = new ScoringService().scoreCluster({
+    scanTarget: target,
+    cluster,
+    parsed,
+    matches,
+  });
+  const issues = new IssueEngine().generateForScore({
+    scanTarget: target,
+    score,
+    cluster,
+    parsed,
+    matches,
+  });
+
+  return { store, target, product, cluster, parsed, matches, score, issues };
+}
+
+test("merchant attribution scan passes when merchant PDP is returned", () => {
+  const output = {
+    mentioned_brands: ["Isntree"],
+    mentioned_products: [
+      {
+        name: "Isntree Hyaluronic Acid Watery Sun Gel",
+        brand: "Isntree",
+        rank: 1,
+        reason: "Merchant PDP supports this recommendation.",
+        purchase_path_present: true,
+        purchase_path_type: "merchant_pdp",
+        product_url:
+          "https://isntree-global.com/products/isntree-hyaluronic-acid-watery-sun-gel-50ml",
+      },
+    ],
+    merchant_store_mentioned: true,
+    merchant_pdp_url_present: true,
+    merchant_pdp_url:
+      "https://isntree-global.com/products/isntree-hyaluronic-acid-watery-sun-gel-50ml",
+    merchant_store_attribution_confidence: 0.94,
+    purchase_path_present: true,
+    purchase_path_type: "merchant_pdp",
+    channel_attribution: "merchant_store_attributed",
+    missing_attributes_identified: [],
+    reasoning_summary: "The merchant PDP was returned as the purchase source.",
+  };
+  const result = scoreAttributionFixture({
+    scanMode: "merchant_store_attribution_test",
+    output,
+  });
+
+  assert.equal(result.score.aggregate_scores.product_entity_visibility_score, 100);
+  assert.equal(result.score.aggregate_scores.merchant_store_visibility_score, 100);
+  assert.equal(result.score.aggregate_scores.pivota_pdp_visibility_score, 0);
+  assert.equal(result.parsed[0].merchant_pdp_url_present, true);
+  assert.equal(result.parsed[0].merchant_store_attribution_confidence, 0.94);
+  assert.equal(result.parsed[0].channel_attribution, "merchant_store_attributed");
+  assert.equal(result.issues.some((issue) => issue.issue_type === "merchant_store_attribution_gap"), false);
+});
+
+test("merchant attribution scan creates a gap when product is visible but merchant PDP is missing", () => {
+  const output = {
+    mentioned_brands: ["Isntree"],
+    mentioned_products: [
+      {
+        name: "Isntree Hyaluronic Acid Watery Sun Gel",
+        brand: "Isntree",
+        rank: 1,
+        reason: "Product is relevant.",
+        purchase_path_present: false,
+      },
+    ],
+    channel_attribution: "unattributed_product_recommendation",
+    missing_attributes_identified: [],
+    reasoning_summary: "The product was recommended without a merchant buying path.",
+  };
+  const result = scoreAttributionFixture({
+    scanMode: "merchant_store_attribution_test",
+    output,
+  });
+  const issue = result.issues.find(
+    (item) => item.issue_type === "merchant_store_attribution_gap"
+  );
+
+  assert.equal(result.score.aggregate_scores.product_entity_visibility_score, 100);
+  assert.equal(result.score.aggregate_scores.merchant_store_visibility_score, 0);
+  assert.ok(issue, "expected merchant_store_attribution_gap");
+  assert.deepEqual(issue.fix_targets, [
+    "merchant_pdp",
+    "merchant_catalog",
+    "merchant_structured_data",
+  ]);
+  assert.match(issue.root_cause, /merchant store\/PDP was not returned/);
+});
+
+test("Pivota attribution scan passes when Pivota PDP and offer are returned", () => {
+  const output = {
+    mentioned_brands: ["Isntree"],
+    mentioned_products: [
+      {
+        name: "Isntree Hyaluronic Acid Watery Sun Gel",
+        brand: "Isntree",
+        rank: 1,
+        reason: "Pivota product object supports this recommendation.",
+        purchase_path_present: true,
+        purchase_path_type: "pivota_offer",
+        product_url: "https://pivota.cc/pdp/pe_isntree_watery_sun_gel",
+      },
+    ],
+    pivota_pdp_mentioned: true,
+    pivota_pdp_url_present: true,
+    pivota_pdp_url: "https://pivota.cc/pdp/pe_isntree_watery_sun_gel",
+    pivota_offer_present: true,
+    pivota_offer_ids: ["offer_isntree_direct_50ml"],
+    purchase_path_present: true,
+    purchase_path_type: "pivota_offer",
+    channel_attribution: "pivota_offer_attributed",
+    missing_attributes_identified: [],
+    reasoning_summary: "The Pivota PDP and offer were returned.",
+  };
+  const result = scoreAttributionFixture({
+    scanMode: "pivota_pdp_attribution_test",
+    output,
+  });
+
+  assert.equal(result.score.aggregate_scores.product_entity_visibility_score, 100);
+  assert.equal(result.score.aggregate_scores.pivota_pdp_visibility_score, 100);
+  assert.equal(result.score.aggregate_scores.pivota_offer_visibility_score, 100);
+  assert.equal(result.parsed[0].pivota_pdp_url_present, true);
+  assert.deepEqual(result.parsed[0].pivota_offer_ids, ["offer_isntree_direct_50ml"]);
+  assert.equal(result.issues.some((issue) => issue.issue_type === "pivota_pdp_attribution_gap"), false);
+});
+
+test("Pivota attribution scan creates PDP and offer attribution gaps", () => {
+  const noPivotaOutput = {
+    mentioned_brands: ["Isntree"],
+    mentioned_products: [
+      {
+        name: "Isntree Hyaluronic Acid Watery Sun Gel",
+        brand: "Isntree",
+        rank: 1,
+        reason: "Product is relevant.",
+        purchase_path_present: false,
+      },
+    ],
+    channel_attribution: "unattributed_product_recommendation",
+    missing_attributes_identified: [],
+    reasoning_summary: "The product was recommended without Pivota attribution.",
+  };
+  const missingPdp = scoreAttributionFixture({
+    scanMode: "pivota_pdp_attribution_test",
+    output: noPivotaOutput,
+  });
+  assert.ok(
+    missingPdp.issues.some((issue) => issue.issue_type === "pivota_pdp_attribution_gap")
+  );
+
+  const pdpOnlyOutput = {
+    mentioned_brands: ["Isntree"],
+    mentioned_products: [
+      {
+        name: "Isntree Hyaluronic Acid Watery Sun Gel",
+        brand: "Isntree",
+        rank: 1,
+        reason: "Pivota PDP supports this recommendation.",
+        purchase_path_present: true,
+        purchase_path_type: "pivota_pdp",
+        product_url: "https://pivota.cc/pdp/pe_isntree_watery_sun_gel",
+      },
+    ],
+    pivota_pdp_mentioned: true,
+    pivota_pdp_url_present: true,
+    pivota_pdp_url: "https://pivota.cc/pdp/pe_isntree_watery_sun_gel",
+    pivota_offer_present: false,
+    pivota_offer_ids: [],
+    purchase_path_present: true,
+    purchase_path_type: "pivota_pdp",
+    channel_attribution: "pivota_pdp_attributed",
+    missing_attributes_identified: [],
+    reasoning_summary: "The Pivota PDP was returned without merchant offer IDs.",
+  };
+  const missingOffer = scoreAttributionFixture({
+    scanMode: "pivota_pdp_attribution_test",
+    output: pdpOnlyOutput,
+  });
+  assert.equal(missingOffer.score.aggregate_scores.pivota_pdp_visibility_score, 100);
+  assert.equal(missingOffer.score.aggregate_scores.pivota_offer_visibility_score, 0);
+  assert.ok(
+    missingOffer.issues.some((issue) => issue.issue_type === "pivota_offer_attribution_gap")
   );
 });
 

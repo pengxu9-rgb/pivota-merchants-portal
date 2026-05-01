@@ -33,10 +33,14 @@ export const PARSED_RECOMMENDATION_SCHEMA = {
     product_entity_mentioned: { type: "boolean" },
     merchant_store_mentioned: { type: "boolean" },
     merchant_pdp_url_present: { type: "boolean" },
+    merchant_pdp_url: { type: "string" },
+    merchant_store_attribution_confidence: { type: "number" },
     merchant_offer_present: { type: "boolean" },
     pivota_pdp_mentioned: { type: "boolean" },
     pivota_pdp_url_present: { type: "boolean" },
+    pivota_pdp_url: { type: "string" },
     pivota_offer_present: { type: "boolean" },
+    pivota_offer_ids: { type: "array", items: { type: "string" } },
     purchase_path_present: { type: "boolean" },
     purchase_path_type: { type: "string" },
     channel_attribution: { type: "string" },
@@ -220,9 +224,52 @@ function mockGeminiOutput(input: DemandTestInput) {
     ? inferMissingAttributes(input).slice(0, 1)
     : inferMissingAttributes(input);
 
+  const merchantAttributed =
+    input.scanMode === "merchant_store_attribution_test" && shouldMentionMerchant;
+  const pivotaAttributed =
+    input.scanMode === "pivota_pdp_attribution_test" && shouldMentionMerchant;
+  const merchantPdpUrl = input.merchantContext?.product?.pdp_url || "";
+  const pivotaPdpUrl =
+    typeof input.merchantContext?.product?.pivota_attributes?.pivota_pdp_url === "string"
+      ? input.merchantContext.product.pivota_attributes.pivota_pdp_url
+      : "";
+  const pivotaOfferIds = Array.isArray(
+    input.merchantContext?.product?.pivota_attributes?.offer_ids
+  )
+    ? input.merchantContext?.product?.pivota_attributes?.offer_ids.map(String)
+    : [];
+
   return {
     mentioned_brands: [...new Set(mentionedProducts.map((product) => product.brand))],
     mentioned_products: mentionedProducts,
+    product_entity_mentioned: shouldMentionMerchant,
+    merchant_store_mentioned: merchantAttributed,
+    merchant_pdp_url_present: merchantAttributed && Boolean(merchantPdpUrl),
+    merchant_pdp_url: merchantAttributed ? merchantPdpUrl : "",
+    merchant_store_attribution_confidence: merchantAttributed ? 0.92 : 0,
+    merchant_offer_present: false,
+    pivota_pdp_mentioned: pivotaAttributed,
+    pivota_pdp_url_present: pivotaAttributed && Boolean(pivotaPdpUrl),
+    pivota_pdp_url: pivotaAttributed ? pivotaPdpUrl : "",
+    pivota_offer_present: pivotaAttributed && pivotaOfferIds.length > 0,
+    pivota_offer_ids: pivotaAttributed ? pivotaOfferIds : [],
+    purchase_path_present: merchantAttributed || pivotaAttributed,
+    purchase_path_type: merchantAttributed
+      ? "merchant_pdp"
+      : pivotaAttributed && pivotaOfferIds.length
+        ? "pivota_offer"
+        : pivotaAttributed
+          ? "pivota_pdp"
+          : "none",
+    channel_attribution: merchantAttributed
+      ? "merchant_store_attributed"
+      : pivotaAttributed && pivotaOfferIds.length
+        ? "pivota_offer_attributed"
+        : pivotaAttributed
+          ? "pivota_pdp_attributed"
+          : shouldMentionMerchant
+            ? "unattributed_product_recommendation"
+            : "unknown",
     missing_attributes_identified: missingAttributes,
     reasoning_summary: shouldMentionMerchant
       ? `${product?.title || "The merchant product"} is visible for this AI demand scenario but still needs clearer structured evidence.`
@@ -464,6 +511,24 @@ export function parseProviderOutput(
     Boolean(output.merchant_pdp_url_present) ||
     Boolean(merchantProduct?.pdp_url && includesLoose(allText, merchantProduct.pdp_url)) ||
     Boolean(merchantPdpDomain && productUrls.includes(merchantPdpDomain));
+  const merchantPdpUrl =
+    typeof output.merchant_pdp_url === "string"
+      ? output.merchant_pdp_url
+      : merchantPdpUrlPresent
+        ? merchantProduct?.pdp_url
+        : undefined;
+  const explicitMerchantConfidence = Number(
+    output.merchant_store_attribution_confidence
+  );
+  const merchantStoreAttributionConfidence = Number(
+    (Number.isFinite(explicitMerchantConfidence)
+      ? Math.max(0, Math.min(1, explicitMerchantConfidence))
+      : merchantPdpUrlPresent
+        ? 0.95
+        : merchantStoreMentioned
+          ? 0.82
+          : 0).toFixed(2)
+  );
   const merchantOfferPresent =
     Boolean(output.merchant_offer_present) || purchasePathType === "merchant_offer";
   const pivotaPdpMentioned =
@@ -474,8 +539,17 @@ export function parseProviderOutput(
     Boolean(output.pivota_pdp_url_present) ||
     Boolean(pivotaPdpUrl && includesLoose(allText, pivotaPdpUrl)) ||
     Boolean(pivotaPdpDomain && productUrls.includes(pivotaPdpDomain));
+  const parsedPivotaPdpUrl =
+    typeof output.pivota_pdp_url === "string"
+      ? output.pivota_pdp_url
+      : pivotaPdpUrlPresent
+        ? pivotaPdpUrl
+        : undefined;
   const pivotaOfferPresent =
     Boolean(output.pivota_offer_present) || purchasePathType === "pivota_offer";
+  const pivotaOfferIds = Array.isArray(output.pivota_offer_ids)
+    ? output.pivota_offer_ids.map(String).filter(Boolean)
+    : [];
   const competitorBrands = input.competitorContext?.brands || [];
   const competitorSubstitutionDetected =
     !merchantProductMentioned &&
@@ -522,14 +596,18 @@ export function parseProviderOutput(
     ),
     merchant_store_mentioned: merchantStoreMentioned,
     merchant_pdp_url_present: merchantPdpUrlPresent,
+    merchant_pdp_url: merchantPdpUrl,
+    merchant_store_attribution_confidence: merchantStoreAttributionConfidence,
     merchant_offer_present: merchantOfferPresent,
     pivota_pdp_mentioned: pivotaPdpMentioned,
     pivota_pdp_url_present: pivotaPdpUrlPresent,
+    pivota_pdp_url: parsedPivotaPdpUrl,
     pivota_offer_present: pivotaOfferPresent,
+    pivota_offer_ids: pivotaOfferIds,
     competitor_substitution_detected: competitorSubstitutionDetected,
-    purchase_path_present: mentionedProducts.some(
-      (product) => product.purchase_path_present
-    ),
+    purchase_path_present:
+      Boolean(output.purchase_path_present) ||
+      mentionedProducts.some((product) => product.purchase_path_present),
     purchase_path_type: purchasePathType,
     channel_attribution: channelAttribution,
     missing_attributes_identified: missingAttributes,

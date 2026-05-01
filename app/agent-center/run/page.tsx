@@ -36,6 +36,24 @@ const steps = [
   "Run Scan",
 ];
 
+const scanModes = [
+  {
+    id: "open_product_visibility_test",
+    label: "Open Product Visibility Test",
+    helper: "Tests whether the product entity is known and recommended by the model.",
+  },
+  {
+    id: "merchant_store_attribution_test",
+    label: "Merchant Store Attribution Test",
+    helper: "Tests whether the model can return your merchant store/PDP as the purchase source.",
+  },
+  {
+    id: "pivota_pdp_attribution_test",
+    label: "Pivota PDP Attribution Test",
+    helper: "Tests whether the model can return Pivota unified PDP or Pivota-managed offers as the agent-facing path.",
+  },
+] as const;
+
 type StoreRecord = {
   id: string;
   store_name: string;
@@ -55,6 +73,9 @@ export default function RunAgentScanPage() {
   const [stores, setStores] = useState<StoreRecord[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState("");
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [selectedScanMode, setSelectedScanMode] = useState<(typeof scanModes)[number]["id"]>(
+    "open_product_visibility_test"
+  );
   const [scanTarget, setScanTarget] = useState<any>(null);
   const [readiness, setReadiness] = useState<any>(null);
   const [estimate, setEstimate] = useState<any>(null);
@@ -111,6 +132,8 @@ export default function RunAgentScanPage() {
       await loadStores();
       setSelectedStoreId(payload.store.id);
       setSelectedProductIds([]);
+      setScanTarget(null);
+      setEstimate(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add store");
     } finally {
@@ -119,7 +142,7 @@ export default function RunAgentScanPage() {
   }
 
   async function ensureScanTarget() {
-    if (scanTarget) return scanTarget;
+    if (scanTarget?.scan_mode === selectedScanMode) return scanTarget;
     if (!selectedStoreId) throw new Error("Select or add a store before scanning.");
     const selectedIds = selectedProductIds.length
       ? selectedProductIds
@@ -131,7 +154,7 @@ export default function RunAgentScanPage() {
         body: JSON.stringify({
           store_id: selectedStoreId,
           selected_product_ids: selectedIds,
-          scan_mode: "open_product_visibility_test",
+          scan_mode: selectedScanMode,
         }),
       }
     );
@@ -433,23 +456,32 @@ export default function RunAgentScanPage() {
       ) : null}
 
       {step === 2 ? (
-        <SurfaceCard title="Choose Scan Type" description="Demand Test Agent V1 scope.">
-          <div className="grid gap-4 px-5 py-5 md:grid-cols-2 xl:grid-cols-4">
-            {[
-              ["AI Demand Scan", "enabled", "Query generation, visibility, substitution, attributes."],
-              ["SKU / Variant Match", "coming soon", "Partial matching only in V1."],
-              ["Offer Execution", "coming soon", "Requires offer, promo, and inventory inputs."],
-              ["Checkout Verification", "future", "No PSP, payment, or transaction logic in V1."],
-            ].map(([label, status, description]) => (
-              <div key={label} className="rounded-2xl border border-[color:var(--merchant-line)] bg-white/70 p-4">
+        <SurfaceCard title="Choose Scan Mode" description="V1 supports product visibility and attribution testing. Offer execution and checkout verification remain future phases.">
+          <div className="grid gap-4 px-5 py-5 md:grid-cols-3">
+            {scanModes.map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                onClick={() => {
+                  setSelectedScanMode(mode.id);
+                  setScanTarget(null);
+                  setEstimate(null);
+                }}
+                className={cx(
+                  "rounded-2xl border p-4 text-left transition",
+                  selectedScanMode === mode.id
+                    ? "border-[color:var(--merchant-brand)] bg-[color:var(--merchant-brand-soft)]"
+                    : "border-[color:var(--merchant-line)] bg-white/70 hover:bg-white"
+                )}
+              >
                 <div className="flex items-center justify-between gap-3">
-                  <p className="font-medium text-[color:var(--merchant-ink)]">{label}</p>
-                  <StatusBadge tone={status === "enabled" ? "success" : "neutral"}>
-                    {status}
+                  <p className="font-medium text-[color:var(--merchant-ink)]">{mode.label}</p>
+                  <StatusBadge tone={selectedScanMode === mode.id ? "success" : "neutral"}>
+                    {selectedScanMode === mode.id ? "selected" : "available"}
                   </StatusBadge>
                 </div>
-                <p className="mt-3 text-sm text-[color:var(--merchant-muted)]">{description}</p>
-              </div>
+                <p className="mt-3 text-sm text-[color:var(--merchant-muted)]">{mode.helper}</p>
+              </button>
             ))}
           </div>
         </SurfaceCard>

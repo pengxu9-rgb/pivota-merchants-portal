@@ -19,6 +19,11 @@ import {
 export default function ScanResultsPage() {
   const params = useParams<{ scanId: string }>();
   const [results, setResults] = useState<any>(null);
+  const scanMode = results?.scan_target?.scan_mode;
+  const productStrong =
+    (results?.aggregate_scores?.product_entity_visibility_score ??
+      results?.aggregate_scores?.visibility_score ??
+      0) >= 70;
 
   useEffect(() => {
     if (!params.scanId) return;
@@ -82,14 +87,39 @@ export default function ScanResultsPage() {
               label="Merchant Store Visibility"
               value={results?.aggregate_scores?.merchant_store_visibility_score ?? 0}
             />
+            {scanMode === "open_product_visibility_test" ? (
+              <p className="text-sm text-[color:var(--merchant-muted)]">
+                Merchant visibility is not proven in this scan.
+              </p>
+            ) : null}
             <ScoreBar
               label="Pivota Channel Visibility"
               value={results?.aggregate_scores?.pivota_pdp_visibility_score ?? 0}
             />
+            {scanMode === "open_product_visibility_test" ? (
+              <p className="text-sm text-[color:var(--merchant-muted)]">
+                Pivota channel visibility is not proven in this scan.
+              </p>
+            ) : null}
             <ScoreBar
               label="Executable Offer Visibility"
               value={results?.aggregate_scores?.executable_offer_visibility_score ?? "not_tested"}
             />
+            {scanMode === "merchant_store_attribution_test" ? (
+              <p className="text-sm text-[color:var(--merchant-muted)]">
+                Merchant Store Visibility is pass/fail scored for this attribution scan.
+              </p>
+            ) : null}
+            {scanMode === "pivota_pdp_attribution_test" ? (
+              <p className="text-sm text-[color:var(--merchant-muted)]">
+                Pivota Channel Visibility is pass/fail scored for this attribution scan.
+              </p>
+            ) : null}
+            {scanMode === "open_product_visibility_test" && productStrong ? (
+              <div className="rounded-xl bg-[color:var(--merchant-brand-soft)] p-3 text-sm text-[color:var(--merchant-brand)]">
+                Recommended next: run Merchant Store Attribution Test or Pivota PDP Attribution Test.
+              </div>
+            ) : null}
             <ScoreBar
               label="Recommendation rank"
               value={results?.aggregate_scores?.recommendation_rank_score || 0}

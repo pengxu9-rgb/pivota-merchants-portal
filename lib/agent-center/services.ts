@@ -393,6 +393,7 @@ function formatFixTarget(target: FixTarget) {
   const labels: Record<FixTarget, string> = {
     merchant_pdp: "merchant PDP",
     merchant_catalog: "merchant catalog",
+    merchant_structured_data: "merchant structured data",
     merchant_variant_map: "merchant variant map",
     pivota_unified_pdp: "Pivota unified PDP",
     pivota_product_graph: "Pivota product graph",
@@ -417,6 +418,69 @@ function patchAttributeActions(attributes: string[], layer: "merchant" | "pivota
       ? `Add or clarify ${titleCase(attribute)} on the merchant PDP.`
       : `Normalize ${titleCase(attribute)} on the Pivota unified PDP.`
   );
+}
+
+function scanModePromptInstructions(input: {
+  scanMode: ScanMode;
+  store: MerchantStore;
+  product?: ProductRecord;
+}) {
+  const merchantPdpUrl = input.product?.pdp_url || input.store.store_url;
+  const pivotaPdpUrl =
+    typeof input.product?.pivota_attributes?.pivota_pdp_url === "string"
+      ? input.product.pivota_attributes.pivota_pdp_url
+      : "";
+  const pivotaProductObjectId =
+    typeof input.product?.pivota_attributes?.pivota_product_object_id === "string"
+      ? input.product.pivota_attributes.pivota_product_object_id
+      : input.product?.product_entity_id || "";
+  const pivotaOfferIds = Array.isArray(input.product?.pivota_attributes?.offer_ids)
+    ? input.product?.pivota_attributes?.offer_ids
+    : [];
+
+  if (input.scanMode === "merchant_store_attribution_test") {
+    return [
+      "",
+      "Scan mode: merchant_store_attribution_test.",
+      `Merchant store: ${input.store.store_name}.`,
+      `Merchant store URL: ${input.store.store_url}.`,
+      `Merchant PDP URL: ${merchantPdpUrl}.`,
+      "If a recommended product is supported by the merchant source, include the merchant store and merchant PDP URL as the purchase source.",
+      "Set merchant_store_mentioned, merchant_pdp_url_present, merchant_pdp_url, merchant_store_attribution_confidence, purchase_path_type, and channel_attribution accurately.",
+      "Use channel_attribution = merchant_store_attributed only when the merchant store or merchant PDP is actually returned as the buying path.",
+    ].join("\n");
+  }
+
+  if (input.scanMode === "pivota_pdp_attribution_test") {
+    return [
+      "",
+      "Scan mode: pivota_pdp_attribution_test.",
+      `Pivota ProductEntity: ${input.product?.product_entity_id || "unknown"}.`,
+      `Pivota product object ID: ${pivotaProductObjectId || "unknown"}.`,
+      `Pivota PDP URL: ${pivotaPdpUrl || "not available"}.`,
+      `Pivota offer IDs: ${pivotaOfferIds.join(", ") || "none"}.`,
+      "If a recommended product is supported by the Pivota unified PDP or Pivota product object, include the Pivota PDP URL or product object as the agent-facing path.",
+      "Set pivota_pdp_mentioned, pivota_pdp_url_present, pivota_pdp_url, pivota_offer_present, pivota_offer_ids, purchase_path_type, and channel_attribution accurately.",
+      "Use channel_attribution = pivota_pdp_attributed only when the Pivota PDP/object is returned. Use pivota_offer_attributed only when a Pivota-managed offer is returned.",
+    ].join("\n");
+  }
+
+  return [
+    "",
+    "Scan mode: open_product_visibility_test.",
+    "This scan measures whether the product entity is known and recommended by the model.",
+    "Do not mark merchant store, merchant PDP, Pivota PDP, or offer attribution as successful unless the answer explicitly returns those paths.",
+  ].join("\n");
+}
+
+function promptForScanMode(input: {
+  templatePrompt: string;
+  query: string;
+  scanMode: ScanMode;
+  store: MerchantStore;
+  product?: ProductRecord;
+}) {
+  return `${input.templatePrompt.replace("{{query}}", input.query)}${scanModePromptInstructions(input)}`;
 }
 
 function topCompetitorRecommendations(matches: ProductMatchResult[]) {
@@ -1732,6 +1796,18 @@ export class FixTargetRouter {
       return ["pivota_unified_pdp"];
     }
 
+    if (input.issueType === "merchant_store_attribution_gap") {
+      return ["merchant_pdp", "merchant_catalog", "merchant_structured_data"];
+    }
+
+    if (input.issueType === "pivota_pdp_attribution_gap") {
+      return ["pivota_unified_pdp", "pivota_product_graph", "pivota_query_mapping"];
+    }
+
+    if (input.issueType === "pivota_offer_attribution_gap") {
+      return ["pivota_unified_pdp", "pivota_product_graph"];
+    }
+
     if (input.issueType === "missing_attribute") {
       const merchantHasAttributes = input.missingAttributes.every((attribute) =>
         Boolean(input.product?.attributes?.[attribute])
@@ -1790,6 +1866,14 @@ export class IssueEngine {
       ...input.matches.map((item) => item.match_confidence_score),
       1
     );
+    const hasPivotaOffers = Boolean(
+      product &&
+        (Array.isArray(product.pivota_attributes?.offer_ids)
+          ? product.pivota_attributes.offer_ids.length
+          : Array.isArray(product.pivota_attributes?.merchant_offers)
+            ? product.pivota_attributes.merchant_offers.length
+            : false)
+    );
 
     if (
       aggregate.product_entity_visibility_score < 20 &&
@@ -1803,6 +1887,73 @@ export class IssueEngine {
             "The merchant product is rarely surfaced for high-value AI demand scenarios.",
           recommendedAction:
             "Strengthen the merchant PDP and Pivota unified PDP with demand-specific attributes and clearer agent summary copy.",
+          input,
+          product,
+          missingAttributes,
+          parserConfidence,
+          matchConfidence,
+        })
+      );
+    }
+
+    if (
+      input.scanTarget.scan_mode === "merchant_store_attribution_test" &&
+      aggregate.product_entity_visibility_score >= 60 &&
+      aggregate.merchant_store_visibility_score < 40
+    ) {
+      issues.push(
+        this.createIssue({
+          issueType: "merchant_store_attribution_gap",
+          severity: "high",
+          rootCause:
+            "The product is visible to the model, but the merchant store/PDP was not returned as the buying path.",
+          recommendedAction:
+            "Strengthen merchant PDP structured data, catalog source fields, and source attribution copy so the merchant store can be returned as the purchase source.",
+          input,
+          product,
+          missingAttributes,
+          parserConfidence,
+          matchConfidence,
+        })
+      );
+    }
+
+    if (
+      input.scanTarget.scan_mode === "pivota_pdp_attribution_test" &&
+      aggregate.product_entity_visibility_score >= 60 &&
+      aggregate.pivota_pdp_visibility_score < 40
+    ) {
+      issues.push(
+        this.createIssue({
+          issueType: "pivota_pdp_attribution_gap",
+          severity: "high",
+          rootCause:
+            "The product is visible to the model, but the Pivota unified PDP or product object was not returned as the agent-facing path.",
+          recommendedAction:
+            "Update the Pivota unified PDP, product object ID, and query mapping so the Pivota channel is returned for this demand scenario.",
+          input,
+          product,
+          missingAttributes,
+          parserConfidence,
+          matchConfidence,
+        })
+      );
+    }
+
+    if (
+      input.scanTarget.scan_mode === "pivota_pdp_attribution_test" &&
+      hasPivotaOffers &&
+      aggregate.pivota_pdp_visibility_score >= 40 &&
+      aggregate.pivota_offer_visibility_score < 40
+    ) {
+      issues.push(
+        this.createIssue({
+          issueType: "pivota_offer_attribution_gap",
+          severity: "medium",
+          rootCause:
+            "The Pivota unified PDP is visible, but Pivota-managed merchant offers were not returned.",
+          recommendedAction:
+            "Attach or refresh offer IDs under the Pivota unified PDP and ensure the product object exposes merchant offer metadata.",
           input,
           product,
           missingAttributes,
@@ -2101,12 +2252,19 @@ export class DemandTestJobService {
             repetitionIndex += 1
           ) {
             const query = cluster.queries[(repetitionIndex - 1) % cluster.queries.length];
-            const prompt = template.prompt.replace("{{query}}", query);
+            const prompt = promptForScanMode({
+              templatePrompt: template.prompt,
+              query,
+              scanMode: target.scan_mode,
+              store,
+              product,
+            });
             const input: DemandTestInput = {
               merchantId: job.merchant_id,
               storeId: job.store_id,
               scanTargetId: job.scan_target_id,
               queryClusterId: cluster.id,
+              scanMode: target.scan_mode,
               query,
               promptTemplateId,
               prompt,
@@ -2886,6 +3044,7 @@ export class DemoScenarioService {
         storeId: store.id,
         scanTargetId: target.id,
         queryClusterId: cluster.id,
+        scanMode: target.scan_mode,
         query,
         promptTemplateId: "general_recommendation_v1",
         prompt: `User query: ${query}`,
