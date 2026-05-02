@@ -40,6 +40,7 @@ const {
   InputReadinessService,
   IssueEngine,
   IssueResolutionService,
+  MerchantFacingReportService,
   MerchantStoreService,
   OfferExecutionService,
   ProductionValidationRunService,
@@ -4917,6 +4918,118 @@ test("production validation report includes snapshot blockers and preview usage"
           event.billing_status === "not_invoiced"
       )
     );
+  });
+});
+
+test("merchant-facing report draft summarizes dual-path readiness safely", async () => {
+  resetAgentCenterState();
+  await withMockProductionValidationFetch(async () => {
+    const run = new ProductionValidationRunService().create(
+      productionValidationPayload({
+        pivota_pdp_url:
+          "https://agent.pivota.cc/products/ext_isntree_watery_sun_gel",
+        pivota_offer_id: "offer_isntree_direct_50ml",
+        pivota_pdp_quality_findings: pivotaLivePdpQualityFindings,
+        merchant_offer_input: {
+          price: 18.99,
+          currency: "USD",
+          coupon_status: "none",
+          inventory_status: "in_stock",
+        },
+        pivota_offer_input: {
+          price: 18.99,
+          currency: "USD",
+          coupon_status: "none",
+          inventory_status: "in_stock",
+        },
+      })
+    );
+    const completed = await new ProductionValidationRunService().run(run.id);
+    const blocker = completed.validation_report.top_blockers.find(
+      (item) => item.issue_id
+    );
+    if (blocker?.issue_id) new IssueResolutionService().generate(blocker.issue_id);
+
+    const report = new MerchantFacingReportService().generate(completed.id);
+    const serialized = JSON.stringify(report).toLowerCase();
+
+    assert.equal(report.production_validation_run_id, completed.id);
+    assert.equal(report.status, "draft");
+    assert.equal(report.tested_product.product_name, completed.product_name);
+    assert.equal(
+      report.path_readiness.merchant_owned_path.merchant_pdp_url,
+      completed.merchant_pdp_url
+    );
+    assert.equal(
+      report.path_readiness.pivota_agent_facing_path.pivota_pdp_url,
+      completed.pivota_pdp_url
+    );
+    assert.match(
+      report.path_readiness.pivota_agent_facing_path.summary,
+      /agent-facing/
+    );
+    assert.equal(report.usage_statement.billing_mode, "preview_only");
+    assert.equal(report.usage_statement.billing_status, "not_invoiced");
+    assert.match(report.usage_statement.merchant_copy, /not invoiced/i);
+    assert.ok(report.v1_does_not_prove.includes("Real payment authorization"));
+    assert.ok(report.v1_does_not_prove.includes("Final GMV attribution"));
+    assert.ok(report.recommended_fixes.length > 0);
+    assert.ok(report.sharing_notes.some((note) => /raw provider/i.test(note)));
+    assert.equal(serialized.includes("token_count"), false);
+    assert.equal(serialized.includes("raw_output"), false);
+    assert.equal(
+      new MerchantFacingReportService().latestForRun(completed.id).id,
+      report.id
+    );
+  });
+});
+
+test("merchant-facing report draft API is internal and idempotent", async () => {
+  resetAgentCenterState();
+  await withInternalProductionValidationEnv(async () => {
+    await withMockProductionValidationFetch(async () => {
+      const run = new ProductionValidationRunService().create(
+        productionValidationPayload({
+          pivota_pdp_quality_findings: pivotaLivePdpQualityFindings,
+        })
+      );
+      const completed = await new ProductionValidationRunService().run(run.id);
+      const created = await handleAgentCenterRequest(
+        internalProductionValidationRequest(
+          `https://example.test/api/agent-center/internal-production-validation-runs/${completed.id}/report-draft`,
+          { method: "POST" }
+        ),
+        {
+          path: [
+            "internal-production-validation-runs",
+            completed.id,
+            "report-draft",
+          ],
+        }
+      );
+      const fetched = await handleAgentCenterRequest(
+        internalProductionValidationRequest(
+          `https://example.test/api/agent-center/internal-production-validation-runs/${completed.id}/report-draft`
+        ),
+        {
+          path: [
+            "internal-production-validation-runs",
+            completed.id,
+            "report-draft",
+          ],
+        }
+      );
+      const createdPayload = await created.json();
+      const fetchedPayload = await fetched.json();
+
+      assert.equal(created.status, 201);
+      assert.equal(fetched.status, 200);
+      assert.equal(fetchedPayload.report.id, createdPayload.report.id);
+      assert.equal(
+        fetchedPayload.report.usage_statement.billing_status,
+        "not_invoiced"
+      );
+    });
   });
 });
 

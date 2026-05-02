@@ -32,6 +32,12 @@ const nextConfig = {
           destination:
             "/api/agent-center/internal-production-validation-runs/:runId/run",
         },
+        {
+          source:
+            "/api/internal/agent-center/production-validation-runs/:runId/report-draft",
+          destination:
+            "/api/agent-center/internal-production-validation-runs/:runId/report-draft",
+        },
       ],
     };
   },

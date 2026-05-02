@@ -362,6 +362,29 @@ Usage preview statement
 All pilot usage is preview-only and not invoiced. Merchant-facing usage should be shown as credits and usage, not token-level provider costs.
 ```
 
+## Automated Report Draft
+
+After an internal production validation run completes, Pivota operators can generate
+a merchant-facing report draft from the validated run payload:
+
+```text
+POST /api/internal/agent-center/production-validation-runs/:id/report-draft
+GET  /api/internal/agent-center/production-validation-runs/:id/report-draft
+```
+
+The draft is stored on the `ProductionValidationRun` payload. It does not require a
+new DB table for V1. The report separates:
+
+- discoverability vs contextual attribution
+- merchant-owned path vs Pivota agent-facing path
+- offer readiness vs checkout readiness
+- recommended fixes, owner, approval requirement, and retest plan
+- usage preview as credits only
+
+The report draft intentionally excludes raw provider payloads, prompt traces,
+provider token counts, internal debug payloads, real billing, payment execution,
+order placement, and final GMV attribution.
+
 ## Demo Script
 
 Use this language when explaining the pilot:
@@ -402,6 +425,8 @@ Internal production validation endpoints:
 POST   /api/internal/agent-center/production-validation-runs
 GET    /api/internal/agent-center/production-validation-runs/:id
 POST   /api/internal/agent-center/production-validation-runs/:id/run
+POST   /api/internal/agent-center/production-validation-runs/:id/report-draft
+GET    /api/internal/agent-center/production-validation-runs/:id/report-draft
 DELETE /api/internal/agent-center/production-validation-runs/:id
 ```
 

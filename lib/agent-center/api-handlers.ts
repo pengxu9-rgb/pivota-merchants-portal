@@ -16,6 +16,7 @@ import {
   getUsageSummary,
   InputReadinessService,
   IssueResolutionService,
+  MerchantFacingReportService,
   MerchantStoreService,
   OfferExecutionService,
   ProductionValidationRunService,
@@ -190,10 +191,6 @@ async function handleInternalProductionValidationRunsRequestInner(
       return json({ production_validation_run: service.create(body) }, 201);
     }
 
-    if (req.method === "GET" && runId) {
-      return json({ production_validation_run: service.get(runId) });
-    }
-
     if (req.method === "POST" && runId && params?.action === "run") {
       const body = await requestBody(req);
       const completed = await service.run(runId);
@@ -212,6 +209,37 @@ async function handleInternalProductionValidationRunsRequestInner(
       return json({
         production_validation_run: completed,
       });
+    }
+
+    if (
+      req.method === "POST" &&
+      runId &&
+      params?.action === "report-draft"
+    ) {
+      const body = await requestBody(req);
+      return json(
+        {
+          report: new MerchantFacingReportService().generate(runId, {
+            regenerate: Boolean(body.regenerate),
+            audience: body.audience,
+          }),
+        },
+        201
+      );
+    }
+
+    if (
+      req.method === "GET" &&
+      runId &&
+      params?.action === "report-draft"
+    ) {
+      return json({
+        report: new MerchantFacingReportService().latestForRun(runId),
+      });
+    }
+
+    if (req.method === "GET" && runId) {
+      return json({ production_validation_run: service.get(runId) });
     }
 
     if (req.method === "DELETE" && runId) {

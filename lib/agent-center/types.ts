@@ -1406,6 +1406,109 @@ export type ProductionValidationReport = {
   billing_status: "not_invoiced";
 };
 
+export type MerchantFacingReportStatus = "draft" | "shared" | "archived";
+
+export type MerchantFacingValidationReport = Timestamped & {
+  id: string;
+  production_validation_run_id: string;
+  merchant_id?: string;
+  store_id?: string;
+  scan_target_id?: string;
+  report_type: "agent_center_production_validation";
+  audience: "merchant" | "investor" | "internal_review";
+  status: MerchantFacingReportStatus;
+  title: string;
+  executive_summary: string;
+  tested_product: {
+    merchant_name: string;
+    store_url: string;
+    product_name: string;
+    brand?: string;
+    sku_name?: string;
+    category?: string;
+    market: string;
+    language: string;
+    currency: string;
+  };
+  path_readiness: {
+    discoverability: {
+      status: GMVAssuranceDimensionStatus;
+      summary: string;
+      organic_product_discovery?: VisibilityScoreValue;
+      merchant_pdp_discovery?: VisibilityScoreValue;
+      pivota_pdp_discovery?: VisibilityScoreValue;
+      buying_path_discovery?: VisibilityScoreValue;
+      competitor_dominance?: VisibilityScoreValue;
+    };
+    merchant_owned_path: {
+      merchant_pdp_url: string;
+      preflight_status: ProductionValidationUrlPreflight["status"];
+      attribution_status: GMVAssuranceDimensionStatus;
+      offer_source_status: GMVAssuranceDimensionStatus;
+      checkout_path_status: GMVAssuranceDimensionStatus;
+      summary: string;
+    };
+    pivota_agent_facing_path: {
+      pivota_pdp_url?: string;
+      preflight_status: ProductionValidationUrlPreflight["status"];
+      attribution_status: GMVAssuranceDimensionStatus;
+      offer_state_status: GMVAssuranceDimensionStatus;
+      checkout_handoff_status: GMVAssuranceDimensionStatus;
+      summary: string;
+    };
+    offer_readiness: {
+      status: GMVAssuranceDimensionStatus;
+      readiness_scores: number[];
+      findings: string[];
+      summary: string;
+    };
+    checkout_readiness: {
+      status: GMVAssuranceDimensionStatus;
+      readiness_scores: number[];
+      findings: string[];
+      summary: string;
+    };
+  };
+  blockers: Array<{
+    blocker_type: string;
+    severity: Severity;
+    affected_layer: string;
+    issue_id?: string;
+    resolution_plan_id?: string;
+    recommended_action: string;
+  }>;
+  recommended_fixes: Array<{
+    title: string;
+    owner_type?: IssueResolutionOwnerType;
+    owner_team?: string;
+    approval_required: boolean;
+    target_layer: string;
+    action_status?: RecommendedActionStatus;
+    expected_impact?: string;
+  }>;
+  retest_plan: string[];
+  usage_statement: {
+    ai_test_credits: number;
+    product_understanding_credits: number;
+    offer_verification_credits: number;
+    checkout_verification_credits: number;
+    resolution_plan_credits?: number;
+    total_preview_credits: number;
+    billing_mode: "preview_only";
+    billing_status: "not_invoiced";
+    merchant_copy: string;
+  };
+  v1_does_not_prove: string[];
+  sharing_notes: string[];
+  source_summary: {
+    issue_ids: string[];
+    product_diagnosis_ids: string[];
+    offer_diagnosis_ids: string[];
+    checkout_diagnosis_ids: string[];
+    gmv_assurance_snapshot_id?: string;
+  };
+};
+
 type ReturnTypePlaceholderDemandAggregate = {
   product_entity_visibility_score: number;
   merchant_store_visibility_score: number;
@@ -1460,6 +1563,7 @@ export type ProductionValidationRun = Timestamped & {
   pivota_pdp_quality_findings?: string[];
   pivota_live_pdp_quality_findings?: string[];
   pivota_pdp_quality_gate?: Record<string, unknown>;
+  demand_scan_modes?: ScanMode[];
   repetitions?: number;
   scan_target_id?: string;
   issue_ids: string[];
@@ -1470,6 +1574,7 @@ export type ProductionValidationRun = Timestamped & {
   gmv_assurance_snapshot_id?: string;
   usage_event_ids: string[];
   validation_report?: ProductionValidationReport;
+  merchant_facing_report_draft?: MerchantFacingValidationReport;
   completed_at?: string;
   deleted_at?: string;
 };

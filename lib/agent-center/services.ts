@@ -46,6 +46,7 @@ import type {
   IssueResolutionPlan,
   LLMSurfaceResult,
   LLMSurfaceTestRun,
+  MerchantFacingValidationReport,
   MerchantStore,
   MerchantCheckoutPath,
   MatchConfidence,
@@ -9166,6 +9167,343 @@ export class ProductionValidationRunService {
       (connection) => !storeIds.includes(connection.store_id)
     );
     state.stores = state.stores.filter((store) => !storeIds.includes(store.id));
+  }
+}
+
+function combineReportStatuses(
+  statuses: Array<GMVAssuranceDimensionStatus | undefined>
+): GMVAssuranceDimensionStatus {
+  const present = statuses.filter(Boolean) as GMVAssuranceDimensionStatus[];
+  if (!present.length) return "not_tested";
+  if (present.includes("blocked")) return "blocked";
+  if (present.includes("needs_work")) return "needs_work";
+  if (present.includes("not_configured")) return "not_configured";
+  if (present.includes("passed")) return "passed";
+  return "not_tested";
+}
+
+function reportScoreLabel(score?: VisibilityScoreValue) {
+  if (score === undefined) return "not tested";
+  return typeof score === "number" ? `${score}%` : score.replace(/_/g, " ");
+}
+
+function reportStatusLabel(status?: GMVAssuranceDimensionStatus) {
+  return (status || "not_tested").replace(/_/g, " ");
+}
+
+function reportPreflightLabel(status?: ProductionValidationUrlPreflight["status"]) {
+  return (status || "not_provided").replace(/_/g, " ");
+}
+
+export class MerchantFacingReportService {
+  latestForRun(runId: string) {
+    return new ProductionValidationRunService().get(runId).merchant_facing_report_draft || null;
+  }
+
+  get(reportId: string) {
+    const run = getAgentCenterState().productionValidationRuns.find(
+      (item) => item.merchant_facing_report_draft?.id === reportId
+    );
+    return run?.merchant_facing_report_draft || null;
+  }
+
+  generate(
+    runId: string,
+    options: {
+      regenerate?: boolean;
+      audience?: MerchantFacingValidationReport["audience"];
+    } = {}
+  ) {
+    const run = new ProductionValidationRunService().get(runId);
+    if (run.merchant_facing_report_draft && !options.regenerate) {
+      return run.merchant_facing_report_draft;
+    }
+    if (!run.validation_report) {
+      throw new Error(
+        `Production validation run must be completed before report generation: ${runId}`
+      );
+    }
+
+    const report = run.validation_report;
+    const snapshot = report.gmv_assurance_snapshot;
+    const discovery = snapshot?.discovery_readiness_summary;
+    const demand = snapshot?.demand_test_summary;
+    const offer = snapshot?.offer_execution_summary;
+    const checkout = snapshot?.checkout_verification_summary;
+    const merchantAttribution = demand?.merchant_attribution_status.status || "not_tested";
+    const pivotaAttribution = demand?.pivota_attribution_status.status || "not_tested";
+    const offerStatus = offer?.offer_readiness_status.status || "not_tested";
+    const checkoutStatus = checkout?.checkout_readiness_status.status || "not_tested";
+    const discoveryStatus = combineReportStatuses([
+      discovery?.organic_product_discovery_status.status,
+      discovery?.merchant_pdp_discovery_status.status,
+      discovery?.pivota_pdp_discovery_status.status,
+      discovery?.buying_path_discovery_status.status,
+      discovery?.competitor_dominance_status.status,
+    ]);
+    const blockers = this.blockers(report);
+    const now = nowIso();
+
+    const draft: MerchantFacingValidationReport = {
+      id: run.merchant_facing_report_draft?.id || nextId("merchant_report"),
+      production_validation_run_id: run.id,
+      merchant_id: snapshot?.merchant_id,
+      store_id: snapshot?.store_id,
+      scan_target_id: report.target_summary.scan_target_id || run.scan_target_id,
+      report_type: "agent_center_production_validation",
+      audience: options.audience || "merchant",
+      status: "draft",
+      title: `${report.target_summary.brand || report.target_summary.merchant_name} Agent Center validation report`,
+      executive_summary: this.executiveSummary(report, discoveryStatus),
+      tested_product: {
+        merchant_name: report.target_summary.merchant_name,
+        store_url: report.target_summary.store_url,
+        product_name: report.target_summary.product_name,
+        brand: report.target_summary.brand,
+        sku_name: report.target_summary.sku_name,
+        category: report.target_summary.category,
+        market: report.target_summary.market,
+        language: report.target_summary.language,
+        currency: report.target_summary.currency,
+      },
+      path_readiness: {
+        discoverability: {
+          status: discoveryStatus,
+          summary: this.discoverySummary(report, discoveryStatus),
+          organic_product_discovery:
+            discovery?.organic_product_discovery_status.score,
+          merchant_pdp_discovery: discovery?.merchant_pdp_discovery_status.score,
+          pivota_pdp_discovery: discovery?.pivota_pdp_discovery_status.score,
+          buying_path_discovery: discovery?.buying_path_discovery_status.score,
+          competitor_dominance: discovery?.competitor_dominance_status.score,
+        },
+        merchant_owned_path: {
+          merchant_pdp_url: report.target_summary.merchant_pdp_url,
+          preflight_status: report.url_preflight_results.merchant_pdp.status,
+          attribution_status: merchantAttribution,
+          offer_source_status: offerStatus,
+          checkout_path_status: checkoutStatus,
+          summary: this.merchantPathSummary(report, merchantAttribution),
+        },
+        pivota_agent_facing_path: {
+          pivota_pdp_url: report.target_summary.pivota_pdp_url,
+          preflight_status: report.url_preflight_results.pivota_pdp.status,
+          attribution_status: pivotaAttribution,
+          offer_state_status: offerStatus,
+          checkout_handoff_status: checkoutStatus,
+          summary: this.pivotaPathSummary(report, pivotaAttribution),
+        },
+        offer_readiness: {
+          status: offerStatus,
+          readiness_scores: report.offer_execution_summary.readiness_scores,
+          findings: report.offer_execution_summary.findings,
+          summary: this.offerSummary(report, offerStatus),
+        },
+        checkout_readiness: {
+          status: checkoutStatus,
+          readiness_scores: report.checkout_verification_summary.readiness_scores,
+          findings: report.checkout_verification_summary.findings,
+          summary: this.checkoutSummary(report, checkoutStatus),
+        },
+      },
+      blockers,
+      recommended_fixes: this.recommendedFixes(blockers),
+      retest_plan: this.retestPlan(report, blockers),
+      usage_statement: {
+        ...report.usage_summary,
+        merchant_copy:
+          "This report uses AI Test Credits in preview mode only. Usage is not invoiced, and merchant-facing reporting does not show token-level provider costs.",
+      },
+      v1_does_not_prove: [
+        "Real payment authorization",
+        "PSP success",
+        "Order placement",
+        "Order write-back",
+        "Refunds",
+        "Settlement",
+        "Final GMV attribution",
+        "Real billing or invoicing",
+        "Consumer Gemini UI or AI Mode ranking",
+      ],
+      sharing_notes: [
+        "This is a merchant-facing draft generated from validated Agent Center outputs.",
+        "Raw provider payloads, prompt traces, provider token counts, and internal debug payloads are intentionally excluded.",
+        "Contextual attribution is reported separately from natural or search-grounded discovery.",
+      ],
+      source_summary: {
+        issue_ids: run.issue_ids,
+        product_diagnosis_ids: run.product_diagnosis_ids,
+        offer_diagnosis_ids: run.offer_diagnosis_ids,
+        checkout_diagnosis_ids: run.checkout_diagnosis_ids,
+        gmv_assurance_snapshot_id: run.gmv_assurance_snapshot_id,
+      },
+      created_at: run.merchant_facing_report_draft?.created_at || now,
+      updated_at: now,
+    };
+
+    // Keep the deterministic report draft on the existing validation run payload
+    // so DB-backed deployments do not need a separate report table for V1.
+    run.merchant_facing_report_draft = draft;
+    touch(run);
+    return draft;
+  }
+
+  private executiveSummary(
+    report: ProductionValidationReport,
+    discoveryStatus: GMVAssuranceDimensionStatus
+  ) {
+    const readiness = report.gmv_assurance_snapshot?.readiness_level || "monitoring";
+    const blocker = report.top_blockers[0];
+    if (blocker) {
+      return `Agent Center validated ${report.target_summary.product_name}. Overall readiness is ${readiness.replace(/_/g, " ")}. The primary blocker is ${titleCase(blocker.blocker_type)} on ${blocker.affected_layer}; the recommended next action is: ${report.next_best_action}`;
+    }
+    return `Agent Center validated ${report.target_summary.product_name}. Overall readiness is ${readiness.replace(/_/g, " ")} and discovery readiness is ${reportStatusLabel(discoveryStatus)}. No high-severity blocker was generated in this run.`;
+  }
+
+  private discoverySummary(
+    report: ProductionValidationReport,
+    status: GMVAssuranceDimensionStatus
+  ) {
+    const discovery = report.gmv_assurance_snapshot?.discovery_readiness_summary;
+    if (!discovery) {
+      return "Discovery was not included in this validation run.";
+    }
+    return [
+      `Discovery readiness is ${reportStatusLabel(status)}.`,
+      `Organic product discovery: ${reportScoreLabel(discovery.organic_product_discovery_status.score)}.`,
+      `Merchant PDP discovery: ${reportScoreLabel(discovery.merchant_pdp_discovery_status.score)}.`,
+      `Pivota PDP discovery: ${reportScoreLabel(discovery.pivota_pdp_discovery_status.score)}.`,
+      "Search-grounded discovery is distinct from contextual attribution and only counts URLs returned by Gemini or grounding metadata.",
+    ].join(" ");
+  }
+
+  private merchantPathSummary(
+    report: ProductionValidationReport,
+    attributionStatus: GMVAssuranceDimensionStatus
+  ) {
+    const preflight = report.url_preflight_results.merchant_pdp.status;
+    if (preflight !== "passed") {
+      return `Merchant-owned PDP preflight is ${reportPreflightLabel(preflight)}. Merchant attribution cannot be treated as ready until the source-layer PDP is reachable.`;
+    }
+    if (attributionStatus === "passed") {
+      return "Merchant-owned PDP is reachable and merchant attribution passed in the relevant attribution test.";
+    }
+    return `Merchant-owned PDP is reachable, but merchant attribution is ${reportStatusLabel(attributionStatus)} in this validation.`;
+  }
+
+  private pivotaPathSummary(
+    report: ProductionValidationReport,
+    attributionStatus: GMVAssuranceDimensionStatus
+  ) {
+    const preflight = report.url_preflight_results.pivota_pdp.status;
+    if (!report.target_summary.pivota_pdp_url || preflight === "not_provided") {
+      return "Pivota PDP URL was not provided. Pivota agent-facing path attribution is not tested, not a merchant PDP failure.";
+    }
+    if (preflight !== "passed") {
+      return `Pivota agent-facing PDP preflight is ${reportPreflightLabel(preflight)}. Pivota path attribution cannot be proven until the public PDP is reachable.`;
+    }
+    if (attributionStatus === "passed") {
+      return "Pivota agent-facing PDP is reachable and Pivota attribution passed in the relevant attribution test.";
+    }
+    return `Pivota agent-facing PDP is reachable, but Pivota attribution is ${reportStatusLabel(attributionStatus)}. Pivota does not replace the merchant PDP; it provides an additional agent-facing execution layer.`;
+  }
+
+  private offerSummary(
+    report: ProductionValidationReport,
+    status: GMVAssuranceDimensionStatus
+  ) {
+    if (!report.offer_execution_summary.diagnosis_ids.length) {
+      return "Offer readiness was not tested because offer metadata was not provided.";
+    }
+    if (status === "passed") return "Offer readiness passed for the tested offer metadata.";
+    return `Offer readiness is ${reportStatusLabel(status)} with findings: ${report.offer_execution_summary.findings.map(titleCase).join(", ") || "none"}.`;
+  }
+
+  private checkoutSummary(
+    report: ProductionValidationReport,
+    status: GMVAssuranceDimensionStatus
+  ) {
+    if (!report.checkout_verification_summary.diagnosis_ids.length) {
+      return "Checkout readiness was not tested because checkout path metadata was not provided. V1 does not execute payment or place orders.";
+    }
+    if (status === "passed") {
+      return "Checkout path readiness passed through pre-payment URL and parameter validation.";
+    }
+    return `Checkout readiness is ${reportStatusLabel(status)} with findings: ${report.checkout_verification_summary.findings.map(titleCase).join(", ") || "none"}.`;
+  }
+
+  private blockers(report: ProductionValidationReport) {
+    return report.top_blockers.map((blocker) => {
+      const plan = blocker.issue_id ? latestIssueResolutionPlan(blocker.issue_id) : null;
+      return {
+        blocker_type: blocker.blocker_type,
+        severity: blocker.severity,
+        affected_layer: blocker.affected_layer,
+        issue_id: blocker.issue_id,
+        resolution_plan_id: plan?.id || blocker.resolution_plan_id,
+        recommended_action:
+          nextResolutionAction(plan)?.title || blocker.recommended_action,
+      };
+    });
+  }
+
+  private recommendedFixes(
+    blockers: MerchantFacingValidationReport["blockers"]
+  ): MerchantFacingValidationReport["recommended_fixes"] {
+    const fixes: MerchantFacingValidationReport["recommended_fixes"] = [];
+    for (const blocker of blockers) {
+      const plan = blocker.issue_id ? latestIssueResolutionPlan(blocker.issue_id) : null;
+      if (!plan) {
+        fixes.push({
+          title: blocker.recommended_action,
+          approval_required: false,
+          target_layer: blocker.affected_layer,
+        });
+        continue;
+      }
+      for (const action of plan.recommended_actions) {
+        fixes.push({
+          title: action.title,
+          owner_type: plan.owner_type,
+          owner_team: plan.owner_team,
+          approval_required: action.requires_merchant_approval,
+          target_layer: String(action.target_layer || blocker.affected_layer),
+          action_status: action.status,
+          expected_impact: action.expected_impact,
+        });
+      }
+    }
+    return fixes.length
+      ? fixes
+      : [
+          {
+            title: "Monitor only",
+            approval_required: false,
+            target_layer: "monitoring",
+          },
+        ];
+  }
+
+  private retestPlan(
+    report: ProductionValidationReport,
+    blockers: MerchantFacingValidationReport["blockers"]
+  ) {
+    const planSteps = blockers.map((blocker) => {
+      const plan = blocker.issue_id ? latestIssueResolutionPlan(blocker.issue_id) : null;
+      if (plan?.verification_plan?.scan_mode) {
+        return `After approved fixes, rerun ${plan.verification_plan.scan_mode} for ${titleCase(blocker.blocker_type)}.`;
+      }
+      if (plan?.verification_plan?.workflow_type) {
+        return `After approved fixes, rerun ${String(plan.verification_plan.workflow_type).replace(/_/g, " ")} for ${titleCase(blocker.blocker_type)}.`;
+      }
+      return `After approved fixes, rerun the relevant Agent Center validation for ${titleCase(blocker.blocker_type)}.`;
+    });
+    if (planSteps.length) return unique(planSteps);
+    return [
+      report.next_best_action && report.next_best_action !== "Monitor only."
+        ? report.next_best_action
+        : "No blocker retest is required; continue monitoring the product.",
+    ];
   }
 }
 
