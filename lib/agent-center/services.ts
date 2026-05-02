@@ -7923,6 +7923,7 @@ type CreateProductionValidationRunInput = Partial<
   pivota_pdp_quality_findings?: string[];
   pivota_live_pdp_quality_findings?: string[];
   pivota_pdp_quality_gate?: Record<string, unknown>;
+  demand_scan_modes?: ScanMode[];
   repetitions?: number;
 };
 
@@ -8110,6 +8111,7 @@ export class ProductionValidationRunService {
       pivota_pdp_quality_findings?: string[];
       pivota_live_pdp_quality_findings?: string[];
       pivota_pdp_quality_gate?: Record<string, unknown>;
+      demand_scan_modes?: ScanMode[];
       repetitions?: number;
     };
     extendedRun.product_attributes = input.product_attributes;
@@ -8121,6 +8123,9 @@ export class ProductionValidationRunService {
     extendedRun.pivota_live_pdp_quality_findings =
       input.pivota_live_pdp_quality_findings;
     extendedRun.pivota_pdp_quality_gate = input.pivota_pdp_quality_gate;
+    extendedRun.demand_scan_modes = this.allowedDemandScanModes(
+      input.demand_scan_modes
+    );
     extendedRun.repetitions = input.repetitions;
 
     getAgentCenterRepository().upsert("productionValidationRuns", run);
@@ -8242,14 +8247,22 @@ export class ProductionValidationRunService {
     const createdOffers = this.createOfferState(run, store, product);
     this.createCheckoutState(run, store, product, createdOffers);
 
-    const demandModes: ScanMode[] = [
-      "organic_product_discovery_test",
-      "search_grounded_product_discovery_test",
-      "buying_path_discovery_test",
-      "open_product_visibility_test",
-      "merchant_store_attribution_test",
-      ...(run.pivota_pdp_url ? (["pivota_pdp_attribution_test"] as ScanMode[]) : []),
-    ];
+    const configuredDemandModes = this.allowedDemandScanModes(
+      (run as ProductionValidationRun & { demand_scan_modes?: ScanMode[] })
+        .demand_scan_modes
+    );
+    const demandModes: ScanMode[] = configuredDemandModes.length
+      ? configuredDemandModes
+      : [
+          "organic_product_discovery_test",
+          "search_grounded_product_discovery_test",
+          "buying_path_discovery_test",
+          "open_product_visibility_test",
+          "merchant_store_attribution_test",
+          ...(run.pivota_pdp_url
+            ? (["pivota_pdp_attribution_test"] as ScanMode[])
+            : []),
+        ];
     const demandSummaries: ProductionValidationReport["demand_test_summary"]["modes_run"] =
       [];
     for (const scanMode of demandModes) {
@@ -8423,6 +8436,18 @@ export class ProductionValidationRunService {
       billing_mode: "preview_only",
       billing_status: "not_invoiced",
     };
+  }
+
+  private allowedDemandScanModes(value?: ScanMode[]) {
+    const allowed = new Set<ScanMode>([
+      "organic_product_discovery_test",
+      "search_grounded_product_discovery_test",
+      "buying_path_discovery_test",
+      "open_product_visibility_test",
+      "merchant_store_attribution_test",
+      "pivota_pdp_attribution_test",
+    ]);
+    return unique((value || []).filter((mode): mode is ScanMode => allowed.has(mode)));
   }
 
   private createProduct(run: ProductionValidationRun): ProductRecord {

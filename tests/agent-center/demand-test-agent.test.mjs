@@ -1351,6 +1351,9 @@ test("Gemini grounding tool is included only for search-grounded discovery when 
   );
 
   assert.deepEqual(search.requestBody.tools, [{ google_search: {} }]);
+  assert.equal(search.requestBody.generationConfig.responseMimeType, undefined);
+  assert.equal(search.requestBody.generationConfig.responseSchema, undefined);
+  assert.equal(organic.requestBody.generationConfig.responseMimeType, "application/json");
   assert.equal(organic.requestBody.tools, undefined);
   assert.equal(buyingPath.requestBody.tools, undefined);
   assert.equal(contextual.requestBody.tools, undefined);
@@ -1371,6 +1374,39 @@ test("Gemini grounding metadata populates discovery sources and returned URLs", 
   assert.ok(result.parsed.returned_urls.includes(result.merchantPdpUrl));
   assert.equal(result.parsed.merchant_pdp_url_exact_match, true);
   assert.equal(result.parsed.discovery_type, "search_grounded");
+});
+
+test("Gemini parser fallback preserves grounding URLs when grounded text is not JSON", () => {
+  const { store, target } = createConnectedTarget();
+  target.scan_mode = "search_grounded_product_discovery_test";
+  const cluster = new QueryClusterService().generateForScanTarget(target.id)[0];
+  const product = store.products[0];
+  const input = {
+    ...demandInput(store, target, cluster, product),
+    scanMode: "search_grounded_product_discovery_test",
+  };
+  const raw = {
+    provider: "gemini",
+    model: DEFAULT_GEMINI_MODEL,
+    raw_output: "The official product page appears in the grounded sources.",
+    normalized_output: {
+      grounding_sources: [product.pdp_url],
+      grounding_search_queries: [`${product.brand} ${product.title}`],
+    },
+    input_tokens: 12,
+    output_tokens: 18,
+    tool_calls: 1,
+    provider_request_id: "grounding_fallback_test",
+  };
+
+  const parsed = parseProviderOutput(raw, input);
+
+  assert.equal(parsed.schema_valid, false);
+  assert.ok(parsed.validation_errors.includes("raw_output_json_invalid"));
+  assert.ok(parsed.grounding_sources.includes(product.pdp_url));
+  assert.ok(parsed.returned_urls.includes(product.pdp_url));
+  assert.equal(parsed.merchant_pdp_url_exact_match, true);
+  assert.equal(parsed.discovery_type, "search_grounded");
 });
 
 test("parser schema validation marks invalid raw output", () => {
@@ -4709,6 +4745,30 @@ test("production validation without Pivota PDP skips Pivota attribution mode", a
     assert.equal(
       report.gmv_assurance_snapshot.demand_test_summary.pivota_attribution_status.status,
       "not_tested"
+    );
+  });
+});
+
+test("production validation can scope demand modes for internal grounding smoke", async () => {
+  resetAgentCenterState();
+  await withMockProductionValidationFetch(async () => {
+    const run = new ProductionValidationRunService().create(
+      productionValidationPayload({
+        demand_scan_modes: ["search_grounded_product_discovery_test"],
+      })
+    );
+    const completed = await new ProductionValidationRunService().run(run.id);
+    const report = completed.validation_report;
+    const modes = report.demand_test_summary.modes_run.map(
+      (item) => item.scan_mode
+    );
+
+    assert.deepEqual(modes, ["search_grounded_product_discovery_test"]);
+    assert.equal(completed.demand_test_job_ids.length, 1);
+    assert.equal(
+      report.demand_test_summary.modes_run[0].aggregate_scores
+        .search_grounded_merchant_pdp_discovery_score,
+      "not_configured"
     );
   });
 });

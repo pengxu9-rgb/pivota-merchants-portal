@@ -655,6 +655,15 @@ export class GeminiProviderAdapter {
       input.model
     )}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
+    const useSearchGrounding = geminiSearchGroundingEnabled(input);
+    const generationConfig: Record<string, unknown> = {
+      temperature: 0.2,
+    };
+    if (!useSearchGrounding) {
+      generationConfig.responseMimeType = "application/json";
+      generationConfig.responseSchema = PARSED_RECOMMENDATION_SCHEMA;
+    }
+
     const body: Record<string, unknown> = {
       contents: [
         {
@@ -666,17 +675,14 @@ export class GeminiProviderAdapter {
           ],
         },
       ],
-      generationConfig: {
-        temperature: 0.2,
-        responseMimeType: "application/json",
-        responseSchema: PARSED_RECOMMENDATION_SCHEMA,
-      },
+      generationConfig,
     };
-    if (geminiSearchGroundingEnabled(input)) {
-      // This repo calls Gemini through the REST API, whose JSON field uses the
-      // snake_case Google Search tool shape. The SDK equivalent is
-      // `{ googleSearch: {} }`; keep grounding scoped to search-grounded
-      // discovery only.
+    if (useSearchGrounding) {
+      // This route calls Gemini through REST. For the current Gemini 2.5 Flash
+      // baseline, Google Search grounding uses the REST `google_search` tool
+      // shape. Structured response schema is intentionally omitted here because
+      // schema+tool requests are Gemini 3-only; the prompt still asks for JSON
+      // and parser fallback preserves grounding metadata.
       body.tools = [{ google_search: {} }];
     }
 
@@ -730,7 +736,7 @@ export class GeminiProviderAdapter {
           normalized_output: normalizedWithGrounding,
           input_tokens: Number(usage.promptTokenCount || 0),
           output_tokens: Number(usage.candidatesTokenCount || 0),
-          tool_calls: geminiSearchGroundingEnabled(input) ? 1 : 0,
+          tool_calls: useSearchGrounding ? 1 : 0,
           provider_request_id:
             response.headers.get("x-request-id") ||
             `gemini_${stableHash(rawText).slice(0, 12)}`,
@@ -759,11 +765,15 @@ export function parseProviderOutput(
     if (typeof raw.raw_output === "string") {
       const parsed = parseJsonObject(raw.raw_output);
       if (parsed) output = { ...parsed, ...(raw.normalized_output || {}) };
-      else validationErrors.push("raw_output_json_invalid");
+      else {
+        output = raw.normalized_output || {};
+        validationErrors.push("raw_output_json_invalid");
+      }
     } else {
       output = raw.normalized_output || raw.raw_output;
     }
   } catch {
+    output = raw.normalized_output || {};
     validationErrors.push("raw_output_json_invalid");
   }
 
