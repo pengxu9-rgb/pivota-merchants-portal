@@ -501,8 +501,11 @@ export type ParsedRecommendation = Timestamped & {
   offer_signal_present: boolean;
   price_signal_present: boolean;
   availability_signal_present: boolean;
-  discovery_type?: ScanMode;
+  discovery_type?: ScanMode | "organic" | "search_grounded" | "buying_path";
   grounding_sources?: string[];
+  grounding_source_titles?: string[];
+  grounding_search_queries?: string[];
+  grounding_supports?: Array<Record<string, unknown>>;
   competitor_substitution_detected: boolean;
   purchase_path_present: boolean;
   purchase_path_type: PurchasePathType;
@@ -1123,6 +1126,7 @@ export type GMVAssuranceDimensionStatus =
   | "passed"
   | "needs_work"
   | "blocked"
+  | "not_configured"
   | "not_tested";
 
 export type GMVAssuranceReadinessLevel =

@@ -36,6 +36,7 @@ import type {
   EntityMappingFinding,
   FixTarget,
   GMVAssuranceBlocker,
+  GMVAssuranceDimensionStatus,
   GMVAssuranceDimensionSummary,
   GMVAssuranceSnapshot,
   GMVAssuranceUsageSummary,
@@ -194,10 +195,7 @@ function discoveryTestEnabled(scanMode?: ScanMode) {
 }
 
 function geminiSearchGroundingConfigured() {
-  return (
-    process.env.GEMINI_SEARCH_GROUNDING_ENABLED === "true" ||
-    process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED === "true"
-  );
+  return process.env.GEMINI_SEARCH_GROUNDING_ENABLED === "true";
 }
 
 function merchantAttributionTestEnabled(scanMode?: ScanMode) {
@@ -1936,16 +1934,10 @@ export class ScoringService {
       );
     }).length;
     const merchantPdpDiscoveryRuns = parsed.filter(
-      (item) =>
-        item.merchant_pdp_url_exact_match ||
-        item.merchant_pdp_url_found ||
-        item.merchant_domain_found
+      (item) => item.merchant_pdp_url_exact_match
     ).length;
     const pivotaPdpDiscoveryRuns = parsed.filter(
-      (item) =>
-        item.pivota_pdp_url_exact_match ||
-        item.pivota_pdp_url_found ||
-        item.pivota_domain_found
+      (item) => item.pivota_pdp_url_exact_match
     ).length;
     const buyingPathRuns = parsed.filter(
       (item) => item.buying_path_present || item.purchase_path_present
@@ -2150,16 +2142,10 @@ export class ScoringService {
       );
     }).length;
     const merchantPdpDiscoveryRuns = parsed.filter(
-      (item) =>
-        item.merchant_pdp_url_exact_match ||
-        item.merchant_pdp_url_found ||
-        item.merchant_domain_found
+      (item) => item.merchant_pdp_url_exact_match
     ).length;
     const pivotaPdpDiscoveryRuns = parsed.filter(
-      (item) =>
-        item.pivota_pdp_url_exact_match ||
-        item.pivota_pdp_url_found ||
-        item.pivota_domain_found
+      (item) => item.pivota_pdp_url_exact_match
     ).length;
     const buyingPathRuns = parsed.filter(
       (item) => item.buying_path_present || item.purchase_path_present
@@ -2276,21 +2262,21 @@ export class ScoringService {
       ),
       search_grounded_merchant_pdp_discovery_score: scoreExplanation(
         scores.search_grounded_merchant_pdp_discovery_score,
-        "runs_where_merchant_domain_or_pdp_url_returned / total_completed_runs * 100",
+        "runs_where_expected_merchant_pdp_url_returned / total_completed_runs * 100",
         scoreSearchGroundedDiscovery && !searchGroundingConfigured
           ? "search_grounded_merchant_pdp_discovery_score = not_configured because Gemini search grounding is not configured; no contextual attribution fallback was used."
           : scoreSearchGroundedDiscovery || scoreBuyingPathDiscovery
-            ? `search_grounded_merchant_pdp_discovery_score = ${scores.search_grounded_merchant_pdp_discovery_score} because the merchant domain/PDP appeared in ${merchantPdpDiscoveryRuns} of ${parsed.length} discovery runs.`
+            ? `search_grounded_merchant_pdp_discovery_score = ${scores.search_grounded_merchant_pdp_discovery_score} because the expected merchant PDP URL appeared in ${merchantPdpDiscoveryRuns} of ${parsed.length} discovery runs.`
             : "search_grounded_merchant_pdp_discovery_score = not_tested because this was not a search-grounded or buying-path discovery scan.",
         supportingRuns
       ),
       search_grounded_pivota_pdp_discovery_score: scoreExplanation(
         scores.search_grounded_pivota_pdp_discovery_score,
-        "runs_where_pivota_domain_or_pdp_url_returned / total_completed_runs * 100",
+        "runs_where_expected_pivota_pdp_url_returned / total_completed_runs * 100",
         scoreSearchGroundedDiscovery && !searchGroundingConfigured
           ? "search_grounded_pivota_pdp_discovery_score = not_configured because Gemini search grounding is not configured; no contextual attribution fallback was used."
           : scoreSearchGroundedDiscovery || scoreBuyingPathDiscovery
-            ? `search_grounded_pivota_pdp_discovery_score = ${scores.search_grounded_pivota_pdp_discovery_score} because the Pivota domain/PDP appeared in ${pivotaPdpDiscoveryRuns} of ${parsed.length} discovery runs.`
+            ? `search_grounded_pivota_pdp_discovery_score = ${scores.search_grounded_pivota_pdp_discovery_score} because the expected Pivota PDP URL appeared in ${pivotaPdpDiscoveryRuns} of ${parsed.length} discovery runs.`
             : "search_grounded_pivota_pdp_discovery_score = not_tested because this was not a search-grounded or buying-path discovery scan.",
         supportingRuns
       ),
@@ -5397,7 +5383,8 @@ function latestByCreatedAt<T extends { created_at: string }>(items: T[]) {
 }
 
 function scoreStatus(score?: VisibilityScoreValue, passAt = 80, blockBelow = 50) {
-  if (score === undefined || score === "not_tested" || score === "not_configured") {
+  if (score === "not_configured") return "not_configured" as const;
+  if (score === undefined || score === "not_tested") {
     return "not_tested" as const;
   }
   if (score < blockBelow) return "blocked" as const;
@@ -7155,7 +7142,8 @@ function issueEligibleForTopBlocker(input: {
 }
 
 function inverseScoreStatus(score?: VisibilityScoreValue, passAtOrBelow = 20, blockAt = 60) {
-  if (score === undefined || score === "not_tested" || score === "not_configured") {
+  if (score === "not_configured") return "not_configured" as const;
+  if (score === undefined || score === "not_tested") {
     return "not_tested" as const;
   }
   if (score >= blockAt) return "blocked" as const;
@@ -10250,6 +10238,75 @@ export class DemoScenarioService {
   }
 }
 
+function searchGroundedDiscoveryEvidence(scanTargetId?: string) {
+  const empty = {
+    status: "not_tested" as GMVAssuranceDimensionStatus,
+    grounding_sources_count: 0,
+    returned_urls: [] as string[],
+    grounding_sources: [] as string[],
+    grounding_search_queries: [] as string[],
+    matched_merchant_pdp: false,
+    matched_pivota_pdp: false,
+    merchant_domain_found: false,
+    pivota_domain_found: false,
+  };
+  if (!scanTargetId) return empty;
+
+  const state = getAgentCenterState();
+  const jobIds = new Set(
+    state.jobs
+      .filter(
+        (job) =>
+          job.scan_target_id === scanTargetId &&
+          job.scan_mode === "search_grounded_product_discovery_test"
+      )
+      .map((job) => job.id)
+  );
+  if (!jobIds.size) return empty;
+
+  const runIds = new Set(
+    state.testRuns.filter((run) => jobIds.has(run.job_id)).map((run) => run.id)
+  );
+  const parsed = state.parsedRecommendations.filter((item) =>
+    runIds.has(item.test_run_id)
+  );
+  const scores = state.scores.filter(
+    (score) => score.job_id && jobIds.has(score.job_id)
+  );
+  const aggregate = aggregateScores(scores);
+  const merchantScore =
+    aggregate.search_grounded_merchant_pdp_discovery_score;
+  const pivotaScore = aggregate.search_grounded_pivota_pdp_discovery_score;
+  const matchedMerchant = parsed.some((item) => item.merchant_pdp_url_exact_match);
+  const matchedPivota = parsed.some((item) => item.pivota_pdp_url_exact_match);
+  const status: GMVAssuranceDimensionStatus =
+    merchantScore === "not_configured" || pivotaScore === "not_configured"
+      ? "not_configured"
+      : matchedMerchant || matchedPivota
+        ? "passed"
+        : parsed.length
+          ? "needs_work"
+          : "not_tested";
+
+  return {
+    status,
+    grounding_sources_count: unique(
+      parsed.flatMap((item) => item.grounding_sources || [])
+    ).length,
+    returned_urls: unique(parsed.flatMap((item) => item.returned_urls || [])),
+    grounding_sources: unique(
+      parsed.flatMap((item) => item.grounding_sources || [])
+    ),
+    grounding_search_queries: unique(
+      parsed.flatMap((item) => item.grounding_search_queries || [])
+    ),
+    matched_merchant_pdp: matchedMerchant,
+    matched_pivota_pdp: matchedPivota,
+    merchant_domain_found: parsed.some((item) => item.merchant_domain_found),
+    pivota_domain_found: parsed.some((item) => item.pivota_domain_found),
+  };
+}
+
 export function getAgentCenterOverview(merchantId = DEMO_MERCHANT_ID) {
   const state = getAgentCenterState();
   const jobs = state.jobs.filter((job) => job.merchant_id === merchantId);
@@ -10262,11 +10319,17 @@ export function getAgentCenterOverview(merchantId = DEMO_MERCHANT_ID) {
   );
   const usage = getUsageSummary(merchantId);
   const latestAssuranceSnapshot = new GMVAssuranceService().latest(merchantId);
+  const discoveryEvidence = searchGroundedDiscoveryEvidence(
+    latestAssuranceSnapshot?.scan_target_id || latestJob?.scan_target_id
+  );
 
   return {
     latest_job: latestJob,
     latest_result: latestResults,
     latest_assurance_snapshot: latestAssuranceSnapshot,
+    discovery_evidence: {
+      search_grounded: discoveryEvidence,
+    },
     ai_visibility_score:
       latestResults?.aggregate_scores.product_entity_visibility_score || 0,
     product_entity_visibility_score:

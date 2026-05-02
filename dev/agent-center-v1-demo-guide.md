@@ -23,6 +23,12 @@ Agent Center V1 currently includes:
 
 This baseline has been production-smoked with internal demo fixtures. All merchant-facing usage remains preview-only and not invoiced.
 
+Search-grounded discovery is gated by `GEMINI_SEARCH_GROUNDING_ENABLED=true`.
+When enabled, Gemini Google Search grounding is used only for
+`search_grounded_product_discovery_test`. Organic discovery, buying-path
+discovery, contextual attribution, Product Understanding, Offer Execution,
+Checkout Verification, and retest workflows remain ungrounded.
+
 ## Demo Story
 
 Start with the problem merchants understand: AI agents can recommend products, but a recommendation is not GMV until the product can be attributed to the right buying path and the pre-payment chain is ready.
@@ -111,7 +117,7 @@ Demand Test Agent verifies whether the product is visible in AI demand scenarios
 It supports:
 
 - organic product discovery testing
-- search-grounded product discovery testing, when Gemini grounding is configured
+- search-grounded product discovery testing, when `GEMINI_SEARCH_GROUNDING_ENABLED=true`
 - buying-path discovery testing
 - open product/entity visibility testing
 - merchant store attribution testing
@@ -119,7 +125,7 @@ It supports:
 - retest and before/after verification
 - usage preview
 
-Important distinction: contextual attribution is not natural discovery. "Merchant PDP was returned in contextual attribution test" is different from "Merchant PDP was discovered in search-grounded discovery test." Product/entity visibility does not prove merchant store visibility or Pivota channel visibility. Pivota attribution only counts when a verified public Pivota PDP URL, verified product object ID, or verified offer ID is returned.
+Important distinction: contextual attribution is not natural discovery. "Merchant PDP was returned in contextual attribution test" is different from "Merchant PDP was discovered in search-grounded discovery test." Search-grounded discovery evaluates URLs returned by the model or Gemini `groundingMetadata`, without injecting expected merchant/Pivota PDP URLs as source context. It does not prove consumer Gemini UI or AI Mode ranking. Product/entity visibility does not prove merchant store visibility or Pivota channel visibility. Pivota attribution only counts when a verified public Pivota PDP URL, verified product object ID, or verified offer ID is returned.
 
 ### Product Understanding + SKU Match Agent
 

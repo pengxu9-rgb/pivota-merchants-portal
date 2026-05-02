@@ -29,6 +29,19 @@ type OverviewPayload = {
   latest_job: any | null;
   latest_result: any | null;
   latest_assurance_snapshot: any | null;
+  discovery_evidence?: {
+    search_grounded?: {
+      status: string;
+      grounding_sources_count: number;
+      returned_urls: string[];
+      grounding_sources: string[];
+      grounding_search_queries: string[];
+      matched_merchant_pdp: boolean;
+      matched_pivota_pdp: boolean;
+      merchant_domain_found: boolean;
+      pivota_domain_found: boolean;
+    };
+  };
   ai_visibility_score: number;
   product_entity_visibility_score: number;
   merchant_store_visibility_score: number;
@@ -135,6 +148,10 @@ function formatScore(value: any) {
   if (value === "not_configured") return "Not configured";
   if (value === "not_tested" || value === undefined) return "Not tested";
   return `${value}%`;
+}
+
+function yesNo(value: boolean) {
+  return value ? "Yes" : "No";
 }
 
 export default function AgentCenterPage() {
@@ -266,49 +283,117 @@ export default function AgentCenterPage() {
         description="Discoverability asks whether users and agents can find you naturally. Readiness asks whether the path can execute once found. Transaction is not tested in V1."
       >
         {snapshot ? (
-          <div className="divide-y divide-[color:var(--merchant-line)]">
-            {discoveryDimensions(snapshot).map(([key, dimension]: any) => (
-              <div
-                key={key}
-                className="grid gap-3 px-5 py-4 text-sm lg:grid-cols-[240px_130px_150px_1fr]"
-              >
-                <div>
-                  <p className="font-medium text-[color:var(--merchant-ink)]">
-                    {dimensionLabels[key] || label(key)}
-                  </p>
-                  <p className="mt-1 text-[color:var(--merchant-muted)]">
-                    {dimension.evidence}
-                  </p>
+          <div>
+            <div className="px-5 py-4 text-sm text-[color:var(--merchant-muted-strong)]">
+              Search-grounded discovery uses Gemini with Google Search grounding. It
+              tests whether public web/search-grounded Gemini can find the page. It
+              does not prove consumer Gemini UI ranking.
+            </div>
+            <div className="divide-y divide-[color:var(--merchant-line)]">
+              {discoveryDimensions(snapshot).map(([key, dimension]: any) => (
+                <div
+                  key={key}
+                  className="grid gap-3 px-5 py-4 text-sm lg:grid-cols-[240px_130px_150px_1fr]"
+                >
+                  <div>
+                    <p className="font-medium text-[color:var(--merchant-ink)]">
+                      {dimensionLabels[key] || label(key)}
+                    </p>
+                    <p className="mt-1 text-[color:var(--merchant-muted)]">
+                      {dimension.evidence}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="merchant-overline mb-1">Status</p>
+                    <StatusBadge tone={badgeTone(dimension.status) as any}>
+                      {label(dimension.status)}
+                    </StatusBadge>
+                  </div>
+                  <div>
+                    <p className="merchant-overline mb-1">Score</p>
+                    <p className="font-semibold text-[color:var(--merchant-ink)]">
+                      {formatScore(dimension.score)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="merchant-overline mb-1">Recommended next action</p>
+                    <p className="text-[color:var(--merchant-muted-strong)]">
+                      {dimension.recommended_next_action}
+                    </p>
+                    {dimension.issue_id ? (
+                      <Link
+                        href={`/agent-center/issues/${dimension.issue_id}`}
+                        className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-[color:var(--merchant-brand)]"
+                      >
+                        <span>Open linked issue</span>
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    ) : null}
+                  </div>
                 </div>
-                <div>
-                  <p className="merchant-overline mb-1">Status</p>
-                  <StatusBadge tone={badgeTone(dimension.status) as any}>
-                    {label(dimension.status)}
-                  </StatusBadge>
+              ))}
+              {overview?.discovery_evidence?.search_grounded ? (
+                <div className="grid gap-3 px-5 py-4 text-sm lg:grid-cols-[240px_1fr]">
+                  <div>
+                    <p className="font-medium text-[color:var(--merchant-ink)]">
+                      Search Grounded Discovery
+                    </p>
+                    <p className="mt-1 text-[color:var(--merchant-muted)]">
+                      Grounding sources:{" "}
+                      {overview.discovery_evidence.search_grounded.grounding_sources_count}
+                    </p>
+                    <div className="mt-2">
+                      <StatusBadge
+                        tone={
+                          badgeTone(
+                            overview.discovery_evidence.search_grounded.status
+                          ) as any
+                        }
+                      >
+                        {label(overview.discovery_evidence.search_grounded.status)}
+                      </StatusBadge>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                      <p className="merchant-overline mb-1">Matched paths</p>
+                      <p>
+                        Merchant PDP:{" "}
+                        {yesNo(
+                          overview.discovery_evidence.search_grounded
+                            .matched_merchant_pdp
+                        )}
+                      </p>
+                      <p>
+                        Pivota PDP:{" "}
+                        {yesNo(
+                          overview.discovery_evidence.search_grounded
+                            .matched_pivota_pdp
+                        )}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="merchant-overline mb-1">Returned URLs</p>
+                      {overview.discovery_evidence.search_grounded.returned_urls.length ? (
+                        <ul className="space-y-1">
+                          {overview.discovery_evidence.search_grounded.returned_urls
+                            .slice(0, 4)
+                            .map((url) => (
+                              <li key={url} className="truncate font-mono text-xs">
+                                {url}
+                              </li>
+                            ))}
+                        </ul>
+                      ) : (
+                        <p className="text-[color:var(--merchant-muted)]">
+                          No URLs returned.
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <p className="merchant-overline mb-1">Score</p>
-                  <p className="font-semibold text-[color:var(--merchant-ink)]">
-                    {formatScore(dimension.score)}
-                  </p>
-                </div>
-                <div>
-                  <p className="merchant-overline mb-1">Recommended next action</p>
-                  <p className="text-[color:var(--merchant-muted-strong)]">
-                    {dimension.recommended_next_action}
-                  </p>
-                  {dimension.issue_id ? (
-                    <Link
-                      href={`/agent-center/issues/${dimension.issue_id}`}
-                      className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-[color:var(--merchant-brand)]"
-                    >
-                      <span>Open linked issue</span>
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </Link>
-                  ) : null}
-                </div>
-              </div>
-            ))}
+              ) : null}
+            </div>
           </div>
         ) : (
           <EmptyAgentState

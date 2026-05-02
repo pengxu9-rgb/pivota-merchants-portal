@@ -1248,6 +1248,131 @@ test("GeminiProviderAdapter uses deterministic mock results when configured", as
   assert.ok(parsed.parser_confidence >= 0.7);
 });
 
+async function captureGeminiRequestForScanMode(scanMode, groundingEnabled = true) {
+  const { store, target } = createConnectedTarget();
+  target.scan_mode = scanMode;
+  const cluster = new QueryClusterService().generateForScanTarget(target.id)[0];
+  const product = store.products[0];
+  const input = {
+    ...demandInput(store, target, cluster, product),
+    scanMode,
+  };
+  const merchantPdpUrl = product.pdp_url;
+  const originalFetch = globalThis.fetch;
+  const originalApiKey = process.env.GEMINI_API_KEY;
+  const originalMock = process.env.PIVOTA_AGENT_CENTER_MOCK_GEMINI;
+  const originalGrounding = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  let requestBody;
+
+  process.env.GEMINI_API_KEY = "test-gemini-key";
+  process.env.PIVOTA_AGENT_CENTER_MOCK_GEMINI = "false";
+  if (groundingEnabled) process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  else delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  globalThis.fetch = async (_url, init) => {
+    requestBody = JSON.parse(String(init.body));
+    const rawText = JSON.stringify({
+      mentioned_brands: [product.brand],
+      mentioned_products: [
+        {
+          name: product.title,
+          brand: product.brand,
+          rank: 1,
+          reason: "Grounded Gemini found the merchant PDP.",
+        },
+      ],
+      returned_urls: [],
+      missing_attributes_identified: [],
+      reasoning_summary: "Grounded response.",
+    });
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => "gemini_request_id" },
+      json: async () => ({
+        candidates: [
+          {
+            content: { parts: [{ text: rawText }] },
+            groundingMetadata: {
+              webSearchQueries: [`${product.brand} ${product.title}`],
+              groundingChunks: [
+                {
+                  web: {
+                    uri: merchantPdpUrl,
+                    title: `${product.brand} official product page`,
+                  },
+                },
+              ],
+              groundingSupports: [{ segment: { startIndex: 0, endIndex: 12 } }],
+            },
+          },
+        ],
+        usageMetadata: {
+          promptTokenCount: 12,
+          candidatesTokenCount: 24,
+        },
+      }),
+    };
+  };
+
+  try {
+    const raw = await new GeminiProviderAdapter().runDemandTest(input);
+    return { raw, parsed: parseProviderOutput(raw, input), requestBody, merchantPdpUrl };
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalApiKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = originalApiKey;
+    if (originalMock === undefined) delete process.env.PIVOTA_AGENT_CENTER_MOCK_GEMINI;
+    else process.env.PIVOTA_AGENT_CENTER_MOCK_GEMINI = originalMock;
+    if (originalGrounding === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = originalGrounding;
+  }
+}
+
+test("Gemini grounding tool is included only for search-grounded discovery when enabled", async () => {
+  const search = await captureGeminiRequestForScanMode(
+    "search_grounded_product_discovery_test",
+    true
+  );
+  const organic = await captureGeminiRequestForScanMode(
+    "organic_product_discovery_test",
+    true
+  );
+  const buyingPath = await captureGeminiRequestForScanMode(
+    "buying_path_discovery_test",
+    true
+  );
+  const contextual = await captureGeminiRequestForScanMode(
+    "merchant_store_attribution_test",
+    true
+  );
+  const disabled = await captureGeminiRequestForScanMode(
+    "search_grounded_product_discovery_test",
+    false
+  );
+
+  assert.deepEqual(search.requestBody.tools, [{ google_search: {} }]);
+  assert.equal(organic.requestBody.tools, undefined);
+  assert.equal(buyingPath.requestBody.tools, undefined);
+  assert.equal(contextual.requestBody.tools, undefined);
+  assert.equal(disabled.requestBody.tools, undefined);
+  assert.equal(search.raw.tool_calls, 1);
+  assert.equal(disabled.raw.tool_calls, 0);
+});
+
+test("Gemini grounding metadata populates discovery sources and returned URLs", async () => {
+  const result = await captureGeminiRequestForScanMode(
+    "search_grounded_product_discovery_test",
+    true
+  );
+
+  assert.equal(result.parsed.grounding_search_queries.length, 1);
+  assert.match(result.parsed.grounding_search_queries[0], /Demo/i);
+  assert.deepEqual(result.parsed.grounding_sources, [result.merchantPdpUrl]);
+  assert.ok(result.parsed.returned_urls.includes(result.merchantPdpUrl));
+  assert.equal(result.parsed.merchant_pdp_url_exact_match, true);
+  assert.equal(result.parsed.discovery_type, "search_grounded");
+});
+
 test("parser schema validation marks invalid raw output", () => {
   const { store, target } = createConnectedTarget();
   const cluster = new QueryClusterService().generateForScanTarget(target.id)[0];
@@ -1686,8 +1811,8 @@ test("organic discovery creates competitor dominance issue when only competitors
 });
 
 test("search-grounded product discovery passes when merchant PDP URL is returned", () => {
-  const previous = process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED;
-  process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true";
   try {
     const merchantPdpUrl =
       "https://isntree-global.com/products/isntree-hyaluronic-acid-watery-sun-gel-50ml";
@@ -1723,14 +1848,51 @@ test("search-grounded product discovery passes when merchant PDP URL is returned
       false
     );
   } finally {
-    if (previous === undefined) delete process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED;
-    else process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+    if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  }
+});
+
+test("grounded merchant PDP URL passes merchant PDP discovery", () => {
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  try {
+    const merchantPdpUrl =
+      "https://isntree-global.com/products/isntree-hyaluronic-acid-watery-sun-gel-50ml";
+    const result = scoreAttributionFixture({
+      scanMode: "search_grounded_product_discovery_test",
+      output: {
+        mentioned_brands: ["Isntree"],
+        mentioned_products: [
+          {
+            name: "Isntree Hyaluronic Acid Watery Sun Gel",
+            brand: "Isntree",
+            rank: 1,
+            reason: "Grounding returned the official merchant PDP.",
+          },
+        ],
+        grounding_sources: [merchantPdpUrl],
+        grounding_search_queries: ["Isntree Hyaluronic Acid Watery Sun Gel"],
+        missing_attributes_identified: [],
+        reasoning_summary: "Grounding metadata supplied the merchant PDP URL.",
+      },
+    });
+
+    assert.equal(
+      result.score.aggregate_scores.search_grounded_merchant_pdp_discovery_score,
+      100
+    );
+    assert.equal(result.parsed[0].merchant_pdp_url_exact_match, true);
+    assert.equal(result.parsed[0].discovery_type, "search_grounded");
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
   }
 });
 
 test("search-grounded product discovery flags wrong buying path URL", () => {
-  const previous = process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED;
-  process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true";
   try {
     const output = {
       mentioned_brands: ["Isntree"],
@@ -1758,8 +1920,50 @@ test("search-grounded product discovery flags wrong buying path URL", () => {
       "expected wrong_buying_path_returned issue"
     );
   } finally {
-    if (previous === undefined) delete process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED;
-    else process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+    if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  }
+});
+
+test("grounded merchant domain with wrong PDP URL creates partial discovery failure", () => {
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  try {
+    const wrongSameDomainUrl =
+      "https://isntree-global.com/blog/hyaluronic-acid-watery-sun-gel-review";
+    const result = scoreAttributionFixture({
+      scanMode: "search_grounded_product_discovery_test",
+      output: {
+        mentioned_brands: ["Isntree"],
+        mentioned_products: [
+          {
+            name: "Isntree Hyaluronic Acid Watery Sun Gel",
+            brand: "Isntree",
+            rank: 1,
+            reason: "Grounding returned the merchant domain but not the PDP.",
+          },
+        ],
+        grounding_sources: [wrongSameDomainUrl],
+        missing_attributes_identified: [],
+        reasoning_summary: "The source is on the merchant domain but is not the PDP.",
+      },
+    });
+
+    assert.equal(result.parsed[0].merchant_domain_found, true);
+    assert.equal(result.parsed[0].merchant_pdp_url_exact_match, false);
+    assert.equal(
+      result.score.aggregate_scores.search_grounded_merchant_pdp_discovery_score,
+      0
+    );
+    assert.ok(
+      result.issues.some((issue) => issue.issue_type === "merchant_pdp_not_discovered")
+    );
+    assert.ok(
+      result.issues.some((issue) => issue.issue_type === "wrong_buying_path_returned")
+    );
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
   }
 });
 
@@ -1797,9 +2001,42 @@ test("buying-path discovery passes when Pivota PDP URL is returned", () => {
   assert.equal(result.parsed[0].pivota_pdp_url_exact_match, true);
 });
 
+test("grounded Pivota PDP URL passes Pivota discovery", () => {
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  try {
+    const result = scoreAttributionFixture({
+      scanMode: "search_grounded_product_discovery_test",
+      output: {
+        mentioned_brands: ["Isntree"],
+        mentioned_products: [
+          {
+            name: "Isntree Hyaluronic Acid Watery Sun Gel",
+            brand: "Isntree",
+            rank: 1,
+            reason: "Grounding returned the Pivota PDP.",
+          },
+        ],
+        grounding_sources: [verifiedPivotaPdpUrl],
+        missing_attributes_identified: [],
+        reasoning_summary: "Grounding metadata supplied the Pivota PDP URL.",
+      },
+    });
+
+    assert.equal(
+      result.score.aggregate_scores.search_grounded_pivota_pdp_discovery_score,
+      100
+    );
+    assert.equal(result.parsed[0].pivota_pdp_url_exact_match, true);
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  }
+});
+
 test("search-grounded discovery marks not_configured instead of contextual fallback", () => {
-  const previous = process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED;
-  delete process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED;
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
   try {
     const merchantPdpUrl =
       "https://isntree-global.com/products/isntree-hyaluronic-acid-watery-sun-gel-50ml";
@@ -1833,8 +2070,8 @@ test("search-grounded discovery marks not_configured instead of contextual fallb
       "expected search_grounding_not_configured issue"
     );
   } finally {
-    if (previous === undefined) delete process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED;
-    else process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+    if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
   }
 });
 
@@ -4607,7 +4844,7 @@ test("production validation report includes snapshot blockers and preview usage"
     assert.equal(
       report.gmv_assurance_snapshot.discovery_readiness_summary
         .merchant_pdp_discovery_status.status,
-      "not_tested"
+      "not_configured"
     );
     assert.ok(Array.isArray(report.top_blockers));
     assert.equal(report.usage_summary.billing_mode, "preview_only");
@@ -5014,6 +5251,40 @@ test("usage event idempotency prevents duplicate credit events", async () => {
   assert.equal(first.id, second.id);
   assert.equal(state.usageEvents.length, initialCount);
   assert.match(first.idempotency_key, /^job_0001:gemini:qc_/);
+});
+
+test("search-grounded discovery usage remains preview-only and not invoiced", async () => {
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  try {
+    const { target } = createConnectedTarget();
+    target.scan_mode = "search_grounded_product_discovery_test";
+    const cluster = new QueryClusterService().generateForScanTarget(target.id)[0];
+    const job = new DemandTestJobService().create({
+      scan_target_id: target.id,
+      query_cluster_ids: [cluster.id],
+      providers: ["gemini"],
+      prompt_template_ids: ["general_recommendation_v1"],
+      repetitions: 1,
+    });
+    const results = await new DemandTestJobService().run(job.id);
+
+    assert.equal(
+      results.aggregate_scores.search_grounded_merchant_pdp_discovery_score,
+      "not_configured"
+    );
+    assert.ok(results.usage_events.length > 0);
+    assert.ok(
+      results.usage_events.every(
+        (event) =>
+          event.billing_mode === "preview_only" &&
+          event.billing_status === "not_invoiced"
+      )
+    );
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  }
 });
 
 test("FixTargetRouter routes merchant, Pivota, both, and human review cases", () => {

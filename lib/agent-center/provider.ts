@@ -66,6 +66,8 @@ export const PARSED_RECOMMENDATION_SCHEMA = {
     availability_signal_present: { type: "boolean" },
     discovery_type: { type: "string" },
     grounding_sources: { type: "array", items: { type: "string" } },
+    grounding_source_titles: { type: "array", items: { type: "string" } },
+    grounding_search_queries: { type: "array", items: { type: "string" } },
     purchase_path_present: { type: "boolean" },
     purchase_path_type: { type: "string" },
     channel_attribution: { type: "string" },
@@ -145,6 +147,17 @@ function discoveryMode(input: DemandTestInput) {
   ].includes(input.scanMode);
 }
 
+function searchGroundedDiscoveryMode(input: DemandTestInput) {
+  return input.scanMode === "search_grounded_product_discovery_test";
+}
+
+function geminiSearchGroundingEnabled(input: DemandTestInput) {
+  return (
+    searchGroundedDiscoveryMode(input) &&
+    process.env.GEMINI_SEARCH_GROUNDING_ENABLED === "true"
+  );
+}
+
 function providerVisibleContext(input: DemandTestInput) {
   if (!discoveryMode(input)) {
     return {
@@ -180,9 +193,72 @@ function providerVisibleContext(input: DemandTestInput) {
       product_name: product?.title,
       brand: product?.brand,
       merchant_domain: domainOf(store?.store_url) || undefined,
+      pivota_domain: domainOf(candidatePivotaPdpUrl(input)) || undefined,
       instruction:
         "Expected merchant/Pivota URLs are intentionally omitted from prompt context and must be discovered by the model output.",
     },
+  };
+}
+
+function groundingMetadataObjects(payload: Record<string, unknown>) {
+  const candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
+  return candidates
+    .map((candidate) => {
+      const value = candidate as Record<string, unknown>;
+      return value.groundingMetadata || value.grounding_metadata;
+    })
+    .filter((value): value is Record<string, unknown> =>
+      Boolean(value && typeof value === "object" && !Array.isArray(value))
+    );
+}
+
+function extractGroundingMetadata(payload: Record<string, unknown>) {
+  const sources: string[] = [];
+  const titles: string[] = [];
+  const queries: string[] = [];
+  const supports: Array<Record<string, unknown>> = [];
+
+  for (const metadata of groundingMetadataObjects(payload)) {
+    queries.push(
+      ...arrayOfStrings(metadata.webSearchQueries),
+      ...arrayOfStrings(metadata.web_search_queries)
+    );
+
+    const chunks = Array.isArray(metadata.groundingChunks)
+      ? metadata.groundingChunks
+      : Array.isArray(metadata.grounding_chunks)
+        ? metadata.grounding_chunks
+        : [];
+    for (const chunk of chunks) {
+      if (!chunk || typeof chunk !== "object" || Array.isArray(chunk)) continue;
+      const record = chunk as Record<string, unknown>;
+      const web = (record.web || record.web_search_result) as
+        | Record<string, unknown>
+        | undefined;
+      if (!web || typeof web !== "object" || Array.isArray(web)) continue;
+      const uri = stringValue(web.uri || web.url);
+      const title = stringValue(web.title);
+      if (uri) sources.push(uri);
+      if (title) titles.push(title);
+    }
+
+    const groundingSupports = Array.isArray(metadata.groundingSupports)
+      ? metadata.groundingSupports
+      : Array.isArray(metadata.grounding_supports)
+        ? metadata.grounding_supports
+        : [];
+    for (const support of groundingSupports) {
+      if (support && typeof support === "object" && !Array.isArray(support)) {
+        supports.push(support as Record<string, unknown>);
+      }
+    }
+  }
+
+  return {
+    grounding_sources: uniqueStrings(sources),
+    grounding_source_titles: uniqueStrings(titles),
+    grounding_search_queries: uniqueStrings(queries),
+    grounding_supports: supports,
   };
 }
 
@@ -579,7 +655,7 @@ export class GeminiProviderAdapter {
       input.model
     )}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
-    const body = {
+    const body: Record<string, unknown> = {
       contents: [
         {
           role: "user",
@@ -596,6 +672,13 @@ export class GeminiProviderAdapter {
         responseSchema: PARSED_RECOMMENDATION_SCHEMA,
       },
     };
+    if (geminiSearchGroundingEnabled(input)) {
+      // This repo calls Gemini through the REST API, whose JSON field uses the
+      // snake_case Google Search tool shape. The SDK equivalent is
+      // `{ googleSearch: {} }`; keep grounding scoped to search-grounded
+      // discovery only.
+      body.tools = [{ google_search: {} }];
+    }
 
     let lastError: unknown;
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -619,15 +702,35 @@ export class GeminiProviderAdapter {
             .join("") || "{}";
         const usage = payload?.usageMetadata || {};
         const normalized = parseJsonObject(rawText);
+        const grounding = extractGroundingMetadata(payload);
+        const normalizedWithGrounding = {
+          ...(normalized || {}),
+          grounding_sources: uniqueStrings(
+            arrayOfStrings(normalized?.grounding_sources).concat(
+              grounding.grounding_sources
+            )
+          ),
+          grounding_source_titles: uniqueStrings(
+            arrayOfStrings(normalized?.grounding_source_titles).concat(
+              grounding.grounding_source_titles
+            )
+          ),
+          grounding_search_queries: uniqueStrings(
+            arrayOfStrings(normalized?.grounding_search_queries).concat(
+              grounding.grounding_search_queries
+            )
+          ),
+          grounding_supports: grounding.grounding_supports,
+        };
 
         return {
           provider: "gemini",
           model: input.model,
           raw_output: rawText,
-          normalized_output: normalized || {},
+          normalized_output: normalizedWithGrounding,
           input_tokens: Number(usage.promptTokenCount || 0),
           output_tokens: Number(usage.candidatesTokenCount || 0),
-          tool_calls: 0,
+          tool_calls: geminiSearchGroundingEnabled(input) ? 1 : 0,
           provider_request_id:
             response.headers.get("x-request-id") ||
             `gemini_${stableHash(rawText).slice(0, 12)}`,
@@ -655,7 +758,7 @@ export function parseProviderOutput(
   try {
     if (typeof raw.raw_output === "string") {
       const parsed = parseJsonObject(raw.raw_output);
-      if (parsed) output = parsed;
+      if (parsed) output = { ...parsed, ...(raw.normalized_output || {}) };
       else validationErrors.push("raw_output_json_invalid");
     } else {
       output = raw.normalized_output || raw.raw_output;
@@ -710,8 +813,18 @@ export function parseProviderOutput(
     .map((product) => product.product_url || "")
     .filter(Boolean)
     .join(" | ");
+  const groundingSources = arrayOfStrings(output.grounding_sources);
+  const groundingSourceTitles = arrayOfStrings(output.grounding_source_titles);
+  const groundingSearchQueries = arrayOfStrings(output.grounding_search_queries);
+  const groundingSupports = Array.isArray(output.grounding_supports)
+    ? output.grounding_supports.filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item && typeof item === "object" && !Array.isArray(item))
+      )
+    : [];
   const returnedUrls = uniqueStrings(
     arrayOfStrings(output.returned_urls)
+      .concat(groundingSources)
       .concat(mentionedProducts.map((product) => product.product_url || ""))
       .concat(stringValue(output.merchant_pdp_url))
       .concat(stringValue(output.pivota_pdp_url))
@@ -756,10 +869,8 @@ export function parseProviderOutput(
   const merchantDomain = domainOf(merchantStore?.store_url);
   const merchantPdpDomain = domainOf(merchantProduct?.pdp_url);
   const merchantDomainFound =
-    Boolean(output.merchant_domain_found) ||
     Boolean(merchantDomain && returnedDomains.includes(merchantDomain));
   const merchantPdpUrlExactMatch =
-    Boolean(output.merchant_pdp_url_exact_match) ||
     returnedUrls.some((url) => sameUrlPath(url, merchantProduct?.pdp_url));
   const pivotaPdpUrl =
     typeof merchantProduct?.pivota_attributes?.pivota_pdp_url === "string"
@@ -767,11 +878,9 @@ export function parseProviderOutput(
       : "";
   const pivotaPdpDomain = domainOf(pivotaPdpUrl);
   const pivotaDomainFound =
-    Boolean(output.pivota_domain_found) ||
     Boolean(pivotaPdpDomain && returnedDomains.includes(pivotaPdpDomain)) ||
     returnedDomains.some((domain) => domain === "agent.pivota.cc" || domain === "pivota.cc");
   const pivotaPdpUrlExactMatch =
-    Boolean(output.pivota_pdp_url_exact_match) ||
     returnedUrls.some((url) => sameUrlPath(url, pivotaPdpUrl));
   const expectedProductObjectId = expectedPivotaProductObjectId(input);
   const preflight = input.pivotaAttributionPreflight;
@@ -997,11 +1106,16 @@ export function parseProviderOutput(
       mentionedProducts.some((product) => Boolean(product.likely_price_range)),
     availability_signal_present: Boolean(output.availability_signal_present),
     discovery_type: discoveryMode(input)
-      ? input.scanMode
+      ? input.scanMode === "search_grounded_product_discovery_test"
+        ? "search_grounded"
+        : input.scanMode
       : stringValue(output.discovery_type)
         ? (stringValue(output.discovery_type) as ParsedRecommendation["discovery_type"])
         : undefined,
-    grounding_sources: arrayOfStrings(output.grounding_sources),
+    grounding_sources: groundingSources,
+    grounding_source_titles: groundingSourceTitles,
+    grounding_search_queries: groundingSearchQueries,
+    grounding_supports: groundingSupports,
     competitor_substitution_detected: competitorSubstitutionDetected,
     purchase_path_present:
       Boolean(output.purchase_path_present) ||

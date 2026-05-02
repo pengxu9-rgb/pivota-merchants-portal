@@ -52,6 +52,7 @@ Before running a merchant pilot:
 - A restricted DB role is configured for `AGENT_CENTER_DATABASE_URL`.
 - The restricted role is scoped to the `agent_center` schema.
 - Internal production validation is enabled for Pivota operators with `ENABLE_INTERNAL_PRODUCTION_VALIDATION=true`.
+- Gemini Search Grounding is enabled only when the operator sets `GEMINI_SEARCH_GROUNDING_ENABLED=true`.
 - Internal routes require an internal secret.
 - The merchant has approved the test scope.
 - Test products, PDP URLs, offer metadata, and checkout metadata are approved for validation.
@@ -199,7 +200,7 @@ Remove optional blocks when the merchant has not approved or provided that data.
 1. Collect merchant inputs.
 2. Confirm merchant approval for the test scope.
 3. Run Organic Product Discovery Test without merchant/Pivota URL context.
-4. Run Search-Grounded Product Discovery Test when Gemini grounding is configured.
+4. Run Search-Grounded Product Discovery Test when `GEMINI_SEARCH_GROUNDING_ENABLED=true`.
 5. Run Buying Path Discovery Test and evaluate returned URLs.
 6. Validate merchant PDP preflight.
 7. Validate merchant store attribution.
@@ -265,9 +266,9 @@ Common pilot blockers:
 
 Operator interpretation:
 
-- `merchant_pdp_not_discovered`: search-grounded discovery did not return the merchant PDP or merchant domain.
-- `pivota_pdp_not_discovered`: discovery did not return the Pivota PDP or Pivota domain.
-- `search_grounding_not_configured`: Gemini search grounding is not configured, so search-grounded discovery is `not_configured`, not a failed attribution test.
+- `merchant_pdp_not_discovered`: search-grounded discovery did not return the expected merchant PDP URL from model output or Gemini grounding sources.
+- `pivota_pdp_not_discovered`: search-grounded or buying-path discovery did not return the expected Pivota PDP URL from model output or grounding sources.
+- `search_grounding_not_configured`: `GEMINI_SEARCH_GROUNDING_ENABLED` is not set to `true`, so search-grounded discovery is `not_configured`, not a failed attribution test.
 - `merchant_store_attribution_gap`: the product may be visible, but the model did not return the merchant store or merchant PDP as the buying path.
 - `pivota_pdp_attribution_gap`: the product may be visible, but verified Pivota channel attribution was not proven.
 - `missing_attribute`: merchant PDP/catalog and/or Pivota PDP is missing important product attributes.
@@ -383,6 +384,7 @@ AGENT_CENTER_DATABASE_URL=<restricted agent_center_app URL>
 AGENT_CENTER_DB_SCHEMA=agent_center
 AGENT_CENTER_DB_SSL=true
 ENABLE_INTERNAL_PRODUCTION_VALIDATION=true
+GEMINI_SEARCH_GROUNDING_ENABLED=true # optional; search-grounded discovery only
 ```
 
 Internal authorization secret priority:
@@ -512,7 +514,9 @@ Merchant PDP attribution and Pivota PDP attribution are separate results. Produc
 V1 limitations:
 
 - Gemini baseline only.
-- Search-Grounded Product Discovery is `not_configured` unless Gemini grounding is configured; it must not fall back to contextual attribution.
+- Search-Grounded Product Discovery is `not_configured` unless `GEMINI_SEARCH_GROUNDING_ENABLED=true`; it must not fall back to contextual attribution.
+- Gemini Search Grounding applies only to `search_grounded_product_discovery_test`. It is not enabled for organic discovery, buying-path discovery, contextual attribution, Product Understanding, Offer Execution, Checkout Verification, or retest workflows.
+- Search grounding tests public web/search-grounded Gemini discovery. It does not prove consumer Gemini UI or AI Mode ranking.
 - No consumer UI scraping.
 - No real checkout execution.
 - No payment authorization.

@@ -36,6 +36,17 @@ ENABLE_INTERNAL_PRODUCTION_VALIDATION=true
 
 If the flag is missing or not `true`, routes return HTTP 403.
 
+Optional Gemini Search Grounding flag:
+
+```text
+GEMINI_SEARCH_GROUNDING_ENABLED=true
+```
+
+This flag applies only to `search_grounded_product_discovery_test`. It adds the
+Gemini Google Search grounding tool for that mode only. Organic discovery,
+buying-path discovery, contextual attribution, Product Understanding, Offer
+Execution, Checkout Verification, retest, and other modes remain ungrounded.
+
 Required internal secret, in priority order:
 
 ```text
@@ -191,7 +202,7 @@ When `POST /api/internal/agent-center/production-validation-runs/:id/run` is cal
 4. Creates an internal validation merchant store and scan target from the real inputs.
 5. Runs Demand Test Agent modes:
    - `organic_product_discovery_test`
-   - `search_grounded_product_discovery_test` when Gemini search grounding is configured; otherwise this mode is marked `not_configured`
+   - `search_grounded_product_discovery_test` when `GEMINI_SEARCH_GROUNDING_ENABLED=true`; otherwise this mode is marked `not_configured`
    - `buying_path_discovery_test`
    - `open_product_visibility_test`
    - `merchant_store_attribution_test`
@@ -256,6 +267,11 @@ Production Validation Runs do not prove:
 The harness does not perform consumer UI scraping and does not execute checkout/payment/order logic.
 
 Contextual attribution passed should not be described as natural discovery. Use "Merchant PDP was returned in contextual attribution test" for attribution modes and "Merchant PDP was discovered in search-grounded discovery test" only for discovery modes.
+
+Search-grounded discovery uses Gemini with Google Search grounding to evaluate
+model-returned URLs and `groundingMetadata` sources. It does not inject expected
+merchant/Pivota PDP URLs as prompt context and it does not prove consumer Gemini
+UI or AI Mode ranking.
 
 ## Sample Isntree Validation Payload
 
@@ -366,7 +382,8 @@ This returns the completed validation run plus a `cleanup` object with `status =
 - Validation runs should be short-lived and cleaned up with `DELETE`.
 - In production serverless smoke, `cleanup_after_run = true` is recommended because later `GET` or `DELETE` requests can land on a different instance until a persistent validation store is added.
 - Demand Test execution uses the current Gemini baseline only.
-- Search-grounded discovery requires Gemini grounding configuration. If unavailable, the score is `not_configured` and must not fall back to contextual attribution.
+- Search-grounded discovery requires `GEMINI_SEARCH_GROUNDING_ENABLED=true`. If unavailable, the score is `not_configured` and must not fall back to contextual attribution.
+- Search grounding applies only to `search_grounded_product_discovery_test`; all other Agent Center modes remain ungrounded.
 - The default run scope is intentionally small for production safety: one purchase-ready query cluster, one prompt template, and one repetition unless explicitly overridden.
 - A passed checkout readiness result means pre-payment path readiness only.
 - No real payment, order, settlement, refund, transaction fee, or billing operation is executed.
