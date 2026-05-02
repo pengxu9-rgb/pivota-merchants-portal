@@ -4,15 +4,16 @@ Last updated: 2026-05-01
 
 ## Product Positioning
 
-Pivota Agent Center V1 helps merchants verify whether agentic demand can become executable pre-payment GMV by checking product visibility, merchant/Pivota attribution, product data readiness, offer readiness, and checkout path readiness.
+Pivota Agent Center V1 helps merchants verify whether agentic demand can become executable pre-payment GMV by checking discoverability, product visibility, merchant/Pivota attribution, product data readiness, offer readiness, and checkout path readiness.
 
-The core message for V1 is simple: Pivota does not only test whether an LLM mentions a product. It tests whether agentic demand can be routed to the merchant or Pivota layer, and whether the product, offer, and checkout path are ready before payment.
+The core message for V1 is simple: Pivota does not only test whether an LLM mentions a product. It first separates natural discoverability from contextual attribution, then tests whether demand can be routed to the merchant or Pivota layer and whether the product, offer, and checkout path are ready before payment.
 
 ## Current Validated Baseline
 
 Agent Center V1 currently includes:
 
 - Agentic GMV Assurance Overview
+- Discoverability Testing Layer
 - Demand Test Agent
 - Product Understanding + SKU Match Agent
 - Offer Execution Agent
@@ -26,13 +27,14 @@ This baseline has been production-smoked with internal demo fixtures. All mercha
 
 Start with the problem merchants understand: AI agents can recommend products, but a recommendation is not GMV until the product can be attributed to the right buying path and the pre-payment chain is ready.
 
-Agent Center V1 shows the chain from AI demand to pre-payment readiness:
+Agent Center V1 shows the chain from discovery to AI demand to pre-payment readiness:
 
-1. Is the product visible to the model?
-2. Can the model attribute that demand to the merchant store or verified Pivota channel?
-3. Does Pivota understand the product, SKU, variant, and query mapping correctly?
-4. Is the merchant offer consistent with Pivota offer state?
-5. Is the checkout path present, reachable, and correctly parameterized before payment?
+1. Can users or agents naturally discover the product, merchant PDP, or Pivota PDP?
+2. Is the product visible to the model?
+3. Can the model attribute that demand to the merchant store or verified Pivota channel?
+4. Does Pivota understand the product, SKU, variant, and query mapping correctly?
+5. Is the merchant offer consistent with Pivota offer state?
+6. Is the checkout path present, reachable, and correctly parameterized before payment?
 
 The demo should make clear that V1 proves pre-payment readiness only. It does not prove payment authorization, order placement, settlement, or final GMV attribution.
 
@@ -40,7 +42,13 @@ The demo should make clear that V1 proves pre-payment readiness only. It does no
 
 1. Open `/agent-center`.
 2. Show the `Agentic GMV Assurance Summary` card.
-3. Show readiness dimensions:
+3. Show the `Discovery Readiness` section:
+   - Organic Product Discovery
+   - Merchant PDP Discovery
+   - Pivota PDP Discovery
+   - Buying Path Discovery
+   - Competitor Dominance
+4. Show readiness dimensions:
    - Product Visibility
    - Merchant Store Attribution
    - Pivota Channel Attribution
@@ -48,13 +56,13 @@ The demo should make clear that V1 proves pre-payment readiness only. It does no
    - SKU / Variant Readiness
    - Offer Readiness
    - Checkout Readiness
-4. Show the top blocker and next best action.
-5. Drill into Issue Detail at `/agent-center/issues/:issueId`.
-6. Show Demand Test result.
-7. Show `Product Understanding Diagnosis`.
-8. Show `Offer Execution Diagnosis`.
-9. Show `Checkout Verification Diagnosis`.
-10. Show Usage Preview and confirm it says `preview_only` / `not_invoiced`.
+5. Show the top blocker and next best action.
+6. Drill into Issue Detail at `/agent-center/issues/:issueId`.
+7. Show Demand Test result.
+8. Show `Product Understanding Diagnosis`.
+9. Show `Offer Execution Diagnosis`.
+10. Show `Checkout Verification Diagnosis`.
+11. Show Usage Preview and confirm it says `preview_only` / `not_invoiced`.
 
 ## Demo Fixture Presets
 
@@ -102,13 +110,16 @@ Demand Test Agent verifies whether the product is visible in AI demand scenarios
 
 It supports:
 
+- organic product discovery testing
+- search-grounded product discovery testing, when Gemini grounding is configured
+- buying-path discovery testing
 - open product/entity visibility testing
 - merchant store attribution testing
 - verified Pivota PDP / offer attribution testing
 - retest and before/after verification
 - usage preview
 
-Important distinction: product/entity visibility does not prove merchant store visibility or Pivota channel visibility. Pivota attribution only counts when a verified public Pivota PDP URL, verified product object ID, or verified offer ID is returned.
+Important distinction: contextual attribution is not natural discovery. "Merchant PDP was returned in contextual attribution test" is different from "Merchant PDP was discovered in search-grounded discovery test." Product/entity visibility does not prove merchant store visibility or Pivota channel visibility. Pivota attribution only counts when a verified public Pivota PDP URL, verified product object ID, or verified offer ID is returned.
 
 ### Product Understanding + SKU Match Agent
 
@@ -155,6 +166,11 @@ V1 does not authorize payments, tokenize cards, place orders, write orders back,
 
 Agent Center V1 can prove:
 
+- organic product/entity discovery
+- organic brand discovery
+- merchant PDP discovery in search-grounded discovery tests
+- Pivota PDP discovery in search-grounded or buying-path discovery tests
+- buying-path discovery from returned URLs, domains, offer, price, or availability signals
 - product/entity visibility
 - merchant attribution when tested in Merchant Store Attribution mode
 - verified Pivota attribution when tested in Pivota PDP Attribution mode
@@ -178,6 +194,7 @@ Agent Center V1 does not prove:
 - transaction fees
 - final GMV attribution
 - real billing
+- consumer UI scraping
 
 Any V1 claim that a path is ready means pre-payment readiness only.
 

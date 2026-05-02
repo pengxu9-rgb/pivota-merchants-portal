@@ -34,6 +34,17 @@ type OverviewPayload = {
   merchant_store_visibility_score: number;
   pivota_pdp_visibility_score: number;
   executable_offer_visibility_score: number | "not_tested";
+  organic_product_discovery_score: number | "not_tested" | "not_configured";
+  search_grounded_merchant_pdp_discovery_score:
+    | number
+    | "not_tested"
+    | "not_configured";
+  search_grounded_pivota_pdp_discovery_score:
+    | number
+    | "not_tested"
+    | "not_configured";
+  buying_path_discovery_score: number | "not_tested" | "not_configured";
+  competitor_dominance_score: number | "not_tested" | "not_configured";
   competitor_substitution_rate: number;
   pivota_pdp_readiness_score: number;
   estimated_gmv_at_risk: number;
@@ -47,6 +58,11 @@ type OverviewPayload = {
 };
 
 const dimensionLabels: Record<string, string> = {
+  organic_product_discovery_status: "Organic Product Discovery",
+  merchant_pdp_discovery_status: "Merchant PDP Discovery",
+  pivota_pdp_discovery_status: "Pivota PDP Discovery",
+  buying_path_discovery_status: "Buying Path Discovery",
+  competitor_dominance_status: "Competitor Dominance",
   product_visibility_status: "Product Visibility",
   merchant_attribution_status: "Merchant Store Attribution",
   pivota_attribution_status: "Pivota Channel Attribution",
@@ -89,6 +105,38 @@ function readinessDimensions(snapshot: any) {
   ].filter(([, value]) => Boolean(value));
 }
 
+function discoveryDimensions(snapshot: any) {
+  if (!snapshot?.discovery_readiness_summary) return [];
+  return [
+    [
+      "organic_product_discovery_status",
+      snapshot.discovery_readiness_summary.organic_product_discovery_status,
+    ],
+    [
+      "merchant_pdp_discovery_status",
+      snapshot.discovery_readiness_summary.merchant_pdp_discovery_status,
+    ],
+    [
+      "pivota_pdp_discovery_status",
+      snapshot.discovery_readiness_summary.pivota_pdp_discovery_status,
+    ],
+    [
+      "buying_path_discovery_status",
+      snapshot.discovery_readiness_summary.buying_path_discovery_status,
+    ],
+    [
+      "competitor_dominance_status",
+      snapshot.discovery_readiness_summary.competitor_dominance_status,
+    ],
+  ].filter(([, value]) => Boolean(value));
+}
+
+function formatScore(value: any) {
+  if (value === "not_configured") return "Not configured";
+  if (value === "not_tested" || value === undefined) return "Not tested";
+  return `${value}%`;
+}
+
 export default function AgentCenterPage() {
   const [overview, setOverview] = useState<OverviewPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -124,7 +172,7 @@ export default function AgentCenterPage() {
       <PageHeader
         eyebrow="Agentic GMV Assurance"
         title="Agentic GMV Center"
-        description="Pivota tests your product visibility and recommendation readiness across AI demand scenarios."
+        description="Pivota separates discoverability, attribution, and pre-payment readiness across AI demand scenarios."
         actions={
           <>
             <MerchantLinkButton href="/agent-center/run" icon={Play}>
@@ -213,6 +261,65 @@ export default function AgentCenterPage() {
         </div>
       </SurfaceCard>
 
+      <SurfaceCard
+        title="Discovery Readiness"
+        description="Discoverability asks whether users and agents can find you naturally. Readiness asks whether the path can execute once found. Transaction is not tested in V1."
+      >
+        {snapshot ? (
+          <div className="divide-y divide-[color:var(--merchant-line)]">
+            {discoveryDimensions(snapshot).map(([key, dimension]: any) => (
+              <div
+                key={key}
+                className="grid gap-3 px-5 py-4 text-sm lg:grid-cols-[240px_130px_150px_1fr]"
+              >
+                <div>
+                  <p className="font-medium text-[color:var(--merchant-ink)]">
+                    {dimensionLabels[key] || label(key)}
+                  </p>
+                  <p className="mt-1 text-[color:var(--merchant-muted)]">
+                    {dimension.evidence}
+                  </p>
+                </div>
+                <div>
+                  <p className="merchant-overline mb-1">Status</p>
+                  <StatusBadge tone={badgeTone(dimension.status) as any}>
+                    {label(dimension.status)}
+                  </StatusBadge>
+                </div>
+                <div>
+                  <p className="merchant-overline mb-1">Score</p>
+                  <p className="font-semibold text-[color:var(--merchant-ink)]">
+                    {formatScore(dimension.score)}
+                  </p>
+                </div>
+                <div>
+                  <p className="merchant-overline mb-1">Recommended next action</p>
+                  <p className="text-[color:var(--merchant-muted-strong)]">
+                    {dimension.recommended_next_action}
+                  </p>
+                  {dimension.issue_id ? (
+                    <Link
+                      href={`/agent-center/issues/${dimension.issue_id}`}
+                      className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-[color:var(--merchant-brand)]"
+                    >
+                      <span>Open linked issue</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyAgentState
+            title="No discovery snapshot yet"
+            description="Run a discovery scan to measure organic, search-grounded, and buying-path findability."
+            href="/agent-center/run"
+            cta="Run Discovery Test"
+          />
+        )}
+      </SurfaceCard>
+
       <SurfaceCard title="Readiness Dimensions">
         {snapshot ? (
           <div className="divide-y divide-[color:var(--merchant-line)]">
@@ -238,9 +345,7 @@ export default function AgentCenterPage() {
                 <div>
                   <p className="merchant-overline mb-1">Score</p>
                   <p className="font-semibold text-[color:var(--merchant-ink)]">
-                    {dimension.score === "not_tested" || dimension.score === undefined
-                      ? "Not tested"
-                      : `${dimension.score}%`}
+                    {formatScore(dimension.score)}
                   </p>
                   {dimension.issue_id || dimension.diagnosis_id ? (
                     <p className="mt-1 truncate font-mono text-xs text-[color:var(--merchant-muted)]">
@@ -368,6 +473,22 @@ export default function AgentCenterPage() {
                 <ScoreBar
                   label="Executable Offer Visibility"
                   value={overview.latest_result.aggregate_scores.executable_offer_visibility_score ?? "not_tested"}
+                />
+                <ScoreBar
+                  label="Organic Product Discovery"
+                  value={overview.latest_result.aggregate_scores.organic_product_discovery_score ?? "not_tested"}
+                />
+                <ScoreBar
+                  label="Merchant PDP Discovery"
+                  value={overview.latest_result.aggregate_scores.search_grounded_merchant_pdp_discovery_score ?? "not_tested"}
+                />
+                <ScoreBar
+                  label="Pivota PDP Discovery"
+                  value={overview.latest_result.aggregate_scores.search_grounded_pivota_pdp_discovery_score ?? "not_tested"}
+                />
+                <ScoreBar
+                  label="Buying Path Discovery"
+                  value={overview.latest_result.aggregate_scores.buying_path_discovery_score ?? "not_tested"}
                 />
                 <ScoreBar
                   label="Competitor substitution"

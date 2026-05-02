@@ -173,6 +173,33 @@ function executableOfferTestEnabled(scanMode?: ScanMode) {
   ].includes(scanMode || "");
 }
 
+function organicDiscoveryTestEnabled(scanMode?: ScanMode) {
+  return scanMode === "organic_product_discovery_test";
+}
+
+function searchGroundedDiscoveryTestEnabled(scanMode?: ScanMode) {
+  return scanMode === "search_grounded_product_discovery_test";
+}
+
+function buyingPathDiscoveryTestEnabled(scanMode?: ScanMode) {
+  return scanMode === "buying_path_discovery_test";
+}
+
+function discoveryTestEnabled(scanMode?: ScanMode) {
+  return (
+    organicDiscoveryTestEnabled(scanMode) ||
+    searchGroundedDiscoveryTestEnabled(scanMode) ||
+    buyingPathDiscoveryTestEnabled(scanMode)
+  );
+}
+
+function geminiSearchGroundingConfigured() {
+  return (
+    process.env.GEMINI_SEARCH_GROUNDING_ENABLED === "true" ||
+    process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED === "true"
+  );
+}
+
 function merchantAttributionTestEnabled(scanMode?: ScanMode) {
   return [
     "merchant_store_attribution_test",
@@ -492,6 +519,38 @@ function scanModePromptInstructions(input: {
     ? input.product?.pivota_attributes?.offer_ids
     : [];
 
+  if (input.scanMode === "organic_product_discovery_test") {
+    return [
+      "",
+      "Scan mode: organic_product_discovery_test.",
+      "This scan measures natural discovery from category, problem, or shopping-intent prompts.",
+      "Do not use or assume merchant PDP URL, Pivota PDP URL, exact product URL, offer ID, or checkout path context.",
+      "Return mentioned_brands, mentioned_products, competitor_products, returned_urls if naturally provided, and discovery_type.",
+    ].join("\n");
+  }
+
+  if (input.scanMode === "search_grounded_product_discovery_test") {
+    return [
+      "",
+      "Scan mode: search_grounded_product_discovery_test.",
+      `Product name for search query: ${input.product?.title || "unknown"}.`,
+      `Brand for search query: ${input.product?.brand || input.store.store_name}.`,
+      "Do not treat expected URLs as context. Evaluate discovery by the URLs and domains returned by the model/search grounding.",
+      "Return returned_urls, returned_domains, grounding_sources, merchant_pdp_url_found, pivota_pdp_url_found, and exact-match flags when applicable.",
+    ].join("\n");
+  }
+
+  if (input.scanMode === "buying_path_discovery_test") {
+    return [
+      "",
+      "Scan mode: buying_path_discovery_test.",
+      `Product: ${input.product?.title || "unknown"} by ${input.product?.brand || input.store.store_name}.`,
+      "Ask where a shopper or agent should buy this product from official or verified options.",
+      "Do not force expected merchant or Pivota URLs. Score only URLs, domains, offers, prices, and availability signals that are returned.",
+      "Return returned_urls, returned_domains, buying_path_present, offer_signal_present, price_signal_present, and availability_signal_present.",
+    ].join("\n");
+  }
+
   if (input.scanMode === "merchant_store_attribution_test") {
     return [
       "",
@@ -536,6 +595,32 @@ function promptForScanMode(input: {
   product?: ProductRecord;
 }) {
   return `${input.templatePrompt.replace("{{query}}", input.query)}${scanModePromptInstructions(input)}`;
+}
+
+function queryForScanMode(
+  cluster: QueryCluster,
+  product: ProductRecord | undefined,
+  scanMode: ScanMode,
+  repetitionIndex: number
+) {
+  if (scanMode !== "organic_product_discovery_test") {
+    return cluster.queries[(repetitionIndex - 1) % cluster.queries.length];
+  }
+
+  const productTitle = asLower(product?.title);
+  const brand = asLower(product?.brand);
+  const organicQueries = cluster.queries.filter((query) => {
+    const text = asLower(query);
+    return (
+      (!productTitle || !text.includes(productTitle)) &&
+      (!brand || !text.includes(brand)) &&
+      !text.includes("http")
+    );
+  });
+
+  return (organicQueries.length ? organicQueries : cluster.queries)[
+    (repetitionIndex - 1) % (organicQueries.length ? organicQueries.length : cluster.queries.length)
+  ];
 }
 
 function topCompetitorRecommendations(matches: ProductMatchResult[]) {
@@ -786,7 +871,12 @@ export class InputReadinessService {
     );
     const missingInputs: InputReadinessSnapshot["missing_inputs"] = [];
     const limitations: string[] = [];
-    const modes: ScanMode[] = ["open_product_visibility_test"];
+    const modes: ScanMode[] = [
+      "organic_product_discovery_test",
+      "search_grounded_product_discovery_test",
+      "buying_path_discovery_test",
+      "open_product_visibility_test",
+    ];
 
     let score = 24;
     if (store.store_url) score += 10;
@@ -838,6 +928,12 @@ export class InputReadinessService {
 
     if (!connection?.capabilities.checkout) {
       limitations.push("Checkout verification is unavailable without checkout integration.");
+    }
+
+    if (!geminiSearchGroundingConfigured()) {
+      limitations.push(
+        "Search-grounded product discovery is available only when Gemini search grounding is configured; otherwise it is marked not configured."
+      );
     }
 
     if (!connection?.capabilities.orders) {
@@ -1738,6 +1834,11 @@ export class ScoringService {
     const scoreMerchantAttribution = merchantAttributionTestEnabled(scanMode);
     const scorePivotaAttribution = pivotaAttributionTestEnabled(scanMode);
     const scoreExecutableOffer = executableOfferTestEnabled(scanMode);
+    const scoreOrganicDiscovery = organicDiscoveryTestEnabled(scanMode);
+    const scoreSearchGroundedDiscovery = searchGroundedDiscoveryTestEnabled(scanMode);
+    const scoreBuyingPathDiscovery = buyingPathDiscoveryTestEnabled(scanMode);
+    const scoreDiscovery = discoveryTestEnabled(scanMode);
+    const searchGroundingConfigured = geminiSearchGroundingConfigured();
     const matchesByParsedId = new Map(
       matches.map((match) => [match.parsed_recommendation_id, match])
     );
@@ -1819,6 +1920,51 @@ export class ScoringService {
         : item.competitor_substitution_detected;
       return competitorAppeared && !merchantVisible;
     }).length;
+    const organicBrandMentions = parsed.filter(
+      (item) => item.merchant_brand_mentioned || item.merchant_product_mentioned
+    ).length;
+    const competitorDominanceRuns = parsed.filter((item) => {
+      const match = matchesByParsedId.get(item.id);
+      const merchantVisible = match
+        ? match.counts_for_visibility
+        : item.merchant_product_mentioned || item.product_entity_mentioned;
+      return (
+        !merchantVisible &&
+        (item.competitor_products.length > 0 ||
+          item.competitor_domains.length > 0 ||
+          item.competitor_substitution_detected)
+      );
+    }).length;
+    const merchantPdpDiscoveryRuns = parsed.filter(
+      (item) =>
+        item.merchant_pdp_url_exact_match ||
+        item.merchant_pdp_url_found ||
+        item.merchant_domain_found
+    ).length;
+    const pivotaPdpDiscoveryRuns = parsed.filter(
+      (item) =>
+        item.pivota_pdp_url_exact_match ||
+        item.pivota_pdp_url_found ||
+        item.pivota_domain_found
+    ).length;
+    const buyingPathRuns = parsed.filter(
+      (item) => item.buying_path_present || item.purchase_path_present
+    ).length;
+    const offerSignalRuns = parsed.filter(
+      (item) =>
+        item.offer_signal_present ||
+        item.price_signal_present ||
+        item.availability_signal_present ||
+        item.merchant_offer_present ||
+        item.pivota_offer_present
+    ).length;
+    const urlMatchRuns = parsed.filter(
+      (item) => item.merchant_pdp_url_exact_match || item.pivota_pdp_url_exact_match
+    ).length;
+    const urlAccuracyScore =
+      parsed.some((item) => item.returned_urls.length > 0)
+        ? clampScore((urlMatchRuns / total) * 100)
+        : 0;
     const missingAttributes = unique(
       parsed
         .flatMap((item) => item.missing_attributes_identified)
@@ -1858,6 +2004,41 @@ export class ScoringService {
       executable_offer_visibility_score: scoreExecutableOffer
         ? clampScore((executableOfferMentions / total) * 100)
         : ("not_tested" as const),
+      organic_product_discovery_score: scoreOrganicDiscovery
+        ? clampScore((productEntityMentions / total) * 100)
+        : ("not_tested" as const),
+      organic_brand_discovery_score: scoreOrganicDiscovery
+        ? clampScore((organicBrandMentions / total) * 100)
+        : ("not_tested" as const),
+      competitor_dominance_score: scoreDiscovery
+        ? clampScore((competitorDominanceRuns / total) * 100)
+        : ("not_tested" as const),
+      search_grounded_merchant_pdp_discovery_score: scoreSearchGroundedDiscovery
+        ? searchGroundingConfigured
+          ? clampScore((merchantPdpDiscoveryRuns / total) * 100)
+          : ("not_configured" as const)
+        : scoreBuyingPathDiscovery
+          ? clampScore((merchantPdpDiscoveryRuns / total) * 100)
+          : ("not_tested" as const),
+      search_grounded_pivota_pdp_discovery_score: scoreSearchGroundedDiscovery
+        ? searchGroundingConfigured
+          ? clampScore((pivotaPdpDiscoveryRuns / total) * 100)
+          : ("not_configured" as const)
+        : scoreBuyingPathDiscovery
+          ? clampScore((pivotaPdpDiscoveryRuns / total) * 100)
+          : ("not_tested" as const),
+      buying_path_discovery_score: scoreBuyingPathDiscovery
+        ? clampScore((buyingPathRuns / total) * 100)
+        : ("not_tested" as const),
+      offer_discovery_score: scoreBuyingPathDiscovery
+        ? clampScore((offerSignalRuns / total) * 100)
+        : ("not_tested" as const),
+      url_match_accuracy_score:
+        scoreSearchGroundedDiscovery && !searchGroundingConfigured
+          ? ("not_configured" as const)
+          : scoreSearchGroundedDiscovery || scoreBuyingPathDiscovery
+            ? urlAccuracyScore
+            : ("not_tested" as const),
       visibility_score: clampScore((productEntityMentions / total) * 100),
       recommendation_rank_score: clampScore(rankScore),
       competitor_substitution_score: clampScore((substitutions / total) * 100),
@@ -1879,6 +2060,11 @@ export class ScoringService {
     const scoreMerchantAttribution = merchantAttributionTestEnabled(scanMode);
     const scorePivotaAttribution = pivotaAttributionTestEnabled(scanMode);
     const scoreExecutableOffer = executableOfferTestEnabled(scanMode);
+    const scoreOrganicDiscovery = organicDiscoveryTestEnabled(scanMode);
+    const scoreSearchGroundedDiscovery = searchGroundedDiscoveryTestEnabled(scanMode);
+    const scoreBuyingPathDiscovery = buyingPathDiscoveryTestEnabled(scanMode);
+    const scoreDiscovery = discoveryTestEnabled(scanMode);
+    const searchGroundingConfigured = geminiSearchGroundingConfigured();
     const supportingRuns = parsed.map((item) => item.test_run_id).filter(Boolean);
     const matchesByParsedId = new Map(
       matches.map((match) => [match.parsed_recommendation_id, match])
@@ -1948,6 +2134,47 @@ export class ScoringService {
         : item.competitor_substitution_detected;
       return competitorAppeared && !merchantVisible;
     }).length;
+    const organicBrandMentions = parsed.filter(
+      (item) => item.merchant_brand_mentioned || item.merchant_product_mentioned
+    ).length;
+    const competitorDominanceRuns = parsed.filter((item) => {
+      const match = matchesByParsedId.get(item.id);
+      const merchantVisible = match
+        ? match.counts_for_visibility
+        : item.merchant_product_mentioned || item.product_entity_mentioned;
+      return (
+        !merchantVisible &&
+        (item.competitor_products.length > 0 ||
+          item.competitor_domains.length > 0 ||
+          item.competitor_substitution_detected)
+      );
+    }).length;
+    const merchantPdpDiscoveryRuns = parsed.filter(
+      (item) =>
+        item.merchant_pdp_url_exact_match ||
+        item.merchant_pdp_url_found ||
+        item.merchant_domain_found
+    ).length;
+    const pivotaPdpDiscoveryRuns = parsed.filter(
+      (item) =>
+        item.pivota_pdp_url_exact_match ||
+        item.pivota_pdp_url_found ||
+        item.pivota_domain_found
+    ).length;
+    const buyingPathRuns = parsed.filter(
+      (item) => item.buying_path_present || item.purchase_path_present
+    ).length;
+    const offerSignalRuns = parsed.filter(
+      (item) =>
+        item.offer_signal_present ||
+        item.price_signal_present ||
+        item.availability_signal_present ||
+        item.merchant_offer_present ||
+        item.pivota_offer_present
+    ).length;
+    const urlMatchRuns = parsed.filter(
+      (item) => item.merchant_pdp_url_exact_match || item.pivota_pdp_url_exact_match
+    ).length;
     const ranks = parsed
       .map((item) => {
         const match = matchesByParsedId.get(item.id);
@@ -2021,6 +2248,76 @@ export class ScoringService {
         scoreExecutableOffer
           ? `executable_offer_visibility_score = ${scores.executable_offer_visibility_score} because executable offers or checkout paths appeared in ${executableOfferMentions} of ${parsed.length} completed Gemini runs.`
           : "executable_offer_visibility_score = not_tested because V1 open product visibility scans do not include offer or checkout execution data.",
+        supportingRuns
+      ),
+      organic_product_discovery_score: scoreExplanation(
+        scores.organic_product_discovery_score,
+        "organic_product_mentions / total_completed_runs * 100",
+        scoreOrganicDiscovery
+          ? `organic_product_discovery_score = ${scores.organic_product_discovery_score} because the target product/entity appeared in ${productEntityMentions} of ${parsed.length} organic no-context discovery runs.`
+          : "organic_product_discovery_score = not_tested because this was not an organic discovery scan.",
+        supportingRuns
+      ),
+      organic_brand_discovery_score: scoreExplanation(
+        scores.organic_brand_discovery_score,
+        "organic_brand_mentions / total_completed_runs * 100",
+        scoreOrganicDiscovery
+          ? `organic_brand_discovery_score = ${scores.organic_brand_discovery_score} because the target brand appeared in ${organicBrandMentions} of ${parsed.length} organic no-context discovery runs.`
+          : "organic_brand_discovery_score = not_tested because this was not an organic discovery scan.",
+        supportingRuns
+      ),
+      competitor_dominance_score: scoreExplanation(
+        scores.competitor_dominance_score,
+        "runs_where_competitors_appear_and_target_absent / total_completed_runs * 100",
+        scoreDiscovery
+          ? `competitor_dominance_score = ${scores.competitor_dominance_score} because competitors appeared while the merchant product was absent in ${competitorDominanceRuns} of ${parsed.length} discovery runs.`
+          : "competitor_dominance_score = not_tested because contextual attribution scans do not populate discovery scores.",
+        supportingRuns
+      ),
+      search_grounded_merchant_pdp_discovery_score: scoreExplanation(
+        scores.search_grounded_merchant_pdp_discovery_score,
+        "runs_where_merchant_domain_or_pdp_url_returned / total_completed_runs * 100",
+        scoreSearchGroundedDiscovery && !searchGroundingConfigured
+          ? "search_grounded_merchant_pdp_discovery_score = not_configured because Gemini search grounding is not configured; no contextual attribution fallback was used."
+          : scoreSearchGroundedDiscovery || scoreBuyingPathDiscovery
+            ? `search_grounded_merchant_pdp_discovery_score = ${scores.search_grounded_merchant_pdp_discovery_score} because the merchant domain/PDP appeared in ${merchantPdpDiscoveryRuns} of ${parsed.length} discovery runs.`
+            : "search_grounded_merchant_pdp_discovery_score = not_tested because this was not a search-grounded or buying-path discovery scan.",
+        supportingRuns
+      ),
+      search_grounded_pivota_pdp_discovery_score: scoreExplanation(
+        scores.search_grounded_pivota_pdp_discovery_score,
+        "runs_where_pivota_domain_or_pdp_url_returned / total_completed_runs * 100",
+        scoreSearchGroundedDiscovery && !searchGroundingConfigured
+          ? "search_grounded_pivota_pdp_discovery_score = not_configured because Gemini search grounding is not configured; no contextual attribution fallback was used."
+          : scoreSearchGroundedDiscovery || scoreBuyingPathDiscovery
+            ? `search_grounded_pivota_pdp_discovery_score = ${scores.search_grounded_pivota_pdp_discovery_score} because the Pivota domain/PDP appeared in ${pivotaPdpDiscoveryRuns} of ${parsed.length} discovery runs.`
+            : "search_grounded_pivota_pdp_discovery_score = not_tested because this was not a search-grounded or buying-path discovery scan.",
+        supportingRuns
+      ),
+      buying_path_discovery_score: scoreExplanation(
+        scores.buying_path_discovery_score,
+        "runs_with_buying_path_or_url / total_completed_runs * 100",
+        scoreBuyingPathDiscovery
+          ? `buying_path_discovery_score = ${scores.buying_path_discovery_score} because a buying path or URL appeared in ${buyingPathRuns} of ${parsed.length} buying-path discovery runs.`
+          : "buying_path_discovery_score = not_tested because this was not a buying-path discovery scan.",
+        supportingRuns
+      ),
+      offer_discovery_score: scoreExplanation(
+        scores.offer_discovery_score,
+        "runs_with_offer_price_or_availability_signal / total_completed_runs * 100",
+        scoreBuyingPathDiscovery
+          ? `offer_discovery_score = ${scores.offer_discovery_score} because offer, price, or availability signals appeared in ${offerSignalRuns} of ${parsed.length} buying-path discovery runs.`
+          : "offer_discovery_score = not_tested because this was not a buying-path discovery scan.",
+        supportingRuns
+      ),
+      url_match_accuracy_score: scoreExplanation(
+        scores.url_match_accuracy_score,
+        "runs_with_exact_expected_merchant_or_pivota_url / total_completed_runs * 100",
+        scoreSearchGroundedDiscovery && !searchGroundingConfigured
+          ? "url_match_accuracy_score = not_configured because Gemini search grounding is not configured."
+          : scoreSearchGroundedDiscovery || scoreBuyingPathDiscovery
+            ? `url_match_accuracy_score = ${scores.url_match_accuracy_score} because exact expected merchant/Pivota URLs appeared in ${urlMatchRuns} of ${parsed.length} discovery runs.`
+            : "url_match_accuracy_score = not_tested because contextual attribution scans do not populate discovery scores.",
         supportingRuns
       ),
       visibility_score: scoreExplanation(
@@ -2107,8 +2404,31 @@ export class FixTargetRouter {
       return ["merchant_pdp", "merchant_catalog", "merchant_structured_data"];
     }
 
+    if (input.issueType === "merchant_pdp_not_discovered") {
+      return ["merchant_pdp", "merchant_structured_data"];
+    }
+
     if (input.issueType === "pivota_pdp_attribution_gap") {
       return ["pivota_unified_pdp", "pivota_product_graph", "pivota_query_mapping"];
+    }
+
+    if (input.issueType === "pivota_pdp_not_discovered") {
+      return ["pivota_unified_pdp", "pivota_product_graph"];
+    }
+
+    if (
+      input.issueType === "wrong_buying_path_returned" ||
+      input.issueType === "buying_path_missing"
+    ) {
+      return ["merchant_pdp", "pivota_product_graph"];
+    }
+
+    if (input.issueType === "offer_not_discovered") {
+      return ["merchant_offer_source", "pivota_offer_layer"];
+    }
+
+    if (input.issueType === "search_grounding_not_configured") {
+      return ["human_review"];
     }
 
     if (input.issueType === "pivota_offer_attribution_gap") {
@@ -2133,14 +2453,21 @@ export class FixTargetRouter {
       return ["merchant_pdp"];
     }
 
-    if (input.issueType === "competitor_substitution") {
+    if (
+      input.issueType === "competitor_substitution" ||
+      input.issueType === "competitor_dominance"
+    ) {
       if (input.missingAttributes.length > 0) {
         return ["merchant_pdp", "pivota_unified_pdp"];
       }
       return ["both_merchant_and_pivota"];
     }
 
-    if (input.issueType === "ai_visibility_loss") {
+    if (
+      input.issueType === "ai_visibility_loss" ||
+      input.issueType === "organic_product_not_discovered" ||
+      input.issueType === "organic_brand_not_discovered"
+    ) {
       if (input.missingAttributes.length > 0) {
         return ["merchant_pdp", "pivota_unified_pdp"];
       }
@@ -2185,8 +2512,213 @@ export class IssueEngine {
             ? product.pivota_attributes.merchant_offers.length
             : false)
     );
+    const scanMode = input.scanTarget.scan_mode;
+    const isDiscoveryScan = discoveryTestEnabled(scanMode);
+    const scoreValue = (value: VisibilityScoreValue | undefined) =>
+      typeof value === "number" ? value : undefined;
 
     if (
+      scanMode === "search_grounded_product_discovery_test" &&
+      (aggregate.search_grounded_merchant_pdp_discovery_score === "not_configured" ||
+        aggregate.search_grounded_pivota_pdp_discovery_score === "not_configured")
+    ) {
+      issues.push(
+        this.createIssue({
+          issueType: "search_grounding_not_configured",
+          severity: "low",
+          rootCause:
+            "Gemini search grounding is not configured, so search-grounded product discovery was marked not configured instead of falling back to contextual attribution.",
+          recommendedAction:
+            "Configure Gemini search grounding before using Search-Grounded Product Discovery, or run Organic Product Discovery / Buying Path Discovery separately.",
+          input,
+          product,
+          missingAttributes,
+          parserConfidence,
+          matchConfidence,
+        })
+      );
+    }
+
+    if (
+      scanMode === "organic_product_discovery_test" &&
+      numericScore(aggregate.organic_product_discovery_score) < 40
+    ) {
+      issues.push(
+        this.createIssue({
+          issueType: "organic_product_not_discovered",
+          severity: "high",
+          rootCause:
+            "Organic no-context discovery did not naturally surface the merchant product/entity for this query cluster.",
+          recommendedAction:
+            "Improve product discoverability signals, merchant PDP evidence, Pivota product graph coverage, and query mapping before retesting organic discovery.",
+          input,
+          product,
+          missingAttributes,
+          parserConfidence,
+          matchConfidence,
+        })
+      );
+    }
+
+    if (
+      scanMode === "organic_product_discovery_test" &&
+      numericScore(aggregate.organic_brand_discovery_score) < 40
+    ) {
+      issues.push(
+        this.createIssue({
+          issueType: "organic_brand_not_discovered",
+          severity: "medium",
+          rootCause:
+            "Organic no-context discovery did not naturally surface the merchant brand for this query cluster.",
+          recommendedAction:
+            "Strengthen brand-level discoverability evidence and query-category associations before retesting organic discovery.",
+          input,
+          product,
+          missingAttributes,
+          parserConfidence,
+          matchConfidence,
+        })
+      );
+    }
+
+    if (isDiscoveryScan && numericScore(aggregate.competitor_dominance_score) >= 60) {
+      issues.push(
+        this.createIssue({
+          issueType: "competitor_dominance",
+          severity: "high",
+          rootCause:
+            "Discovery results are dominated by competitor products while the merchant product is absent.",
+          recommendedAction:
+            "Add comparison-ready merchant/Pivota evidence and expand query/product mappings so the target product can compete in natural discovery.",
+          input,
+          product,
+          missingAttributes,
+          parserConfidence,
+          matchConfidence,
+        })
+      );
+    }
+
+    const merchantDiscoveryScore = scoreValue(
+      aggregate.search_grounded_merchant_pdp_discovery_score
+    );
+    const pivotaDiscoveryScore = scoreValue(
+      aggregate.search_grounded_pivota_pdp_discovery_score
+    );
+    if (
+      scanMode === "search_grounded_product_discovery_test" &&
+      merchantDiscoveryScore !== undefined &&
+      merchantDiscoveryScore < 40
+    ) {
+      issues.push(
+        this.createIssue({
+          issueType: "merchant_pdp_not_discovered",
+          severity: "high",
+          rootCause:
+            "Search-grounded product discovery did not return the merchant domain or merchant PDP URL.",
+          recommendedAction:
+            "Improve merchant PDP indexability, structured data, and source-layer buying path signals, then rerun Search-Grounded Product Discovery.",
+          input,
+          product,
+          missingAttributes,
+          parserConfidence,
+          matchConfidence,
+        })
+      );
+    }
+
+    if (
+      (scanMode === "search_grounded_product_discovery_test" ||
+        scanMode === "buying_path_discovery_test") &&
+      pivotaDiscoveryScore !== undefined &&
+      pivotaDiscoveryScore < 40 &&
+      product?.pivota_attributes?.pivota_pdp_url
+    ) {
+      issues.push(
+        this.createIssue({
+          issueType: "pivota_pdp_not_discovered",
+          severity: "high",
+          rootCause:
+            "Discovery did not return the Pivota unified PDP URL or Pivota domain even though a Pivota PDP was expected for evaluation.",
+          recommendedAction:
+            "Improve Pivota PDP public availability, product graph bindings, and agent-facing metadata before rerunning discovery.",
+          input,
+          product,
+          missingAttributes,
+          parserConfidence,
+          matchConfidence,
+        })
+      );
+    }
+
+    if (
+      (scanMode === "search_grounded_product_discovery_test" ||
+        scanMode === "buying_path_discovery_test") &&
+      scoreValue(aggregate.url_match_accuracy_score) !== undefined &&
+      numericScore(aggregate.url_match_accuracy_score) < 50 &&
+      input.parsed.some((item) => item.returned_urls.length > 0)
+    ) {
+      issues.push(
+        this.createIssue({
+          issueType: "wrong_buying_path_returned",
+          severity: "medium",
+          rootCause:
+            "The model returned buying-path URLs, but they did not match the expected merchant PDP or Pivota PDP evaluation URLs.",
+          recommendedAction:
+            "Review returned URLs, source-layer canonical URLs, and Pivota PDP bindings before rerunning discovery.",
+          input,
+          product,
+          missingAttributes,
+          parserConfidence,
+          matchConfidence,
+        })
+      );
+    }
+
+    if (
+      scanMode === "buying_path_discovery_test" &&
+      numericScore(aggregate.buying_path_discovery_score) < 40
+    ) {
+      issues.push(
+        this.createIssue({
+          issueType: "buying_path_missing",
+          severity: "high",
+          rootCause:
+            "Buying-path discovery did not return a merchant/Pivota URL, official page, or other buying path.",
+          recommendedAction:
+            "Improve official buying-path signals and rerun Buying Path Discovery.",
+          input,
+          product,
+          missingAttributes,
+          parserConfidence,
+          matchConfidence,
+        })
+      );
+    }
+
+    if (
+      scanMode === "buying_path_discovery_test" &&
+      numericScore(aggregate.offer_discovery_score) < 40
+    ) {
+      issues.push(
+        this.createIssue({
+          issueType: "offer_not_discovered",
+          severity: "medium",
+          rootCause:
+            "Buying-path discovery did not return offer, price, or availability signals.",
+          recommendedAction:
+            "Expose current offer, price, promo, and availability signals on merchant/Pivota layers before rerunning buying-path discovery.",
+          input,
+          product,
+          missingAttributes,
+          parserConfidence,
+          matchConfidence,
+        })
+      );
+    }
+
+    if (
+      !isDiscoveryScan &&
       aggregate.product_entity_visibility_score < 20 &&
       input.cluster.estimated_demand_value >= 8000
     ) {
@@ -2295,7 +2827,7 @@ export class IssueEngine {
       );
     }
 
-    if (aggregate.competitor_substitution_score >= 60) {
+    if (!isDiscoveryScan && aggregate.competitor_substitution_score >= 60) {
       issues.push(
         this.createIssue({
           issueType: "competitor_substitution",
@@ -2592,7 +3124,12 @@ export class DemandTestJobService {
             repetitionIndex <= job.scope.repetitions;
             repetitionIndex += 1
           ) {
-            const query = cluster.queries[(repetitionIndex - 1) % cluster.queries.length];
+            const query = queryForScanMode(
+              cluster,
+              product,
+              target.scan_mode,
+              repetitionIndex
+            );
             const prompt = promptForScanMode({
               templatePrompt: template.prompt,
               query,
@@ -2825,6 +3362,14 @@ function aggregateScores(scores: DemandVisibilityScore[]) {
       pivota_offer_visibility_score: 0,
       pivota_attribution_echo_rate: 0,
       executable_offer_visibility_score: "not_tested" as const,
+      organic_product_discovery_score: "not_tested" as const,
+      organic_brand_discovery_score: "not_tested" as const,
+      competitor_dominance_score: "not_tested" as const,
+      search_grounded_merchant_pdp_discovery_score: "not_tested" as const,
+      search_grounded_pivota_pdp_discovery_score: "not_tested" as const,
+      buying_path_discovery_score: "not_tested" as const,
+      offer_discovery_score: "not_tested" as const,
+      url_match_accuracy_score: "not_tested" as const,
       visibility_score: 0,
       recommendation_rank_score: 0,
       competitor_substitution_score: 0,
@@ -2879,6 +3424,20 @@ function aggregateScores(scores: DemandVisibilityScore[]) {
     }
   );
   const count = scores.length;
+  const optionalAverage = (
+    key: keyof DemandVisibilityScore["aggregate_scores"]
+  ): VisibilityScoreValue => {
+    const values = scores
+      .map((score) => score.aggregate_scores[key])
+      .filter((value): value is number => typeof value === "number");
+    if (values.length) {
+      return clampScore(values.reduce((sum, value) => sum + value, 0) / values.length);
+    }
+    if (scores.some((score) => score.aggregate_scores[key] === "not_configured")) {
+      return "not_configured";
+    }
+    return "not_tested";
+  };
   const productEntityVisibility = clampScore(
     sum.product_entity_visibility_score / count
   );
@@ -2899,6 +3458,18 @@ function aggregateScores(scores: DemandVisibilityScore[]) {
           sum.executable_offer_visibility_score / sum.executable_offer_tested_count
         )
       : ("not_tested" as const),
+    organic_product_discovery_score: optionalAverage("organic_product_discovery_score"),
+    organic_brand_discovery_score: optionalAverage("organic_brand_discovery_score"),
+    competitor_dominance_score: optionalAverage("competitor_dominance_score"),
+    search_grounded_merchant_pdp_discovery_score: optionalAverage(
+      "search_grounded_merchant_pdp_discovery_score"
+    ),
+    search_grounded_pivota_pdp_discovery_score: optionalAverage(
+      "search_grounded_pivota_pdp_discovery_score"
+    ),
+    buying_path_discovery_score: optionalAverage("buying_path_discovery_score"),
+    offer_discovery_score: optionalAverage("offer_discovery_score"),
+    url_match_accuracy_score: optionalAverage("url_match_accuracy_score"),
     visibility_score: productEntityVisibility,
     recommendation_rank_score: clampScore(sum.recommendation_rank_score / count),
     competitor_substitution_score: clampScore(
@@ -2950,6 +3521,16 @@ function scoreSnapshot(input: {
       pivota_offer_visibility_score: aggregate.pivota_offer_visibility_score,
       pivota_attribution_echo_rate: aggregate.pivota_attribution_echo_rate,
       executable_offer_visibility_score: aggregate.executable_offer_visibility_score,
+      organic_product_discovery_score: aggregate.organic_product_discovery_score,
+      organic_brand_discovery_score: aggregate.organic_brand_discovery_score,
+      competitor_dominance_score: aggregate.competitor_dominance_score,
+      search_grounded_merchant_pdp_discovery_score:
+        aggregate.search_grounded_merchant_pdp_discovery_score,
+      search_grounded_pivota_pdp_discovery_score:
+        aggregate.search_grounded_pivota_pdp_discovery_score,
+      buying_path_discovery_score: aggregate.buying_path_discovery_score,
+      offer_discovery_score: aggregate.offer_discovery_score,
+      url_match_accuracy_score: aggregate.url_match_accuracy_score,
       visibility_score: aggregate.visibility_score,
       recommendation_rank_score: aggregate.recommendation_rank_score,
       competitor_substitution_score: aggregate.competitor_substitution_score,
@@ -4815,8 +5396,10 @@ function latestByCreatedAt<T extends { created_at: string }>(items: T[]) {
   )[0];
 }
 
-function scoreStatus(score?: number | "not_tested", passAt = 80, blockBelow = 50) {
-  if (score === undefined || score === "not_tested") return "not_tested" as const;
+function scoreStatus(score?: VisibilityScoreValue, passAt = 80, blockBelow = 50) {
+  if (score === undefined || score === "not_tested" || score === "not_configured") {
+    return "not_tested" as const;
+  }
   if (score < blockBelow) return "blocked" as const;
   return score >= passAt ? ("passed" as const) : ("needs_work" as const);
 }
@@ -6467,6 +7050,7 @@ type CreateAssuranceSnapshotInput = {
   store_id?: string;
   scan_target_id?: string;
   product_entity_id?: string;
+  assurance_scope?: "full_assurance" | "readiness_only";
 };
 
 const PIVOTA_PDP_QUALITY_FINDING_TYPES = [
@@ -6568,6 +7152,14 @@ function issueEligibleForTopBlocker(input: {
   }
   if (isLowSeverityHumanReviewPlaceholder(issue)) return false;
   return severityValue(issue.severity) >= severityValue("medium") || dimensionNeedsWork(dimension);
+}
+
+function inverseScoreStatus(score?: VisibilityScoreValue, passAtOrBelow = 20, blockAt = 60) {
+  if (score === undefined || score === "not_tested" || score === "not_configured") {
+    return "not_tested" as const;
+  }
+  if (score >= blockAt) return "blocked" as const;
+  return score <= passAtOrBelow ? ("passed" as const) : ("needs_work" as const);
 }
 
 function applyResolutionPlansToSnapshot(snapshot: GMVAssuranceSnapshot) {
@@ -6678,6 +7270,181 @@ export class GMVAssuranceService {
       latestScore?.aggregate_scores.merchant_store_visibility_score;
     const pivotaAttributionScore =
       latestScore?.aggregate_scores.pivota_pdp_visibility_score;
+    const assuranceScope = input.assurance_scope || "full_assurance";
+    const organicProductDiscoveryScore =
+      latestScore?.aggregate_scores.organic_product_discovery_score;
+    const merchantPdpDiscoveryScore =
+      latestScore?.aggregate_scores.search_grounded_merchant_pdp_discovery_score;
+    const pivotaPdpDiscoveryScore =
+      latestScore?.aggregate_scores.search_grounded_pivota_pdp_discovery_score;
+    const buyingPathDiscoveryScore =
+      latestScore?.aggregate_scores.buying_path_discovery_score;
+    const competitorDominanceScore =
+      latestScore?.aggregate_scores.competitor_dominance_score;
+    const organicDiscoveryIssue = issueForTypes(issues, [
+      "organic_product_not_discovered",
+      "organic_brand_not_discovered",
+      "competitor_dominance",
+    ]);
+    const merchantPdpDiscoveryIssue = issueForTypes(issues, [
+      "merchant_pdp_not_discovered",
+      "wrong_buying_path_returned",
+      "search_grounding_not_configured",
+    ]);
+    const pivotaPdpDiscoveryIssue = issueForTypes(issues, [
+      "pivota_pdp_not_discovered",
+      "wrong_buying_path_returned",
+      "search_grounding_not_configured",
+    ]);
+    const buyingPathDiscoveryIssue = issueForTypes(issues, [
+      "buying_path_missing",
+      "wrong_buying_path_returned",
+      "offer_not_discovered",
+    ]);
+    const competitorDominanceIssue = issueForTypes(issues, ["competitor_dominance"]);
+    const organicDiscoveryStatusValue = scoreStatus(
+      organicProductDiscoveryScore,
+      80,
+      40
+    );
+    const organicDiscoveryStatus: GMVAssuranceDimensionSummary = {
+      status: organicDiscoveryStatusValue,
+      score: organicProductDiscoveryScore ?? "not_tested",
+      issue_id:
+        organicDiscoveryStatusValue === "passed" ? undefined : organicDiscoveryIssue?.id,
+      recommended_next_action:
+        organicProductDiscoveryScore === undefined ||
+        organicProductDiscoveryScore === "not_tested"
+          ? "Run Organic Product Discovery Test."
+          : organicProductDiscoveryScore === "not_configured"
+            ? "Configure discovery provider before organic discovery."
+            : organicProductDiscoveryScore < 40
+              ? "Improve organic discoverability and rerun Organic Product Discovery Test."
+              : "Monitor organic product discovery.",
+      evidence:
+        organicProductDiscoveryScore === undefined ||
+        organicProductDiscoveryScore === "not_tested"
+          ? "Organic no-context product discovery has not been tested."
+          : organicProductDiscoveryScore === "not_configured"
+            ? "Organic discovery provider is not configured."
+            : `Organic product discovery score is ${organicProductDiscoveryScore}.`,
+    };
+    const merchantPdpDiscoveryStatusValue = scoreStatus(
+      merchantPdpDiscoveryScore,
+      80,
+      40
+    );
+    const merchantPdpDiscoveryStatus: GMVAssuranceDimensionSummary = {
+      status: merchantPdpDiscoveryStatusValue,
+      score: merchantPdpDiscoveryScore ?? "not_tested",
+      issue_id:
+        merchantPdpDiscoveryStatusValue === "passed"
+          ? undefined
+          : merchantPdpDiscoveryIssue?.id,
+      recommended_next_action:
+        merchantPdpDiscoveryScore === "not_configured"
+          ? "Configure Gemini search grounding before Search-Grounded Product Discovery."
+          : merchantPdpDiscoveryScore === undefined ||
+              merchantPdpDiscoveryScore === "not_tested"
+            ? "Run Search-Grounded Product Discovery Test."
+            : merchantPdpDiscoveryScore < 40
+              ? "Improve merchant PDP discovery signals and rerun search-grounded discovery."
+              : "Monitor merchant PDP discovery.",
+      evidence:
+        merchantPdpDiscoveryScore === "not_configured"
+          ? "Gemini search grounding is not configured; contextual attribution was not used as a fallback."
+          : merchantPdpDiscoveryScore === undefined ||
+              merchantPdpDiscoveryScore === "not_tested"
+            ? "Merchant PDP search-grounded discovery has not been tested."
+            : `Merchant PDP discovery score is ${merchantPdpDiscoveryScore}.`,
+    };
+    const pivotaPdpDiscoveryStatusValue = scoreStatus(
+      pivotaPdpDiscoveryScore,
+      80,
+      40
+    );
+    const pivotaPdpDiscoveryStatus: GMVAssuranceDimensionSummary = {
+      status: pivotaPdpDiscoveryStatusValue,
+      score: pivotaPdpDiscoveryScore ?? "not_tested",
+      issue_id:
+        pivotaPdpDiscoveryStatusValue === "passed"
+          ? undefined
+          : pivotaPdpDiscoveryIssue?.id,
+      recommended_next_action:
+        pivotaPdpDiscoveryScore === "not_configured"
+          ? "Configure Gemini search grounding before Pivota PDP discovery."
+          : pivotaPdpDiscoveryScore === undefined ||
+              pivotaPdpDiscoveryScore === "not_tested"
+            ? "Run Search-Grounded Product Discovery or Buying Path Discovery for the Pivota PDP."
+            : pivotaPdpDiscoveryScore < 40
+              ? "Improve Pivota PDP discovery signals and rerun discovery."
+              : "Monitor Pivota PDP discovery.",
+      evidence:
+        pivotaPdpDiscoveryScore === "not_configured"
+          ? "Gemini search grounding is not configured; contextual attribution was not used as a fallback."
+          : pivotaPdpDiscoveryScore === undefined ||
+              pivotaPdpDiscoveryScore === "not_tested"
+            ? "Pivota PDP discovery has not been tested."
+            : `Pivota PDP discovery score is ${pivotaPdpDiscoveryScore}.`,
+    };
+    const buyingPathDiscoveryStatusValue = scoreStatus(
+      buyingPathDiscoveryScore,
+      80,
+      40
+    );
+    const buyingPathDiscoveryStatus: GMVAssuranceDimensionSummary = {
+      status: buyingPathDiscoveryStatusValue,
+      score: buyingPathDiscoveryScore ?? "not_tested",
+      issue_id:
+        buyingPathDiscoveryStatusValue === "passed"
+          ? undefined
+          : buyingPathDiscoveryIssue?.id,
+      recommended_next_action:
+        buyingPathDiscoveryScore === undefined ||
+        buyingPathDiscoveryScore === "not_tested"
+          ? "Run Buying Path Discovery Test."
+          : buyingPathDiscoveryScore === "not_configured"
+            ? "Configure discovery provider before buying-path discovery."
+            : buyingPathDiscoveryScore < 40
+              ? "Improve official buying-path signals and rerun Buying Path Discovery."
+              : "Monitor buying-path discovery.",
+      evidence:
+        buyingPathDiscoveryScore === undefined ||
+        buyingPathDiscoveryScore === "not_tested"
+          ? "Buying-path discovery has not been tested."
+          : buyingPathDiscoveryScore === "not_configured"
+            ? "Buying-path discovery provider is not configured."
+            : `Buying path discovery score is ${buyingPathDiscoveryScore}.`,
+    };
+    const competitorDominanceStatusValue = inverseScoreStatus(
+      competitorDominanceScore,
+      20,
+      60
+    );
+    const competitorDominanceStatus: GMVAssuranceDimensionSummary = {
+      status: competitorDominanceStatusValue,
+      score: competitorDominanceScore ?? "not_tested",
+      issue_id:
+        competitorDominanceStatusValue === "passed"
+          ? undefined
+          : competitorDominanceIssue?.id,
+      recommended_next_action:
+        competitorDominanceScore === undefined ||
+        competitorDominanceScore === "not_tested"
+          ? "Run discovery tests to measure competitor dominance."
+          : competitorDominanceScore === "not_configured"
+            ? "Configure discovery provider before measuring competitor dominance."
+            : competitorDominanceScore >= 60
+              ? "Reduce competitor dominance with stronger merchant/Pivota evidence and rerun discovery."
+              : "Monitor competitor dominance.",
+      evidence:
+        competitorDominanceScore === undefined ||
+        competitorDominanceScore === "not_tested"
+          ? "Competitor dominance has not been tested in discovery mode."
+          : competitorDominanceScore === "not_configured"
+            ? "Competitor dominance provider is not configured."
+            : `Competitor dominance score is ${competitorDominanceScore}; lower is better.`,
+    };
     const productVisibilityIssue = issueForTypes(issues, [
       "ai_visibility_loss",
       "competitor_substitution",
@@ -6898,6 +7665,47 @@ export class GMVAssuranceService {
       }
     };
 
+    addTopBlocker({
+      blocker_type: organicDiscoveryIssue?.issue_type || "organic_product_discovery_gap",
+      severity: organicDiscoveryIssue?.severity || "high",
+      affected_layer: "discovery",
+      fix_target: organicDiscoveryIssue?.fix_targets[0],
+      issue_id: organicDiscoveryIssue?.id,
+      recommended_action: organicDiscoveryStatus.recommended_next_action,
+    }, organicDiscoveryStatus, organicDiscoveryIssue);
+    addTopBlocker({
+      blocker_type: merchantPdpDiscoveryIssue?.issue_type || "merchant_pdp_discovery_gap",
+      severity: merchantPdpDiscoveryIssue?.severity || "high",
+      affected_layer: "merchant_discovery",
+      fix_target: merchantPdpDiscoveryIssue?.fix_targets[0],
+      issue_id: merchantPdpDiscoveryIssue?.id,
+      recommended_action: merchantPdpDiscoveryStatus.recommended_next_action,
+    }, merchantPdpDiscoveryStatus, merchantPdpDiscoveryIssue);
+    addTopBlocker({
+      blocker_type: pivotaPdpDiscoveryIssue?.issue_type || "pivota_pdp_discovery_gap",
+      severity: pivotaPdpDiscoveryIssue?.severity || "high",
+      affected_layer: "pivota_discovery",
+      fix_target: pivotaPdpDiscoveryIssue?.fix_targets[0],
+      issue_id: pivotaPdpDiscoveryIssue?.id,
+      recommended_action: pivotaPdpDiscoveryStatus.recommended_next_action,
+    }, pivotaPdpDiscoveryStatus, pivotaPdpDiscoveryIssue);
+    addTopBlocker({
+      blocker_type: buyingPathDiscoveryIssue?.issue_type || "buying_path_discovery_gap",
+      severity: buyingPathDiscoveryIssue?.severity || "high",
+      affected_layer: "buying_path_discovery",
+      fix_target: buyingPathDiscoveryIssue?.fix_targets[0],
+      issue_id: buyingPathDiscoveryIssue?.id,
+      recommended_action: buyingPathDiscoveryStatus.recommended_next_action,
+    }, buyingPathDiscoveryStatus, buyingPathDiscoveryIssue);
+    addTopBlocker({
+      blocker_type: competitorDominanceIssue?.issue_type || "competitor_dominance",
+      severity: competitorDominanceIssue?.severity || "high",
+      affected_layer: "discovery_competition",
+      fix_target: competitorDominanceIssue?.fix_targets[0],
+      issue_id: competitorDominanceIssue?.id,
+      recommended_action: competitorDominanceStatus.recommended_next_action,
+    }, competitorDominanceStatus, competitorDominanceIssue);
+
     if (productVisibilityStatus.status === "blocked") {
       addTopBlocker({
         blocker_type: "low_product_visibility",
@@ -6976,7 +7784,14 @@ export class GMVAssuranceService {
       }, checkoutStatus, issues.find((issue) => issue.id === checkoutDiagnosis?.issue_id));
     }
 
-    const dimensions = [
+    const discoveryDimensions = [
+      organicDiscoveryStatus,
+      merchantPdpDiscoveryStatus,
+      pivotaPdpDiscoveryStatus,
+      buyingPathDiscoveryStatus,
+      competitorDominanceStatus,
+    ];
+    const readinessDimensions = [
       productVisibilityStatus,
       merchantAttributionStatus,
       pivotaAttributionStatus,
@@ -6985,6 +7800,10 @@ export class GMVAssuranceService {
       offerStatus,
       checkoutStatus,
     ];
+    const dimensions =
+      assuranceScope === "readiness_only"
+        ? readinessDimensions
+        : [...discoveryDimensions, ...readinessDimensions];
     let readinessLevel: GMVAssuranceSnapshot["readiness_level"] = "monitoring";
     if (productVisibilityStatus.status === "blocked") {
       readinessLevel = "blocked";
@@ -7041,6 +7860,14 @@ export class GMVAssuranceService {
       scan_target_id: target.id,
       product_entity_id: productEntityId,
       issue_ids: issueIds,
+      assurance_scope: assuranceScope,
+      discovery_readiness_summary: {
+        organic_product_discovery_status: organicDiscoveryStatus,
+        merchant_pdp_discovery_status: merchantPdpDiscoveryStatus,
+        pivota_pdp_discovery_status: pivotaPdpDiscoveryStatus,
+        buying_path_discovery_status: buyingPathDiscoveryStatus,
+        competitor_dominance_status: competitorDominanceStatus,
+      },
       demand_test_summary: {
         scan_mode: target.scan_mode,
         product_visibility_status: productVisibilityStatus,
@@ -7420,11 +8247,17 @@ export class ProductionValidationRunService {
       clusters.find((item) => item.intent_type === "purchase_ready") ||
       clusters[0];
     if (!cluster) throw new Error("Production validation query cluster not found");
+    const discoveryCluster =
+      clusters.find((item) => item.intent_type === "category_recommendation") ||
+      cluster;
 
     const createdOffers = this.createOfferState(run, store, product);
     this.createCheckoutState(run, store, product, createdOffers);
 
     const demandModes: ScanMode[] = [
+      "organic_product_discovery_test",
+      "search_grounded_product_discovery_test",
+      "buying_path_discovery_test",
       "open_product_visibility_test",
       "merchant_store_attribution_test",
       ...(run.pivota_pdp_url ? (["pivota_pdp_attribution_test"] as ScanMode[]) : []),
@@ -7434,9 +8267,12 @@ export class ProductionValidationRunService {
     for (const scanMode of demandModes) {
       target.scan_mode = scanMode;
       touch(target);
+      const clusterForMode = discoveryTestEnabled(scanMode)
+        ? discoveryCluster
+        : cluster;
       const job = new DemandTestJobService().create({
         scan_target_id: target.id,
-        query_cluster_ids: [cluster.id],
+        query_cluster_ids: [clusterForMode.id],
         prompt_template_ids: ["purchase_ready_v1"],
         providers: ["gemini"],
         repetitions: this.repetitions(run),
@@ -7866,6 +8702,12 @@ export class ProductionValidationRunService {
     const summaryForMode = (scanMode: ScanMode) =>
       input.demandSummaries.find((summary) => summary.scan_mode === scanMode);
     const open = summaryForMode("open_product_visibility_test")?.aggregate_scores;
+    const organic =
+      summaryForMode("organic_product_discovery_test")?.aggregate_scores;
+    const searchGrounded =
+      summaryForMode("search_grounded_product_discovery_test")?.aggregate_scores;
+    const buyingPath =
+      summaryForMode("buying_path_discovery_test")?.aggregate_scores;
     const merchant =
       summaryForMode("merchant_store_attribution_test")?.aggregate_scores;
     const pivota =
@@ -7882,6 +8724,30 @@ export class ProductionValidationRunService {
       pivota_offer_visibility_score: pivota?.pivota_offer_visibility_score || 0,
       pivota_attribution_echo_rate: pivota?.pivota_attribution_echo_rate || 0,
       executable_offer_visibility_score: "not_tested",
+      organic_product_discovery_score:
+        organic?.organic_product_discovery_score ?? "not_tested",
+      organic_brand_discovery_score:
+        organic?.organic_brand_discovery_score ?? "not_tested",
+      competitor_dominance_score:
+        organic?.competitor_dominance_score ??
+        searchGrounded?.competitor_dominance_score ??
+        buyingPath?.competitor_dominance_score ??
+        "not_tested",
+      search_grounded_merchant_pdp_discovery_score:
+        searchGrounded?.search_grounded_merchant_pdp_discovery_score ??
+        buyingPath?.search_grounded_merchant_pdp_discovery_score ??
+        "not_tested",
+      search_grounded_pivota_pdp_discovery_score:
+        searchGrounded?.search_grounded_pivota_pdp_discovery_score ??
+        buyingPath?.search_grounded_pivota_pdp_discovery_score ??
+        "not_tested",
+      buying_path_discovery_score:
+        buyingPath?.buying_path_discovery_score ?? "not_tested",
+      offer_discovery_score: buyingPath?.offer_discovery_score ?? "not_tested",
+      url_match_accuracy_score:
+        searchGrounded?.url_match_accuracy_score ??
+        buyingPath?.url_match_accuracy_score ??
+        "not_tested",
       visibility_score:
         open?.product_entity_visibility_score ??
         merchant?.product_entity_visibility_score ??
@@ -7935,6 +8801,18 @@ export class ProductionValidationRunService {
         executable_offer_visibility_score: explanation(
           "executable_offer_visibility_score"
         ),
+        organic_product_discovery_score: explanation("organic_product_discovery_score"),
+        organic_brand_discovery_score: explanation("organic_brand_discovery_score"),
+        competitor_dominance_score: explanation("competitor_dominance_score"),
+        search_grounded_merchant_pdp_discovery_score: explanation(
+          "search_grounded_merchant_pdp_discovery_score"
+        ),
+        search_grounded_pivota_pdp_discovery_score: explanation(
+          "search_grounded_pivota_pdp_discovery_score"
+        ),
+        buying_path_discovery_score: explanation("buying_path_discovery_score"),
+        offer_discovery_score: explanation("offer_discovery_score"),
+        url_match_accuracy_score: explanation("url_match_accuracy_score"),
         visibility_score: explanation("visibility_score"),
         recommendation_rank_score: explanation("recommendation_rank_score"),
         competitor_substitution_score: explanation("competitor_substitution_score"),
@@ -8483,6 +9361,14 @@ function assuranceFixtureScore(input: {
     pivota_offer_visibility_score: 100,
     pivota_attribution_echo_rate: 0,
     executable_offer_visibility_score: "not_tested",
+    organic_product_discovery_score: "not_tested",
+    organic_brand_discovery_score: "not_tested",
+    competitor_dominance_score: "not_tested",
+    search_grounded_merchant_pdp_discovery_score: "not_tested",
+    search_grounded_pivota_pdp_discovery_score: "not_tested",
+    buying_path_discovery_score: "not_tested",
+    offer_discovery_score: "not_tested",
+    url_match_accuracy_score: "not_tested",
     visibility_score: 100,
     recommendation_rank_score: 100,
     competitor_substitution_score: 0,
@@ -8527,6 +9413,18 @@ function assuranceFixtureScore(input: {
       executable_offer_visibility_score: explanation(
         "executable_offer_visibility_score"
       ),
+      organic_product_discovery_score: explanation("organic_product_discovery_score"),
+      organic_brand_discovery_score: explanation("organic_brand_discovery_score"),
+      competitor_dominance_score: explanation("competitor_dominance_score"),
+      search_grounded_merchant_pdp_discovery_score: explanation(
+        "search_grounded_merchant_pdp_discovery_score"
+      ),
+      search_grounded_pivota_pdp_discovery_score: explanation(
+        "search_grounded_pivota_pdp_discovery_score"
+      ),
+      buying_path_discovery_score: explanation("buying_path_discovery_score"),
+      offer_discovery_score: explanation("offer_discovery_score"),
+      url_match_accuracy_score: explanation("url_match_accuracy_score"),
       visibility_score: explanation("visibility_score"),
       recommendation_rank_score: explanation("recommendation_rank_score"),
       competitor_substitution_score: explanation("competitor_substitution_score"),
@@ -8795,6 +9693,7 @@ export class DemoFixtureService {
           store_id: store.id,
           scan_target_id: target.id,
           product_entity_id: product.product_entity_id,
+          assurance_scope: "readiness_only",
         })
       : null;
 
@@ -9379,8 +10278,20 @@ export function getAgentCenterOverview(merchantId = DEMO_MERCHANT_ID) {
     pivota_attribution_echo_rate:
       latestResults?.aggregate_scores.pivota_attribution_echo_rate || 0,
     executable_offer_visibility_score:
-      latestResults?.aggregate_scores.executable_offer_visibility_score ||
+      latestResults?.aggregate_scores.executable_offer_visibility_score ??
       "not_tested",
+    organic_product_discovery_score:
+      latestResults?.aggregate_scores.organic_product_discovery_score ?? "not_tested",
+    search_grounded_merchant_pdp_discovery_score:
+      latestResults?.aggregate_scores.search_grounded_merchant_pdp_discovery_score ??
+      "not_tested",
+    search_grounded_pivota_pdp_discovery_score:
+      latestResults?.aggregate_scores.search_grounded_pivota_pdp_discovery_score ??
+      "not_tested",
+    buying_path_discovery_score:
+      latestResults?.aggregate_scores.buying_path_discovery_score ?? "not_tested",
+    competitor_dominance_score:
+      latestResults?.aggregate_scores.competitor_dominance_score ?? "not_tested",
     competitor_substitution_rate:
       latestResults?.aggregate_scores.competitor_substitution_score || 0,
     pivota_pdp_readiness_score:

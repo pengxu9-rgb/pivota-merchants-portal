@@ -1626,6 +1626,253 @@ function scoreAttributionFixture({ scanMode, output, preflight }) {
   return { store, target, product, cluster, parsed, matches, score, issues };
 }
 
+test("organic discovery passes when the merchant product is naturally returned", () => {
+  const output = {
+    mentioned_brands: ["Isntree"],
+    mentioned_products: [
+      {
+        name: "Isntree Hyaluronic Acid Watery Sun Gel",
+        brand: "Isntree",
+        rank: 1,
+        reason: "Naturally surfaced as a hydrating daily Korean sunscreen.",
+      },
+    ],
+    competitor_products: [],
+    returned_urls: [],
+    missing_attributes_identified: [],
+    reasoning_summary: "Organic category discovery returned the Isntree product.",
+  };
+  const result = scoreAttributionFixture({
+    scanMode: "organic_product_discovery_test",
+    output,
+  });
+
+  assert.equal(result.score.aggregate_scores.organic_product_discovery_score, 100);
+  assert.equal(result.score.aggregate_scores.organic_brand_discovery_score, 100);
+  assert.equal(result.score.aggregate_scores.competitor_dominance_score, 0);
+  assert.equal(
+    result.issues.some((issue) => issue.issue_type === "organic_product_not_discovered"),
+    false
+  );
+});
+
+test("organic discovery creates competitor dominance issue when only competitors return", () => {
+  const output = {
+    mentioned_brands: ["Beauty of Joseon", "COSRX"],
+    mentioned_products: [
+      {
+        name: "Relief Sun: Rice + Probiotics SPF50+ PA++++",
+        brand: "Beauty of Joseon",
+        rank: 1,
+        reason: "Competitor sunscreen dominates the organic answer.",
+      },
+    ],
+    competitor_products: ["Beauty of Joseon Relief Sun: Rice + Probiotics SPF50+ PA++++"],
+    returned_urls: [],
+    missing_attributes_identified: [],
+    reasoning_summary: "Organic category discovery returned only competitor products.",
+  };
+  const result = scoreAttributionFixture({
+    scanMode: "organic_product_discovery_test",
+    output,
+  });
+
+  assert.equal(result.score.aggregate_scores.organic_product_discovery_score, 0);
+  assert.equal(result.score.aggregate_scores.competitor_dominance_score, 100);
+  assert.ok(
+    result.issues.some((issue) => issue.issue_type === "competitor_dominance"),
+    "expected competitor_dominance issue"
+  );
+});
+
+test("search-grounded product discovery passes when merchant PDP URL is returned", () => {
+  const previous = process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  try {
+    const merchantPdpUrl =
+      "https://isntree-global.com/products/isntree-hyaluronic-acid-watery-sun-gel-50ml";
+    const output = {
+      mentioned_brands: ["Isntree"],
+      mentioned_products: [
+        {
+          name: "Isntree Hyaluronic Acid Watery Sun Gel",
+          brand: "Isntree",
+          rank: 1,
+          reason: "Search result returned the official merchant PDP.",
+          product_url: merchantPdpUrl,
+        },
+      ],
+      returned_urls: [merchantPdpUrl],
+      grounding_sources: [merchantPdpUrl],
+      missing_attributes_identified: [],
+      reasoning_summary: "Search-grounded discovery returned the official PDP.",
+    };
+    const result = scoreAttributionFixture({
+      scanMode: "search_grounded_product_discovery_test",
+      output,
+    });
+
+    assert.equal(
+      result.score.aggregate_scores.search_grounded_merchant_pdp_discovery_score,
+      100
+    );
+    assert.equal(result.score.aggregate_scores.url_match_accuracy_score, 100);
+    assert.equal(result.parsed[0].merchant_pdp_url_exact_match, true);
+    assert.equal(
+      result.issues.some((issue) => issue.issue_type === "merchant_pdp_not_discovered"),
+      false
+    );
+  } finally {
+    if (previous === undefined) delete process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  }
+});
+
+test("search-grounded product discovery flags wrong buying path URL", () => {
+  const previous = process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  try {
+    const output = {
+      mentioned_brands: ["Isntree"],
+      mentioned_products: [
+        {
+          name: "Isntree Hyaluronic Acid Watery Sun Gel",
+          brand: "Isntree",
+          rank: 1,
+          reason: "Search result returned a marketplace page instead of expected paths.",
+          product_url: "https://example-marketplace.com/isntree-watery-sun-gel",
+        },
+      ],
+      returned_urls: ["https://example-marketplace.com/isntree-watery-sun-gel"],
+      missing_attributes_identified: [],
+      reasoning_summary: "The returned URL does not match merchant or Pivota PDP.",
+    };
+    const result = scoreAttributionFixture({
+      scanMode: "search_grounded_product_discovery_test",
+      output,
+    });
+
+    assert.equal(result.score.aggregate_scores.url_match_accuracy_score, 0);
+    assert.ok(
+      result.issues.some((issue) => issue.issue_type === "wrong_buying_path_returned"),
+      "expected wrong_buying_path_returned issue"
+    );
+  } finally {
+    if (previous === undefined) delete process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  }
+});
+
+test("buying-path discovery passes when Pivota PDP URL is returned", () => {
+  const output = {
+    mentioned_brands: ["Isntree"],
+    mentioned_products: [
+      {
+        name: "Isntree Hyaluronic Acid Watery Sun Gel",
+        brand: "Isntree",
+        rank: 1,
+        reason: "Pivota PDP appeared as an agent-facing buying path.",
+        product_url: verifiedPivotaPdpUrl,
+      },
+    ],
+    returned_urls: [verifiedPivotaPdpUrl],
+    buying_path_present: true,
+    offer_signal_present: true,
+    price_signal_present: true,
+    availability_signal_present: true,
+    missing_attributes_identified: [],
+    reasoning_summary: "Buying-path discovery returned the Pivota PDP URL.",
+  };
+  const result = scoreAttributionFixture({
+    scanMode: "buying_path_discovery_test",
+    output,
+  });
+
+  assert.equal(
+    result.score.aggregate_scores.search_grounded_pivota_pdp_discovery_score,
+    100
+  );
+  assert.equal(result.score.aggregate_scores.buying_path_discovery_score, 100);
+  assert.equal(result.score.aggregate_scores.offer_discovery_score, 100);
+  assert.equal(result.parsed[0].pivota_pdp_url_exact_match, true);
+});
+
+test("search-grounded discovery marks not_configured instead of contextual fallback", () => {
+  const previous = process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED;
+  delete process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED;
+  try {
+    const merchantPdpUrl =
+      "https://isntree-global.com/products/isntree-hyaluronic-acid-watery-sun-gel-50ml";
+    const output = {
+      mentioned_brands: ["Isntree"],
+      mentioned_products: [
+        {
+          name: "Isntree Hyaluronic Acid Watery Sun Gel",
+          brand: "Isntree",
+          rank: 1,
+          reason: "Even if URL is present, grounding is not configured.",
+          product_url: merchantPdpUrl,
+        },
+      ],
+      returned_urls: [merchantPdpUrl],
+      missing_attributes_identified: [],
+      reasoning_summary: "Search grounding disabled fixture.",
+    };
+    const result = scoreAttributionFixture({
+      scanMode: "search_grounded_product_discovery_test",
+      output,
+    });
+
+    assert.equal(
+      result.score.aggregate_scores.search_grounded_merchant_pdp_discovery_score,
+      "not_configured"
+    );
+    assert.equal(result.score.aggregate_scores.url_match_accuracy_score, "not_configured");
+    assert.ok(
+      result.issues.some((issue) => issue.issue_type === "search_grounding_not_configured"),
+      "expected search_grounding_not_configured issue"
+    );
+  } finally {
+    if (previous === undefined) delete process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.PIVOTA_GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  }
+});
+
+test("contextual attribution tests do not populate discovery scores", () => {
+  const output = {
+    mentioned_brands: ["Isntree"],
+    mentioned_products: [
+      {
+        name: "Isntree Hyaluronic Acid Watery Sun Gel",
+        brand: "Isntree",
+        rank: 1,
+        reason: "Merchant PDP supports this contextual attribution test.",
+        product_url:
+          "https://isntree-global.com/products/isntree-hyaluronic-acid-watery-sun-gel-50ml",
+      },
+    ],
+    merchant_store_mentioned: true,
+    merchant_pdp_url_present: true,
+    merchant_pdp_url:
+      "https://isntree-global.com/products/isntree-hyaluronic-acid-watery-sun-gel-50ml",
+    channel_attribution: "merchant_store_attributed",
+    missing_attributes_identified: [],
+    reasoning_summary: "Contextual attribution passed but is not natural discovery.",
+  };
+  const result = scoreAttributionFixture({
+    scanMode: "merchant_store_attribution_test",
+    output,
+  });
+
+  assert.equal(result.score.aggregate_scores.merchant_store_visibility_score, 100);
+  assert.equal(result.score.aggregate_scores.organic_product_discovery_score, "not_tested");
+  assert.equal(
+    result.score.aggregate_scores.search_grounded_merchant_pdp_discovery_score,
+    "not_tested"
+  );
+  assert.equal(result.score.aggregate_scores.buying_path_discovery_score, "not_tested");
+});
+
 test("merchant attribution scan passes when merchant PDP is returned", () => {
   const output = {
     mentioned_brands: ["Isntree"],
@@ -3500,6 +3747,36 @@ test("GMV assurance snapshot creation aggregates demand and agent readiness", ()
   );
 });
 
+test("GMV overview separates discovery readiness from execution readiness", () => {
+  resetAgentCenterState();
+  const fixture = new DemoFixtureService().create({
+    preset: "full_ready_pre_payment_chain",
+    environment: "test",
+  });
+
+  const fullSnapshot = new GMVAssuranceService().createSnapshot({
+    scan_target_id: fixture.scan_target.id,
+    product_entity_id: fixture.product.product_entity_id,
+    assurance_scope: "full_assurance",
+  });
+  const readinessOnlySnapshot = new GMVAssuranceService().createSnapshot({
+    scan_target_id: fixture.scan_target.id,
+    product_entity_id: fixture.product.product_entity_id,
+    assurance_scope: "readiness_only",
+  });
+
+  assert.equal(
+    fullSnapshot.discovery_readiness_summary.organic_product_discovery_status.status,
+    "not_tested"
+  );
+  assert.equal(fullSnapshot.readiness_level, "monitoring");
+  assert.equal(readinessOnlySnapshot.readiness_level, "ready_for_agentic_checkout");
+  assert.equal(
+    readinessOnlySnapshot.offer_execution_summary.offer_readiness_status.status,
+    "passed"
+  );
+});
+
 test("GMV assurance blocker logic blocks low product visibility", () => {
   const result = runControlledSunscreenCase({
     attributes: {},
@@ -4133,9 +4410,25 @@ test("production validation preflights merchant and Pivota PDP URLs", async () =
     assert.equal(report.url_preflight_results.pivota_pdp.status_code, 200);
     assert.ok(
       report.demand_test_summary.modes_run.some(
+        (item) => item.scan_mode === "organic_product_discovery_test"
+      )
+    );
+    assert.ok(
+      report.demand_test_summary.modes_run.some(
+        (item) => item.scan_mode === "search_grounded_product_discovery_test"
+      )
+    );
+    assert.ok(
+      report.demand_test_summary.modes_run.some(
+        (item) => item.scan_mode === "buying_path_discovery_test"
+      )
+    );
+    assert.ok(
+      report.demand_test_summary.modes_run.some(
         (item) => item.scan_mode === "pivota_pdp_attribution_test"
       )
     );
+    assert.ok(report.gmv_assurance_snapshot.discovery_readiness_summary);
   });
 });
 
@@ -4171,6 +4464,9 @@ test("production validation without Pivota PDP skips Pivota attribution mode", a
       (item) => item.scan_mode
     );
 
+    assert.ok(modes.includes("organic_product_discovery_test"));
+    assert.ok(modes.includes("search_grounded_product_discovery_test"));
+    assert.ok(modes.includes("buying_path_discovery_test"));
     assert.ok(!modes.includes("pivota_pdp_attribution_test"));
     assert.ok(report.demand_test_summary.skipped_modes.includes("pivota_pdp_attribution_test"));
     assert.equal(
@@ -4307,6 +4603,12 @@ test("production validation report includes snapshot blockers and preview usage"
     );
 
     assert.ok(report.gmv_assurance_snapshot.id);
+    assert.ok(report.gmv_assurance_snapshot.discovery_readiness_summary);
+    assert.equal(
+      report.gmv_assurance_snapshot.discovery_readiness_summary
+        .merchant_pdp_discovery_status.status,
+      "not_tested"
+    );
     assert.ok(Array.isArray(report.top_blockers));
     assert.equal(report.usage_summary.billing_mode, "preview_only");
     assert.equal(report.usage_summary.billing_status, "not_invoiced");

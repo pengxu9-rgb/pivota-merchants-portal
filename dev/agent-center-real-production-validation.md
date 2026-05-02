@@ -4,12 +4,12 @@ Last updated: 2026-05-01
 
 ## Purpose
 
-Production Validation Runs provide an internal-only harness for validating the full Agent Center pre-payment workflow against real merchant and Pivota inputs.
+Production Validation Runs provide an internal-only harness for validating the full Agent Center discovery and pre-payment workflow against real merchant and Pivota inputs.
 
 This is different from internal demo fixtures:
 
 - demo fixtures validate controlled expected cases
-- production validation runs validate real product, store, PDP, offer, and checkout metadata supplied by an internal operator
+- production validation runs validate real product, store, PDP, offer, checkout, and discovery-evaluation metadata supplied by an internal operator
 
 The harness is intended for production smoke and product-quality validation before exposing a merchant-facing workflow.
 
@@ -77,6 +77,19 @@ Minimum payload:
   "currency": "USD"
 }
 ```
+
+Discovery evaluation inputs:
+
+```json
+{
+  "merchant_domain": "isntree.com",
+  "expected_merchant_pdp_url": "https://www.isntree.com/products/hyaluronic-acid-watery-sun-gel",
+  "expected_pivota_pdp_url": "https://agent.pivota.cc/products/ext_d7c74bcb380cbc2bdd5d5d90",
+  "competitor_brands": ["Beauty of Joseon", "COSRX", "Laneige", "Anua"]
+}
+```
+
+Expected URLs are for evaluation only. Organic discovery prompts must not inject merchant PDP, Pivota PDP, or exact buying-path context. Search-grounded prompts may include product name and brand, but must not use expected URLs as source context.
 
 Optional Pivota fields:
 
@@ -177,6 +190,9 @@ When `POST /api/internal/agent-center/production-validation-runs/:id/run` is cal
 3. Preflights the checkout URL when checkout metadata is provided.
 4. Creates an internal validation merchant store and scan target from the real inputs.
 5. Runs Demand Test Agent modes:
+   - `organic_product_discovery_test`
+   - `search_grounded_product_discovery_test` when Gemini search grounding is configured; otherwise this mode is marked `not_configured`
+   - `buying_path_discovery_test`
    - `open_product_visibility_test`
    - `merchant_store_attribution_test`
    - `pivota_pdp_attribution_test` when `pivota_pdp_url` is provided
@@ -190,6 +206,7 @@ The validation report includes:
 
 - target summary
 - URL preflight results
+- discovery readiness summary
 - demand test summary
 - product understanding summary
 - offer execution summary
@@ -208,6 +225,10 @@ A production validation run can prove:
 - real merchant PDP URL preflight status
 - real Pivota PDP URL preflight status when provided
 - real checkout URL preflight status when provided
+- organic product/brand discovery when tested
+- merchant PDP discovery in search-grounded discovery tests
+- Pivota PDP discovery in search-grounded or buying-path discovery tests
+- buying-path discovery from returned URLs and offer signals
 - product/entity visibility from Demand Test Agent
 - merchant store attribution from Merchant Store Attribution Test
 - verified Pivota attribution from Pivota PDP Attribution Test
@@ -233,6 +254,8 @@ Production Validation Runs do not prove:
 - real billing
 
 The harness does not perform consumer UI scraping and does not execute checkout/payment/order logic.
+
+Contextual attribution passed should not be described as natural discovery. Use "Merchant PDP was returned in contextual attribution test" for attribution modes and "Merchant PDP was discovered in search-grounded discovery test" only for discovery modes.
 
 ## Sample Isntree Validation Payload
 
@@ -343,6 +366,7 @@ This returns the completed validation run plus a `cleanup` object with `status =
 - Validation runs should be short-lived and cleaned up with `DELETE`.
 - In production serverless smoke, `cleanup_after_run = true` is recommended because later `GET` or `DELETE` requests can land on a different instance until a persistent validation store is added.
 - Demand Test execution uses the current Gemini baseline only.
+- Search-grounded discovery requires Gemini grounding configuration. If unavailable, the score is `not_configured` and must not fall back to contextual attribution.
 - The default run scope is intentionally small for production safety: one purchase-ready query cluster, one prompt template, and one repetition unless explicitly overridden.
 - A passed checkout readiness result means pre-payment path readiness only.
 - No real payment, order, settlement, refund, transaction fee, or billing operation is executed.

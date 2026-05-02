@@ -50,6 +50,22 @@ export const PARSED_RECOMMENDATION_SCHEMA = {
     pivota_offer_ids_verified: { type: "boolean" },
     pivota_attribution_verified: { type: "boolean" },
     pivota_attribution_failure_reason: { type: "string" },
+    returned_urls: { type: "array", items: { type: "string" } },
+    returned_domains: { type: "array", items: { type: "string" } },
+    merchant_domain_found: { type: "boolean" },
+    merchant_pdp_url_found: { type: "boolean" },
+    merchant_pdp_url_exact_match: { type: "boolean" },
+    pivota_domain_found: { type: "boolean" },
+    pivota_pdp_url_found: { type: "boolean" },
+    pivota_pdp_url_exact_match: { type: "boolean" },
+    competitor_products: { type: "array", items: { type: "string" } },
+    competitor_domains: { type: "array", items: { type: "string" } },
+    buying_path_present: { type: "boolean" },
+    offer_signal_present: { type: "boolean" },
+    price_signal_present: { type: "boolean" },
+    availability_signal_present: { type: "boolean" },
+    discovery_type: { type: "string" },
+    grounding_sources: { type: "array", items: { type: "string" } },
     purchase_path_present: { type: "boolean" },
     purchase_path_type: { type: "string" },
     channel_attribution: { type: "string" },
@@ -111,6 +127,63 @@ function sameUrlPath(a?: string | null, b?: string | null) {
   const left = normalizeUrlKey(a);
   const right = normalizeUrlKey(b);
   return Boolean(left && right && left === right);
+}
+
+function urlsFromText(value: string) {
+  return (
+    value
+      .match(/https?:\/\/[^\s")\]]+/gi)
+      ?.map((url) => url.replace(/[),.;]+$/g, "")) || []
+  );
+}
+
+function discoveryMode(input: DemandTestInput) {
+  return [
+    "organic_product_discovery_test",
+    "search_grounded_product_discovery_test",
+    "buying_path_discovery_test",
+  ].includes(input.scanMode);
+}
+
+function providerVisibleContext(input: DemandTestInput) {
+  if (!discoveryMode(input)) {
+    return {
+      merchant: input.merchantContext,
+      pivota: input.pivotaContext,
+      competitors: input.competitorContext,
+    };
+  }
+
+  const product = input.merchantContext?.product;
+  const store = input.merchantContext?.store;
+  const base = {
+    scan_mode: input.scanMode,
+    category: product?.category || store?.primary_category,
+    market: input.market,
+    language: input.language,
+    competitors: input.competitorContext,
+  };
+
+  if (input.scanMode === "organic_product_discovery_test") {
+    return {
+      discovery: {
+        ...base,
+        instruction:
+          "No merchant PDP, Pivota PDP, exact URL, or expected buying path context is provided in this organic discovery prompt.",
+      },
+    };
+  }
+
+  return {
+    discovery: {
+      ...base,
+      product_name: product?.title,
+      brand: product?.brand,
+      merchant_domain: domainOf(store?.store_url) || undefined,
+      instruction:
+        "Expected merchant/Pivota URLs are intentionally omitted from prompt context and must be discovered by the model output.",
+    },
+  };
 }
 
 function candidatePivotaPdpUrl(input: DemandTestInput) {
@@ -372,6 +445,10 @@ function mockGeminiOutput(input: DemandTestInput) {
     input.scanMode === "merchant_store_attribution_test" && shouldMentionMerchant;
   const pivotaAttributed =
     input.scanMode === "pivota_pdp_attribution_test" && shouldMentionMerchant;
+  const searchDiscovery =
+    input.scanMode === "search_grounded_product_discovery_test" && shouldMentionMerchant;
+  const buyingPathDiscovery =
+    input.scanMode === "buying_path_discovery_test" && shouldMentionMerchant;
   const merchantPdpUrl = input.merchantContext?.product?.pdp_url || "";
   const pivotaPdpUrl =
     typeof input.merchantContext?.product?.pivota_attributes?.pivota_pdp_url === "string"
@@ -383,6 +460,10 @@ function mockGeminiOutput(input: DemandTestInput) {
   )
     ? input.merchantContext?.product?.pivota_attributes?.offer_ids.map(String)
     : [];
+  const returnedUrls = [
+    searchDiscovery || buyingPathDiscovery ? merchantPdpUrl : "",
+    buyingPathDiscovery ? pivotaPdpUrl : "",
+  ].filter(Boolean);
 
   return {
     mentioned_brands: [...new Set(mentionedProducts.map((product) => product.brand))],
@@ -408,6 +489,25 @@ function mockGeminiOutput(input: DemandTestInput) {
     pivota_attribution_failure_reason: pivotaAttributed
       ? "mock_provider_output_requires_preflight_verification"
       : "",
+    returned_urls: returnedUrls,
+    returned_domains: uniqueStrings(returnedUrls.map(domainOf)),
+    merchant_domain_found: returnedUrls.some((url) => domainOf(url) === domainOf(input.merchantContext?.store?.store_url)),
+    merchant_pdp_url_found: returnedUrls.some((url) => sameUrlPath(url, merchantPdpUrl)),
+    merchant_pdp_url_exact_match: returnedUrls.some((url) => sameUrlPath(url, merchantPdpUrl)),
+    pivota_domain_found: returnedUrls.some((url) => domainOf(url) === "agent.pivota.cc"),
+    pivota_pdp_url_found: returnedUrls.some((url) => sameUrlPath(url, pivotaPdpUrl)),
+    pivota_pdp_url_exact_match: returnedUrls.some((url) => sameUrlPath(url, pivotaPdpUrl)),
+    competitor_products: shouldMentionMerchant
+      ? []
+      : mentionedProducts.map((item) => `${item.brand} ${item.name}`),
+    competitor_domains: [],
+    buying_path_present: buyingPathDiscovery || merchantAttributed || pivotaAttributed,
+    offer_signal_present: Boolean(buyingPathDiscovery && pivotaOfferIds.length),
+    price_signal_present: buyingPathDiscovery,
+    availability_signal_present: buyingPathDiscovery,
+    discovery_type: discoveryMode(input) ? input.scanMode : undefined,
+    grounding_sources:
+      input.scanMode === "search_grounded_product_discovery_test" ? returnedUrls : [],
     purchase_path_present: merchantAttributed || pivotaAttributed,
     purchase_path_type: merchantAttributed
       ? "merchant_pdp"
@@ -485,11 +585,7 @@ export class GeminiProviderAdapter {
           role: "user",
           parts: [
             {
-              text: `${input.prompt}\n\nContext:\n${JSON.stringify({
-                merchant: input.merchantContext,
-                pivota: input.pivotaContext,
-                competitors: input.competitorContext,
-              })}`,
+              text: `${input.prompt}\n\nContext:\n${JSON.stringify(providerVisibleContext(input))}`,
             },
           ],
         },
@@ -614,10 +710,28 @@ export function parseProviderOutput(
     .map((product) => product.product_url || "")
     .filter(Boolean)
     .join(" | ");
+  const returnedUrls = uniqueStrings(
+    arrayOfStrings(output.returned_urls)
+      .concat(mentionedProducts.map((product) => product.product_url || ""))
+      .concat(stringValue(output.merchant_pdp_url))
+      .concat(stringValue(output.pivota_pdp_url))
+      .concat(urlsFromText(String(output.reasoning_summary || "")))
+  );
+  const returnedDomains = uniqueStrings(
+    arrayOfStrings(output.returned_domains)
+      .map((domain) => domain.replace(/^https?:\/\//, "").replace(/^www\./, ""))
+      .concat(returnedUrls.map(domainOf))
+  );
+  const competitorProductsFromOutput = arrayOfStrings(output.competitor_products);
+  const competitorDomainsFromOutput = arrayOfStrings(output.competitor_domains);
   const allText = [
     joinedProducts,
     joinedBrands,
     productUrls,
+    returnedUrls.join(" | "),
+    returnedDomains.join(" | "),
+    competitorProductsFromOutput.join(" | "),
+    competitorDomainsFromOutput.join(" | "),
     String(output.reasoning_summary || ""),
     String(output.purchase_path_type || ""),
     String(output.channel_attribution || ""),
@@ -641,11 +755,24 @@ export function parseProviderOutput(
     includesLoose(joinedProducts, merchantProduct?.product_entity_id);
   const merchantDomain = domainOf(merchantStore?.store_url);
   const merchantPdpDomain = domainOf(merchantProduct?.pdp_url);
+  const merchantDomainFound =
+    Boolean(output.merchant_domain_found) ||
+    Boolean(merchantDomain && returnedDomains.includes(merchantDomain));
+  const merchantPdpUrlExactMatch =
+    Boolean(output.merchant_pdp_url_exact_match) ||
+    returnedUrls.some((url) => sameUrlPath(url, merchantProduct?.pdp_url));
   const pivotaPdpUrl =
     typeof merchantProduct?.pivota_attributes?.pivota_pdp_url === "string"
       ? merchantProduct.pivota_attributes.pivota_pdp_url
       : "";
   const pivotaPdpDomain = domainOf(pivotaPdpUrl);
+  const pivotaDomainFound =
+    Boolean(output.pivota_domain_found) ||
+    Boolean(pivotaPdpDomain && returnedDomains.includes(pivotaPdpDomain)) ||
+    returnedDomains.some((domain) => domain === "agent.pivota.cc" || domain === "pivota.cc");
+  const pivotaPdpUrlExactMatch =
+    Boolean(output.pivota_pdp_url_exact_match) ||
+    returnedUrls.some((url) => sameUrlPath(url, pivotaPdpUrl));
   const expectedProductObjectId = expectedPivotaProductObjectId(input);
   const preflight = input.pivotaAttributionPreflight;
   const verifiedPivotaUrl = preflight?.verified_url;
@@ -669,6 +796,7 @@ export function parseProviderOutput(
     Boolean(merchantDomain && includesLoose(allText, merchantDomain));
   const merchantPdpUrlPresent =
     Boolean(output.merchant_pdp_url_present) ||
+    merchantPdpUrlExactMatch ||
     Boolean(merchantProduct?.pdp_url && includesLoose(allText, merchantProduct.pdp_url)) ||
     Boolean(merchantPdpDomain && productUrls.includes(merchantPdpDomain));
   const merchantPdpUrl =
@@ -710,6 +838,7 @@ export function parseProviderOutput(
     modelPivotaUrl;
   const pivotaPdpUrlPresent =
     Boolean(parsedPivotaPdpUrl) ||
+    pivotaPdpUrlExactMatch ||
     Boolean(pivotaPdpUrl && includesLoose(allText, pivotaPdpUrl)) ||
     Boolean(verifiedPivotaUrl && includesLoose(allText, verifiedPivotaUrl)) ||
     Boolean(pivotaPdpDomain && productUrls.includes(pivotaPdpDomain));
@@ -764,11 +893,22 @@ export function parseProviderOutput(
               ? "unverified_pivota_echo"
               : preflight?.failure_reason;
   const competitorBrands = input.competitorContext?.brands || [];
+  const competitorProducts = uniqueStrings(
+    competitorProductsFromOutput.concat(
+      mentionedProducts
+        .filter((product) =>
+          competitorBrands.some((brand) => includesLoose(product.brand, brand))
+        )
+        .map((product) => `${product.brand} ${product.name}`)
+    )
+  );
+  const competitorDomains = uniqueStrings(competitorDomainsFromOutput);
   const competitorSubstitutionDetected =
     !merchantProductMentioned &&
-    mentionedProducts.some((product) =>
-      competitorBrands.some((brand) => includesLoose(product.brand, brand))
-    );
+    (competitorProducts.length > 0 ||
+      mentionedProducts.some((product) =>
+        competitorBrands.some((brand) => includesLoose(product.brand, brand))
+      ));
   const outputChannelAttribution = normalizeChannelAttribution(
     output.channel_attribution
   );
@@ -836,9 +976,37 @@ export function parseProviderOutput(
     pivota_attribution_failure_reason: pivotaAttributionFailureReason,
     pivota_pdp_preflight_status: preflight?.status,
     pivota_pdp_preflight_status_code: preflight?.status_code,
+    returned_urls: returnedUrls,
+    returned_domains: returnedDomains,
+    merchant_domain_found: merchantDomainFound,
+    merchant_pdp_url_found: merchantPdpUrlPresent,
+    merchant_pdp_url_exact_match: merchantPdpUrlExactMatch,
+    pivota_domain_found: pivotaDomainFound,
+    pivota_pdp_url_found: pivotaPdpUrlPresent,
+    pivota_pdp_url_exact_match: pivotaPdpUrlExactMatch,
+    competitor_products: competitorProducts,
+    competitor_domains: competitorDomains,
+    buying_path_present:
+      Boolean(output.buying_path_present) ||
+      returnedUrls.length > 0 ||
+      purchasePathType !== "none",
+    offer_signal_present:
+      Boolean(output.offer_signal_present) || merchantOfferPresent || pivotaOfferPresent,
+    price_signal_present:
+      Boolean(output.price_signal_present) ||
+      mentionedProducts.some((product) => Boolean(product.likely_price_range)),
+    availability_signal_present: Boolean(output.availability_signal_present),
+    discovery_type: discoveryMode(input)
+      ? input.scanMode
+      : stringValue(output.discovery_type)
+        ? (stringValue(output.discovery_type) as ParsedRecommendation["discovery_type"])
+        : undefined,
+    grounding_sources: arrayOfStrings(output.grounding_sources),
     competitor_substitution_detected: competitorSubstitutionDetected,
     purchase_path_present:
       Boolean(output.purchase_path_present) ||
+      Boolean(output.buying_path_present) ||
+      returnedUrls.length > 0 ||
       mentionedProducts.some((product) => product.purchase_path_present),
     purchase_path_type: purchasePathType,
     channel_attribution: channelAttribution,

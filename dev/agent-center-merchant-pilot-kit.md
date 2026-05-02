@@ -14,8 +14,9 @@ Internal production validation routes must not be exposed directly to merchants.
 
 Agent Center V1 verifies pre-payment agentic GMV readiness.
 
-It checks whether AI demand can move from product awareness to a ready pre-payment buying path by validating:
+It checks whether AI demand can move from discovery to product awareness to a ready pre-payment buying path by validating:
 
+- organic / search-grounded / buying-path discoverability
 - product visibility
 - merchant attribution
 - verified Pivota attribution
@@ -30,6 +31,12 @@ Agent Center pilots validate dual-path readiness:
 - Pivota agent-facing path: Pivota unified PDP / product object / offer / checkout handoff
 
 Pivota PDP does not replace the merchant PDP. The merchant PDP remains the source-layer buying path and source of truth; the Pivota PDP is an agent-facing execution layer on top of that merchant-owned source layer.
+
+Agent Center pilots should report discovery and readiness separately:
+
+- Discoverability: can users or agents naturally find the product, merchant PDP, or Pivota PDP?
+- Readiness: if found, can the product, offer, and checkout path support pre-payment execution?
+- Transaction: not tested in V1.
 
 The positioning for pilots is:
 
@@ -76,6 +83,8 @@ Recommended inputs:
 - merchant product attributes
 - Pivota ProductEntity ID
 - Pivota PDP URL, when Pivota PDP Attribution Test is not in scope
+- merchant domain for discovery evaluation
+- expected merchant/Pivota PDP URLs for discovery evaluation only, not prompt context
 - merchant offer metadata
 - Pivota offer metadata
 - checkout path metadata if available
@@ -189,23 +198,26 @@ Remove optional blocks when the merchant has not approved or provided that data.
 
 1. Collect merchant inputs.
 2. Confirm merchant approval for the test scope.
-3. Validate merchant PDP preflight.
-4. Validate merchant store attribution.
-5. Validate Pivota PDP preflight when a Pivota PDP URL is provided.
-6. Validate Pivota PDP attribution when a Pivota PDP URL is provided.
-7. Compare the merchant-owned path against the Pivota agent-facing path.
-8. Run checkout URL preflight where checkout metadata is available.
-9. Create a production validation run through the internal route.
-10. Run production validation.
-11. Review the generated `GMVAssuranceSnapshot`.
-12. Review generated issues and top blockers.
-13. Review Product Understanding, Offer Execution, and Checkout Verification diagnoses when available.
-14. Create resolution plans for pilot blockers.
-15. Review owner, approval requirement, patch preview, and retest plan.
-16. Share a curated merchant-facing report.
-17. Apply state-only patches or approved patches where applicable.
-18. Retest using the relevant agent or scan mode.
-19. Record before/after result and pilot learning.
+3. Run Organic Product Discovery Test without merchant/Pivota URL context.
+4. Run Search-Grounded Product Discovery Test when Gemini grounding is configured.
+5. Run Buying Path Discovery Test and evaluate returned URLs.
+6. Validate merchant PDP preflight.
+7. Validate merchant store attribution.
+8. Validate Pivota PDP preflight when a Pivota PDP URL is provided.
+9. Validate Pivota PDP attribution when a Pivota PDP URL is provided.
+10. Compare the merchant-owned path against the Pivota agent-facing path.
+11. Run checkout URL preflight where checkout metadata is available.
+12. Create a production validation run through the internal route.
+13. Run production validation.
+14. Review the generated `GMVAssuranceSnapshot`.
+15. Review generated issues and top blockers.
+16. Review Product Understanding, Offer Execution, and Checkout Verification diagnoses when available.
+17. Create resolution plans for pilot blockers.
+18. Review owner, approval requirement, patch preview, and retest plan.
+19. Share a curated merchant-facing report.
+20. Apply state-only patches or approved patches where applicable.
+21. Retest using the relevant agent or scan mode.
+22. Record before/after result and pilot learning.
 
 Resolution actions in V1 are state transitions unless an action is explicitly wired to an approved write-back path. Do not write to merchant production systems from the pilot workflow.
 
@@ -232,6 +244,15 @@ Success examples:
 
 Common pilot blockers:
 
+- `organic_product_not_discovered`
+- `organic_brand_not_discovered`
+- `competitor_dominance`
+- `merchant_pdp_not_discovered`
+- `pivota_pdp_not_discovered`
+- `wrong_buying_path_returned`
+- `buying_path_missing`
+- `offer_not_discovered`
+- `search_grounding_not_configured`
 - `merchant_store_attribution_gap`
 - `pivota_pdp_attribution_gap`
 - `unverified_pivota_attribution`
@@ -244,6 +265,9 @@ Common pilot blockers:
 
 Operator interpretation:
 
+- `merchant_pdp_not_discovered`: search-grounded discovery did not return the merchant PDP or merchant domain.
+- `pivota_pdp_not_discovered`: discovery did not return the Pivota PDP or Pivota domain.
+- `search_grounding_not_configured`: Gemini search grounding is not configured, so search-grounded discovery is `not_configured`, not a failed attribution test.
 - `merchant_store_attribution_gap`: the product may be visible, but the model did not return the merchant store or merchant PDP as the buying path.
 - `pivota_pdp_attribution_gap`: the product may be visible, but verified Pivota channel attribution was not proven.
 - `missing_attribute`: merchant PDP/catalog and/or Pivota PDP is missing important product attributes.
@@ -259,7 +283,7 @@ Use this structure for pilot reporting. Curate the contents before sharing exter
 
 ```text
 Executive summary
-Pivota tested whether the selected product can move from AI demand to a ready pre-payment buying path. The validation checked the merchant-owned source path and the Pivota agent-facing path separately, including product visibility, attribution, product/SKU readiness, offer readiness, and checkout path readiness. No real payment, order placement, refund, settlement, or billing occurred.
+Pivota tested whether the selected product can move from discoverability to AI demand to a ready pre-payment buying path. The validation checked the merchant-owned source path and the Pivota agent-facing path separately, including discovery, product visibility, attribution, product/SKU readiness, offer readiness, and checkout path readiness. No real payment, order placement, refund, settlement, or billing occurred.
 
 Tested product / store
 - Merchant:
@@ -271,6 +295,13 @@ Tested product / store
 - Market / language / currency:
 
 Buying Path Readiness
+Discoverability:
+- Organic product discovery:
+- Merchant PDP discovery:
+- Pivota PDP discovery:
+- Buying path discovery:
+- Competitor dominance:
+
 Merchant-owned path:
 - Merchant PDP URL:
 - Merchant PDP preflight:
@@ -462,6 +493,10 @@ Pilot safety rules:
 
 Agent Center V1 can separately prove:
 
+- organic product/brand discovery
+- merchant PDP discovery in search-grounded discovery tests
+- Pivota PDP discovery in search-grounded or buying-path discovery tests
+- buying-path discovery from returned URLs/signals
 - product/entity visibility
 - merchant PDP attribution
 - Pivota PDP attribution
@@ -477,6 +512,7 @@ Merchant PDP attribution and Pivota PDP attribution are separate results. Produc
 V1 limitations:
 
 - Gemini baseline only.
+- Search-Grounded Product Discovery is `not_configured` unless Gemini grounding is configured; it must not fall back to contextual attribution.
 - No consumer UI scraping.
 - No real checkout execution.
 - No payment authorization.

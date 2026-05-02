@@ -10,6 +10,9 @@ export type StorePlatform =
 export type IntegrationStatus = "connected" | "url_only" | "disconnected";
 
 export type ScanMode =
+  | "organic_product_discovery_test"
+  | "search_grounded_product_discovery_test"
+  | "buying_path_discovery_test"
   | "open_product_visibility_test"
   | "merchant_store_attribution_test"
   | "pivota_pdp_attribution_test"
@@ -94,6 +97,15 @@ export type AgenticGMVIssueType =
   | "pivota_pdp_readiness_gap"
   | "pivota_pdp_content_quality_gap"
   | "pivota_product_intelligence_gap"
+  | "organic_product_not_discovered"
+  | "organic_brand_not_discovered"
+  | "competitor_dominance"
+  | "merchant_pdp_not_discovered"
+  | "pivota_pdp_not_discovered"
+  | "wrong_buying_path_returned"
+  | "buying_path_missing"
+  | "offer_not_discovered"
+  | "search_grounding_not_configured"
   | "product_entity_mapping_issue"
   | "wrong_product_family"
   | "no_purchase_path"
@@ -191,7 +203,7 @@ export type PurchasePathType =
   | "executable_offer"
   | "unknown";
 
-export type VisibilityScoreValue = number | "not_tested";
+export type VisibilityScoreValue = number | "not_tested" | "not_configured";
 
 export type ProductRecord = DemoFixtureMetadata & {
   id: string;
@@ -475,6 +487,22 @@ export type ParsedRecommendation = Timestamped & {
   pivota_attribution_failure_reason?: string;
   pivota_pdp_preflight_status?: PivotaAttributionPreflight["status"];
   pivota_pdp_preflight_status_code?: number | null;
+  returned_urls: string[];
+  returned_domains: string[];
+  merchant_domain_found: boolean;
+  merchant_pdp_url_found: boolean;
+  merchant_pdp_url_exact_match: boolean;
+  pivota_domain_found: boolean;
+  pivota_pdp_url_found: boolean;
+  pivota_pdp_url_exact_match: boolean;
+  competitor_products: string[];
+  competitor_domains: string[];
+  buying_path_present: boolean;
+  offer_signal_present: boolean;
+  price_signal_present: boolean;
+  availability_signal_present: boolean;
+  discovery_type?: ScanMode;
+  grounding_sources?: string[];
   competitor_substitution_detected: boolean;
   purchase_path_present: boolean;
   purchase_path_type: PurchasePathType;
@@ -552,6 +580,14 @@ export type DemandVisibilityScore = Timestamped & {
       pivota_offer_visibility_score: number;
       pivota_attribution_echo_rate: number;
       executable_offer_visibility_score: VisibilityScoreValue;
+      organic_product_discovery_score: VisibilityScoreValue;
+      organic_brand_discovery_score: VisibilityScoreValue;
+      competitor_dominance_score: VisibilityScoreValue;
+      search_grounded_merchant_pdp_discovery_score: VisibilityScoreValue;
+      search_grounded_pivota_pdp_discovery_score: VisibilityScoreValue;
+      buying_path_discovery_score: VisibilityScoreValue;
+      offer_discovery_score: VisibilityScoreValue;
+      url_match_accuracy_score: VisibilityScoreValue;
       visibility_score: number;
       recommendation_rank_score: number;
       competitor_substitution_score: number;
@@ -566,6 +602,14 @@ export type DemandVisibilityScore = Timestamped & {
     pivota_offer_visibility_score: number;
     pivota_attribution_echo_rate: number;
     executable_offer_visibility_score: VisibilityScoreValue;
+    organic_product_discovery_score: VisibilityScoreValue;
+    organic_brand_discovery_score: VisibilityScoreValue;
+    competitor_dominance_score: VisibilityScoreValue;
+    search_grounded_merchant_pdp_discovery_score: VisibilityScoreValue;
+    search_grounded_pivota_pdp_discovery_score: VisibilityScoreValue;
+    buying_path_discovery_score: VisibilityScoreValue;
+    offer_discovery_score: VisibilityScoreValue;
+    url_match_accuracy_score: VisibilityScoreValue;
     visibility_score: number;
     recommendation_rank_score: number;
     competitor_substitution_score: number;
@@ -1089,7 +1133,7 @@ export type GMVAssuranceReadinessLevel =
 
 export type GMVAssuranceDimensionSummary = {
   status: GMVAssuranceDimensionStatus;
-  score?: number | "not_tested";
+  score?: VisibilityScoreValue;
   issue_id?: string;
   diagnosis_id?: string;
   recommended_next_action: string;
@@ -1125,6 +1169,14 @@ export type GMVAssuranceSnapshot = Timestamped & {
   scan_target_id: string;
   product_entity_id?: string;
   issue_ids: string[];
+  assurance_scope?: "full_assurance" | "readiness_only";
+  discovery_readiness_summary?: {
+    organic_product_discovery_status: GMVAssuranceDimensionSummary;
+    merchant_pdp_discovery_status: GMVAssuranceDimensionSummary;
+    pivota_pdp_discovery_status: GMVAssuranceDimensionSummary;
+    buying_path_discovery_status: GMVAssuranceDimensionSummary;
+    competitor_dominance_status: GMVAssuranceDimensionSummary;
+  };
   demand_test_summary: {
     scan_mode: ScanMode;
     product_visibility_status: GMVAssuranceDimensionSummary;
@@ -1357,6 +1409,14 @@ type ReturnTypePlaceholderDemandAggregate = {
   pivota_offer_visibility_score: number;
   pivota_attribution_echo_rate: number;
   executable_offer_visibility_score: VisibilityScoreValue;
+  organic_product_discovery_score: VisibilityScoreValue;
+  organic_brand_discovery_score: VisibilityScoreValue;
+  competitor_dominance_score: VisibilityScoreValue;
+  search_grounded_merchant_pdp_discovery_score: VisibilityScoreValue;
+  search_grounded_pivota_pdp_discovery_score: VisibilityScoreValue;
+  buying_path_discovery_score: VisibilityScoreValue;
+  offer_discovery_score: VisibilityScoreValue;
+  url_match_accuracy_score: VisibilityScoreValue;
   visibility_score: number;
   recommendation_rank_score: number;
   competitor_substitution_score: number;

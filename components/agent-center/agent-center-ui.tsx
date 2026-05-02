@@ -70,13 +70,13 @@ export function ScoreBar({
   label,
   inverse = false,
 }: {
-  value: number | "not_tested";
+  value: number | "not_tested" | "not_configured";
   label: string;
   inverse?: boolean;
 }) {
   const numericValue = typeof value === "number" ? value : 0;
   const tone =
-    value === "not_tested"
+    value === "not_tested" || value === "not_configured"
       ? "bg-[color:var(--merchant-muted)]"
       : inverse && numericValue >= 60
       ? "bg-[color:var(--merchant-critical)]"
@@ -91,7 +91,11 @@ export function ScoreBar({
       <div className="flex items-center justify-between gap-3 text-sm">
         <span className="font-medium text-[color:var(--merchant-ink)]">{label}</span>
         <span className="text-[color:var(--merchant-muted)]">
-          {value === "not_tested" ? "Not tested" : `${Math.round(numericValue)}%`}
+          {value === "not_configured"
+            ? "Not configured"
+            : value === "not_tested"
+              ? "Not tested"
+              : `${Math.round(numericValue)}%`}
         </span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-[color:var(--merchant-surface-muted)]">

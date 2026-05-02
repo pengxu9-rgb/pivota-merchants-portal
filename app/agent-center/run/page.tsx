@@ -38,6 +38,24 @@ const steps = [
 
 const scanModes = [
   {
+    id: "organic_product_discovery_test",
+    label: "Organic Product Discovery Test",
+    helper:
+      "Tests whether your product or brand appears naturally from no-context category and shopping-intent prompts.",
+  },
+  {
+    id: "search_grounded_product_discovery_test",
+    label: "Search-Grounded Product Discovery Test",
+    helper:
+      "Tests whether AI/search grounding can discover your merchant PDP or Pivota PDP from product-name queries.",
+  },
+  {
+    id: "buying_path_discovery_test",
+    label: "Buying Path Discovery Test",
+    helper:
+      "Tests whether AI returns official pages, verified buying options, offers, prices, or availability signals.",
+  },
+  {
     id: "open_product_visibility_test",
     label: "Open Product Visibility Test",
     helper: "Tests whether the product entity is known and recommended by the model.",
@@ -456,8 +474,8 @@ export default function RunAgentScanPage() {
       ) : null}
 
       {step === 2 ? (
-        <SurfaceCard title="Choose Scan Mode" description="V1 supports product visibility and attribution testing. Offer execution and checkout verification remain future phases.">
-          <div className="grid gap-4 px-5 py-5 md:grid-cols-3">
+        <SurfaceCard title="Choose Scan Mode" description="V1 separates natural discovery from contextual attribution and pre-payment readiness checks.">
+          <div className="grid gap-4 px-5 py-5 md:grid-cols-2 xl:grid-cols-3">
             {scanModes.map((mode) => (
               <button
                 key={mode.id}
