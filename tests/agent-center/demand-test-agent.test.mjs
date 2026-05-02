@@ -5025,11 +5025,105 @@ test("merchant-facing report draft API is internal and idempotent", async () => 
       assert.equal(created.status, 201);
       assert.equal(fetched.status, 200);
       assert.equal(fetchedPayload.report.id, createdPayload.report.id);
+      assert.equal(fetchedPayload.report.report_status, "draft");
       assert.equal(
         fetchedPayload.report.usage_statement.billing_status,
         "not_invoiced"
       );
+
+      const reviewed = await handleAgentCenterRequest(
+        internalProductionValidationRequest(
+          `https://example.test/api/agent-center/internal-production-validation-runs/${completed.id}/report-draft`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              report_status: "reviewed",
+              reviewed_by: "operator@example.com",
+            }),
+          }
+        ),
+        {
+          path: [
+            "internal-production-validation-runs",
+            completed.id,
+            "report-draft",
+          ],
+        }
+      );
+      const reviewedPayload = await reviewed.json();
+
+      assert.equal(reviewed.status, 200);
+      assert.equal(reviewedPayload.report.report_status, "reviewed");
+      assert.equal(reviewedPayload.report.status, "reviewed");
+      assert.equal(reviewedPayload.report.reviewed_by, "operator@example.com");
+      assert.ok(reviewedPayload.report.reviewed_at);
+
+      const approved = await handleAgentCenterRequest(
+        internalProductionValidationRequest(
+          `https://example.test/api/agent-center/internal-production-validation-runs/${completed.id}/report-draft`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              report_status: "approved_to_share",
+              approved_by: "lead@example.com",
+            }),
+          }
+        ),
+        {
+          path: [
+            "internal-production-validation-runs",
+            completed.id,
+            "report-draft",
+          ],
+        }
+      );
+      const approvedPayload = await approved.json();
+
+      assert.equal(approved.status, 200);
+      assert.equal(approvedPayload.report.report_status, "approved_to_share");
+      assert.equal(approvedPayload.report.approved_by, "lead@example.com");
+      assert.ok(approvedPayload.report.approved_to_share_at);
     });
+  });
+});
+
+test("merchant-facing report markdown and safety warnings exclude raw debug payload", async () => {
+  resetAgentCenterState();
+  await withMockProductionValidationFetch(async () => {
+    const run = new ProductionValidationRunService().create(
+      productionValidationPayload({
+        pivota_pdp_url: undefined,
+        merchant_offer_input: undefined,
+        pivota_offer_input: undefined,
+        merchant_checkout_input: undefined,
+        pivota_checkout_input: undefined,
+      })
+    );
+    const completed = await new ProductionValidationRunService().run(run.id);
+    const service = new MerchantFacingReportService();
+    const report = service.generate(completed.id);
+    const markdown = service.toMarkdown(report).toLowerCase();
+
+    assert.ok(
+      report.safety_warnings.some(
+        (warning) => warning.warning_type === "checkout_not_tested"
+      )
+    );
+    assert.ok(
+      report.safety_warnings.some(
+        (warning) => warning.warning_type === "pivota_pdp_not_provided"
+      )
+    );
+    assert.ok(
+      report.safety_warnings.some(
+        (warning) => warning.warning_type === "raw_debug_payload_excluded"
+      )
+    );
+    assert.match(markdown, /merchant-owned path/);
+    assert.match(markdown, /pivota agent-facing path/);
+    assert.equal(markdown.includes("raw_output"), false);
+    assert.equal(markdown.includes("token_count"), false);
+    assert.equal(markdown.includes("debug payload"), true);
   });
 });
 
@@ -5287,6 +5381,41 @@ test("Agent Center overview renders GMV Assurance summary", async () => {
   assert.match(source, /Assurance Usage Preview/);
   assert.match(source, /ready_for_agentic_checkout/);
   assert.ok(source.includes("gmv-assurance/snapshots"));
+});
+
+test("internal report preview page renders report review controls", async () => {
+  const source = await readFile(
+    new URL(
+      "../../app/internal/agent-center/production-validation-runs/[runId]/report/page.tsx",
+      import.meta.url
+    ),
+    "utf8"
+  );
+  const copySource = await readFile(
+    new URL(
+      "../../app/internal/agent-center/production-validation-runs/[runId]/report/copy-markdown-button.tsx",
+      import.meta.url
+    ),
+    "utf8"
+  );
+
+  assert.match(source, /Merchant Validation Report Preview/);
+  assert.match(source, /Report draft missing/);
+  assert.match(source, /Generate report draft/);
+  assert.match(source, /Regenerate report draft/);
+  assert.match(source, /Mark reviewed/);
+  assert.match(source, /Mark approved_to_share/);
+  assert.match(source, /Executive Summary/);
+  assert.match(source, /Discoverability/);
+  assert.match(source, /Merchant-Owned Path/);
+  assert.match(source, /Pivota Agent-Facing Path/);
+  assert.match(source, /Blockers and Recommended Fixes/);
+  assert.match(source, /What V1 Does Not Prove/);
+  assert.match(source, /Usage Preview/);
+  assert.match(source, /Safety Warnings/);
+  assert.match(source, /raw debug payloads are intentionally excluded/i);
+  assert.match(copySource, /Copy report as Markdown/);
+  assert.match(copySource, /navigator.clipboard.writeText/);
 });
 
 test("issue debug view and retest preparation expose internal validation evidence", () => {

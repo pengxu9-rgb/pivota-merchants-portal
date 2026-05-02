@@ -238,6 +238,17 @@ async function handleInternalProductionValidationRunsRequestInner(
       });
     }
 
+    if (
+      req.method === "PATCH" &&
+      runId &&
+      params?.action === "report-draft"
+    ) {
+      const body = await requestBody(req);
+      return json({
+        report: new MerchantFacingReportService().updateStatus(runId, body),
+      });
+    }
+
     if (req.method === "GET" && runId) {
       return json({ production_validation_run: service.get(runId) });
     }

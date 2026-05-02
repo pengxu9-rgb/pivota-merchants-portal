@@ -1406,7 +1406,12 @@ export type ProductionValidationReport = {
   billing_status: "not_invoiced";
 };
 
-export type MerchantFacingReportStatus = "draft" | "shared" | "archived";
+export type MerchantFacingReportStatus =
+  | "draft"
+  | "reviewed"
+  | "approved_to_share"
+  | "shared"
+  | "archived";
 
 export type MerchantFacingValidationReport = Timestamped & {
   id: string;
@@ -1417,6 +1422,11 @@ export type MerchantFacingValidationReport = Timestamped & {
   report_type: "agent_center_production_validation";
   audience: "merchant" | "investor" | "internal_review";
   status: MerchantFacingReportStatus;
+  report_status: MerchantFacingReportStatus;
+  reviewed_at?: string;
+  approved_to_share_at?: string;
+  reviewed_by?: string;
+  approved_by?: string;
   title: string;
   executive_summary: string;
   tested_product: {
@@ -1439,6 +1449,12 @@ export type MerchantFacingValidationReport = Timestamped & {
       pivota_pdp_discovery?: VisibilityScoreValue;
       buying_path_discovery?: VisibilityScoreValue;
       competitor_dominance?: VisibilityScoreValue;
+    };
+    product_sku_readiness: {
+      status: GMVAssuranceDimensionStatus;
+      product_data_status: GMVAssuranceDimensionStatus;
+      sku_variant_status: GMVAssuranceDimensionStatus;
+      summary: string;
     };
     merchant_owned_path: {
       merchant_pdp_url: string;
@@ -1475,6 +1491,7 @@ export type MerchantFacingValidationReport = Timestamped & {
     affected_layer: string;
     issue_id?: string;
     resolution_plan_id?: string;
+    root_cause?: string;
     recommended_action: string;
   }>;
   recommended_fixes: Array<{
@@ -1499,6 +1516,11 @@ export type MerchantFacingValidationReport = Timestamped & {
     merchant_copy: string;
   };
   v1_does_not_prove: string[];
+  safety_warnings: Array<{
+    warning_type: string;
+    severity: "info" | "warning";
+    message: string;
+  }>;
   sharing_notes: string[];
   source_summary: {
     issue_ids: string[];
