@@ -351,6 +351,13 @@ agent-facing PDP signals:
 - product identity, overview, product intelligence module, and
   similar/substitute highlight
 
+If Pivota-owned optimization has been applied and search-grounded Pivota PDP
+discovery still remains `0` / `not_found`, follow
+[Pivota PDP Indexing and Discoverability Runbook](./pivota-pdp-indexing-discoverability-runbook.md)
+before claiming uplift. The next operational step is to verify that the public
+Pivota PDP is crawlable, indexable, canonical, structured, sitemap-listed, and
+eligible for search ingestion.
+
 For `wrong_buying_path_returned`, the plan should include wrong URL analysis,
 canonical buying-path metadata fixes, and product graph/source-reference updates
 to reduce confusion with third-party retailers, competitor pages, or unrelated
@@ -724,6 +731,9 @@ Before sharing uplift claims:
 5. Report only measured before/after score deltas.
 
 If search-grounded discovery remains `not_found` after a Pivota-owned patch, report: "Pivota-owned readiness improved, but search-grounded discovery has not yet returned the Pivota PDP. Indexing may require more time or external search engine ingestion."
+
+For the operational indexing checklist, use
+[Pivota PDP Indexing and Discoverability Runbook](./pivota-pdp-indexing-discoverability-runbook.md).
 
 ## Validation Commands
 
