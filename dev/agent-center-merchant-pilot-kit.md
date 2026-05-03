@@ -698,6 +698,33 @@ V1 limitations:
 13. Record before/after results.
 14. Decide whether the merchant is ready for a deeper agentic checkout pilot.
 
+## Pivota-Owned Optimization Workflow
+
+After a diagnostic report produces Pivota-owned discovery blockers, Pivota operators may apply only Pivota-owned optimization actions:
+
+- `pivota_discovery_signal_patch`
+- `pivota_source_reference_patch`
+- `pivota_product_intelligence_patch`
+- `pivota_product_schema_patch`
+- `pivota_offer_schema_patch`
+- `pivota_sitemap_submission`
+- `query_cluster_mapping_patch`
+- `competitor_substitute_graph_patch`
+
+These patches update Pivota Agent Center / Pivota PDP / product graph state only. They must not write back to merchant PDPs, merchant catalogs, Shopify, checkout systems, PSPs, orders, refunds, settlement, or billing.
+
+Merchant-owned actions still require merchant approval and external implementation. Examples include merchant PDP copy changes, merchant structured data changes, merchant canonical URL changes, and merchant sitemap/indexing work.
+
+Before sharing uplift claims:
+
+1. Generate the Pivota-owned patch from the issue Resolution Plan.
+2. Apply only the Pivota-owned patch.
+3. Rerun the relevant validation mode.
+4. Regenerate the GMV Assurance Snapshot and merchant-facing report draft.
+5. Report only measured before/after score deltas.
+
+If search-grounded discovery remains `not_found` after a Pivota-owned patch, report: "Pivota-owned readiness improved, but search-grounded discovery has not yet returned the Pivota PDP. Indexing may require more time or external search engine ingestion."
+
 ## Validation Commands
 
 Run these before shipping Agent Center V1 pilot workflow changes:

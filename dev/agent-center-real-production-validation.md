@@ -420,6 +420,33 @@ curl -X DELETE "$BASE_URL/api/internal/agent-center/production-validation-runs/$
   -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET"
 ```
 
+Issue-scoped Pivota-owned optimization flow:
+
+```bash
+curl -X POST "$BASE_URL/api/agent-center/issues/$ISSUE_ID/pivota-optimization-patch" \
+  -H "content-type: application/json"
+
+curl -X POST "$BASE_URL/api/agent-center/issues/$ISSUE_ID/apply-pivota-optimization" \
+  -H "content-type: application/json"
+
+curl -X POST "$BASE_URL/api/agent-center/issues/$ISSUE_ID/rerun-after-pivota-optimization" \
+  -H "content-type: application/json"
+```
+
+The optimization endpoints only apply Pivota-owned patch types:
+
+- Pivota PDP discovery signals
+- Pivota source references
+- Pivota product intelligence
+- Pivota Product / Offer schema payloads
+- Pivota sitemap submission instructions
+- Pivota query-cluster mappings
+- Pivota competitor/substitute graph mappings
+
+They do not write to merchant production systems. Merchant-owned actions remain approval-required and must be handled outside this V1 endpoint.
+
+After applying a Pivota-owned patch, rerun the relevant validation mode and regenerate the merchant-facing report. The report may show readiness changes, but it must not claim discoverability uplift unless the rerun score actually improves.
+
 For production smoke in the current serverless in-memory baseline, prefer cleanup in the same run invocation:
 
 ```bash
@@ -439,6 +466,7 @@ This returns the completed validation run plus a `cleanup` object with `status =
 - Demand Test execution uses the current Gemini baseline only.
 - Search-grounded discovery requires `GEMINI_SEARCH_GROUNDING_ENABLED=true`. If unavailable, the score is `not_configured` and must not fall back to contextual attribution.
 - Search grounding applies only to `search_grounded_product_discovery_test`; all other Agent Center modes remain ungrounded.
+- Pivota-owned optimization can update Pivota Agent Center/PDP/product graph state, but public search-grounded discovery may still require external indexing time before Gemini returns the Pivota PDP.
 - The default run scope is intentionally small for production safety: one purchase-ready query cluster, one prompt template, and one repetition unless explicitly overridden.
 - A passed checkout readiness result means pre-payment path readiness only.
 - No real payment, order, settlement, refund, transaction fee, or billing operation is executed.

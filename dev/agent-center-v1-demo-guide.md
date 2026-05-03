@@ -259,8 +259,23 @@ V1 usage areas include:
 - Product Understanding Credits
 - Offer Verification Credits
 - Checkout Verification Credits
+- Pivota Optimization Credits, when Pivota-owned optimization patches are applied
 
 These are preview usage signals for product validation and merchant understanding.
+
+## Pivota-Owned Optimization Demo
+
+For discovery blockers, Agent Center can now show the first optimization execution step before the full Optimization Proof Loop:
+
+1. Open an issue such as `pivota_pdp_not_discovered`, `pivota_pdp_readiness_gap`, or `competitor_dominance`.
+2. Generate a Pivota-owned optimization patch from the Resolution Plan.
+3. Apply only Pivota-owned actions, such as source references, product intelligence, Product/Offer schema, sitemap instructions, query mappings, or competitor/substitute graph updates.
+4. Rerun the relevant validation mode.
+5. Regenerate the report draft and show the "Pivota-Owned Optimization Applied" section.
+
+This does not write to merchant production systems. Merchant PDP copy, merchant structured data, canonical URL, sitemap, or catalog changes still require merchant approval and merchant-side execution.
+
+Do not claim discovery uplift unless a rerun score improves. If Pivota PDP readiness improves but search-grounded discovery still does not return the Pivota PDP, explain that external indexing/search ingestion can require more time.
 
 ## Founder Demo Script
 

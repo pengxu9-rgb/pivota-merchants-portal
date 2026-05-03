@@ -45,6 +45,7 @@ const {
   MerchantFacingReportService,
   MerchantStoreService,
   OfferExecutionService,
+  PivotaOptimizationService,
   ProductionValidationRunService,
   ProductNameNormalizer,
   ProductMatchService,
@@ -4905,6 +4906,199 @@ test("issue resolution plan generation handles wrong buying path discovery gaps"
   }
 });
 
+test("Pivota optimization generates patches for Pivota PDP discovery gaps", () => {
+  resetAgentCenterState();
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  try {
+    const result = scoreAttributionFixture({
+      scanMode: "search_grounded_product_discovery_test",
+      output: {
+        mentioned_brands: ["Isntree"],
+        mentioned_products: [
+          {
+            name: "Isntree Hyaluronic Acid Watery Sun Gel",
+            brand: "Isntree",
+            rank: 1,
+            reason: "Product was mentioned without a Pivota PDP URL.",
+          },
+        ],
+        returned_urls: [],
+        missing_attributes_identified: [],
+      },
+    });
+    const issue = result.issues.find(
+      (item) => item.issue_type === "pivota_pdp_not_discovered"
+    );
+    const patches = new PivotaOptimizationService().generate(issue.id);
+    const patchTypes = patches.map((patch) => patch.patch_type);
+
+    assert.ok(patchTypes.includes("pivota_source_reference_patch"));
+    assert.ok(patchTypes.includes("pivota_product_intelligence_patch"));
+    assert.ok(patchTypes.includes("pivota_product_schema_patch"));
+    assert.ok(patchTypes.includes("pivota_offer_schema_patch"));
+    assert.ok(patchTypes.includes("pivota_sitemap_submission"));
+    assert.equal(patches.every((patch) => patch.status === "proposed"), true);
+    assert.equal(
+      patches.every((patch) => patch.evidence.merchant_writeback === false),
+      true
+    );
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  }
+});
+
+test("Pivota optimization applies source reference, intelligence, and schema patches", () => {
+  resetAgentCenterState();
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  try {
+    const result = scoreAttributionFixture({
+      scanMode: "search_grounded_product_discovery_test",
+      output: {
+        mentioned_brands: ["Isntree"],
+        mentioned_products: [
+          {
+            name: "Isntree Hyaluronic Acid Watery Sun Gel",
+            brand: "Isntree",
+            rank: 1,
+            reason: "Product was mentioned without a Pivota PDP URL.",
+          },
+        ],
+        returned_urls: [],
+        missing_attributes_identified: [],
+      },
+    });
+    const issue = result.issues.find(
+      (item) => item.issue_type === "pivota_pdp_not_discovered"
+    );
+    const service = new PivotaOptimizationService();
+    const patches = service.generate(issue.id);
+    const desiredPatches = patches.filter((patch) =>
+      [
+        "pivota_source_reference_patch",
+        "pivota_product_intelligence_patch",
+        "pivota_product_schema_patch",
+      ].includes(patch.patch_type)
+    );
+    for (const patch of desiredPatches) service.apply(issue.id, { patch_id: patch.id });
+
+    const product = getAgentCenterState().stores
+      .find((store) => store.id === issue.store_id)
+      .products.find((item) =>
+        issue.affected_product_entities.includes(item.product_entity_id)
+      );
+    const usage = getAgentCenterState().usageEvents.filter(
+      (event) => event.agent_type === "pivota_optimization_workflow"
+    );
+
+    assert.ok(product.pivota_attributes.source_references.length);
+    assert.ok(product.pivota_attributes.product_intelligence_module.populated);
+    assert.ok(product.pivota_attributes.structured_data.product_schema);
+    assert.equal(
+      desiredPatches.every(
+        (patch) => service.list(issue.id).find((item) => item.id === patch.id).status === "applied"
+      ),
+      true
+    );
+    assert.equal(usage.length, desiredPatches.length);
+    assert.equal(usage.every((event) => event.billing_mode === "preview_only"), true);
+    assert.equal(usage.every((event) => event.billing_status === "not_invoiced"), true);
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  }
+});
+
+test("Pivota optimization applies query mapping and competitor graph patches", () => {
+  resetAgentCenterState();
+  const result = scoreAttributionFixture({
+    scanMode: "organic_product_discovery_test",
+    output: {
+      mentioned_brands: ["Beauty of Joseon", "COSRX"],
+      mentioned_products: [
+        {
+          name: "Beauty of Joseon Relief Sun",
+          brand: "Beauty of Joseon",
+          rank: 1,
+          reason: "Dominant competitor in the organic query.",
+        },
+      ],
+      missing_attributes_identified: [],
+    },
+  });
+  const organicIssue = result.issues.find(
+    (item) => item.issue_type === "organic_product_not_discovered"
+  );
+  const competitorIssue = result.issues.find(
+    (item) => item.issue_type === "competitor_dominance"
+  );
+  const service = new PivotaOptimizationService();
+  const queryPatch = service
+    .generate(organicIssue.id)
+    .find((patch) => patch.patch_type === "query_cluster_mapping_patch");
+  const competitorPatch = service
+    .generate(competitorIssue.id)
+    .find((patch) => patch.patch_type === "competitor_substitute_graph_patch");
+
+  service.apply(organicIssue.id, { patch_id: queryPatch.id });
+  service.apply(competitorIssue.id, { patch_id: competitorPatch.id });
+
+  const product = getAgentCenterState().stores
+    .find((store) => store.id === organicIssue.store_id)
+    .products.find((item) =>
+      organicIssue.affected_product_entities.includes(item.product_entity_id)
+    );
+  const cluster = getAgentCenterState().queryClusters.find(
+    (item) => item.id === result.cluster.id
+  );
+
+  assert.ok(cluster.queries.some((query) => /where to buy/i.test(query)));
+  assert.ok(product.pivota_attributes.competitor_substitute_graph_patch);
+  assert.ok(product.pivota_attributes.query_cluster_mapping_patch);
+});
+
+test("Pivota optimization rejects merchant-owned actions", () => {
+  resetAgentCenterState();
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  try {
+    const result = scoreAttributionFixture({
+      scanMode: "search_grounded_product_discovery_test",
+      output: {
+        mentioned_brands: ["Isntree"],
+        mentioned_products: [
+          {
+            name: "Isntree Hyaluronic Acid Watery Sun Gel",
+            brand: "Isntree",
+            rank: 1,
+            reason: "No official merchant PDP was returned.",
+          },
+        ],
+        returned_urls: [],
+        missing_attributes_identified: [],
+      },
+    });
+    const issue = result.issues.find(
+      (item) => item.issue_type === "merchant_pdp_not_discovered"
+    );
+    const plan = new IssueResolutionService().generate(issue.id);
+    const merchantAction = plan.recommended_actions.find(
+      (action) => action.action_type === "merchant_indexability_patch"
+    );
+
+    assert.throws(() =>
+      new PivotaOptimizationService().generate(issue.id, {
+        action_id: merchantAction.id,
+      })
+    );
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  }
+});
+
 test("issue resolution plan generation handles Pivota attribution gaps", () => {
   const fixture = runIsntreeProductUnderstandingCase({
     issueType: "pivota_pdp_attribution_gap",
@@ -5533,7 +5727,9 @@ test("merchant-facing report draft summarizes dual-path readiness safely", async
     assert.ok(report.v1_does_not_prove.includes("Real payment authorization"));
     assert.ok(report.v1_does_not_prove.includes("Final GMV attribution"));
     assert.ok(report.recommended_fixes.length > 0);
-    assert.ok(report.sharing_notes.some((note) => /raw provider/i.test(note)));
+    assert.ok(
+      report.sharing_notes.some((note) => /Provider response details/i.test(note))
+    );
     assert.equal(serialized.includes("\"prompt\""), false);
     assert.equal(serialized.includes("input_tokens"), false);
     assert.equal(serialized.includes("output_tokens"), false);
@@ -5824,6 +6020,94 @@ test("merchant-facing report maps scoped numeric zero search-grounded scores as 
   });
 });
 
+test("merchant-facing report includes Pivota-owned optimization applied section", async () => {
+  resetAgentCenterState();
+  await withMockProductionValidationFetch(async () => {
+    const completed = await new ProductionValidationRunService().run(
+      new ProductionValidationRunService().create(
+        productionValidationPayload({
+          demand_scan_modes: ["search_grounded_product_discovery_test"],
+          pivota_pdp_url: verifiedPivotaPdpUrl,
+        })
+      ).id
+    );
+    const baseIssue = getAgentCenterState().issues.find(
+      (issue) => issue.scan_target_id === completed.scan_target_id
+    );
+    const pivotaIssue = {
+      ...baseIssue,
+      id: "issue_report_pivota_optimization_gap",
+      issue_type: "pivota_pdp_not_discovered",
+      severity: "high",
+      merchant_facing_summary:
+        "Search-grounded Gemini did not return the expected Pivota PDP.",
+      evidence: {
+        ...baseIssue.evidence,
+        summary: "Expected Pivota PDP URL was not returned by search-grounded Gemini.",
+      },
+    };
+    getAgentCenterState().issues.push(pivotaIssue);
+    completed.issue_ids = [pivotaIssue.id];
+    completed.validation_report.top_blockers = [
+      {
+        blocker_type: "pivota_pdp_not_discovered",
+        severity: "high",
+        affected_layer: "pivota_discovery",
+        fix_target: "pivota_unified_pdp",
+        issue_id: pivotaIssue.id,
+        recommended_action:
+          "Improve Pivota PDP discovery signals and rerun discovery.",
+      },
+    ];
+
+    const optimization = new PivotaOptimizationService();
+    const sourcePatch = optimization
+      .generate(pivotaIssue.id)
+      .find((patch) => patch.patch_type === "pivota_source_reference_patch");
+    const [appliedPatch] = optimization.apply(pivotaIssue.id, {
+      patch_id: sourcePatch.id,
+    });
+    appliedPatch.rerun_result = {
+      before_scores: {
+        aggregate_scores: {
+          search_grounded_pivota_pdp_discovery_score: 0,
+        },
+      },
+      after_scores: {
+        aggregate_scores: {
+          search_grounded_pivota_pdp_discovery_score: 0,
+        },
+      },
+      score_delta: {},
+    };
+
+    const report = new MerchantFacingReportService().generate(completed.id, {
+      regenerate: true,
+    });
+    const markdown = new MerchantFacingReportService().toMarkdown(report);
+
+    assert.equal(
+      report.pivota_owned_optimization_applied.status,
+      "applied_no_uplift"
+    );
+    assert.match(
+      report.pivota_owned_optimization_applied.summary,
+      /search-grounded discovery has not yet returned the Pivota PDP/i
+    );
+    assert.ok(
+      report.pivota_owned_optimization_applied.actions_applied.some(
+        (action) => action.patch_type === "pivota_source_reference_patch"
+      )
+    );
+    assert.equal(
+      report.pivota_owned_optimization_applied.score_deltas[0].delta,
+      0
+    );
+    assert.match(markdown, /Pivota-Owned Optimization Applied/);
+    assert.doesNotMatch(markdown, /raw_output|prompt trace|input_tokens|output_tokens/i);
+  });
+});
+
 test("merchant-facing report draft API is internal and idempotent", async () => {
   resetAgentCenterState();
   await withInternalProductionValidationEnv(async () => {
@@ -5964,7 +6248,8 @@ test("merchant-facing report markdown and safety warnings exclude raw debug payl
     assert.match(markdown, /discovery vs readiness/);
     assert.equal(markdown.includes("raw_output"), false);
     assert.equal(markdown.includes("token_count"), false);
-    assert.equal(markdown.includes("debug payload"), true);
+    assert.equal(markdown.includes("provider response details"), true);
+    assert.equal(markdown.includes("debug payload"), false);
   });
 });
 
@@ -6270,7 +6555,7 @@ test("internal report preview page renders report review controls", async () => 
   assert.match(source, /What V1 Does Not Prove/);
   assert.match(source, /Usage Preview/);
   assert.match(source, /Safety Warnings/);
-  assert.match(source, /raw debug payloads are intentionally excluded/i);
+  assert.match(source, /Provider response details and internal diagnostics are excluded/i);
   assert.match(copySource, /Copy report as Markdown/);
   assert.match(copySource, /navigator.clipboard.writeText/);
 });

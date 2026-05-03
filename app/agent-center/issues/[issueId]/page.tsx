@@ -117,6 +117,37 @@ function isDiscoveryResolutionBlocker(issue: any, resolutionPlan: any) {
   );
 }
 
+function isPivotaOwnedOptimizationAction(action: any) {
+  const supported = [
+    "pivota_discovery_signal_patch",
+    "pivota_source_reference_patch",
+    "pivota_product_intelligence_patch",
+    "pivota_product_schema_patch",
+    "pivota_offer_schema_patch",
+    "pivota_sitemap_submission",
+    "query_cluster_mapping_patch",
+    "competitor_substitute_graph_patch",
+    "pivota_pdp_identity_and_overview_patch",
+    "pivota_product_intelligence_module_patch",
+    "pivota_unified_pdp_patch",
+    "pivota_product_graph_patch",
+    "pivota_unified_pdp_source_reference_patch",
+    "publish_or_verify_pivota_pdp_url",
+    "bind_product_object_id",
+    "update_pivota_product_graph_object_reference",
+    "require_verified_pivota_url_or_object_id",
+    "competitor_or_retailer_confusion_patch",
+    "pivota_product_graph_buying_path_binding",
+  ];
+  return (
+    supported.includes(action?.action_type) &&
+    !action?.requires_merchant_approval &&
+    (action?.owner_type === "pivota_ops" ||
+      action?.owner_type === "pivota_eng" ||
+      /pivota/i.test(String(action?.target_layer || "")))
+  );
+}
+
 function aggregateScore(issue: any, key: string) {
   return issue?.evidence?.aggregate_scores?.[key];
 }
@@ -211,6 +242,7 @@ export default function IssueDetailPage() {
   const [offerDiagnosis, setOfferDiagnosis] = useState<any>(null);
   const [checkoutDiagnosis, setCheckoutDiagnosis] = useState<any>(null);
   const [resolutionPlan, setResolutionPlan] = useState<any>(null);
+  const [pivotaPatches, setPivotaPatches] = useState<any[]>([]);
   const [retestPreparation, setRetestPreparation] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [retestState, setRetestState] = useState("idle");
@@ -218,6 +250,7 @@ export default function IssueDetailPage() {
   const [offerDiagnosisState, setOfferDiagnosisState] = useState("idle");
   const [checkoutDiagnosisState, setCheckoutDiagnosisState] = useState("idle");
   const [resolutionState, setResolutionState] = useState("idle");
+  const [pivotaOptimizationState, setPivotaOptimizationState] = useState("idle");
 
   async function loadIssue(issueId: string) {
     const payload = await agentFetch<{ issue: any }>(`/api/agent-center/issues/${issueId}`);
@@ -242,6 +275,10 @@ export default function IssueDetailPage() {
       `/api/agent-center/issues/${issueId}/resolution-plan`
     );
     setResolutionPlan(resolutionPayload.resolution_plan);
+    const pivotaPatchPayload = await agentFetch<{ patches: any[] }>(
+      `/api/agent-center/issues/${issueId}/pivota-optimization-patch`
+    );
+    setPivotaPatches(pivotaPatchPayload.patches || []);
   }
 
   useEffect(() => {
@@ -424,6 +461,69 @@ export default function IssueDetailPage() {
       await loadIssue(issue.id);
     } catch {
       setResolutionState("failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function generatePivotaPatch(actionId?: string) {
+    if (!issue) return;
+    setLoading(true);
+    setPivotaOptimizationState("generating");
+    try {
+      const payload = await agentFetch<{ patches: any[] }>(
+        `/api/agent-center/issues/${issue.id}/pivota-optimization-patch`,
+        {
+          method: "POST",
+          body: JSON.stringify(actionId ? { action_id: actionId } : {}),
+        }
+      );
+      setPivotaPatches(payload.patches || []);
+      setPivotaOptimizationState("generated");
+      await loadIssue(issue.id);
+    } catch {
+      setPivotaOptimizationState("failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function applyPivotaPatch(patchId?: string) {
+    if (!issue) return;
+    setLoading(true);
+    setPivotaOptimizationState("applying");
+    try {
+      const payload = await agentFetch<{ patches: any[] }>(
+        `/api/agent-center/issues/${issue.id}/apply-pivota-optimization`,
+        {
+          method: "POST",
+          body: JSON.stringify(patchId ? { patch_id: patchId } : {}),
+        }
+      );
+      setPivotaPatches(payload.patches || []);
+      setPivotaOptimizationState("applied");
+      await loadIssue(issue.id);
+    } catch {
+      setPivotaOptimizationState("failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function rerunAfterPivotaOptimization() {
+    if (!issue) return;
+    setLoading(true);
+    setPivotaOptimizationState("rerunning");
+    try {
+      const payload = await agentFetch<{ patches: any[] }>(
+        `/api/agent-center/issues/${issue.id}/rerun-after-pivota-optimization`,
+        { method: "POST" }
+      );
+      setPivotaPatches(payload.patches || []);
+      setPivotaOptimizationState("rerun completed");
+      await loadIssue(issue.id);
+    } catch {
+      setPivotaOptimizationState("failed");
     } finally {
       setLoading(false);
     }
@@ -791,6 +891,16 @@ export default function IssueDetailPage() {
                             Apply
                           </MerchantButton>
                         ) : null}
+                        {isPivotaOwnedOptimizationAction(action) ? (
+                          <MerchantButton
+                            icon={ClipboardList}
+                            variant="secondary"
+                            onClick={() => generatePivotaPatch(action.id)}
+                            disabled={loading}
+                          >
+                            Generate Pivota Patch
+                          </MerchantButton>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -798,6 +908,106 @@ export default function IssueDetailPage() {
               ))}
             </div>
           ) : null}
+
+          <div className="rounded-[8px] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="font-semibold text-[color:var(--merchant-ink)]">
+                  Pivota-Owned Optimization
+                </p>
+                <p className="mt-1 text-sm text-[color:var(--merchant-muted)]">
+                  Applies only Pivota-owned PDP, schema, product graph, query
+                  mapping, sitemap, and competitor graph state. Merchant-owned
+                  actions are not writable here.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <MerchantButton
+                  icon={ClipboardList}
+                  variant="secondary"
+                  onClick={() => generatePivotaPatch()}
+                  disabled={loading}
+                >
+                  Generate Pivota Patch
+                </MerchantButton>
+                <MerchantButton
+                  icon={Send}
+                  variant="secondary"
+                  onClick={() => applyPivotaPatch()}
+                  disabled={loading || !pivotaPatches.length}
+                >
+                  Apply Pivota Patch
+                </MerchantButton>
+                <MerchantButton
+                  icon={RotateCcw}
+                  onClick={rerunAfterPivotaOptimization}
+                  disabled={loading || !pivotaPatches.some((patch) => patch.status === "applied")}
+                >
+                  Rerun Validation
+                </MerchantButton>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <MetricTile label="Patch state" value={label(pivotaOptimizationState)} />
+              <MetricTile
+                label="Generated patches"
+                value={String(pivotaPatches.length)}
+              />
+              <MetricTile
+                label="Usage"
+                value={
+                  pivotaPatches.some((patch) => patch.usage_event_ids?.length)
+                    ? "preview only"
+                    : "not metered"
+                }
+              />
+            </div>
+            {pivotaPatches.length ? (
+              <div className="mt-4 space-y-3">
+                {pivotaPatches.map((patch) => (
+                  <div
+                    key={patch.id}
+                    className="rounded-[8px] border border-[color:var(--merchant-line)] bg-white p-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-[color:var(--merchant-ink)]">
+                          {label(patch.patch_type)}
+                        </p>
+                        <p className="text-sm text-[color:var(--merchant-muted)]">
+                          {label(patch.target_layer)} - {label(patch.status)}
+                        </p>
+                      </div>
+                      {patch.status !== "applied" ? (
+                        <MerchantButton
+                          icon={Send}
+                          variant="secondary"
+                          onClick={() => applyPivotaPatch(patch.id)}
+                          disabled={loading}
+                        >
+                          Apply Patch
+                        </MerchantButton>
+                      ) : null}
+                    </div>
+                    <div className="mt-3 grid gap-4 lg:grid-cols-3">
+                      <div>
+                        <p className="merchant-overline mb-2">Before state</p>
+                        <JsonBlock value={patch.before_state || {}} />
+                      </div>
+                      <div>
+                        <p className="merchant-overline mb-2">Patch preview</p>
+                        <JsonBlock value={patch.patch_payload || {}} />
+                      </div>
+                      <div>
+                        <p className="merchant-overline mb-2">After state</p>
+                        <JsonBlock value={patch.after_state || {}} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
 
           <div className="flex flex-wrap gap-2">
             <MerchantButton

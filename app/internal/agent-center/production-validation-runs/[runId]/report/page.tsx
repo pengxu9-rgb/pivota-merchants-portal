@@ -156,7 +156,7 @@ function SafetyWarnings({ report }: { report: MerchantFacingValidationReport }) 
   return (
     <SurfaceCard
       title="Safety Warnings"
-      description="Internal review checks before sharing this merchant-facing draft."
+      description="Internal review checks before sharing this merchant-facing draft. Provider response details and internal diagnostics are excluded."
     >
       <div className="divide-y divide-[color:var(--merchant-line)]">
         {report.safety_warnings.map((warning) => (
@@ -430,6 +430,75 @@ function ReportPreview({
         </p>
       </SurfaceCard>
 
+      <SurfaceCard title="Pivota-Owned Optimization Applied">
+        <div className="border-b border-[color:var(--merchant-line)] px-5 py-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge tone={statusTone(report.pivota_owned_optimization_applied.status)}>
+              {label(report.pivota_owned_optimization_applied.status)}
+            </StatusBadge>
+            <span className="text-sm text-[color:var(--merchant-muted-strong)]">
+              {report.pivota_owned_optimization_applied.summary}
+            </span>
+          </div>
+        </div>
+        <div className="grid gap-4 px-5 py-4 lg:grid-cols-2">
+          <div>
+            <p className="merchant-overline">Actions applied</p>
+            <ul className="mt-2 space-y-2 text-sm text-[color:var(--merchant-muted-strong)]">
+              {report.pivota_owned_optimization_applied.actions_applied.length ? (
+                report.pivota_owned_optimization_applied.actions_applied.map((action) => (
+                  <li key={action.patch_id}>
+                    <span className="font-medium text-[color:var(--merchant-ink)]">
+                      {label(action.patch_type)}
+                    </span>{" "}
+                    on {label(action.target_layer)}
+                    {action.applied_at ? ` - ${formatDate(action.applied_at)}` : ""}
+                  </li>
+                ))
+              ) : (
+                <li>No Pivota-owned optimization has been applied yet.</li>
+              )}
+            </ul>
+          </div>
+          <div>
+            <p className="merchant-overline">Score deltas</p>
+            <ul className="mt-2 space-y-2 text-sm text-[color:var(--merchant-muted-strong)]">
+              {report.pivota_owned_optimization_applied.score_deltas.length ? (
+                report.pivota_owned_optimization_applied.score_deltas.map((delta) => (
+                  <li key={delta.score_name}>
+                    <span className="font-medium text-[color:var(--merchant-ink)]">
+                      {label(delta.score_name)}
+                    </span>
+                    : {label(delta.before)} to {label(delta.after)}
+                    {typeof delta.delta === "number"
+                      ? ` (${delta.delta >= 0 ? "+" : ""}${delta.delta})`
+                      : ""}
+                  </li>
+                ))
+              ) : (
+                <li>No comparable rerun score delta is available yet.</li>
+              )}
+            </ul>
+          </div>
+        </div>
+        <div className="grid gap-4 border-t border-[color:var(--merchant-line)] px-5 py-4 lg:grid-cols-2">
+          <div>
+            <p className="merchant-overline">Blockers cleared</p>
+            <p className="mt-2 text-sm text-[color:var(--merchant-muted-strong)]">
+              {report.pivota_owned_optimization_applied.blockers_cleared.join(", ") ||
+                "None confirmed yet"}
+            </p>
+          </div>
+          <div>
+            <p className="merchant-overline">Blockers remaining</p>
+            <p className="mt-2 text-sm text-[color:var(--merchant-muted-strong)]">
+              {report.pivota_owned_optimization_applied.blockers_remaining.join(", ") ||
+                "None"}
+            </p>
+          </div>
+        </div>
+      </SurfaceCard>
+
       <div className="grid gap-6 xl:grid-cols-2">
         <SurfaceCard title="Merchant-Owned Path">
           <dl>
@@ -580,7 +649,7 @@ function ReportPreview({
 
       <SurfaceCard
         title="Usage Preview"
-        description="Merchant reporting shows credits only, not token-level provider costs."
+        description="Merchant reporting shows credits only, not provider cost details."
       >
         <div className="grid sm:grid-cols-2 lg:grid-cols-5">
           <MetricStatus label="AI Test Credits" status={report.usage_statement.ai_test_credits} />

@@ -68,6 +68,9 @@ import type {
   PivotaOffer,
   PivotaCheckoutPath,
   PivotaPDPDiscoverabilityAudit,
+  PivotaOptimizationPatch,
+  PivotaOptimizationPatchType,
+  PivotaOptimizationTargetLayer,
   ProductLayerComparison,
   ProductMatchLevel,
   ProductMatchResult,
@@ -785,7 +788,7 @@ function merchantSafeDiscoveryEvidence(input: {
         testedOrganicQueries.filter((item) => item.merchant_brand_appeared).length
       } of ${testedOrganicQueries.length}.`
     : `No normalized organic query examples were available for ${targetProduct}.`;
-  const likelyReasons = unique(
+  const likelyReasons = unique<string>(
     input.parsed
       .flatMap((item) => item.mentioned_products.map((product) => product.reason))
       .filter(Boolean)
@@ -808,7 +811,7 @@ function merchantSafeDiscoveryEvidence(input: {
         }
         return "stronger category association";
       })
-      .concat(DISCOVERY_COMPETITOR_LIKELY_REASONS)
+      .concat([...DISCOVERY_COMPETITOR_LIKELY_REASONS])
   ).slice(0, 6);
 
   return {
@@ -1631,6 +1634,48 @@ export class UsageMeteringService {
       model: "issue-resolution-deterministic-v1",
       query_cluster_id: input.issue.affected_query_clusters[0] || "none",
       prompt_template_id: "issue_resolution_plan_v1",
+      input_tokens: 0,
+      output_tokens: 0,
+      billable: true,
+      billing_mode: "preview_only",
+      billing_status: "not_invoiced",
+      created_at: now,
+      updated_at: now,
+    };
+    repository.upsert("usageEvents", event);
+    return event;
+  }
+
+  recordPivotaOptimization(input: {
+    issue: AgenticGMVIssue;
+    patch: PivotaOptimizationPatch;
+    quantity?: number;
+  }) {
+    const actionId = input.patch.action_ids[0] || input.patch.id;
+    const key = `pivota_optimization:${input.issue.id}:${actionId}:${input.patch.patch_type}:v1`;
+    const repository = getAgentCenterRepository();
+    const state = repository.getState();
+    const existing = state.usageEvents.find((event) => event.idempotency_key === key);
+    if (existing) return existing;
+
+    const target = findScanTarget(input.issue.scan_target_id);
+    const now = nowIso();
+    const event: UsageEvent = {
+      id: nextId("usage"),
+      idempotency_key: key,
+      merchant_id: input.issue.merchant_id,
+      store_id: input.issue.store_id,
+      scan_target_id: input.issue.scan_target_id,
+      event_type: "pivota_optimization_credit",
+      quantity: input.quantity || 1,
+      source_agent: "pivota_optimization_workflow",
+      agent_type: "pivota_optimization_workflow",
+      workflow_type: "pivota_discoverability_optimization",
+      scan_mode: target.scan_mode,
+      provider: "internal",
+      model: "pivota-optimization-deterministic-v1",
+      query_cluster_id: input.issue.affected_query_clusters[0] || "none",
+      prompt_template_id: "pivota_optimization_patch_v1",
       input_tokens: 0,
       output_tokens: 0,
       billable: true,
@@ -3756,9 +3801,95 @@ function scoreSnapshot(input: {
   };
 }
 
+function dimensionScoreValue(
+  dimension?: GMVAssuranceDimensionSummary
+): VisibilityScoreValue {
+  return dimension?.score ?? "not_tested";
+}
+
+function dimensionNumericScore(
+  dimension?: GMVAssuranceDimensionSummary,
+  fallback = 0
+) {
+  return typeof dimension?.score === "number" ? dimension.score : fallback;
+}
+
+function urlMatchScoreFromSnapshot(
+  snapshot: GMVAssuranceSnapshot
+): VisibilityScoreValue {
+  const scores = [
+    snapshot.discovery_readiness_summary?.merchant_pdp_discovery_status.score,
+    snapshot.discovery_readiness_summary?.pivota_pdp_discovery_status.score,
+  ].filter((value): value is number => typeof value === "number");
+  if (!scores.length) return "not_tested";
+  return clampScore(scores.reduce((sum, value) => sum + value, 0) / scores.length);
+}
+
+function scoreSnapshotFromAssuranceSnapshot(
+  issue: AgenticGMVIssue,
+  snapshot: GMVAssuranceSnapshot
+): VerificationRun["before_scores"] {
+  const discovery = snapshot.discovery_readiness_summary;
+  const demand = snapshot.demand_test_summary;
+  const product = snapshot.product_understanding_summary;
+  const productVisibility = dimensionNumericScore(demand.product_visibility_status);
+  return {
+    score_ids: [snapshot.demand_test_summary.latest_score_id || snapshot.id],
+    aggregate_scores: {
+      product_entity_visibility_score: productVisibility,
+      merchant_store_visibility_score: dimensionNumericScore(
+        demand.merchant_attribution_status
+      ),
+      pivota_pdp_visibility_score: dimensionNumericScore(
+        demand.pivota_attribution_status
+      ),
+      pivota_offer_visibility_score: 0,
+      pivota_attribution_echo_rate: 0,
+      executable_offer_visibility_score: "not_tested",
+      organic_product_discovery_score: dimensionScoreValue(
+        discovery?.organic_product_discovery_status
+      ),
+      organic_brand_discovery_score: "not_tested",
+      competitor_dominance_score: dimensionScoreValue(
+        discovery?.competitor_dominance_status
+      ),
+      search_grounded_merchant_pdp_discovery_score: dimensionScoreValue(
+        discovery?.merchant_pdp_discovery_status
+      ),
+      search_grounded_pivota_pdp_discovery_score: dimensionScoreValue(
+        discovery?.pivota_pdp_discovery_status
+      ),
+      buying_path_discovery_score: dimensionScoreValue(
+        discovery?.buying_path_discovery_status
+      ),
+      offer_discovery_score: "not_tested",
+      url_match_accuracy_score: urlMatchScoreFromSnapshot(snapshot),
+      visibility_score: productVisibility,
+      recommendation_rank_score: 0,
+      competitor_substitution_score: 0,
+      attribute_readiness_score: dimensionNumericScore(
+        product.product_data_readiness_status
+      ),
+      pivota_pdp_readiness_score: dimensionNumericScore(
+        product.product_data_readiness_status
+      ),
+    },
+    estimated_gmv_at_risk: issue.estimated_gmv_at_risk,
+    gmv_estimation_method: issue.gmv_estimation_method,
+    estimated_gmv_at_risk_confidence:
+      issue.estimated_gmv_at_risk_confidence,
+  };
+}
+
+function scoreValueDelta(after: VisibilityScoreValue, before: VisibilityScoreValue) {
+  return typeof after === "number" && typeof before === "number"
+    ? after - before
+    : 0;
+}
+
 function scoreDelta(
-  before: ReturnType<typeof scoreSnapshot>,
-  after: ReturnType<typeof scoreSnapshot>
+  before: VerificationRun["before_scores"],
+  after: VerificationRun["after_scores"]
 ) {
   return {
     product_entity_visibility_score:
@@ -3777,11 +3908,50 @@ function scoreDelta(
       after.aggregate_scores.pivota_attribution_echo_rate -
       before.aggregate_scores.pivota_attribution_echo_rate,
     executable_offer_visibility_score:
-      typeof after.aggregate_scores.executable_offer_visibility_score === "number" &&
-      typeof before.aggregate_scores.executable_offer_visibility_score === "number"
-        ? after.aggregate_scores.executable_offer_visibility_score -
-          before.aggregate_scores.executable_offer_visibility_score
-        : 0,
+      scoreValueDelta(
+        after.aggregate_scores.executable_offer_visibility_score,
+        before.aggregate_scores.executable_offer_visibility_score
+      ),
+    organic_product_discovery_score:
+      scoreValueDelta(
+        after.aggregate_scores.organic_product_discovery_score,
+        before.aggregate_scores.organic_product_discovery_score
+      ),
+    organic_brand_discovery_score:
+      scoreValueDelta(
+        after.aggregate_scores.organic_brand_discovery_score,
+        before.aggregate_scores.organic_brand_discovery_score
+      ),
+    competitor_dominance_score:
+      scoreValueDelta(
+        after.aggregate_scores.competitor_dominance_score,
+        before.aggregate_scores.competitor_dominance_score
+      ),
+    search_grounded_merchant_pdp_discovery_score:
+      scoreValueDelta(
+        after.aggregate_scores.search_grounded_merchant_pdp_discovery_score,
+        before.aggregate_scores.search_grounded_merchant_pdp_discovery_score
+      ),
+    search_grounded_pivota_pdp_discovery_score:
+      scoreValueDelta(
+        after.aggregate_scores.search_grounded_pivota_pdp_discovery_score,
+        before.aggregate_scores.search_grounded_pivota_pdp_discovery_score
+      ),
+    buying_path_discovery_score:
+      scoreValueDelta(
+        after.aggregate_scores.buying_path_discovery_score,
+        before.aggregate_scores.buying_path_discovery_score
+      ),
+    offer_discovery_score:
+      scoreValueDelta(
+        after.aggregate_scores.offer_discovery_score,
+        before.aggregate_scores.offer_discovery_score
+      ),
+    url_match_accuracy_score:
+      scoreValueDelta(
+        after.aggregate_scores.url_match_accuracy_score,
+        before.aggregate_scores.url_match_accuracy_score
+      ),
     visibility_score:
       after.aggregate_scores.product_entity_visibility_score -
       before.aggregate_scores.product_entity_visibility_score,
@@ -3891,12 +4061,23 @@ export class VerificationService {
         issue.affected_query_clusters.includes(score.query_cluster_id) &&
         (!preparation.source_job_id || score.job_id === preparation.source_job_id)
     );
-    if (!beforeScores.length) throw new Error("Before score not found");
-    const beforeSnapshot = scoreSnapshot({
-      issue,
-      scores: beforeScores,
-      estimatedGmvAtRisk: issue.estimated_gmv_at_risk,
-    });
+    const beforeSnapshot = beforeScores.length
+      ? scoreSnapshot({
+          issue,
+          scores: beforeScores,
+          estimatedGmvAtRisk: issue.estimated_gmv_at_risk,
+        })
+      : (() => {
+          const assuranceSnapshot = latestByCreatedAt(
+            state.gmvAssuranceSnapshots.filter(
+              (snapshot) =>
+                snapshot.scan_target_id === issue.scan_target_id &&
+                snapshot.issue_ids.includes(issue.id)
+            )
+          );
+          if (!assuranceSnapshot) throw new Error("Before score not found");
+          return scoreSnapshotFromAssuranceSnapshot(issue, assuranceSnapshot);
+        })();
 
     const job = new DemandTestJobService().create({
       scan_target_id: target.id,
@@ -6479,6 +6660,110 @@ function actionStatusAfterApply(action: RecommendedAction) {
     : "applied";
 }
 
+const PIVOTA_OPTIMIZATION_ACTION_TYPES = new Set([
+  "pivota_discovery_signal_patch",
+  "pivota_source_reference_patch",
+  "pivota_product_intelligence_patch",
+  "pivota_product_schema_patch",
+  "pivota_offer_schema_patch",
+  "pivota_sitemap_submission",
+  "query_cluster_mapping_patch",
+  "competitor_substitute_graph_patch",
+]);
+
+const PIVOTA_OPTIMIZATION_ACTION_ALIASES: Record<string, PivotaOptimizationPatchType> = {
+  pivota_pdp_identity_and_overview_patch: "pivota_discovery_signal_patch",
+  pivota_product_intelligence_module_patch: "pivota_product_intelligence_patch",
+  pivota_unified_pdp_patch: "pivota_product_intelligence_patch",
+  pivota_product_graph_patch: "query_cluster_mapping_patch",
+  pivota_unified_pdp_source_reference_patch: "pivota_source_reference_patch",
+  publish_or_verify_pivota_pdp_url: "pivota_source_reference_patch",
+  bind_product_object_id: "query_cluster_mapping_patch",
+  update_pivota_product_graph_object_reference: "query_cluster_mapping_patch",
+  require_verified_pivota_url_or_object_id: "pivota_source_reference_patch",
+  competitor_or_retailer_confusion_patch: "competitor_substitute_graph_patch",
+  pivota_product_graph_buying_path_binding: "query_cluster_mapping_patch",
+};
+
+function pivotaOptimizationPatchTypeForAction(
+  action: RecommendedAction
+): PivotaOptimizationPatchType | null {
+  if (PIVOTA_OPTIMIZATION_ACTION_TYPES.has(action.action_type)) {
+    return action.action_type as PivotaOptimizationPatchType;
+  }
+  return PIVOTA_OPTIMIZATION_ACTION_ALIASES[action.action_type] || null;
+}
+
+function isPivotaOwnedOptimizationAction(action: RecommendedAction) {
+  const patchType = pivotaOptimizationPatchTypeForAction(action);
+  if (!patchType) return false;
+  if (action.requires_merchant_approval) return false;
+  return (
+    action.owner_type === "pivota_ops" ||
+    action.owner_type === "pivota_eng" ||
+    /pivota/i.test(String(action.target_layer))
+  );
+}
+
+function pivotaOptimizationTargetLayer(
+  patchType: PivotaOptimizationPatchType
+): PivotaOptimizationTargetLayer {
+  const map: Record<PivotaOptimizationPatchType, PivotaOptimizationTargetLayer> = {
+    pivota_discovery_signal_patch: "pivota_unified_pdp",
+    pivota_source_reference_patch: "pivota_unified_pdp",
+    pivota_product_intelligence_patch: "pivota_product_graph",
+    pivota_product_schema_patch: "pivota_schema_markup",
+    pivota_offer_schema_patch: "pivota_schema_markup",
+    pivota_sitemap_submission: "pivota_sitemap",
+    query_cluster_mapping_patch: "pivota_query_mapping",
+    competitor_substitute_graph_patch: "pivota_competitor_graph",
+  };
+  return map[patchType];
+}
+
+function pivotaOptimizationPatchesForIssue(issueId: string) {
+  const state = getAgentCenterState();
+  const fromCollection = state.pivotaOptimizationPatches.filter((patch) =>
+    patch.source_issue_ids.includes(issueId)
+  );
+  const fromPlans = state.issueResolutionPlans
+    .filter((plan) => plan.issue_id === issueId)
+    .flatMap((plan) => plan.pivota_optimization_patches || []);
+  const byId = new Map<string, PivotaOptimizationPatch>();
+  for (const patch of [...fromCollection, ...fromPlans]) byId.set(patch.id, patch);
+  return [...byId.values()].sort(
+    (left, right) =>
+      new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+  );
+}
+
+function storePivotaOptimizationPatch(
+  plan: IssueResolutionPlan,
+  patch: PivotaOptimizationPatch
+) {
+  const repository = getAgentCenterRepository();
+  const state = repository.getState();
+  const existingIndex = state.pivotaOptimizationPatches.findIndex(
+    (item) => item.id === patch.id
+  );
+  if (existingIndex >= 0) {
+    state.pivotaOptimizationPatches[existingIndex] = patch;
+  } else {
+    state.pivotaOptimizationPatches.push(patch);
+  }
+  plan.pivota_optimization_patch_ids = unique([
+    ...(plan.pivota_optimization_patch_ids || []),
+    patch.id,
+  ]);
+  const embedded = plan.pivota_optimization_patches || [];
+  const embeddedIndex = embedded.findIndex((item) => item.id === patch.id);
+  if (embeddedIndex >= 0) embedded[embeddedIndex] = patch;
+  else embedded.push(patch);
+  plan.pivota_optimization_patches = embedded;
+  touch(plan);
+  repository.upsert("issueResolutionPlans", plan);
+}
+
 export class IssueResolutionService {
   latest(issueId: string) {
     findIssue(issueId);
@@ -7886,6 +8171,942 @@ export class IssueResolutionService {
           "Creates an explicit owner and review path for unsupported blockers.",
       }),
     ];
+  }
+}
+
+type PivotaOptimizationContext = {
+  issue: AgenticGMVIssue;
+  plan: IssueResolutionPlan;
+  action: RecommendedAction;
+  patchType: PivotaOptimizationPatchType;
+  store: MerchantStore;
+  target: ScanTarget;
+  product?: ProductRecord;
+  run?: ProductionValidationRun;
+};
+
+function fallbackPivotaOptimizationActions(
+  issue: AgenticGMVIssue,
+  plan: IssueResolutionPlan
+): RecommendedAction[] {
+  const action = (
+    index: number,
+    actionType: PivotaOptimizationPatchType,
+    title: string,
+    description: string,
+    targetLayer: string
+  ): RecommendedAction => ({
+    id: `${plan.id}_pivota_fallback_${index}`,
+    action_type: actionType,
+    title,
+    description,
+    target_layer: targetLayer,
+    owner_type: "pivota_ops",
+    owner_team: "Pivota Discovery Ops",
+    requires_merchant_approval: false,
+    can_apply_automatically: true,
+    patch_payload: {
+      source_issue_id: issue.id,
+      product_entity_ids: issue.affected_product_entities,
+    },
+    status: "proposed",
+    evidence: {
+      issue_id: issue.id,
+      issue_type: issue.issue_type,
+      blocker_type: plan.blocker_type,
+      generated_as_fallback: true,
+    },
+    expected_impact:
+      "Improves Pivota-owned discoverability/readiness signals before validation rerun.",
+  });
+
+  if (plan.blocker_type === "pivota_pdp_not_discovered") {
+    return [
+      action(
+        1,
+        "pivota_source_reference_patch",
+        "Add Pivota source reference",
+        "Add the merchant PDP as a verified source reference on the Pivota PDP.",
+        "pivota_unified_pdp"
+      ),
+      action(
+        2,
+        "pivota_product_intelligence_patch",
+        "Complete Pivota product intelligence",
+        "Populate Pivota PDP identity, overview, product intelligence, and similar/substitute highlights.",
+        "pivota_product_graph"
+      ),
+      action(
+        3,
+        "pivota_product_schema_patch",
+        "Add Pivota Product schema",
+        "Generate machine-readable Product schema for the Pivota PDP.",
+        "pivota_schema_markup"
+      ),
+      action(
+        4,
+        "pivota_sitemap_submission",
+        "Prepare Pivota sitemap submission",
+        "Generate a sitemap entry and operator indexing instructions for the Pivota PDP.",
+        "pivota_sitemap"
+      ),
+    ];
+  }
+
+  if (
+    plan.blocker_type === "pivota_pdp_readiness_gap" ||
+    plan.blocker_type === "pivota_pdp_content_quality_gap" ||
+    plan.blocker_type === "pivota_product_intelligence_gap"
+  ) {
+    return [
+      action(
+        1,
+        "pivota_discovery_signal_patch",
+        "Strengthen Pivota discovery signals",
+        "Improve Pivota PDP identity, title, summary, buying-path summary, and query phrases.",
+        "pivota_unified_pdp"
+      ),
+      action(
+        2,
+        "pivota_product_intelligence_patch",
+        "Complete Pivota product intelligence",
+        "Populate Pivota product intelligence fields required for the quality gate.",
+        "pivota_product_graph"
+      ),
+    ];
+  }
+
+  if (plan.blocker_type === "competitor_dominance") {
+    return [
+      action(
+        1,
+        "competitor_substitute_graph_patch",
+        "Update competitor/substitute graph",
+        "Add competitor relationships, differentiation notes, and query clusters where competitors dominated.",
+        "pivota_competitor_graph"
+      ),
+    ];
+  }
+
+  if (plan.blocker_type === "organic_product_not_discovered") {
+    return [
+      action(
+        1,
+        "pivota_discovery_signal_patch",
+        "Strengthen Pivota discovery signals",
+        "Improve Pivota PDP discovery fields and source-backed product identity.",
+        "pivota_unified_pdp"
+      ),
+      action(
+        2,
+        "query_cluster_mapping_patch",
+        "Add organic query mappings",
+        "Map the product to organic, product-name, buying-path, and category/use-case queries.",
+        "pivota_query_mapping"
+      ),
+    ];
+  }
+
+  return [];
+}
+
+function latestProductionValidationRunForIssue(issueId: string) {
+  return (
+    latestByCreatedAt(
+      getAgentCenterState().productionValidationRuns.filter((run) =>
+        run.issue_ids.includes(issueId)
+      )
+    ) || undefined
+  );
+}
+
+function pivotaPdpUrlForContext(input: {
+  issue: AgenticGMVIssue;
+  product?: ProductRecord;
+  run?: ProductionValidationRun;
+}) {
+  return (
+    input.run?.pivota_pdp_url ||
+    String(input.product?.pivota_attributes?.pivota_pdp_url || "") ||
+    String(input.issue.evidence?.pivota_pdp_url || "")
+  );
+}
+
+function productObjectIdForContext(input: {
+  issue: AgenticGMVIssue;
+  product?: ProductRecord;
+  run?: ProductionValidationRun;
+}) {
+  return (
+    input.run?.pivota_product_entity_id ||
+    String(input.product?.pivota_attributes?.pivota_product_object_id || "") ||
+    input.issue.affected_product_entities[0] ||
+    ""
+  );
+}
+
+function productNameForContext(input: {
+  product?: ProductRecord;
+  run?: ProductionValidationRun;
+  issue: AgenticGMVIssue;
+}) {
+  return input.run?.product_name || input.product?.title || input.issue.affected_product_entities[0] || "Product";
+}
+
+function patchContextSummary(context: PivotaOptimizationContext) {
+  const productEntityId =
+    context.product?.product_entity_id ||
+    context.issue.affected_product_entities[0] ||
+    productObjectIdForContext(context);
+  return {
+    product_entity_id: productEntityId,
+    product_name: productNameForContext(context),
+    brand: context.product?.brand || context.run?.brand || context.store.store_name,
+    sku: context.product?.sku || context.run?.sku_name,
+    category: context.product?.category || context.run?.category || context.store.primary_category,
+    pivota_pdp_url: pivotaPdpUrlForContext(context),
+    merchant_pdp_url: context.product?.pdp_url || context.run?.merchant_pdp_url || context.issue.store_url,
+    merchant_name: context.run?.merchant_name || context.store.store_name,
+    query_cluster_ids: context.issue.affected_query_clusters,
+  };
+}
+
+function pivotaOptimizationBeforeState(context: PivotaOptimizationContext) {
+  const state = getAgentCenterState();
+  const productEntityId =
+    context.product?.product_entity_id || context.issue.affected_product_entities[0];
+  return {
+    product: context.product
+      ? {
+          id: context.product.id,
+          product_entity_id: context.product.product_entity_id,
+          title: context.product.title,
+          pivota_attributes: cloneJson(context.product.pivota_attributes || {}),
+        }
+      : null,
+    query_clusters: state.queryClusters
+      .filter(
+        (cluster) =>
+          cluster.scan_target_id === context.issue.scan_target_id &&
+          (!productEntityId || cluster.product_entity_id === productEntityId)
+      )
+      .map((cluster) => ({
+        id: cluster.id,
+        intent_type: cluster.intent_type,
+        queries: cluster.queries,
+        required_attributes: cluster.required_attributes,
+      })),
+    pivota_offers: state.pivotaOffers
+      .filter(
+        (offer) =>
+          offer.merchant_id === context.issue.merchant_id &&
+          offer.store_id === context.issue.store_id &&
+          (!productEntityId || offer.product_entity_id === productEntityId)
+      )
+      .map((offer) => ({
+        id: offer.id,
+        product_entity_id: offer.product_entity_id,
+        sku_id: offer.sku_id,
+        price: offer.price,
+        currency: offer.currency,
+        inventory_status: offer.inventory_status,
+        attached_to_pivota_pdp: offer.attached_to_pivota_pdp,
+        structured_data: (offer as unknown as Record<string, unknown>).structured_data,
+      })),
+  };
+}
+
+function patchPayloadForPivotaOptimization(
+  context: PivotaOptimizationContext
+): Record<string, unknown> {
+  const summary = patchContextSummary(context);
+  const sourceUrl = String(summary.merchant_pdp_url || "");
+  const pivotaUrl = String(summary.pivota_pdp_url || "");
+  const queryPhrases = unique([
+    ...((context.action.patch_payload?.example_query_mappings as
+      | string[]
+      | undefined) || []),
+    `${summary.brand || ""} ${summary.product_name}`.trim(),
+    `${summary.product_name} official page`,
+    `${summary.category || "skincare"} ${summary.product_name}`,
+    `where to buy ${summary.product_name}`,
+  ].filter(Boolean));
+  const beautySignals = {
+    skin_type:
+      context.product?.attributes.skin_type ||
+      context.product?.pivota_attributes.skin_type ||
+      "not specified",
+    finish:
+      context.product?.attributes.finish ||
+      context.product?.pivota_attributes.finish ||
+      "not specified",
+    active_ingredients:
+      context.product?.attributes.active_ingredients ||
+      context.product?.pivota_attributes.active_ingredients ||
+      context.product?.attributes.ingredients ||
+      "not specified",
+    product_family:
+      context.product?.attributes.product_family ||
+      context.product?.category ||
+      context.run?.category ||
+      "skincare",
+    claim_evidence:
+      context.product?.attributes.claim_evidence ||
+      "Use merchant source description, ingredient evidence, and public PDP copy as proof points.",
+    use_case:
+      context.product?.attributes.use_case ||
+      `Help shoppers evaluate ${summary.product_name} for ${summary.category || "its target use case"}.`,
+    texture:
+      context.product?.attributes.texture ||
+      context.product?.pivota_attributes.texture ||
+      context.product?.attributes.finish ||
+      "not specified",
+    key_benefits:
+      context.product?.attributes.key_benefits ||
+      context.product?.attributes.benefits ||
+      [
+        "clear product identity",
+        "source-backed buying path",
+        "agent-readable product attributes",
+      ],
+  };
+
+  if (context.patchType === "pivota_discovery_signal_patch") {
+    return {
+      title: `${summary.brand ? `${summary.brand} ` : ""}${summary.product_name}`.trim(),
+      canonical_product_name: summary.product_name,
+      brand: summary.brand,
+      category: summary.category,
+      concise_product_description:
+        context.product?.agent_summary ||
+        `${summary.product_name} is a ${summary.category || "product"} from ${summary.brand || summary.merchant_name}.`,
+      agent_facing_summary:
+        `Agent-facing PDP for ${summary.product_name}, linked to the official merchant source and optimized for product-name, category, and buying-path discovery.`,
+      relevant_query_phrases: queryPhrases,
+      buying_path_summary: pivotaUrl
+        ? `Use ${pivotaUrl} as the Pivota agent-facing PDP and ${sourceUrl} as the official merchant source path.`
+        : `Use ${sourceUrl} as the verified merchant source path until a Pivota PDP URL is available.`,
+      source_issue_id: context.issue.id,
+    };
+  }
+
+  if (context.patchType === "pivota_source_reference_patch") {
+    return {
+      verified_merchant_pdp_url: sourceUrl,
+      source_merchant_name: summary.merchant_name,
+      source_url: sourceUrl,
+      source_type: "official_merchant_pdp",
+      source_verified_at: nowIso(),
+      source_confidence: sourceUrl ? "high" : "low",
+      canonical_product_name: summary.product_name,
+    };
+  }
+
+  if (context.patchType === "pivota_product_intelligence_patch") {
+    return {
+      product_identity: {
+        product_entity_id: summary.product_entity_id,
+        canonical_product_name: summary.product_name,
+        brand: summary.brand,
+        sku: summary.sku,
+        category: summary.category,
+      },
+      overview:
+        context.product?.agent_summary ||
+        `${summary.product_name} should be represented as a source-backed ${summary.category || "product"} in the Pivota agent-facing PDP.`,
+      ingredients: beautySignals.active_ingredients,
+      active_components: beautySignals.active_ingredients,
+      use_cases: [beautySignals.use_case, ...queryPhrases.slice(0, 3)],
+      target_customer: beautySignals.skin_type,
+      skin_type: beautySignals.skin_type,
+      finish: beautySignals.finish,
+      texture: beautySignals.texture,
+      product_family: beautySignals.product_family,
+      claim_evidence: beautySignals.claim_evidence,
+      key_benefits: beautySignals.key_benefits,
+      differentiators: [
+        "official merchant source reference",
+        "Pivota agent-facing product object",
+        "query-cluster mapped product identity",
+      ],
+      product_intelligence_module: {
+        populated: true,
+        summary:
+          `Use source-backed product attributes and merchant PDP references to explain when ${summary.product_name} should be recommended.`,
+        source_references: sourceUrl ? [sourceUrl] : [],
+      },
+      similar_substitute_highlight:
+        "Compare substitutes by ingredient positioning, use case, texture/finish, target customer, and verified buying path.",
+    };
+  }
+
+  if (context.patchType === "pivota_product_schema_patch") {
+    return {
+      schema_type: "Product",
+      json_ld: {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        name: summary.product_name,
+        brand: summary.brand ? { "@type": "Brand", name: summary.brand } : undefined,
+        sku: summary.sku,
+        url: pivotaUrl,
+        description:
+          context.product?.agent_summary ||
+          `${summary.product_name} from ${summary.brand || summary.merchant_name}.`,
+        image: context.product?.attributes.image || context.product?.pivota_attributes.image,
+        category: summary.category,
+      },
+    };
+  }
+
+  if (context.patchType === "pivota_offer_schema_patch") {
+    const offers = getAgentCenterState().pivotaOffers.filter(
+      (offer) =>
+        offer.merchant_id === context.issue.merchant_id &&
+        offer.store_id === context.issue.store_id &&
+        offer.product_entity_id === summary.product_entity_id
+    );
+    return {
+      schema_type: offers.length > 1 ? "AggregateOffer" : "Offer",
+      json_ld:
+        offers.length > 1
+          ? {
+              "@context": "https://schema.org",
+              "@type": "AggregateOffer",
+              url: pivotaUrl,
+              priceCurrency: offers[0]?.currency || context.store.currency,
+              lowPrice: Math.min(...offers.map((offer) => offer.price)),
+              highPrice: Math.max(...offers.map((offer) => offer.price)),
+              offerCount: offers.length,
+              seller: { "@type": "Organization", name: summary.merchant_name },
+            }
+          : {
+              "@context": "https://schema.org",
+              "@type": "Offer",
+              price: offers[0]?.promo_price || offers[0]?.price,
+              priceCurrency: offers[0]?.currency || context.store.currency,
+              availability:
+                offers[0]?.inventory_status === "in_stock"
+                  ? "https://schema.org/InStock"
+                  : "https://schema.org/OutOfStock",
+              seller: { "@type": "Organization", name: summary.merchant_name },
+              url: pivotaUrl || sourceUrl,
+              merchant_source_url: sourceUrl,
+            },
+      offer_ids: offers.map((offer) => offer.id),
+    };
+  }
+
+  if (context.patchType === "pivota_sitemap_submission") {
+    return {
+      sitemap_submission_recommended: true,
+      sitemap_entry: {
+        loc: pivotaUrl,
+        lastmod: nowIso(),
+        changefreq: "weekly",
+        priority: 0.8,
+      },
+      operator_instructions:
+        "Add this Pivota PDP URL to sitemap and request indexing.",
+    };
+  }
+
+  if (context.patchType === "query_cluster_mapping_patch") {
+    return {
+      product_entity_id: summary.product_entity_id,
+      organic_query_clusters: queryPhrases.slice(0, 4),
+      product_name_discovery_queries: [
+        `${summary.product_name}`,
+        `${summary.brand || ""} ${summary.product_name}`.trim(),
+        `${summary.product_name} official`,
+      ],
+      buying_path_discovery_queries: [
+        `where to buy ${summary.product_name}`,
+        `${summary.product_name} official store`,
+        `${summary.product_name} Pivota`,
+      ],
+      category_use_case_queries: queryPhrases,
+      source_issue_id: context.issue.id,
+    };
+  }
+
+  return {
+    product_entity_id: summary.product_entity_id,
+    competitor_brands:
+      context.issue.evidence?.top_competitors ||
+      context.store.competitor_brands ||
+      [],
+    competitor_products:
+      context.issue.evidence?.top_competitor_recommendations ||
+      context.store.competitor_products ||
+      [],
+    substitute_relationships: "compare_by_use_case_ingredient_texture_and_buying_path",
+    differentiation_notes: [
+      "Clarify product use cases where the target should win.",
+      "Attach competitor/substitute relationships to affected query clusters.",
+      "Use verified source references to distinguish official Pivota/merchant paths from third-party URLs.",
+    ],
+    query_clusters_where_competitors_dominated: context.issue.affected_query_clusters,
+  };
+}
+
+export class PivotaOptimizationService {
+  list(issueId: string) {
+    findIssue(issueId);
+    return pivotaOptimizationPatchesForIssue(issueId);
+  }
+
+  generate(
+    issueId: string,
+    options: { action_id?: string; regenerate?: boolean } = {}
+  ) {
+    const issue = findIssue(issueId);
+    const plan = new IssueResolutionService().generate(issueId);
+    const contexts = this.optimizationContexts(issue, plan, options.action_id);
+    if (!contexts.length) {
+      throw new Error(
+        "No Pivota-owned optimization action is available for this issue"
+      );
+    }
+
+    const patches = contexts.map((context) => {
+      const existing = pivotaOptimizationPatchesForIssue(issueId).find(
+        (patch) =>
+          !options.regenerate &&
+          patch.patch_type === context.patchType &&
+          patch.action_ids.includes(context.action.id)
+      );
+      if (existing) return existing;
+
+      const now = nowIso();
+      const patch: PivotaOptimizationPatch = {
+        id: nextId("pivota_optimization"),
+        merchant_id: issue.merchant_id,
+        store_id: issue.store_id,
+        product_entity_id:
+          context.product?.product_entity_id ||
+          issue.affected_product_entities[0] ||
+          productObjectIdForContext(context),
+        pivota_pdp_url: pivotaPdpUrlForContext(context) || undefined,
+        source_issue_ids: [issue.id],
+        resolution_plan_id: plan.id,
+        action_ids: [context.action.id],
+        patch_type: context.patchType,
+        target_layer: pivotaOptimizationTargetLayer(context.patchType),
+        status: "proposed",
+        before_state: pivotaOptimizationBeforeState(context),
+        patch_payload: patchPayloadForPivotaOptimization(context),
+        evidence: {
+          issue_id: issue.id,
+          issue_type: issue.issue_type,
+          blocker_type: plan.blocker_type,
+          action_type: context.action.action_type,
+          target_layer: context.action.target_layer,
+          safe_for_v1: true,
+          merchant_writeback: false,
+        },
+        notes:
+          "Pivota-owned optimization patch only updates Pivota Agent Center/PDP/product-graph state. It does not write to merchant production systems.",
+        created_at: now,
+        updated_at: now,
+      };
+      storePivotaOptimizationPatch(plan, patch);
+      return patch;
+    });
+
+    return patches;
+  }
+
+  apply(
+    issueId: string,
+    options: { patch_id?: string; applied_by?: string } = {}
+  ) {
+    const issue = findIssue(issueId);
+    const plan = new IssueResolutionService().generate(issueId);
+    let patches = pivotaOptimizationPatchesForIssue(issueId);
+    if (!patches.length) patches = this.generate(issueId);
+    const scoped = options.patch_id
+      ? patches.filter((patch) => patch.id === options.patch_id)
+      : patches.filter((patch) => patch.status === "proposed");
+    if (!scoped.length) {
+      throw new Error("No proposed Pivota optimization patch found to apply");
+    }
+
+    return scoped.map((patch) => this.applyPatch(issue, plan, patch, options.applied_by));
+  }
+
+  async rerunAfterOptimization(issueId: string) {
+    const issue = findIssue(issueId);
+    const target = findScanTarget(issue.scan_target_id);
+    const plan = new IssueResolutionService().generate(issueId);
+    const beforeMode = target.scan_mode;
+    const nextMode = this.rerunModeForPlan(plan);
+    if (nextMode) {
+      target.scan_mode = nextMode;
+      touch(target);
+    }
+
+    const beforeSnapshot = latestByCreatedAt(
+      getAgentCenterState().gmvAssuranceSnapshots.filter(
+        (snapshot) =>
+          snapshot.scan_target_id === issue.scan_target_id &&
+          snapshot.issue_ids.includes(issue.id)
+      )
+    );
+    let verification: VerificationRun | undefined;
+    let productDiagnosis: ProductUnderstandingDiagnosis | undefined;
+    try {
+      if (
+        plan.blocker_type === "pivota_pdp_readiness_gap" ||
+        plan.blocker_type === "pivota_pdp_content_quality_gap" ||
+        plan.blocker_type === "pivota_product_intelligence_gap"
+      ) {
+        productDiagnosis = new ProductUnderstandingService().runDiagnosis(issue.id);
+      }
+      verification = await new VerificationService().retestIssue(issue.id);
+    } finally {
+      target.scan_mode = beforeMode;
+      touch(target);
+    }
+
+    const snapshot = new GMVAssuranceService().createSnapshot({
+      merchant_id: issue.merchant_id,
+      store_id: issue.store_id,
+      scan_target_id: issue.scan_target_id,
+      product_entity_id: issue.affected_product_entities[0],
+    });
+    const result = this.rerunResult({
+      issue,
+      verification,
+      productDiagnosis,
+      beforeSnapshot,
+      afterSnapshot: snapshot,
+    });
+    plan.retest_result = result;
+    touch(plan);
+    for (const patch of pivotaOptimizationPatchesForIssue(issueId).filter(
+      (item) => item.status === "applied"
+    )) {
+      patch.rerun_result = result;
+      touch(patch);
+      storePivotaOptimizationPatch(plan, patch);
+    }
+    return result;
+  }
+
+  private optimizationContexts(
+    issue: AgenticGMVIssue,
+    plan: IssueResolutionPlan,
+    actionId?: string
+  ): PivotaOptimizationContext[] {
+    const store = findStore(issue.store_id);
+    const target = findScanTarget(issue.scan_target_id);
+    const clusters = getAgentCenterState().queryClusters.filter(
+      (cluster) => cluster.scan_target_id === issue.scan_target_id
+    );
+    const product = findProductForIssue(store, issue, clusters);
+    const run = latestProductionValidationRunForIssue(issue.id);
+    const candidateActions = [
+      ...plan.recommended_actions,
+      ...fallbackPivotaOptimizationActions(issue, plan),
+    ];
+    const seenPatchTypes = new Set<PivotaOptimizationPatchType>();
+    return candidateActions
+      .filter((action) => !actionId || action.id === actionId)
+      .filter(isPivotaOwnedOptimizationAction)
+      .map((action) => ({
+        issue,
+        plan,
+        action,
+        patchType: pivotaOptimizationPatchTypeForAction(action)!,
+        store,
+        target,
+        product,
+        run,
+      }))
+      .filter((context) => {
+        if (actionId) return true;
+        if (seenPatchTypes.has(context.patchType)) return false;
+        seenPatchTypes.add(context.patchType);
+        return true;
+      });
+  }
+
+  private applyPatch(
+    issue: AgenticGMVIssue,
+    plan: IssueResolutionPlan,
+    patch: PivotaOptimizationPatch,
+    appliedBy = "pivota_internal"
+  ) {
+    if (patch.status === "applied") return patch;
+    const action = plan.recommended_actions.find((item) =>
+      patch.action_ids.includes(item.id)
+    );
+    if (action && !isPivotaOwnedOptimizationAction(action)) {
+      throw new Error("Merchant-owned actions cannot be applied by Pivota optimization");
+    }
+
+    const store = findStore(issue.store_id);
+    const product = findProductForIssue(
+      store,
+      issue,
+      getAgentCenterState().queryClusters.filter(
+        (cluster) => cluster.scan_target_id === issue.scan_target_id
+      )
+    );
+    if (product) {
+      this.applyPatchToProduct(product, patch);
+      getAgentCenterRepository().upsert("stores", store);
+    }
+    this.applyPatchToQueryClusters(issue, patch);
+    this.applyPatchToPivotaOffers(issue, patch);
+
+    const context: PivotaOptimizationContext = {
+      issue,
+      plan,
+      action:
+        action ||
+        fallbackPivotaOptimizationActions(issue, plan).find((item) =>
+          patch.action_ids.includes(item.id)
+        ) ||
+        ({
+          id: patch.action_ids[0] || patch.id,
+          action_type: patch.patch_type,
+          title: patch.patch_type,
+          description: patch.patch_type,
+          target_layer: patch.target_layer,
+          requires_merchant_approval: false,
+          can_apply_automatically: true,
+          patch_payload: patch.patch_payload,
+          status: "proposed",
+          evidence: {},
+          expected_impact: "",
+        } as RecommendedAction),
+      patchType: patch.patch_type,
+      store,
+      target: findScanTarget(issue.scan_target_id),
+      product,
+      run: latestProductionValidationRunForIssue(issue.id),
+    };
+    patch.after_state = pivotaOptimizationBeforeState(context);
+    patch.status = "applied";
+    patch.applied_at = nowIso();
+    patch.applied_by = appliedBy;
+    const usageEvent = new UsageMeteringService().recordPivotaOptimization({
+      issue,
+      patch,
+    });
+    patch.usage_event_ids = unique([...(patch.usage_event_ids || []), usageEvent.id]);
+    touch(patch);
+
+    if (action) {
+      action.status = "applied";
+      touch(plan);
+    }
+    plan.pivota_internal_status = "applied";
+    plan.status = "ready_for_retest";
+    storePivotaOptimizationPatch(plan, patch);
+    return patch;
+  }
+
+  private applyPatchToProduct(product: ProductRecord, patch: PivotaOptimizationPatch) {
+    const attrs = product.pivota_attributes || {};
+    if (
+      patch.patch_type === "pivota_discovery_signal_patch" ||
+      patch.patch_type === "pivota_source_reference_patch" ||
+      patch.patch_type === "pivota_product_intelligence_patch" ||
+      patch.patch_type === "pivota_sitemap_submission" ||
+      patch.patch_type === "query_cluster_mapping_patch" ||
+      patch.patch_type === "competitor_substitute_graph_patch"
+    ) {
+      product.pivota_attributes = {
+        ...attrs,
+        [patch.patch_type]: patch.patch_payload,
+        ...(patch.patch_type === "pivota_discovery_signal_patch"
+          ? {
+              title: patch.patch_payload.title,
+              canonical_product_name: patch.patch_payload.canonical_product_name,
+              brand: patch.patch_payload.brand,
+              category: patch.patch_payload.category,
+              agent_summary: patch.patch_payload.agent_facing_summary,
+              relevant_query_phrases: patch.patch_payload.relevant_query_phrases,
+              buying_path_summary: patch.patch_payload.buying_path_summary,
+            }
+          : {}),
+        ...(patch.patch_type === "pivota_source_reference_patch"
+          ? {
+              source_references: [
+                ...(Array.isArray(attrs.source_references)
+                  ? attrs.source_references
+                  : []),
+                patch.patch_payload,
+              ],
+              verified_merchant_pdp_url:
+                patch.patch_payload.verified_merchant_pdp_url,
+            }
+          : {}),
+        ...(patch.patch_type === "pivota_product_intelligence_patch"
+          ? {
+              product_identity: patch.patch_payload.product_identity,
+              overview: patch.patch_payload.overview,
+              product_intelligence_module:
+                patch.patch_payload.product_intelligence_module,
+              similar_substitute_highlight:
+                patch.patch_payload.similar_substitute_highlight,
+              skin_type: patch.patch_payload.skin_type,
+              finish: patch.patch_payload.finish,
+              active_ingredients: patch.patch_payload.active_ingredients,
+              product_family: patch.patch_payload.product_family,
+              claim_evidence: patch.patch_payload.claim_evidence,
+              use_case: patch.patch_payload.use_case,
+              texture: patch.patch_payload.texture,
+              key_benefits: patch.patch_payload.key_benefits,
+            }
+          : {}),
+      };
+    }
+
+    if (
+      patch.patch_type === "pivota_product_schema_patch" ||
+      patch.patch_type === "pivota_offer_schema_patch"
+    ) {
+      product.pivota_attributes = {
+        ...attrs,
+        structured_data: {
+          ...((attrs.structured_data as Record<string, unknown> | undefined) || {}),
+          [patch.patch_type === "pivota_product_schema_patch"
+            ? "product_schema"
+            : "offer_schema"]: patch.patch_payload,
+        },
+      };
+    }
+  }
+
+  private applyPatchToQueryClusters(issue: AgenticGMVIssue, patch: PivotaOptimizationPatch) {
+    if (
+      patch.patch_type !== "query_cluster_mapping_patch" &&
+      patch.patch_type !== "competitor_substitute_graph_patch"
+    ) {
+      return;
+    }
+    const state = getAgentCenterState();
+    const clusters = state.queryClusters.filter(
+      (cluster) =>
+        cluster.scan_target_id === issue.scan_target_id &&
+        issue.affected_query_clusters.includes(cluster.id)
+    );
+    const queryPayload =
+      patch.patch_type === "query_cluster_mapping_patch"
+        ? [
+            ...((patch.patch_payload.organic_query_clusters as
+              | string[]
+              | undefined) || []),
+            ...((patch.patch_payload.product_name_discovery_queries as
+              | string[]
+              | undefined) || []),
+            ...((patch.patch_payload.buying_path_discovery_queries as
+              | string[]
+              | undefined) || []),
+            ...((patch.patch_payload.category_use_case_queries as
+              | string[]
+              | undefined) || []),
+          ]
+        : ((patch.patch_payload.query_clusters_where_competitors_dominated as
+            | string[]
+            | undefined) || []);
+    for (const cluster of clusters) {
+      cluster.product_entity_id =
+        patch.product_entity_id || issue.affected_product_entities[0];
+      cluster.queries = unique([...cluster.queries, ...queryPayload]);
+      cluster.required_attributes = unique([
+        ...cluster.required_attributes,
+        "source_reference",
+        "product_identity",
+      ]);
+      touch(cluster);
+    }
+  }
+
+  private applyPatchToPivotaOffers(issue: AgenticGMVIssue, patch: PivotaOptimizationPatch) {
+    if (patch.patch_type !== "pivota_offer_schema_patch") return;
+    const state = getAgentCenterState();
+    for (const offer of state.pivotaOffers.filter(
+      (item) =>
+        item.merchant_id === issue.merchant_id &&
+        item.store_id === issue.store_id &&
+        item.product_entity_id === patch.product_entity_id
+    )) {
+      (offer as unknown as Record<string, unknown>).structured_data = {
+        ...(((offer as unknown as Record<string, unknown>).structured_data as
+          | Record<string, unknown>
+          | undefined) || {}),
+        offer_schema: patch.patch_payload,
+      };
+      touch(offer);
+    }
+  }
+
+  private rerunModeForPlan(plan: IssueResolutionPlan): ScanMode | undefined {
+    if (plan.blocker_type === "competitor_dominance") {
+      return "organic_product_discovery_test";
+    }
+    if (
+      plan.blocker_type === "pivota_pdp_not_discovered" ||
+      plan.blocker_type === "wrong_buying_path_returned"
+    ) {
+      return "search_grounded_product_discovery_test";
+    }
+    if (
+      plan.blocker_type === "pivota_pdp_readiness_gap" ||
+      plan.blocker_type === "pivota_pdp_content_quality_gap" ||
+      plan.blocker_type === "pivota_product_intelligence_gap" ||
+      plan.blocker_type === "pivota_pdp_attribution_gap" ||
+      plan.blocker_type === "unverified_pivota_attribution"
+    ) {
+      return "pivota_pdp_attribution_test";
+    }
+    return plan.verification_plan.scan_mode as ScanMode | undefined;
+  }
+
+  private rerunResult(input: {
+    issue: AgenticGMVIssue;
+    verification?: VerificationRun;
+    productDiagnosis?: ProductUnderstandingDiagnosis;
+    beforeSnapshot?: GMVAssuranceSnapshot;
+    afterSnapshot: GMVAssuranceSnapshot;
+  }) {
+    const beforeScores =
+      input.verification?.before_scores.aggregate_scores ||
+      input.beforeSnapshot?.discovery_readiness_summary;
+    const afterScores = input.verification?.after_scores.aggregate_scores;
+    const pivotaBefore =
+      typeof beforeScores === "object" && beforeScores
+        ? (beforeScores as Record<string, unknown>).search_grounded_pivota_pdp_discovery_score ||
+          (beforeScores as Record<string, unknown>).pivota_pdp_visibility_score
+        : undefined;
+    const pivotaAfter =
+      afterScores?.search_grounded_pivota_pdp_discovery_score ??
+      afterScores?.pivota_pdp_visibility_score;
+    const numericDelta =
+      typeof pivotaBefore === "number" && typeof pivotaAfter === "number"
+        ? pivotaAfter - pivotaBefore
+        : undefined;
+    return {
+      status: "completed",
+      source_agent: "pivota_optimization_workflow",
+      verification_run_id: input.verification?.id,
+      product_diagnosis_id: input.productDiagnosis?.id,
+      gmv_assurance_snapshot_id: input.afterSnapshot.id,
+      before_scores: input.verification?.before_scores,
+      after_scores: input.verification?.after_scores,
+      score_delta: input.verification?.score_delta,
+      comparable_score_delta: numericDelta,
+      uplift_claim_allowed: typeof numericDelta === "number" && numericDelta > 0,
+      merchant_copy:
+        typeof numericDelta === "number" && numericDelta > 0
+          ? "Pivota-owned optimization improved the comparable validation score in the rerun."
+          : "Pivota-owned readiness improved, but search-grounded discovery has not yet returned the Pivota PDP. Indexing may require more time or external search engine ingestion.",
+    };
   }
 }
 
@@ -10950,6 +12171,24 @@ export class MerchantFacingReportService {
       "Shared fixes:",
       ...report.recommended_fix_sections.shared_fixes.map((item) => `- ${item}`),
       "",
+      "## Pivota-Owned Optimization Applied",
+      report.pivota_owned_optimization_applied.summary,
+      ...report.pivota_owned_optimization_applied.actions_applied.map(
+        (action) =>
+          `- ${titleCase(action.patch_type)} on ${titleCase(action.target_layer)}${action.applied_at ? ` (applied ${action.applied_at})` : ""}`
+      ),
+      ...(report.pivota_owned_optimization_applied.score_deltas.length
+        ? report.pivota_owned_optimization_applied.score_deltas.map(
+            (delta) =>
+              `- ${titleCase(delta.score_name)}: ${reportScoreLabel(delta.before)} to ${reportScoreLabel(delta.after)}${typeof delta.delta === "number" ? ` (${delta.delta >= 0 ? "+" : ""}${delta.delta})` : ""}`
+          )
+        : ["- No comparable rerun score delta is available yet."]),
+      ...(report.pivota_owned_optimization_applied.blockers_remaining.length
+        ? [
+            `Remaining blockers: ${report.pivota_owned_optimization_applied.blockers_remaining.map(titleCase).join(", ")}`,
+          ]
+        : ["Remaining blockers: none"]),
+      "",
       "## Retest Plan",
       ...report.retest_plan.map((item) => `- ${item}`),
       "",
@@ -11049,6 +12288,10 @@ export class MerchantFacingReportService {
       readiness_result: readinessResult,
       discovery_evidence: discoveryEvidence,
       discoverability_fix_plan: discoverabilityFixPlan,
+      pivota_owned_optimization_applied: this.pivotaOwnedOptimizationApplied(
+        run,
+        report
+      ),
       tested_product: {
         merchant_name: report.target_summary.merchant_name,
         store_url: report.target_summary.store_url,
@@ -11116,7 +12359,7 @@ export class MerchantFacingReportService {
       usage_statement: {
         ...report.usage_summary,
         merchant_copy:
-          "This report uses AI Test Credits in preview mode only. Usage is not invoiced, and merchant-facing reporting does not show token-level provider costs.",
+          "This report uses AI Test Credits in preview mode only. Usage is not invoiced, and merchant-facing reporting shows credits only.",
       },
       v1_does_not_prove: [
         "Real payment authorization",
@@ -11132,7 +12375,7 @@ export class MerchantFacingReportService {
       safety_warnings: this.safetyWarnings(run, report),
       sharing_notes: [
         "This is a merchant-facing draft generated from validated Agent Center outputs.",
-        "Raw provider payloads, prompt traces, provider token counts, and internal debug payloads are intentionally excluded.",
+        "Provider response details, generation traces, provider cost details, and internal diagnostics are intentionally excluded.",
         "Contextual attribution is reported separately from natural or search-grounded discovery.",
       ],
       source_summary: {
@@ -11253,9 +12496,10 @@ export class MerchantFacingReportService {
     const store = target
       ? state.stores.find((item) => item.id === target.store_id)
       : state.stores.find((item) => item.merchant_id === productionValidationMerchantId(run.id));
+    const products = store?.products || [];
     const product =
-      store?.products.find((item) => item.title === run.product_name) ||
-      store?.products[0];
+      products.find((item) => item.title === run.product_name) ||
+      products[0];
     const cluster =
       (target
         ? state.queryClusters.find(
@@ -11707,6 +12951,101 @@ export class MerchantFacingReportService {
     };
   }
 
+  private pivotaOwnedOptimizationApplied(
+    run: ProductionValidationRun,
+    report: ProductionValidationReport
+  ): MerchantFacingValidationReport["pivota_owned_optimization_applied"] {
+    const patches = run.issue_ids
+      .flatMap((issueId) => pivotaOptimizationPatchesForIssue(issueId))
+      .filter((patch) => patch.status === "applied");
+    if (!patches.length) {
+      return {
+        status: "not_applied",
+        summary:
+          "No Pivota-owned optimization has been applied yet. This report is diagnostic.",
+        actions_applied: [],
+        before_state: {},
+        after_state: {},
+        score_deltas: [],
+        blockers_cleared: [],
+        blockers_remaining: report.top_blockers.map((blocker) => blocker.blocker_type),
+      };
+    }
+
+    const latestRerun = latestByCreatedAt(
+      patches
+        .filter((patch) => patch.rerun_result)
+        .map((patch) => ({
+          id: patch.id,
+          created_at: patch.updated_at || patch.applied_at || patch.created_at,
+          result: patch.rerun_result!,
+        }))
+    )?.result;
+    const scoreDeltas = this.optimizationScoreDeltas(latestRerun);
+    const improved = scoreDeltas.some(
+      (delta) => typeof delta.delta === "number" && delta.delta > 0
+    );
+    const remaining = report.top_blockers.map((blocker) => blocker.blocker_type);
+    const cleared = unique(
+      patches
+        .flatMap((patch) => patch.source_issue_ids)
+        .map((issueId) =>
+          getAgentCenterState().issues.find((issue) => issue.id === issueId)
+        )
+        .filter((issue): issue is AgenticGMVIssue => Boolean(issue))
+        .filter((issue) => issue.status === "resolved")
+        .map((issue) => issue.issue_type)
+    );
+
+    return {
+      status: latestRerun ? (improved ? "applied_with_uplift" : "applied_no_uplift") : "applied",
+      summary: latestRerun
+        ? improved
+          ? "Pivota-owned optimization was applied and the comparable validation rerun improved. Report only the measured score deltas shown below."
+          : "Pivota-owned PDP readiness was updated, but search-grounded discovery has not yet returned the Pivota PDP. This may require indexing time or additional public discoverability work."
+        : "Pivota-owned optimization was applied. Rerun the relevant validation before claiming discovery uplift.",
+      actions_applied: patches.map((patch) => ({
+        patch_id: patch.id,
+        patch_type: patch.patch_type,
+        target_layer: patch.target_layer,
+        applied_at: patch.applied_at,
+        evidence: String(patch.evidence?.action_type || patch.patch_type),
+      })),
+      before_state: patches[0]?.before_state || {},
+      after_state: patches[patches.length - 1]?.after_state || {},
+      validation_rerun_result: latestRerun,
+      score_deltas: scoreDeltas,
+      blockers_cleared: cleared,
+      blockers_remaining: remaining,
+    };
+  }
+
+  private optimizationScoreDeltas(result?: Record<string, unknown>) {
+    if (!result) return [];
+    const before = (result.before_scores as Record<string, unknown> | undefined)
+      ?.aggregate_scores as Record<string, VisibilityScoreValue> | undefined;
+    const after = (result.after_scores as Record<string, unknown> | undefined)
+      ?.aggregate_scores as Record<string, VisibilityScoreValue> | undefined;
+    if (!before || !after) return [];
+    const keys = [
+      "search_grounded_pivota_pdp_discovery_score",
+      "pivota_pdp_visibility_score",
+      "organic_product_discovery_score",
+      "competitor_dominance_score",
+    ];
+    return keys
+      .filter((key) => before[key] !== undefined || after[key] !== undefined)
+      .map((key) => ({
+        score_name: key,
+        before: before[key] ?? "not_tested",
+        after: after[key] ?? "not_tested",
+        delta:
+          typeof before[key] === "number" && typeof after[key] === "number"
+            ? (after[key] as number) - (before[key] as number)
+            : undefined,
+      }));
+  }
+
   private readinessResult(input: {
     report: ProductionValidationReport;
     productSkuStatus: GMVAssuranceDimensionStatus;
@@ -12055,7 +13394,7 @@ export class MerchantFacingReportService {
       warning_type: "raw_debug_payload_excluded",
       severity: "info",
       message:
-        "Raw provider payloads, raw debug payloads, and internal traces are excluded from this merchant-facing draft.",
+        "Provider response details and internal diagnostics are excluded from this merchant-facing draft.",
     });
 
     return warnings;

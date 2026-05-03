@@ -20,6 +20,7 @@ import {
   MerchantFacingReportService,
   MerchantStoreService,
   OfferExecutionService,
+  PivotaOptimizationService,
   ProductionValidationRunService,
   ProductUnderstandingService,
   ScanTargetService,
@@ -520,6 +521,10 @@ async function handleAgentCenterRequestInner(
           const service = new IssueResolutionService();
           return json({ resolution_plan: service.latest(id) });
         }
+        if (action === "pivota-optimization-patch") {
+          const service = new PivotaOptimizationService();
+          return json({ patches: service.list(id) });
+        }
         const issue = state.issues.find((item) => item.id === id);
         return issue ? json({ issue }) : json({ error: "Issue not found" }, 404);
       }
@@ -566,6 +571,28 @@ async function handleAgentCenterRequestInner(
           },
           201
         );
+      }
+      if (req.method === "POST" && id && action === "pivota-optimization-patch") {
+        const service = new PivotaOptimizationService();
+        return json(
+          {
+            patches: service.generate(id, await requestBody(req)),
+          },
+          201
+        );
+      }
+      if (req.method === "POST" && id && action === "apply-pivota-optimization") {
+        const service = new PivotaOptimizationService();
+        return json({
+          patches: service.apply(id, await requestBody(req)),
+        });
+      }
+      if (req.method === "POST" && id && action === "rerun-after-pivota-optimization") {
+        const service = new PivotaOptimizationService();
+        return json({
+          result: await service.rerunAfterOptimization(id),
+          patches: service.list(id),
+        });
       }
       if (req.method === "POST" && id && ["approve", "ignore", "assign"].includes(action || "")) {
         const issue = state.issues.find((item) => item.id === id);

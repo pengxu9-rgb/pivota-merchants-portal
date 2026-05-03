@@ -751,6 +751,53 @@ export type RecommendedAction = {
   expected_impact: string;
 };
 
+export type PivotaOptimizationPatchType =
+  | "pivota_discovery_signal_patch"
+  | "pivota_source_reference_patch"
+  | "pivota_product_intelligence_patch"
+  | "pivota_product_schema_patch"
+  | "pivota_offer_schema_patch"
+  | "pivota_sitemap_submission"
+  | "query_cluster_mapping_patch"
+  | "competitor_substitute_graph_patch";
+
+export type PivotaOptimizationTargetLayer =
+  | "pivota_unified_pdp"
+  | "pivota_product_graph"
+  | "pivota_schema_markup"
+  | "pivota_sitemap"
+  | "pivota_query_mapping"
+  | "pivota_competitor_graph";
+
+export type PivotaOptimizationPatchStatus =
+  | "proposed"
+  | "applied"
+  | "failed"
+  | "skipped";
+
+export type PivotaOptimizationPatch = Timestamped & {
+  id: string;
+  merchant_id: string;
+  store_id: string;
+  product_entity_id: string;
+  pivota_pdp_url?: string;
+  source_issue_ids: string[];
+  resolution_plan_id: string;
+  action_ids: string[];
+  patch_type: PivotaOptimizationPatchType;
+  target_layer: PivotaOptimizationTargetLayer;
+  status: PivotaOptimizationPatchStatus;
+  before_state: Record<string, unknown>;
+  patch_payload: Record<string, unknown>;
+  after_state?: Record<string, unknown>;
+  applied_at?: string;
+  applied_by?: string;
+  evidence: Record<string, unknown>;
+  notes?: string;
+  usage_event_ids?: string[];
+  rerun_result?: Record<string, unknown>;
+};
+
 export type IssueResolutionPlan = Timestamped & {
   id: string;
   issue_id: string;
@@ -772,6 +819,8 @@ export type IssueResolutionPlan = Timestamped & {
   verification_plan: Record<string, unknown>;
   retest_result?: Record<string, unknown>;
   usage_event_ids: string[];
+  pivota_optimization_patch_ids?: string[];
+  pivota_optimization_patches?: PivotaOptimizationPatch[];
 };
 
 export type ProductLayerComparison = {
@@ -1283,27 +1332,31 @@ export type UsageEvent = Timestamped & {
     | "product_understanding_credit"
     | "offer_verification_credit"
     | "checkout_verification_credit"
-    | "resolution_plan_credit";
+    | "resolution_plan_credit"
+    | "pivota_optimization_credit";
   quantity: number;
   source_agent:
     | "demand_test_agent"
     | "product_understanding_agent"
     | "offer_execution_agent"
     | "checkout_verification_agent"
-    | "resolution_workflow";
+    | "resolution_workflow"
+    | "pivota_optimization_workflow";
   agent_type:
     | "demand_test_agent"
     | "product_understanding_agent"
     | "offer_execution_agent"
     | "checkout_verification_agent"
-    | "resolution_workflow";
+    | "resolution_workflow"
+    | "pivota_optimization_workflow";
   workflow_type:
     | "demand_scan"
     | "retest"
     | "product_diagnosis"
     | "offer_readiness"
     | "checkout_readiness"
-    | "issue_resolution";
+    | "issue_resolution"
+    | "pivota_discoverability_optimization";
   scan_mode: ScanMode;
   provider: UsageProviderName;
   model: string;
@@ -1646,6 +1699,28 @@ export type MerchantFacingValidationReport = Timestamped & {
     shared_fixes: string[];
     retest_plan: string[];
   };
+  pivota_owned_optimization_applied: {
+    status: "not_applied" | "applied" | "applied_no_uplift" | "applied_with_uplift";
+    summary: string;
+    actions_applied: Array<{
+      patch_id: string;
+      patch_type: PivotaOptimizationPatchType;
+      target_layer: PivotaOptimizationTargetLayer;
+      applied_at?: string;
+      evidence?: string;
+    }>;
+    before_state: Record<string, unknown>;
+    after_state: Record<string, unknown>;
+    validation_rerun_result?: Record<string, unknown>;
+    score_deltas: Array<{
+      score_name: string;
+      before: VisibilityScoreValue;
+      after: VisibilityScoreValue;
+      delta?: number;
+    }>;
+    blockers_cleared: string[];
+    blockers_remaining: string[];
+  };
   tested_product: {
     merchant_name: string;
     store_url: string;
@@ -1864,6 +1939,7 @@ export type AgentCenterState = {
   offerExecutionDiagnoses: OfferExecutionDiagnosis[];
   checkoutVerificationDiagnoses: CheckoutVerificationDiagnosis[];
   issueResolutionPlans: IssueResolutionPlan[];
+  pivotaOptimizationPatches: PivotaOptimizationPatch[];
   gmvAssuranceSnapshots: GMVAssuranceSnapshot[];
   demoFixtures: DemoFixture[];
   productionValidationRuns: ProductionValidationRun[];
