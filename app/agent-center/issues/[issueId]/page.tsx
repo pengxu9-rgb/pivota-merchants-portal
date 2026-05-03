@@ -14,6 +14,7 @@ import {
 import {
   MerchantButton,
   PageHeader,
+  StatusBadge,
   SurfaceCard,
 } from "@/components/ui/merchant-primitives";
 import {
@@ -108,6 +109,33 @@ function checkoutFindingEvidence(
 
 function latestCheckoutComparison(diagnosis: any) {
   return diagnosis?.checkout_layer_findings?.[0] || {};
+}
+
+function isDiscoveryResolutionBlocker(issue: any, resolutionPlan: any) {
+  return ["organic_product_not_discovered", "competitor_dominance"].includes(
+    resolutionPlan?.blocker_type || issue?.issue_type
+  );
+}
+
+function aggregateScore(issue: any, key: string) {
+  return issue?.evidence?.aggregate_scores?.[key];
+}
+
+function scoreText(value: unknown) {
+  return typeof value === "number" ? `${Math.round(value)}%` : label(String(value || "not tested"));
+}
+
+function passFail(value: unknown, passAt = 80, inverse = false) {
+  if (typeof value !== "number") return "not tested";
+  if (inverse) return value <= 20 ? "passed" : "needs work";
+  return value >= passAt ? "passed" : "needs work";
+}
+
+function contextualAttributionSummary(issue: any) {
+  const product = aggregateScore(issue, "product_entity_visibility_score");
+  const merchant = aggregateScore(issue, "merchant_store_visibility_score");
+  const pivota = aggregateScore(issue, "pivota_pdp_visibility_score");
+  return `Product visibility ${passFail(product)} (${scoreText(product)}), merchant attribution ${passFail(merchant)} (${scoreText(merchant)}), Pivota attribution ${passFail(pivota)} (${scoreText(pivota)}).`;
 }
 
 function estimatedRetestCredits(issue: any, preparation: any) {
@@ -554,6 +582,53 @@ export default function IssueDetailPage() {
             />
           </div>
 
+          {isDiscoveryResolutionBlocker(issue, resolutionPlan) ? (
+            <div className="rounded-[8px] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-4 py-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge tone="warning">Discovery blocker</StatusBadge>
+                <StatusBadge tone="neutral">Affected layer: discovery</StatusBadge>
+                <StatusBadge tone="brand">Retest mode: organic_product_discovery_test</StatusBadge>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <MetricTile
+                  label="Organic discovery score"
+                  value={scoreText(aggregateScore(issue, "organic_product_discovery_score"))}
+                />
+                <MetricTile
+                  label="Competitor dominance score"
+                  value={scoreText(aggregateScore(issue, "competitor_dominance_score"))}
+                  tone={
+                    passFail(
+                      aggregateScore(issue, "competitor_dominance_score"),
+                      80,
+                      true
+                    ) === "passed"
+                      ? "success"
+                      : "warning"
+                  }
+                />
+                <MetricTile
+                  label="Contextual attribution"
+                  value={
+                    passFail(aggregateScore(issue, "merchant_store_visibility_score")) ===
+                      "passed" &&
+                    passFail(aggregateScore(issue, "pivota_pdp_visibility_score")) ===
+                      "passed"
+                      ? "passed"
+                      : "needs work"
+                  }
+                  helper={contextualAttributionSummary(issue)}
+                />
+              </div>
+              <p className="mt-4 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+                Contextual attribution and path readiness can pass while natural
+                no-context discovery still fails. Recommended discovery fixes should
+                strengthen merchant PDP signals, Pivota product graph coverage,
+                differentiation evidence, and organic query mapping before retest.
+              </p>
+            </div>
+          ) : null}
+
           <NarrativeSection title="Root cause hypothesis">
             {resolutionPlan?.root_cause_hypothesis ||
               "Generate a resolution plan to convert this blocker into owned actions, patches, approvals, and a retest path."}
@@ -578,7 +653,11 @@ export default function IssueDetailPage() {
 
           {resolutionPlan?.recommended_actions?.length ? (
             <div className="space-y-3">
-              <p className="merchant-overline">Recommended actions</p>
+              <p className="merchant-overline">
+                {isDiscoveryResolutionBlocker(issue, resolutionPlan)
+                  ? "Recommended discovery fixes"
+                  : "Recommended actions"}
+              </p>
               {resolutionPlan.recommended_actions.map((action: any) => (
                 <div
                   key={action.id}
@@ -592,6 +671,12 @@ export default function IssueDetailPage() {
                       <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted)]">
                         {action.description}
                       </p>
+                      {action.owner_type ? (
+                        <p className="mt-2 text-xs uppercase tracking-wide text-[color:var(--merchant-muted)]">
+                          Owner: {label(action.owner_type)}
+                          {action.owner_team ? ` - ${action.owner_team}` : ""}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="text-right text-xs uppercase tracking-wide text-[color:var(--merchant-muted)]">
                       <p>{label(action.status)}</p>

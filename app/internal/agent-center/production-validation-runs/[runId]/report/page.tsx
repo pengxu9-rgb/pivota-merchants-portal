@@ -212,6 +212,12 @@ function ReportPreview({
         </p>
       </SurfaceCard>
 
+      <SurfaceCard title="Discovery vs Readiness">
+        <p className="px-5 py-4 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+          {report.discovery_vs_readiness}
+        </p>
+      </SurfaceCard>
+
       <SurfaceCard
         title="Discoverability"
         description="Discoverability answers whether users can find the product or buying path. Contextual attribution is reported separately."

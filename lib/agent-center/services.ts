@@ -14,6 +14,7 @@ import {
   nowIso,
   touch,
 } from "./repository.ts";
+import { geminiSearchGroundingEnabled } from "./runtime-config.ts";
 import type {
   AgenticGMVIssue,
   AgenticGMVIssueType,
@@ -196,7 +197,7 @@ function discoveryTestEnabled(scanMode?: ScanMode) {
 }
 
 function geminiSearchGroundingConfigured() {
-  return process.env.GEMINI_SEARCH_GROUNDING_ENABLED === "true";
+  return geminiSearchGroundingEnabled();
 }
 
 function merchantAttributionTestEnabled(scanMode?: ScanMode) {
@@ -2536,8 +2537,7 @@ export class IssueEngine {
           severity: "high",
           rootCause:
             "Organic no-context discovery did not naturally surface the merchant product/entity for this query cluster.",
-          recommendedAction:
-            "Improve product discoverability signals, merchant PDP evidence, Pivota product graph coverage, and query mapping before retesting organic discovery.",
+          recommendedAction: ORGANIC_DISCOVERY_NEXT_ACTION,
           input,
           product,
           missingAttributes,
@@ -2575,8 +2575,7 @@ export class IssueEngine {
           severity: "high",
           rootCause:
             "Discovery results are dominated by competitor products while the merchant product is absent.",
-          recommendedAction:
-            "Add comparison-ready merchant/Pivota evidence and expand query/product mappings so the target product can compete in natural discovery.",
+          recommendedAction: COMPETITOR_DOMINANCE_NEXT_ACTION,
           input,
           product,
           missingAttributes,
@@ -6194,6 +6193,8 @@ export class CheckoutVerificationService {
 }
 
 const supportedResolutionBlockers = new Set([
+  "organic_product_not_discovered",
+  "competitor_dominance",
   "merchant_store_attribution_gap",
   "pivota_pdp_attribution_gap",
   "unverified_pivota_attribution",
@@ -6222,6 +6223,16 @@ function nextResolutionAction(plan?: IssueResolutionPlan | null) {
     (action) =>
       !["applied", "rejected", "skipped"].includes(action.status)
   );
+}
+
+function discoveryResolutionNextAction(blockerType: string) {
+  if (blockerType === "organic_product_not_discovered") {
+    return ORGANIC_DISCOVERY_NEXT_ACTION;
+  }
+  if (blockerType === "competitor_dominance") {
+    return COMPETITOR_DOMINANCE_NEXT_ACTION;
+  }
+  return "";
 }
 
 function actionStatusAfterApply(action: RecommendedAction) {
@@ -6440,6 +6451,12 @@ export class IssueResolutionService {
   }
 
   private ownerForBlocker(blockerType: string): IssueResolutionOwnerType {
+    if (
+      blockerType === "organic_product_not_discovered" ||
+      blockerType === "competitor_dominance"
+    ) {
+      return "shared";
+    }
     if (blockerType === "missing_attribute") return "shared";
     if (blockerType === "merchant_store_attribution_gap") return "shared";
     if (blockerType === "coupon_param_missing") return "shared";
@@ -6460,6 +6477,8 @@ export class IssueResolutionService {
 
   private ownerTeamForBlocker(blockerType: string) {
     const map: Record<string, string> = {
+      organic_product_not_discovered: "Merchant Growth + Pivota Discovery Ops",
+      competitor_dominance: "Merchant Growth + Pivota Discovery Ops",
       merchant_store_attribution_gap: "Merchant PDP + Pivota Product Ops",
       pivota_pdp_attribution_gap: "Pivota Product Ops",
       unverified_pivota_attribution: "Pivota Product Ops",
@@ -6477,6 +6496,18 @@ export class IssueResolutionService {
 
   private fixTargetsForBlocker(issue: AgenticGMVIssue, blockerType: string) {
     const map: Record<string, FixTarget[]> = {
+      organic_product_not_discovered: [
+        "merchant_structured_data",
+        "pivota_unified_pdp",
+        "pivota_product_graph",
+        "pivota_query_mapping",
+      ],
+      competitor_dominance: [
+        "merchant_pdp",
+        "pivota_unified_pdp",
+        "pivota_product_graph",
+        "pivota_query_mapping",
+      ],
       merchant_store_attribution_gap: [
         "merchant_structured_data",
         "pivota_product_graph",
@@ -6504,6 +6535,10 @@ export class IssueResolutionService {
 
   private rootCauseForBlocker(issue: AgenticGMVIssue, blockerType: string) {
     const map: Record<string, string> = {
+      organic_product_not_discovered:
+        "Organic no-context prompts did not naturally surface the product. Merchant-owned and Pivota buying paths can be ready when context is provided, but the product needs stronger public discovery signals and query-cluster mapping before AI users can naturally reach it.",
+      competitor_dominance:
+        "Organic discovery prompts were dominated by competitor brands/products while the target product was absent. The likely gap is weak differentiation evidence, substitute mapping, and category/query coverage for natural AI discovery.",
       merchant_store_attribution_gap:
         "The product can be visible to the model, but the merchant store/PDP was not returned as the buying path. The likely cause is weak merchant buying-path structured data or a missing Pivota binding from product entity to merchant PDP.",
       pivota_pdp_attribution_gap:
@@ -6546,6 +6581,20 @@ export class IssueResolutionService {
         source_agent: "demand_test_agent",
         scan_mode: "merchant_store_attribution_test",
         success_metric: "merchant_store_visibility_score",
+      };
+    }
+    if (
+      blockerType === "organic_product_not_discovered" ||
+      blockerType === "competitor_dominance"
+    ) {
+      return {
+        ...base,
+        source_agent: "demand_test_agent",
+        scan_mode: "organic_product_discovery_test",
+        success_metric:
+          blockerType === "competitor_dominance"
+            ? "competitor_dominance_score"
+            : "organic_product_discovery_score",
       };
     }
     if (
@@ -6606,6 +6655,8 @@ export class IssueResolutionService {
       title: string;
       description: string;
       target_layer: FixTarget | string;
+      owner_type?: IssueResolutionOwnerType;
+      owner_team?: string;
       patch_payload?: Record<string, unknown>;
       requires_merchant_approval?: boolean;
       can_apply_automatically?: boolean;
@@ -6616,6 +6667,8 @@ export class IssueResolutionService {
       title: input.title,
       description: input.description,
       target_layer: input.target_layer,
+      owner_type: input.owner_type,
+      owner_team: input.owner_team,
       requires_merchant_approval: Boolean(input.requires_merchant_approval),
       can_apply_automatically: input.can_apply_automatically ?? true,
       patch_payload: input.patch_payload || {},
@@ -6635,6 +6688,179 @@ export class IssueResolutionService {
       provider_set: issue.verification_plan.providers,
       prompt_template_ids: issue.verification_plan.prompt_templates,
     };
+
+    if (blockerType === "organic_product_not_discovered") {
+      return [
+        action({
+          index: 1,
+          action_type: "merchant_discovery_signal_patch",
+          title: "Strengthen merchant PDP discovery signals",
+          description:
+            "Strengthen merchant PDP discovery signals, including product title, canonical URL, structured Product schema, Offer schema, brand/seller info, availability, price, and product description.",
+          target_layer: "merchant_owned_path",
+          owner_type: "shared",
+          owner_team: "Merchant Growth + Pivota Discovery Ops",
+          requires_merchant_approval: true,
+          can_apply_automatically: false,
+          patch_payload: {
+            canonical_url: issue.store_url,
+            product_entity_ids: issue.affected_product_entities,
+            structured_data: ["Product", "Offer", "Brand", "Seller"],
+            content_signals: [
+              "product title",
+              "canonical URL",
+              "availability",
+              "price",
+              "product description",
+            ],
+            source_issue: issue.id,
+          },
+          expected_impact:
+            "Improves the source-layer evidence available for no-context organic discovery.",
+        }),
+        action({
+          index: 2,
+          action_type: "pivota_discovery_signal_patch",
+          title: "Strengthen Pivota PDP discovery signals",
+          description:
+            "Strengthen Pivota PDP identity, product overview, product intelligence module, canonical product object ID, source references to merchant PDP, and query cluster mapping.",
+          target_layer: "pivota_agent_facing_path",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Discovery Ops",
+          patch_payload: {
+            product_entity_ids: issue.affected_product_entities,
+            source_references: [issue.store_url],
+            pivota_sections: [
+              "identity",
+              "overview",
+              "product_intelligence_module",
+              "canonical_product_object_id",
+            ],
+          },
+          expected_impact:
+            "Gives the Pivota agent-facing path stronger public identity and source evidence.",
+        }),
+        action({
+          index: 3,
+          action_type: "query_cluster_mapping_patch",
+          title: "Map product to organic discovery query clusters",
+          description:
+            "Map product to organic category/intention queries, such as tone brightening cleanser, centella cleanser, k-beauty brightening cleanser.",
+          target_layer: "pivota_product_graph",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Discovery Ops",
+          patch_payload: {
+            query_cluster_ids: issue.affected_query_clusters,
+            product_entity_ids: issue.affected_product_entities,
+            example_query_mappings: [
+              "tone brightening cleanser",
+              "centella cleanser",
+              "k-beauty brightening cleanser",
+            ],
+          },
+          expected_impact:
+            "Expands the organic query surface where the product can be matched and retested.",
+        }),
+        action({
+          index: 4,
+          action_type: "rerun_organic_product_discovery_test",
+          title: "Rerun Organic Product Discovery Test",
+          description:
+            "Rerun organic no-context discovery after merchant/Pivota discovery signal updates.",
+          target_layer: "validation",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Validation Ops",
+          patch_payload: {
+            ...rerunPayload,
+            scan_mode: "organic_product_discovery_test",
+          },
+          expected_impact:
+            "Verifies whether no-context Gemini discovery starts surfacing the product.",
+        }),
+      ];
+    }
+
+    if (blockerType === "competitor_dominance") {
+      return [
+        action({
+          index: 1,
+          action_type: "competitor_dominance_analysis",
+          title: "Analyze dominant competitor matches",
+          description:
+            "Identify which competitor brands/products dominated organic prompts and why.",
+          target_layer: "discovery_analysis",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Discovery Ops",
+          patch_payload: {
+            top_competitors: issue.evidence?.top_competitors || [],
+            top_competitor_recommendations:
+              issue.evidence?.top_competitor_recommendations || [],
+            query_cluster_ids: issue.affected_query_clusters,
+          },
+          expected_impact:
+            "Identifies the competitor evidence patterns the product must compete against.",
+        }),
+        action({
+          index: 2,
+          action_type: "differentiation_evidence_patch",
+          title: "Add product differentiation evidence",
+          description:
+            "Add stronger merchant/Pivota evidence for product differentiation, use cases, ingredients, texture, target skin type, and proof points.",
+          target_layer: "merchant_pdp_and_pivota_pdp",
+          owner_type: "shared",
+          owner_team: "Merchant Growth + Pivota Product Ops",
+          requires_merchant_approval: true,
+          can_apply_automatically: false,
+          patch_payload: {
+            product_entity_ids: issue.affected_product_entities,
+            evidence_fields: [
+              "differentiation",
+              "use cases",
+              "ingredients",
+              "texture",
+              "target skin type",
+              "proof points",
+            ],
+            merchant_patch_required: true,
+          },
+          expected_impact:
+            "Gives AI discovery prompts stronger reasons to choose the target product over substitutes.",
+        }),
+        action({
+          index: 3,
+          action_type: "competitor_substitute_graph_patch",
+          title: "Update competitor and substitute graph mapping",
+          description:
+            "Update Pivota product graph with competitor/substitute relationships and query cluster links.",
+          target_layer: "pivota_product_graph",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Discovery Ops",
+          patch_payload: {
+            product_entity_ids: issue.affected_product_entities,
+            query_cluster_ids: issue.affected_query_clusters,
+            competitor_relationships: issue.evidence?.top_competitors || [],
+          },
+          expected_impact:
+            "Improves substitute-aware matching and query cluster coverage for discovery retests.",
+        }),
+        action({
+          index: 4,
+          action_type: "rerun_organic_product_discovery_test",
+          title: "Rerun Organic Product Discovery Test",
+          description:
+            "Rerun organic discovery to measure competitor dominance reduction.",
+          target_layer: "validation",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Validation Ops",
+          patch_payload: {
+            ...rerunPayload,
+            scan_mode: "organic_product_discovery_test",
+          },
+          expected_impact:
+            "Verifies whether competitor dominance decreases after differentiation and graph updates.",
+        }),
+      ];
+    }
 
     if (blockerType === "merchant_store_attribution_gap") {
       return [
@@ -7054,6 +7280,15 @@ const PIVOTA_PDP_QUALITY_NEXT_ACTION =
 const PIVOTA_PDP_QUALITY_MERCHANT_SUMMARY =
   "Merchant-owned PDP attribution passed. The main readiness gap is on the Pivota agent-facing PDP layer.";
 
+const ORGANIC_DISCOVERY_NEXT_ACTION =
+  "Strengthen merchant and Pivota discovery signals, update query cluster mapping, then rerun Organic Product Discovery Test.";
+
+const COMPETITOR_DOMINANCE_NEXT_ACTION =
+  "Analyze dominant competitor matches, add differentiation evidence, update substitute/query mappings, then rerun Organic Product Discovery Test.";
+
+const DISCOVERY_VS_READINESS_CONTEXTUAL_PASSED =
+  "Your merchant-owned and Pivota paths were returned correctly when product/PDP context was provided. However, the product did not appear in no-context organic discovery prompts, and competitors dominated those prompts. This means the buying paths are ready when surfaced, but discovery signals need to improve before AI users can naturally reach this product.";
+
 function isPivotaPdpQualityFinding(value: string) {
   return (PIVOTA_PDP_QUALITY_FINDING_TYPES as readonly string[]).includes(value);
 }
@@ -7158,7 +7393,8 @@ function applyResolutionPlansToSnapshot(snapshot: GMVAssuranceSnapshot) {
     const action = nextResolutionAction(plan);
     if (!plan || !action) continue;
     blocker.resolution_plan_id = plan.id;
-    blocker.recommended_action = action.title;
+    blocker.recommended_action =
+      discoveryResolutionNextAction(blocker.blocker_type) || action.title;
   }
   snapshot.recommended_next_actions = unique(
     [
@@ -7308,7 +7544,7 @@ export class GMVAssuranceService {
           : organicProductDiscoveryScore === "not_configured"
             ? "Configure discovery provider before organic discovery."
             : organicProductDiscoveryScore < 40
-              ? "Improve organic discoverability and rerun Organic Product Discovery Test."
+              ? ORGANIC_DISCOVERY_NEXT_ACTION
               : "Monitor organic product discovery.",
       evidence:
         organicProductDiscoveryScore === undefined ||
@@ -7424,7 +7660,7 @@ export class GMVAssuranceService {
           : competitorDominanceScore === "not_configured"
             ? "Configure discovery provider before measuring competitor dominance."
             : competitorDominanceScore >= 60
-              ? "Reduce competitor dominance with stronger merchant/Pivota evidence and rerun discovery."
+              ? COMPETITOR_DOMINANCE_NEXT_ACTION
               : "Monitor competitor dominance.",
       evidence:
         competitorDominanceScore === undefined ||
@@ -9261,6 +9497,9 @@ export class MerchantFacingReportService {
       "## Executive Summary",
       report.executive_summary,
       "",
+      "## Discovery vs Readiness",
+      report.discovery_vs_readiness,
+      "",
       "## Discoverability",
       `Status: ${report.path_readiness.discoverability.status.replace(/_/g, " ")}`,
       report.path_readiness.discoverability.summary,
@@ -9367,6 +9606,7 @@ export class MerchantFacingReportService {
       report_status: "draft",
       title: `${report.target_summary.brand || report.target_summary.merchant_name} Agent Center validation report`,
       executive_summary: this.executiveSummary(report, discoveryStatus),
+      discovery_vs_readiness: this.discoveryVsReadinessSummary(report),
       tested_product: {
         merchant_name: report.target_summary.merchant_name,
         store_url: report.target_summary.store_url,
@@ -9477,6 +9717,35 @@ export class MerchantFacingReportService {
       return `Agent Center validated ${report.target_summary.product_name}. Overall readiness is ${readiness.replace(/_/g, " ")}. The primary blocker is ${titleCase(blocker.blocker_type)} on ${blocker.affected_layer}; the recommended next action is: ${report.next_best_action}`;
     }
     return `Agent Center validated ${report.target_summary.product_name}. Overall readiness is ${readiness.replace(/_/g, " ")} and discovery readiness is ${reportStatusLabel(discoveryStatus)}. No high-severity blocker was generated in this run.`;
+  }
+
+  private discoveryVsReadinessSummary(report: ProductionValidationReport) {
+    const snapshot = report.gmv_assurance_snapshot;
+    const discovery = snapshot?.discovery_readiness_summary;
+    const demand = snapshot?.demand_test_summary;
+    const offer = snapshot?.offer_execution_summary;
+    const organicFailed =
+      discovery?.organic_product_discovery_status.status === "blocked" ||
+      discovery?.organic_product_discovery_status.status === "needs_work";
+    const competitorDominated =
+      discovery?.competitor_dominance_status.status === "blocked" ||
+      discovery?.competitor_dominance_status.status === "needs_work";
+    const contextualPathsPassed =
+      demand?.merchant_attribution_status.status === "passed" &&
+      demand?.pivota_attribution_status.status === "passed";
+    const readinessPassed =
+      demand?.product_visibility_status.status === "passed" &&
+      offer?.offer_readiness_status.status === "passed";
+
+    if (organicFailed && competitorDominated && contextualPathsPassed && readinessPassed) {
+      return DISCOVERY_VS_READINESS_CONTEXTUAL_PASSED;
+    }
+
+    return [
+      "Discoverability answers whether AI users can naturally find the product without injected merchant/Pivota URL context.",
+      "Readiness answers whether the merchant-owned and Pivota agent-facing paths work once surfaced.",
+      `Organic discovery is ${reportStatusLabel(discovery?.organic_product_discovery_status.status)}; merchant attribution is ${reportStatusLabel(demand?.merchant_attribution_status.status)}; Pivota attribution is ${reportStatusLabel(demand?.pivota_attribution_status.status)}; offer readiness is ${reportStatusLabel(offer?.offer_readiness_status.status)}.`,
+    ].join(" ");
   }
 
   private discoverySummary(
@@ -9600,8 +9869,8 @@ export class MerchantFacingReportService {
       for (const action of plan.recommended_actions) {
         fixes.push({
           title: action.title,
-          owner_type: plan.owner_type,
-          owner_team: plan.owner_team,
+          owner_type: action.owner_type || plan.owner_type,
+          owner_team: action.owner_team || plan.owner_team,
           approval_required: action.requires_merchant_approval,
           target_layer: String(action.target_layer || blocker.affected_layer),
           action_status: action.status,

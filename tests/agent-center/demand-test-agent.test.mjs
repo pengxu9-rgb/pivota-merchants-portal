@@ -9,6 +9,7 @@ process.env.PIVOTA_AGENT_CENTER_MOCK_GEMINI = "true";
 const repository = await import("../../lib/agent-center/repository.ts");
 const provider = await import("../../lib/agent-center/provider.ts");
 const services = await import("../../lib/agent-center/services.ts");
+const runtimeConfig = await import("../../lib/agent-center/runtime-config.ts");
 const apiHandlers = await import("../../lib/agent-center/api-handlers.ts");
 const { NextRequest } = await import("next/server.js");
 
@@ -58,6 +59,10 @@ const {
   handleInternalDemoFixturesRequest,
   handleInternalProductionValidationRunsRequest,
 } = apiHandlers;
+const {
+  envFlagEnabled,
+  getAgentCenterRuntimeConfigStatus,
+} = runtimeConfig;
 
 const verifiedPivotaPdpUrl =
   "https://agent.pivota.cc/products/ext_d7c74bcb380cbc2bdd5d5d90?return=%2Fproducts%2Fext_0281be2868f91dcf200fa248%3Freturn%3D%252F";
@@ -533,6 +538,93 @@ function runControlledSunscreenCase({ attributes, pivotaAttributes, outputs }) {
   return { store, target, product, cluster, job, parsed, matches, score, issues };
 }
 
+function runOrganicDiscoveryBlockerCase() {
+  const { store, target, product, cluster } = createIsntreeSunscreenTarget(
+    [],
+    "organic_product_discovery_test"
+  );
+  const jobService = new DemandTestJobService();
+  const job = jobService.create({
+    scan_target_id: target.id,
+    query_cluster_ids: [cluster.id],
+    providers: ["gemini"],
+    prompt_template_ids: ["general_recommendation_v1"],
+    repetitions: 2,
+  });
+
+  [competitorOnlyRecommendation([]), competitorOnlyRecommendation([])].forEach(
+    (output, index) => {
+      const input = {
+        ...demandInput(store, target, cluster, product),
+        query: cluster.queries[index % cluster.queries.length],
+        repetitionIndex: index + 1,
+      };
+      const run = jobService.createRun(
+        job,
+        cluster,
+        input.query,
+        "gemini",
+        DEFAULT_GEMINI_MODEL,
+        "general_recommendation_v1",
+        input
+      );
+      const raw = {
+        provider: "gemini",
+        model: DEFAULT_GEMINI_MODEL,
+        raw_output: output,
+        normalized_output: output,
+        input_tokens: 120,
+        output_tokens: 180,
+        tool_calls: 0,
+        provider_request_id: `organic_blocker_${index + 1}`,
+      };
+      const result = jobService.createResult(run, raw);
+      const parsed = parseProviderOutput(raw, input);
+      parsed.test_run_id = run.id;
+      parsed.query_cluster_id = cluster.id;
+      getAgentCenterState().parsedRecommendations.push(parsed);
+      run.status = "completed";
+      run.raw_output_id = result.id;
+      new UsageMeteringService().record({ job, run, result });
+    }
+  );
+
+  const parsed = getAgentCenterState().parsedRecommendations.filter(
+    (item) => item.query_cluster_id === cluster.id
+  );
+  const matches = parsed.map((item) =>
+    new ProductMatchService().match(item, store, cluster)
+  );
+  const score = new ScoringService().scoreCluster({
+    jobId: job.id,
+    scanTarget: target,
+    cluster,
+    parsed,
+    matches,
+  });
+  Object.assign(score.aggregate_scores, {
+    product_entity_visibility_score: 100,
+    merchant_store_visibility_score: 100,
+    pivota_pdp_visibility_score: 100,
+    pivota_offer_visibility_score: 100,
+    visibility_score: 100,
+    attribute_readiness_score: 100,
+    pivota_pdp_readiness_score: 100,
+  });
+  score.provider_scores.production_validation = {
+    ...score.aggregate_scores,
+  };
+  const issues = new IssueEngine().generateForScore({
+    scanTarget: target,
+    score,
+    cluster,
+    parsed,
+    matches,
+  });
+
+  return { store, target, product, cluster, job, parsed, matches, score, issues };
+}
+
 function createOfferExecutionFixture({
   merchantOfferPatch = {},
   pivotaOfferPatch,
@@ -819,6 +911,10 @@ const pivotaLivePdpQualityFindings = [
 
 const pivotaPdpQualityNextAction =
   "Complete Pivota PDP identity, overview, product intelligence module, and similar-card highlight, then rerun Pivota PDP Attribution Test and GMV Assurance Snapshot.";
+const organicDiscoveryNextAction =
+  "Strengthen merchant and Pivota discovery signals, update query cluster mapping, then rerun Organic Product Discovery Test.";
+const competitorDominanceNextAction =
+  "Analyze dominant competitor matches, add differentiation evidence, update substitute/query mappings, then rerun Organic Product Discovery Test.";
 
 function markDemandScoresPassed(result) {
   Object.assign(result.score.aggregate_scores, {
@@ -1267,8 +1363,12 @@ async function captureGeminiRequestForScanMode(scanMode, groundingEnabled = true
 
   process.env.GEMINI_API_KEY = "test-gemini-key";
   process.env.PIVOTA_AGENT_CENTER_MOCK_GEMINI = "false";
-  if (groundingEnabled) process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true";
-  else delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  if (groundingEnabled) {
+    process.env.GEMINI_SEARCH_GROUNDING_ENABLED =
+      typeof groundingEnabled === "string" ? groundingEnabled : "true";
+  } else {
+    delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  }
   globalThis.fetch = async (_url, init) => {
     requestBody = JSON.parse(String(init.body));
     const rawText = JSON.stringify({
@@ -1350,8 +1450,13 @@ test("Gemini grounding tool is included only for search-grounded discovery when 
     "search_grounded_product_discovery_test",
     false
   );
+  const escapedNewline = await captureGeminiRequestForScanMode(
+    "search_grounded_product_discovery_test",
+    "true\\n"
+  );
 
   assert.deepEqual(search.requestBody.tools, [{ google_search: {} }]);
+  assert.deepEqual(escapedNewline.requestBody.tools, [{ google_search: {} }]);
   assert.equal(search.requestBody.generationConfig.responseMimeType, undefined);
   assert.equal(search.requestBody.generationConfig.responseSchema, undefined);
   assert.equal(organic.requestBody.generationConfig.responseMimeType, "application/json");
@@ -1375,6 +1480,46 @@ test("Gemini grounding metadata populates discovery sources and returned URLs", 
   assert.ok(result.parsed.returned_urls.includes(result.merchantPdpUrl));
   assert.equal(result.parsed.merchant_pdp_url_exact_match, true);
   assert.equal(result.parsed.discovery_type, "search_grounded");
+});
+
+test("runtime config normalizes Gemini search grounding flag without exposing secrets", () => {
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true\\n";
+  try {
+    assert.equal(envFlagEnabled(process.env.GEMINI_SEARCH_GROUNDING_ENABLED), true);
+    const status = getAgentCenterRuntimeConfigStatus();
+    assert.equal(status.gemini_search_grounding_enabled, true);
+    assert.equal(status.search_grounded_product_discovery_status, "configured");
+    assert.equal(JSON.stringify(status).includes("GEMINI_API_KEY"), false);
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  }
+});
+
+test("internal config status API is gated and reports grounding configuration", async () => {
+  resetAgentCenterState();
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  await withInternalProductionValidationEnv(async () => {
+    process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true\\n";
+    const response = await handleAgentCenterRequest(
+      internalProductionValidationRequest(
+        "https://example.test/api/agent-center/internal-config-status"
+      ),
+      { path: ["internal-config-status"] }
+    );
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.config.gemini_search_grounding_enabled, true);
+    assert.equal(
+      payload.config.search_grounded_product_discovery_status,
+      "configured"
+    );
+    assert.equal(JSON.stringify(payload).includes("validation-secret"), false);
+  });
+  if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
 });
 
 test("Gemini parser fallback preserves grounding URLs when grounded text is not JSON", () => {
@@ -4350,6 +4495,31 @@ test("GMV assurance usage summary aggregates preview credit categories", () => {
   assert.equal(snapshot.usage_summary.billing_status, "not_invoiced");
 });
 
+test("GMV assurance next action uses discovery-specific resolution guidance", () => {
+  const result = runOrganicDiscoveryBlockerCase();
+  const snapshot = new GMVAssuranceService().createSnapshot({
+    scan_target_id: result.target.id,
+    product_entity_id: result.product.product_entity_id,
+  });
+  const organicIssue = result.issues.find(
+    (issue) => issue.issue_type === "organic_product_not_discovered"
+  );
+  const competitorIssue = result.issues.find(
+    (issue) => issue.issue_type === "competitor_dominance"
+  );
+  new IssueResolutionService().generate(organicIssue.id);
+  new IssueResolutionService().generate(competitorIssue.id);
+  const overview = getAgentCenterOverview();
+
+  assert.equal(snapshot.top_blockers[0].blocker_type, "organic_product_not_discovered");
+  assert.equal(snapshot.top_blockers[0].recommended_action, organicDiscoveryNextAction);
+  assert.ok(snapshot.recommended_next_actions.includes(competitorDominanceNextAction));
+  assert.equal(
+    overview.latest_assurance_snapshot.top_blockers[0].recommended_action,
+    organicDiscoveryNextAction
+  );
+});
+
 test("GMV assurance API creates and fetches snapshots", async () => {
   const fixture = createCheckoutVerificationFixture();
   new ProductUnderstandingService().runDiagnosis(fixture.issue.id);
@@ -4407,6 +4577,64 @@ test("issue resolution plan generation handles merchant store attribution gaps",
   assert.equal(usageEvent.event_type, "resolution_plan_credit");
   assert.equal(usageEvent.billing_mode, "preview_only");
   assert.equal(usageEvent.billing_status, "not_invoiced");
+});
+
+test("issue resolution plan generation handles organic discovery blockers", () => {
+  const result = runOrganicDiscoveryBlockerCase();
+  const issue = result.issues.find(
+    (item) => item.issue_type === "organic_product_not_discovered"
+  );
+  const plan = new IssueResolutionService().generate(issue.id);
+  const actionTypes = plan.recommended_actions.map((action) => action.action_type);
+  const usageEvent = getAgentCenterState().usageEvents.find(
+    (event) => event.id === plan.usage_event_ids[0]
+  );
+
+  assert.equal(plan.blocker_type, "organic_product_not_discovered");
+  assert.equal(plan.owner_type, "shared");
+  assert.ok(plan.fix_targets.includes("merchant_structured_data"));
+  assert.ok(plan.fix_targets.includes("pivota_query_mapping"));
+  assert.ok(actionTypes.includes("merchant_discovery_signal_patch"));
+  assert.ok(actionTypes.includes("pivota_discovery_signal_patch"));
+  assert.ok(actionTypes.includes("query_cluster_mapping_patch"));
+  assert.ok(actionTypes.includes("rerun_organic_product_discovery_test"));
+  assert.equal(plan.verification_plan.scan_mode, "organic_product_discovery_test");
+  assert.notEqual(plan.owner_type, "human_review");
+  assert.ok(
+    plan.recommended_actions.some(
+      (action) =>
+        action.action_type === "merchant_discovery_signal_patch" &&
+        action.requires_merchant_approval === true
+    )
+  );
+  assert.equal(usageEvent.billing_mode, "preview_only");
+  assert.equal(usageEvent.billing_status, "not_invoiced");
+});
+
+test("issue resolution plan generation handles competitor dominance blockers", () => {
+  const result = runOrganicDiscoveryBlockerCase();
+  const issue = result.issues.find(
+    (item) => item.issue_type === "competitor_dominance"
+  );
+  const plan = new IssueResolutionService().generate(issue.id);
+  const actionTypes = plan.recommended_actions.map((action) => action.action_type);
+
+  assert.equal(plan.blocker_type, "competitor_dominance");
+  assert.equal(plan.owner_type, "shared");
+  assert.ok(actionTypes.includes("competitor_dominance_analysis"));
+  assert.ok(actionTypes.includes("differentiation_evidence_patch"));
+  assert.ok(actionTypes.includes("competitor_substitute_graph_patch"));
+  assert.ok(actionTypes.includes("rerun_organic_product_discovery_test"));
+  assert.equal(plan.verification_plan.scan_mode, "organic_product_discovery_test");
+  assert.equal(plan.verification_plan.success_metric, "competitor_dominance_score");
+  assert.notEqual(plan.owner_type, "human_review");
+  assert.ok(
+    plan.recommended_actions.some(
+      (action) =>
+        action.action_type === "differentiation_evidence_patch" &&
+        action.requires_merchant_approval === true
+    )
+  );
 });
 
 test("issue resolution plan generation handles Pivota attribution gaps", () => {
@@ -4949,6 +5177,24 @@ test("merchant-facing report draft summarizes dual-path readiness safely", async
       (item) => item.issue_id
     );
     if (blocker?.issue_id) new IssueResolutionService().generate(blocker.issue_id);
+    completed.validation_report.gmv_assurance_snapshot.discovery_readiness_summary.organic_product_discovery_status = {
+      status: "blocked",
+      score: 0,
+      issue_id: "issue_organic_fixture",
+      recommended_next_action: organicDiscoveryNextAction,
+      evidence: "Organic product discovery score is 0.",
+    };
+    completed.validation_report.gmv_assurance_snapshot.discovery_readiness_summary.competitor_dominance_status = {
+      status: "blocked",
+      score: 100,
+      issue_id: "issue_competitor_fixture",
+      recommended_next_action: competitorDominanceNextAction,
+      evidence: "Competitor dominance score is 100; lower is better.",
+    };
+    completed.validation_report.gmv_assurance_snapshot.demand_test_summary.product_visibility_status.status = "passed";
+    completed.validation_report.gmv_assurance_snapshot.demand_test_summary.merchant_attribution_status.status = "passed";
+    completed.validation_report.gmv_assurance_snapshot.demand_test_summary.pivota_attribution_status.status = "passed";
+    completed.validation_report.gmv_assurance_snapshot.offer_execution_summary.offer_readiness_status.status = "passed";
 
     const report = new MerchantFacingReportService().generate(completed.id);
     const serialized = JSON.stringify(report).toLowerCase();
@@ -4956,6 +5202,8 @@ test("merchant-facing report draft summarizes dual-path readiness safely", async
     assert.equal(report.production_validation_run_id, completed.id);
     assert.equal(report.status, "draft");
     assert.equal(report.tested_product.product_name, completed.product_name);
+    assert.match(report.discovery_vs_readiness, /no-context organic discovery/i);
+    assert.match(report.discovery_vs_readiness, /buying paths are ready when surfaced/i);
     assert.equal(
       report.path_readiness.merchant_owned_path.merchant_pdp_url,
       completed.merchant_pdp_url
@@ -5121,6 +5369,7 @@ test("merchant-facing report markdown and safety warnings exclude raw debug payl
     );
     assert.match(markdown, /merchant-owned path/);
     assert.match(markdown, /pivota agent-facing path/);
+    assert.match(markdown, /discovery vs readiness/);
     assert.equal(markdown.includes("raw_output"), false);
     assert.equal(markdown.includes("token_count"), false);
     assert.equal(markdown.includes("debug payload"), true);
@@ -5365,6 +5614,9 @@ test("Issue Detail renders Issue Resolution Workflow controls", async () => {
   assert.match(source, /Resolution Plan/);
   assert.match(source, /Generate Resolution Plan/);
   assert.match(source, /Retest Resolution Plan/);
+  assert.match(source, /Discovery blocker/);
+  assert.match(source, /Recommended discovery fixes/);
+  assert.match(source, /organic_product_discovery_test/);
   assert.match(source, /resolution-plan/);
   assert.match(source, /Recommended actions/);
 });
@@ -5406,6 +5658,7 @@ test("internal report preview page renders report review controls", async () => 
   assert.match(source, /Mark reviewed/);
   assert.match(source, /Mark approved_to_share/);
   assert.match(source, /Executive Summary/);
+  assert.match(source, /Discovery vs Readiness/);
   assert.match(source, /Discoverability/);
   assert.match(source, /Merchant-Owned Path/);
   assert.match(source, /Pivota Agent-Facing Path/);

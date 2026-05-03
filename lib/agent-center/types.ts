@@ -741,6 +741,8 @@ export type RecommendedAction = {
   title: string;
   description: string;
   target_layer: FixTarget | string;
+  owner_type?: IssueResolutionOwnerType;
+  owner_team?: string;
   requires_merchant_approval: boolean;
   can_apply_automatically: boolean;
   patch_payload: Record<string, unknown>;
@@ -1429,6 +1431,7 @@ export type MerchantFacingValidationReport = Timestamped & {
   approved_by?: string;
   title: string;
   executive_summary: string;
+  discovery_vs_readiness: string;
   tested_product: {
     merchant_name: string;
     store_url: string;

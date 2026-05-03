@@ -9,6 +9,7 @@ import type {
   PurchasePathType,
 } from "./types";
 import { nextId, nowIso } from "./repository.ts";
+import { geminiSearchGroundingEnabled as runtimeGeminiSearchGroundingEnabled } from "./runtime-config.ts";
 
 export const PARSED_RECOMMENDATION_SCHEMA = {
   type: "object",
@@ -154,7 +155,7 @@ function searchGroundedDiscoveryMode(input: DemandTestInput) {
 function geminiSearchGroundingEnabled(input: DemandTestInput) {
   return (
     searchGroundedDiscoveryMode(input) &&
-    process.env.GEMINI_SEARCH_GROUNDING_ENABLED === "true"
+    runtimeGeminiSearchGroundingEnabled()
   );
 }
 

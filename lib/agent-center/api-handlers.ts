@@ -4,6 +4,7 @@ import {
   DEMO_MERCHANT_ID,
   withAgentCenterRepositorySession,
 } from "./repository.ts";
+import { getAgentCenterRuntimeConfigStatus } from "./runtime-config.ts";
 import {
   CheckoutVerificationService,
   DemoFixtureService,
@@ -338,6 +339,15 @@ async function handleAgentCenterRequestInner(
         req,
         id ? { runId: id, action } : undefined
       );
+    }
+
+    if (resource === "internal-config-status") {
+      const gate = internalProductionValidationGate(req);
+      if (!gate.allowed) return json({ error: gate.error }, 403);
+      if (req.method === "GET") {
+        return json({ config: getAgentCenterRuntimeConfigStatus() });
+      }
+      return json({ error: "Unsupported internal config status route" }, 404);
     }
 
     if (!resource || resource === "overview") {
