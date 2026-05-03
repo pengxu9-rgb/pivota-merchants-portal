@@ -5691,6 +5691,44 @@ test("merchant-facing report maps scoped numeric zero search-grounded scores as 
     state.issues.push(merchantIssue, pivotaIssue, wrongPathIssue);
     modeSummary.issue_ids = [merchantIssue.id, pivotaIssue.id, wrongPathIssue.id];
     completed.issue_ids = [...modeSummary.issue_ids];
+    completed.validation_report.top_blockers = [
+      {
+        blocker_type: "merchant_pdp_not_discovered",
+        severity: "high",
+        affected_layer: "merchant_discovery",
+        fix_target: "both_merchant_and_pivota",
+        issue_id: merchantIssue.id,
+        recommended_action:
+          "Improve merchant PDP discovery signals and rerun search-grounded discovery.",
+      },
+      {
+        blocker_type: "pivota_pdp_not_discovered",
+        severity: "high",
+        affected_layer: "pivota_discovery",
+        fix_target: "both_merchant_and_pivota",
+        issue_id: pivotaIssue.id,
+        recommended_action:
+          "Improve Pivota PDP discovery signals and rerun discovery.",
+      },
+      {
+        blocker_type: "low_product_visibility",
+        severity: "critical",
+        affected_layer: "demand_test",
+        recommended_action: "Improve product visibility and rerun Demand Test.",
+      },
+      {
+        blocker_type: "merchant_store_attribution_gap",
+        severity: "high",
+        affected_layer: "merchant_attribution",
+        recommended_action: "Return a verified merchant store/PDP buying path.",
+      },
+      {
+        blocker_type: "pivota_attribution_gap",
+        severity: "high",
+        affected_layer: "pivota_channel",
+        recommended_action: "Publish or verify Pivota PDP / offer attribution.",
+      },
+    ];
 
     const report = new MerchantFacingReportService().generate(completed.id, {
       regenerate: true,
@@ -5777,6 +5815,12 @@ test("merchant-facing report maps scoped numeric zero search-grounded scores as 
       report.readiness_result.contextual_pivota_attribution.status,
       "not_tested"
     );
+    const blockerTypes = report.blockers.map((blocker) => blocker.blocker_type);
+    assert.ok(blockerTypes.includes("merchant_pdp_not_discovered"));
+    assert.ok(blockerTypes.includes("pivota_pdp_not_discovered"));
+    assert.equal(blockerTypes.includes("low_product_visibility"), false);
+    assert.equal(blockerTypes.includes("merchant_store_attribution_gap"), false);
+    assert.equal(blockerTypes.includes("pivota_attribution_gap"), false);
   });
 });
 

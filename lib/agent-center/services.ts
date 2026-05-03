@@ -11825,7 +11825,9 @@ export class MerchantFacingReportService {
   }
 
   private blockers(report: ProductionValidationReport) {
-    return report.top_blockers.map((blocker) => {
+    return report.top_blockers.filter((blocker) =>
+      this.blockerMatchesReportScope(report, blocker.blocker_type)
+    ).map((blocker) => {
       const plan = blocker.issue_id ? latestIssueResolutionPlan(blocker.issue_id) : null;
       const issue = blocker.issue_id
         ? getAgentCenterState().issues.find((item) => item.id === blocker.issue_id)
@@ -11841,6 +11843,42 @@ export class MerchantFacingReportService {
           nextResolutionAction(plan)?.title || blocker.recommended_action,
       };
     });
+  }
+
+  private blockerMatchesReportScope(
+    report: ProductionValidationReport,
+    blockerType: string
+  ) {
+    if (
+      blockerType === "merchant_store_attribution_gap" ||
+      blockerType === "merchant_attribution_gap"
+    ) {
+      return this.modeRan(report, "merchant_store_attribution_test");
+    }
+    if (
+      blockerType === "pivota_attribution_gap" ||
+      blockerType === "pivota_pdp_attribution_gap" ||
+      blockerType === "pivota_offer_attribution_gap" ||
+      blockerType === "unverified_pivota_attribution"
+    ) {
+      return this.modeRan(report, "pivota_pdp_attribution_test");
+    }
+    if (
+      blockerType === "low_product_visibility" ||
+      blockerType === "ai_visibility_loss"
+    ) {
+      return (
+        this.modeRan(report, "open_product_visibility_test") ||
+        this.modeRan(report, "organic_product_discovery_test")
+      );
+    }
+    if (
+      blockerType === "buying_path_missing" ||
+      blockerType === "offer_not_discovered"
+    ) {
+      return this.modeRan(report, "buying_path_discovery_test");
+    }
+    return true;
   }
 
   private recommendedFixes(
