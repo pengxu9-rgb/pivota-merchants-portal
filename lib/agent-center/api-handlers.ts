@@ -341,7 +341,10 @@ async function handleAgentCenterRequestInner(
       );
     }
 
-    if (resource === "internal-config-status") {
+    if (
+      resource === "internal-config-status" ||
+      resource === "internal-runtime-config"
+    ) {
       const gate = internalProductionValidationGate(req);
       if (!gate.allowed) return json({ error: gate.error }, 403);
       if (req.method === "GET") {

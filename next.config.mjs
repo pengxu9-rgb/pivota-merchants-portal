@@ -42,6 +42,10 @@ const nextConfig = {
           source: "/api/internal/agent-center/config-status",
           destination: "/api/agent-center/internal-config-status",
         },
+        {
+          source: "/api/internal/agent-center/runtime-config",
+          destination: "/api/agent-center/internal-runtime-config",
+        },
       ],
     };
   },

@@ -44,6 +44,36 @@ Agent Center V1 shows the chain from discovery to AI demand to pre-payment readi
 
 The demo should make clear that V1 proves pre-payment readiness only. It does not prove payment authorization, order placement, settlement, or final GMV attribution.
 
+## Merchant Pilot Report Quality
+
+For real merchant pilots, do not share a report externally unless discovery
+evidence is concrete enough for a merchant to act on.
+
+Organic discovery failure should be explained as:
+
+- no-context organic prompts did not surface the product or brand
+- competitors appeared instead
+- contextual attribution can still pass because it uses provided product/PDP context
+
+Competitor dominance should list normalized examples:
+
+- query tested
+- returned competitor brands/products
+- whether the merchant product appeared
+- whether the merchant brand appeared
+- likely reason competitors dominated
+- recommended differentiation angles such as ingredients, skin type, texture,
+  product family, use case, claim evidence, review proof, and substitute mapping
+
+Search-grounded discovery should be phrased separately:
+
+- Found: "Search-grounded Gemini found the official merchant PDP when the product name was specified."
+- Not found: "Search-grounded Gemini did not return the official merchant PDP."
+- Not configured: "Search-grounded discovery was not configured in this run."
+
+Do not say contextual attribution equals discovery. Do not claim consumer Gemini
+UI or AI Mode ranking.
+
 ## Demo Flow
 
 1. Open `/agent-center`.
@@ -241,6 +271,7 @@ Run these before shipping Agent Center V1 changes:
 npm run test:agent-center
 npm run lint
 npm run build
+git diff --check
 ```
 
 For production smoke, use internal demo fixtures only and delete each fixture after validation.

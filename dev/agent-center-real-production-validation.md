@@ -22,6 +22,7 @@ POST   /api/internal/agent-center/production-validation-runs
 GET    /api/internal/agent-center/production-validation-runs/:id
 POST   /api/internal/agent-center/production-validation-runs/:id/run
 DELETE /api/internal/agent-center/production-validation-runs/:id
+GET    /api/internal/agent-center/runtime-config
 ```
 
 These routes are not linked from merchant UI. They are rewritten to the shared Agent Center handler so create, run, fetch, and cleanup operate against the same server-side Agent Center state.
@@ -68,6 +69,18 @@ or:
 x-pivota-internal-secret: {secret}
 x-internal-production-validation-token: {secret}
 ```
+
+Runtime config status:
+
+```bash
+curl "$BASE_URL/api/internal/agent-center/runtime-config" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET"
+```
+
+The response returns safe status only, such as state backend,
+`gemini_search_grounding_enabled`, provider configured, production validation
+enabled, and demo fixtures enabled. It must not return API keys, DB URLs,
+internal secrets, provider credentials, or token-level costs.
 
 ## Input Schema
 
@@ -273,6 +286,28 @@ model-returned URLs and `groundingMetadata` sources. It does not inject expected
 merchant/Pivota PDP URLs as prompt context and it does not prove consumer Gemini
 UI or AI Mode ranking.
 
+Interpret search-grounded results as:
+
+- `passed`: the exact expected merchant or Pivota PDP URL was returned by model
+  output or grounding metadata.
+- `needs_work`: grounding ran, but the exact expected PDP URL was not returned.
+- `not_configured`: grounding was not enabled or unavailable; this is not a
+  contextual attribution failure.
+
+If Gemini returns `webSearchQueries` but no `groundingChunks`, keep the search
+queries in internal/debug evidence and score URL discovery only from actual
+returned URLs.
+
+Merchant-facing reports should show concrete normalized discovery evidence:
+
+- tested organic queries
+- returned products and brands
+- returned competitors
+- competitor rank summary
+- missing merchant product/brand summary
+- likely competitor advantage
+- merchant-owned, Pivota-owned, and shared discovery fixes
+
 ## Sample Isntree Validation Payload
 
 ```json
@@ -396,4 +431,5 @@ Run before shipping changes to this harness:
 npm run test:agent-center
 npm run lint
 npm run build
+git diff --check
 ```

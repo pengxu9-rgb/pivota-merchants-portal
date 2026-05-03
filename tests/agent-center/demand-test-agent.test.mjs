@@ -1500,8 +1500,10 @@ test("runtime config normalizes Gemini search grounding flag without exposing se
 test("internal config status API is gated and reports grounding configuration", async () => {
   resetAgentCenterState();
   const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  const previousGemini = process.env.GEMINI_API_KEY;
   await withInternalProductionValidationEnv(async () => {
     process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true\\n";
+    process.env.GEMINI_API_KEY = "test-gemini-key";
     const response = await handleAgentCenterRequest(
       internalProductionValidationRequest(
         "https://example.test/api/agent-center/internal-config-status"
@@ -1511,15 +1513,32 @@ test("internal config status API is gated and reports grounding configuration", 
     const payload = await response.json();
 
     assert.equal(response.status, 200);
+    assert.equal(payload.config.production_validation_enabled, true);
+    assert.equal(payload.config.gemini_provider_configured, true);
+    assert.ok(payload.config.agent_center_state_backend);
     assert.equal(payload.config.gemini_search_grounding_enabled, true);
     assert.equal(
       payload.config.search_grounded_product_discovery_status,
       "configured"
     );
     assert.equal(JSON.stringify(payload).includes("validation-secret"), false);
+    assert.equal(JSON.stringify(payload).includes("DATABASE_URL"), false);
+
+    const runtimeResponse = await handleAgentCenterRequest(
+      internalProductionValidationRequest(
+        "https://example.test/api/agent-center/internal-runtime-config"
+      ),
+      { path: ["internal-runtime-config"] }
+    );
+    const runtimePayload = await runtimeResponse.json();
+    assert.equal(runtimeResponse.status, 200);
+    assert.equal(runtimePayload.config.gemini_search_grounding_enabled, true);
+    assert.equal(JSON.stringify(runtimePayload).includes("validation-secret"), false);
   });
   if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
   else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  if (previousGemini === undefined) delete process.env.GEMINI_API_KEY;
+  else process.env.GEMINI_API_KEY = previousGemini;
 });
 
 test("Gemini parser fallback preserves grounding URLs when grounded text is not JSON", () => {
@@ -5203,7 +5222,50 @@ test("merchant-facing report draft summarizes dual-path readiness safely", async
     assert.equal(report.status, "draft");
     assert.equal(report.tested_product.product_name, completed.product_name);
     assert.match(report.discovery_vs_readiness, /no-context organic discovery/i);
-    assert.match(report.discovery_vs_readiness, /buying paths are ready when surfaced/i);
+    assert.match(report.discovery_vs_readiness, /buying paths appear ready when surfaced/i);
+    assert.match(report.discovery_vs_readiness, /Contextual attribution passed does not mean organic discovery passed/i);
+    assert.match(report.discovery_vs_readiness, /Search-grounded discovery is separate/i);
+    assert.ok(report.discovery_evidence.tested_organic_queries.length > 0);
+    assert.ok(report.discovery_evidence.returned_products.length > 0);
+    assert.ok(report.discovery_evidence.returned_competitors.length > 0);
+    assert.match(report.discovery_evidence.competitor_rank_summary, /competitor/i);
+    assert.match(
+      report.discovery_evidence.missing_merchant_product_summary,
+      /appeared in/i
+    );
+    assert.ok(
+      report.discovery_evidence.competitor_dominance_evidence.likely_reasons.includes(
+        "stronger category association"
+      )
+    );
+    assert.ok(
+      report.discovery_evidence.competitor_dominance_evidence
+        .recommended_differentiation_angles.includes("ingredient positioning")
+    );
+    assert.match(report.discovery_result.interpretation, /discovery/i);
+    assert.match(
+      report.discovery_result.search_grounded_merchant_pdp_discovery.summary,
+      /not configured|official merchant PDP|did not return/i
+    );
+    assert.match(
+      report.readiness_result.contextual_merchant_attribution.summary,
+      /contextual attribution/i
+    );
+    assert.ok(
+      report.recommended_fix_sections.merchant_owned_fixes.some((fix) =>
+        /Product structured data/i.test(fix)
+      )
+    );
+    assert.ok(
+      report.recommended_fix_sections.pivota_owned_fixes.some((fix) =>
+        /product intelligence module/i.test(fix)
+      )
+    );
+    assert.ok(
+      report.recommended_fix_sections.shared_fixes.some((fix) =>
+        /competitors dominated/i.test(fix)
+      )
+    );
     assert.equal(
       report.path_readiness.merchant_owned_path.merchant_pdp_url,
       completed.merchant_pdp_url
@@ -5223,11 +5285,94 @@ test("merchant-facing report draft summarizes dual-path readiness safely", async
     assert.ok(report.v1_does_not_prove.includes("Final GMV attribution"));
     assert.ok(report.recommended_fixes.length > 0);
     assert.ok(report.sharing_notes.some((note) => /raw provider/i.test(note)));
+    assert.equal(serialized.includes("\"prompt\""), false);
+    assert.equal(serialized.includes("input_tokens"), false);
+    assert.equal(serialized.includes("output_tokens"), false);
     assert.equal(serialized.includes("token_count"), false);
     assert.equal(serialized.includes("raw_output"), false);
     assert.equal(
       new MerchantFacingReportService().latestForRun(completed.id).id,
       report.id
+    );
+  });
+});
+
+test("merchant-facing report handles search-grounded discovery interpretations", async () => {
+  resetAgentCenterState();
+  await withMockProductionValidationFetch(async () => {
+    const service = new MerchantFacingReportService();
+
+    const merchantFoundRun = await new ProductionValidationRunService().run(
+      new ProductionValidationRunService().create(productionValidationPayload()).id
+    );
+    merchantFoundRun.validation_report.gmv_assurance_snapshot.discovery_readiness_summary.organic_product_discovery_status = {
+      status: "blocked",
+      score: 0,
+      recommended_next_action: organicDiscoveryNextAction,
+      evidence: "Organic product discovery score is 0.",
+    };
+    merchantFoundRun.validation_report.gmv_assurance_snapshot.discovery_readiness_summary.merchant_pdp_discovery_status = {
+      status: "passed",
+      score: 100,
+      recommended_next_action: "Merchant PDP discovered.",
+      evidence: "Merchant PDP exact URL returned.",
+    };
+    merchantFoundRun.validation_report.gmv_assurance_snapshot.discovery_readiness_summary.pivota_pdp_discovery_status = {
+      status: "needs_work",
+      score: 0,
+      recommended_next_action: "Improve Pivota PDP discovery.",
+      evidence: "Pivota PDP exact URL was not returned.",
+    };
+    const merchantFoundReport = service.generate(merchantFoundRun.id);
+    assert.match(
+      merchantFoundReport.discovery_result.interpretation,
+      /official merchant PDP can be found when the product name (is|was) specified/i
+    );
+    assert.match(
+      merchantFoundReport.discovery_result.interpretation,
+      /Pivota agent-facing path is not yet discoverable/i
+    );
+
+    const bothMissingRun = await new ProductionValidationRunService().run(
+      new ProductionValidationRunService().create(productionValidationPayload()).id
+    );
+    bothMissingRun.validation_report.gmv_assurance_snapshot.discovery_readiness_summary.organic_product_discovery_status = {
+      status: "blocked",
+      score: 0,
+      recommended_next_action: organicDiscoveryNextAction,
+      evidence: "Organic product discovery score is 0.",
+    };
+    bothMissingRun.validation_report.gmv_assurance_snapshot.discovery_readiness_summary.merchant_pdp_discovery_status = {
+      status: "needs_work",
+      score: 0,
+      recommended_next_action: "Merchant PDP not discovered.",
+      evidence: "Merchant PDP exact URL was not returned.",
+    };
+    bothMissingRun.validation_report.gmv_assurance_snapshot.discovery_readiness_summary.pivota_pdp_discovery_status = {
+      status: "needs_work",
+      score: 0,
+      recommended_next_action: "Pivota PDP not discovered.",
+      evidence: "Pivota PDP exact URL was not returned.",
+    };
+    const bothMissingReport = service.generate(bothMissingRun.id);
+    assert.match(
+      bothMissingReport.discovery_result.interpretation,
+      /Neither organic discovery nor search-grounded product discovery returned the official merchant PDP/i
+    );
+
+    const notConfiguredRun = await new ProductionValidationRunService().run(
+      new ProductionValidationRunService().create(productionValidationPayload()).id
+    );
+    notConfiguredRun.validation_report.gmv_assurance_snapshot.discovery_readiness_summary.merchant_pdp_discovery_status = {
+      status: "not_configured",
+      score: "not_configured",
+      recommended_next_action: "Configure search grounding.",
+      evidence: "Search grounding not configured.",
+    };
+    const notConfiguredReport = service.generate(notConfiguredRun.id);
+    assert.match(
+      notConfiguredReport.discovery_result.search_grounded_merchant_pdp_discovery.summary,
+      /not configured/i
     );
   });
 });
@@ -5616,6 +5761,9 @@ test("Issue Detail renders Issue Resolution Workflow controls", async () => {
   assert.match(source, /Retest Resolution Plan/);
   assert.match(source, /Discovery blocker/);
   assert.match(source, /Recommended discovery fixes/);
+  assert.match(source, /Tested organic queries/);
+  assert.match(source, /Dominant competitors/);
+  assert.match(source, /Differentiation recommendations/);
   assert.match(source, /organic_product_discovery_test/);
   assert.match(source, /resolution-plan/);
   assert.match(source, /Recommended actions/);
@@ -5660,6 +5808,11 @@ test("internal report preview page renders report review controls", async () => 
   assert.match(source, /Executive Summary/);
   assert.match(source, /Discovery vs Readiness/);
   assert.match(source, /Discoverability/);
+  assert.match(source, /Discovery Result/);
+  assert.match(source, /Discovery Evidence/);
+  assert.match(source, /Merchant-owned fixes/);
+  assert.match(source, /Pivota-owned fixes/);
+  assert.match(source, /Shared fixes/);
   assert.match(source, /Merchant-Owned Path/);
   assert.match(source, /Pivota Agent-Facing Path/);
   assert.match(source, /Blockers and Recommended Fixes/);

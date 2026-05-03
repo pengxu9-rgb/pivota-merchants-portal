@@ -15,8 +15,19 @@ export function getAgentCenterRuntimeConfigStatus() {
   const searchGroundingRawPresent =
     process.env.GEMINI_SEARCH_GROUNDING_ENABLED !== undefined;
   const searchGroundingEnabled = geminiSearchGroundingEnabled();
+  const stateBackend =
+    process.env.AGENT_CENTER_STATE_BACKEND ||
+    (process.env.AGENT_CENTER_DATABASE_URL ? "db" : "memory");
 
   return {
+    agent_center_state_backend: stateBackend,
+    production_validation_enabled: envFlagEnabled(
+      process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION
+    ),
+    internal_demo_fixtures_enabled: envFlagEnabled(
+      process.env.ENABLE_INTERNAL_DEMO_FIXTURES
+    ),
+    gemini_provider_configured: Boolean(process.env.GEMINI_API_KEY),
     gemini_api_key_configured: Boolean(process.env.GEMINI_API_KEY),
     gemini_search_grounding_env_present: searchGroundingRawPresent,
     gemini_search_grounding_enabled: searchGroundingEnabled,

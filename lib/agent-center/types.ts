@@ -1432,6 +1432,97 @@ export type MerchantFacingValidationReport = Timestamped & {
   title: string;
   executive_summary: string;
   discovery_vs_readiness: string;
+  discovery_result: {
+    organic_product_discovery: {
+      status: GMVAssuranceDimensionStatus;
+      score?: VisibilityScoreValue;
+      summary: string;
+    };
+    organic_brand_discovery: {
+      status: GMVAssuranceDimensionStatus;
+      score?: VisibilityScoreValue;
+      summary: string;
+    };
+    competitor_dominance: {
+      status: GMVAssuranceDimensionStatus;
+      score?: VisibilityScoreValue;
+      summary: string;
+    };
+    search_grounded_merchant_pdp_discovery: {
+      status: GMVAssuranceDimensionStatus;
+      score?: VisibilityScoreValue;
+      summary: string;
+      returned_urls: string[];
+      grounding_sources_count: number;
+    };
+    search_grounded_pivota_pdp_discovery: {
+      status: GMVAssuranceDimensionStatus;
+      score?: VisibilityScoreValue;
+      summary: string;
+      returned_urls: string[];
+      grounding_sources_count: number;
+    };
+    buying_path_discovery: {
+      status: GMVAssuranceDimensionStatus;
+      score?: VisibilityScoreValue;
+      summary: string;
+    };
+    interpretation: string;
+  };
+  readiness_result: {
+    contextual_merchant_attribution: {
+      status: GMVAssuranceDimensionStatus;
+      score?: VisibilityScoreValue;
+      summary: string;
+    };
+    contextual_pivota_attribution: {
+      status: GMVAssuranceDimensionStatus;
+      score?: VisibilityScoreValue;
+      summary: string;
+    };
+    product_sku_readiness: {
+      status: GMVAssuranceDimensionStatus;
+      summary: string;
+    };
+    offer_readiness: {
+      status: GMVAssuranceDimensionStatus;
+      summary: string;
+    };
+    checkout_readiness: {
+      status: GMVAssuranceDimensionStatus;
+      summary: string;
+    };
+  };
+  discovery_evidence: {
+    tested_organic_queries: Array<{
+      query: string;
+      query_cluster_id: string;
+      returned_products: Array<{
+        brand: string;
+        name: string;
+        rank: number;
+        reason?: string;
+      }>;
+      returned_brands: string[];
+      returned_competitors: string[];
+      merchant_product_appeared: boolean;
+      merchant_brand_appeared: boolean;
+    }>;
+    returned_products: string[];
+    returned_brands: string[];
+    returned_competitors: string[];
+    competitor_rank_summary: string;
+    missing_merchant_product_summary: string;
+    likely_competitor_advantage_summary: string;
+    discovery_interpretation: string;
+    competitor_dominance_evidence: {
+      dominant_competitors: string[];
+      competitor_products: string[];
+      query_clusters_where_competitors_won: string[];
+      likely_reasons: string[];
+      recommended_differentiation_angles: string[];
+    };
+  };
   tested_product: {
     merchant_name: string;
     store_url: string;
@@ -1506,6 +1597,11 @@ export type MerchantFacingValidationReport = Timestamped & {
     action_status?: RecommendedActionStatus;
     expected_impact?: string;
   }>;
+  recommended_fix_sections: {
+    merchant_owned_fixes: string[];
+    pivota_owned_fixes: string[];
+    shared_fixes: string[];
+  };
   retest_plan: string[];
   usage_statement: {
     ai_test_credits: number;

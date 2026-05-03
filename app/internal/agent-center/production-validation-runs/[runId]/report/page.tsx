@@ -249,6 +249,109 @@ function ReportPreview({
         </p>
       </SurfaceCard>
 
+      <SurfaceCard title="Discovery Result">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3">
+          <MetricStatus
+            label="Organic product discovery"
+            status={readiness.discoverability.organic_product_discovery}
+            helper={report.discovery_result.organic_product_discovery.summary}
+          />
+          <MetricStatus
+            label="Organic brand discovery"
+            status={report.discovery_result.organic_brand_discovery.score}
+            helper={report.discovery_result.organic_brand_discovery.summary}
+          />
+          <MetricStatus
+            label="Competitor dominance"
+            status={readiness.discoverability.competitor_dominance}
+            helper={report.discovery_result.competitor_dominance.summary}
+          />
+          <MetricStatus
+            label="Search-grounded merchant PDP"
+            status={report.discovery_result.search_grounded_merchant_pdp_discovery.score}
+            helper={report.discovery_result.search_grounded_merchant_pdp_discovery.summary}
+          />
+          <MetricStatus
+            label="Search-grounded Pivota PDP"
+            status={report.discovery_result.search_grounded_pivota_pdp_discovery.score}
+            helper={report.discovery_result.search_grounded_pivota_pdp_discovery.summary}
+          />
+          <MetricStatus
+            label="Buying-path discovery"
+            status={readiness.discoverability.buying_path_discovery}
+            helper={report.discovery_result.buying_path_discovery.summary}
+          />
+        </div>
+        <p className="border-t border-[color:var(--merchant-line)] px-5 py-4 text-sm text-[color:var(--merchant-muted-strong)]">
+          {report.discovery_result.interpretation}
+        </p>
+      </SurfaceCard>
+
+      <SurfaceCard title="Discovery Evidence">
+        <div className="grid gap-4 px-5 py-4 lg:grid-cols-3">
+          <div>
+            <p className="merchant-overline">Missing merchant product</p>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+              {report.discovery_evidence.missing_merchant_product_summary}
+            </p>
+          </div>
+          <div>
+            <p className="merchant-overline">Competitor rank summary</p>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+              {report.discovery_evidence.competitor_rank_summary}
+            </p>
+          </div>
+          <div>
+            <p className="merchant-overline">Likely competitor advantage</p>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+              {report.discovery_evidence.likely_competitor_advantage_summary}
+            </p>
+          </div>
+        </div>
+        <div className="overflow-x-auto border-t border-[color:var(--merchant-line)]">
+          <table className="min-w-full text-left text-sm">
+            <thead className="border-b border-[color:var(--merchant-line)] text-xs uppercase tracking-[0.08em] text-[color:var(--merchant-muted)]">
+              <tr>
+                <th className="px-5 py-3">Query tested</th>
+                <th className="px-5 py-3">Returned products</th>
+                <th className="px-5 py-3">Merchant appeared</th>
+                <th className="px-5 py-3">Returned competitors</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[color:var(--merchant-line)]">
+              {report.discovery_evidence.tested_organic_queries.length ? (
+                report.discovery_evidence.tested_organic_queries.map((item) => (
+                  <tr key={`${item.query_cluster_id}-${item.query}`}>
+                    <td className="px-5 py-4 font-medium text-[color:var(--merchant-ink)]">
+                      {item.query}
+                    </td>
+                    <td className="px-5 py-4 text-[color:var(--merchant-muted)]">
+                      {item.returned_products
+                        .map((product) => `${product.rank}. ${product.brand} ${product.name}`)
+                        .join("; ") || "None captured"}
+                    </td>
+                    <td className="px-5 py-4">
+                      {item.merchant_product_appeared || item.merchant_brand_appeared
+                        ? "Yes"
+                        : "No"}
+                    </td>
+                    <td className="px-5 py-4 text-[color:var(--merchant-muted)]">
+                      {item.returned_competitors.join(", ") || "None captured"}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td className="px-5 py-6 text-[color:var(--merchant-muted)]" colSpan={4}>
+                    No normalized organic query examples were available.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </SurfaceCard>
+
       <div className="grid gap-6 xl:grid-cols-2">
         <SurfaceCard title="Merchant-Owned Path">
           <dl>
@@ -357,6 +460,32 @@ function ReportPreview({
                 ) : null}
               </div>
             ))}
+          </div>
+          <div className="mt-5 grid gap-4 lg:grid-cols-3">
+            <div>
+              <p className="merchant-overline">Merchant-owned fixes</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[color:var(--merchant-muted-strong)]">
+                {report.recommended_fix_sections.merchant_owned_fixes.map((fix) => (
+                  <li key={fix}>{fix}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="merchant-overline">Pivota-owned fixes</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[color:var(--merchant-muted-strong)]">
+                {report.recommended_fix_sections.pivota_owned_fixes.map((fix) => (
+                  <li key={fix}>{fix}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="merchant-overline">Shared fixes</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[color:var(--merchant-muted-strong)]">
+                {report.recommended_fix_sections.shared_fixes.map((fix) => (
+                  <li key={fix}>{fix}</li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
       </SurfaceCard>

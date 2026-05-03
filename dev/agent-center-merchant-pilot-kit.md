@@ -278,6 +278,42 @@ Operator interpretation:
 - `coupon_param_missing`: checkout handoff is missing coupon passthrough.
 - `checkout_url_unreachable`: checkout path preflight failed.
 
+## Discovery Interpretation
+
+Organic discovery failure means the product did not naturally appear in
+no-context category or intent prompts. It should not be softened into a
+readiness pass just because contextual attribution passed later.
+
+Competitor dominance means competitor brands/products appeared while the tested
+merchant product or brand was absent. Merchant-facing reports should include
+normalized examples:
+
+- query tested
+- top returned competitor brands/products
+- whether the merchant product appeared
+- whether the merchant brand appeared
+- likely reason competitors dominated
+
+Search-grounded discovery has three distinct states:
+
+- Found: Gemini with Google Search grounding returned the exact expected PDP URL
+  from model output or `groundingMetadata`.
+- Not found: grounding ran, but the expected merchant/Pivota PDP URL was not
+  returned.
+- Not configured: `GEMINI_SEARCH_GROUNDING_ENABLED=true` was not active or the
+  adapter could not use grounding. This is not a failed discovery result.
+
+Use this phrasing:
+
+- "Contextual attribution passed" means the path was returned when product/PDP
+  context was provided.
+- "Organic discovery passed" means the product/brand appeared without injected
+  merchant or Pivota URL context.
+- "Search-grounded discovery passed" means the exact expected PDP URL was found
+  by search-grounded Gemini when the product name was specified.
+
+Do not claim consumer Gemini UI / AI Mode ranking.
+
 ## Merchant-Facing Report Template
 
 Use this structure for pilot reporting. Curate the contents before sharing externally.
@@ -298,10 +334,20 @@ Tested product / store
 Buying Path Readiness
 Discoverability:
 - Organic product discovery:
+- Organic brand discovery:
 - Merchant PDP discovery:
 - Pivota PDP discovery:
 - Buying path discovery:
 - Competitor dominance:
+
+Discovery evidence:
+- Tested organic queries:
+- Returned products:
+- Returned competitor brands/products:
+- Missing merchant product/brand summary:
+- Competitor rank summary:
+- Likely competitor advantage:
+- Discovery interpretation:
 
 Merchant-owned path:
 - Merchant PDP URL:
@@ -335,11 +381,30 @@ What blocked readiness
 - Root cause hypothesis:
 
 Recommended fixes
-- Action:
-- Target layer:
-- Owner:
-- Approval required:
-- Expected impact:
+Merchant-owned fixes:
+- Strengthen PDP title with full searchable product name.
+- Add category/use-case language.
+- Add or verify Product structured data and Offer structured data where applicable.
+- Ensure canonical PDP URL is clear.
+- Make price, availability, brand, seller identity, and product description machine-readable.
+- Add stronger ingredient, claim, and review evidence when available.
+
+Pivota-owned fixes:
+- Strengthen Pivota PDP identity.
+- Generate stronger product overview from merchant description.
+- Populate product intelligence module.
+- Add organic query-cluster mappings.
+- Add competitor/substitute graph relationships.
+- Add merchant PDP as verified source reference.
+- Rerun Organic Product Discovery Test.
+
+Shared fixes:
+- Identify which competitors dominated which queries.
+- Add product differentiation evidence.
+- Clarify use cases where the product should win.
+- Add comparison/substitute graph relationships.
+- Update query-cluster mapping.
+- Rerun Organic Product Discovery Test.
 
 Owner / approval required
 - Merchant-owned actions:
@@ -378,12 +443,23 @@ new DB table for V1. The report separates:
 - discoverability vs contextual attribution
 - merchant-owned path vs Pivota agent-facing path
 - offer readiness vs checkout readiness
+- organic discovery, search-grounded discovery, contextual attribution, and readiness
+- normalized competitor evidence without raw provider output
 - recommended fixes, owner, approval requirement, and retest plan
 - usage preview as credits only
 
 The report draft intentionally excludes raw provider payloads, prompt traces,
 provider token counts, internal debug payloads, real billing, payment execution,
 order placement, and final GMV attribution.
+
+Sharing criteria before external merchant delivery:
+
+- Discovery failures include concrete normalized query and competitor examples.
+- Competitor dominance includes dominant competitors and differentiation angles.
+- Search-grounded discovery state is explicit: found, not found, or not configured.
+- Contextual attribution is not described as natural discovery.
+- Checkout readiness is marked not tested when checkout metadata is missing.
+- Usage remains `preview_only` / `not_invoiced`.
 
 ## Demo Script
 
@@ -579,4 +655,5 @@ Run these before shipping Agent Center V1 pilot workflow changes:
 npm run test:agent-center
 npm run lint
 npm run build
+git diff --check
 ```

@@ -441,6 +441,27 @@ export default function IssueDetailPage() {
   const checkoutComparison = latestCheckoutComparison(checkoutDiagnosis);
   const merchantCheckoutPath = checkoutComparison.merchant_checkout_path;
   const pivotaCheckoutPath = checkoutComparison.pivota_checkout_path;
+  const discoveryEvidence =
+    issue?.evidence?.discovery_evidence || issue?.evidence || {};
+  const testedOrganicQueries = Array.isArray(
+    discoveryEvidence?.tested_organic_queries
+  )
+    ? discoveryEvidence.tested_organic_queries
+    : [];
+  const competitorDominanceEvidence =
+    discoveryEvidence?.competitor_dominance_evidence || {};
+  const dominantCompetitors = Array.isArray(
+    competitorDominanceEvidence?.dominant_competitors
+  )
+    ? competitorDominanceEvidence.dominant_competitors
+    : Array.isArray(issue?.evidence?.top_competitors)
+      ? issue.evidence.top_competitors
+      : [];
+  const differentiationAngles = Array.isArray(
+    competitorDominanceEvidence?.recommended_differentiation_angles
+  )
+    ? competitorDominanceEvidence.recommended_differentiation_angles
+    : [];
 
   return (
     <main className="merchant-page space-y-6 py-6">
@@ -626,6 +647,56 @@ export default function IssueDetailPage() {
                 strengthen merchant PDP signals, Pivota product graph coverage,
                 differentiation evidence, and organic query mapping before retest.
               </p>
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <NarrativeSection title="Tested organic queries">
+                  <ul className="list-disc space-y-1 pl-5">
+                    {testedOrganicQueries.length ? (
+                      testedOrganicQueries.slice(0, 4).map((item: any) => (
+                        <li key={`${item.query_cluster_id}-${item.query}`}>
+                          {item.query} - merchant appeared:{" "}
+                          {item.merchant_product_appeared ||
+                          item.merchant_brand_appeared
+                            ? "yes"
+                            : "no"}
+                        </li>
+                      ))
+                    ) : (
+                      <li>No normalized organic query examples captured.</li>
+                    )}
+                  </ul>
+                </NarrativeSection>
+                <NarrativeSection title="Missing merchant product / brand">
+                  {discoveryEvidence?.missing_merchant_product_summary ||
+                    "Merchant product and brand presence were not summarized for this issue."}
+                </NarrativeSection>
+                <NarrativeSection title="Dominant competitors">
+                  <div className="flex flex-wrap gap-2">
+                    {dominantCompetitors.length ? (
+                      dominantCompetitors.map((competitor: string) => (
+                        <StatusBadge key={competitor} tone="warning">
+                          {competitor}
+                        </StatusBadge>
+                      ))
+                    ) : (
+                      <span>No dominant competitor summary captured.</span>
+                    )}
+                  </div>
+                </NarrativeSection>
+                <NarrativeSection title="Differentiation recommendations">
+                  <ul className="list-disc space-y-1 pl-5">
+                    {differentiationAngles.length ? (
+                      differentiationAngles.map((angle: string) => (
+                        <li key={angle}>{label(angle)}</li>
+                      ))
+                    ) : (
+                      <>
+                        <li>Add product differentiation evidence.</li>
+                        <li>Update competitor/substitute graph recommendations.</li>
+                      </>
+                    )}
+                  </ul>
+                </NarrativeSection>
+              </div>
             </div>
           ) : null}
 

@@ -50,6 +50,7 @@ import type {
   MerchantFacingValidationReport,
   MerchantStore,
   MerchantCheckoutPath,
+  MentionedProduct,
   MatchConfidence,
   MerchantOffer,
   ParsedRecommendation,
@@ -631,6 +632,204 @@ function topCompetitorRecommendations(matches: ProductMatchResult[]) {
       )
     )
   ).slice(0, 5);
+}
+
+function textIncludesLoose(haystack: string, needle?: string | null) {
+  if (!needle) return false;
+  return asLower(haystack).includes(asLower(needle));
+}
+
+function safeProductLabel(product: { brand?: string; name?: string; title?: string }) {
+  return compactWhitespace(`${product.brand || ""} ${product.name || product.title || ""}`);
+}
+
+function safeMentionedProductLabel(product: MentionedProduct) {
+  return safeProductLabel(product);
+}
+
+const DISCOVERY_COMPETITOR_LIKELY_REASONS = [
+  "stronger category association",
+  "clearer use-case wording",
+  "stronger ingredient/claim evidence",
+  "stronger public web presence",
+  "clearer product page metadata",
+  "more obvious buying path",
+];
+
+const BEAUTY_DISCOVERY_DIFFERENTIATION_ANGLES = [
+  "ingredient positioning",
+  "skin type",
+  "texture / finish",
+  "product family",
+  "use case",
+  "claim evidence",
+  "review proof",
+  "comparison/substitute mapping",
+];
+
+function merchantSafeDiscoveryEvidence(input: {
+  scanTargetId?: string;
+  cluster: QueryCluster;
+  parsed: ParsedRecommendation[];
+  matches?: ProductMatchResult[];
+  product?: ProductRecord;
+  store?: MerchantStore;
+}) {
+  const state = getAgentCenterState();
+  const testRunsById = new Map(state.testRuns.map((run) => [run.id, run]));
+  const competitorBrands = input.store?.competitor_brands || [];
+  const targetProduct = input.product?.title || "the merchant product";
+  const targetBrand = input.product?.brand || input.store?.store_name || "the merchant brand";
+  const returnedProducts = unique(
+    input.parsed.flatMap((item) =>
+      item.mentioned_products.map(safeMentionedProductLabel).filter(Boolean)
+    )
+  ).slice(0, 12);
+  const returnedBrands = unique(
+    input.parsed.flatMap((item) => item.mentioned_brands)
+  ).slice(0, 12);
+  const returnedCompetitors = unique(
+    input.parsed.flatMap((item) =>
+      item.competitor_products.length
+        ? item.competitor_products
+        : item.mentioned_products
+            .filter((product) =>
+              competitorBrands.some((brand) => textIncludesLoose(product.brand, brand))
+            )
+            .map(safeMentionedProductLabel)
+    )
+  ).slice(0, 12);
+  const dominantCompetitors = unique(
+    input.parsed.flatMap((item) =>
+      item.mentioned_products
+        .filter((product) =>
+          competitorBrands.some((brand) => textIncludesLoose(product.brand, brand))
+        )
+        .map((product) => product.brand)
+        .concat(
+          item.competitor_products.map((product) => {
+            const brand = competitorBrands.find((candidate) =>
+              textIncludesLoose(product, candidate)
+            );
+            return brand || product.split(" ")[0] || product;
+          })
+        )
+    )
+  ).slice(0, 8);
+  const testedOrganicQueries = input.parsed
+    .map((item, index) => {
+      const run = testRunsById.get(item.test_run_id);
+      const returnedCompetitorsForRun = unique(
+        item.competitor_products.length
+          ? item.competitor_products
+          : item.mentioned_products
+              .filter((product) =>
+                competitorBrands.some((brand) =>
+                  textIncludesLoose(product.brand, brand)
+                )
+              )
+              .map(safeMentionedProductLabel)
+      ).slice(0, 5);
+
+      return {
+        query: run?.query || input.cluster.queries[index % input.cluster.queries.length] || input.cluster.cluster_name,
+        query_cluster_id: item.query_cluster_id || input.cluster.id,
+        returned_products: item.mentioned_products
+          .slice()
+          .sort((left, right) => left.rank - right.rank)
+          .slice(0, 5)
+          .map((product) => ({
+            brand: product.brand,
+            name: product.name,
+            rank: product.rank,
+            ...(product.reason ? { reason: product.reason } : {}),
+          })),
+        returned_brands: item.mentioned_brands.slice(0, 8),
+        returned_competitors: returnedCompetitorsForRun,
+        merchant_product_appeared:
+          item.merchant_product_mentioned || item.product_entity_mentioned,
+        merchant_brand_appeared: item.merchant_brand_mentioned,
+      };
+    })
+    .slice(0, 6);
+  const competitorWins = testedOrganicQueries.filter(
+    (item) =>
+      item.returned_competitors.length &&
+      !item.merchant_product_appeared &&
+      !item.merchant_brand_appeared
+  );
+  const topRankedCompetitors = input.parsed
+    .flatMap((item) =>
+      item.mentioned_products
+        .filter((product) =>
+          competitorBrands.some((brand) => textIncludesLoose(product.brand, brand))
+        )
+        .map((product) => `${product.rank}. ${safeMentionedProductLabel(product)}`)
+    )
+    .slice(0, 5);
+  const competitorRankSummary = topRankedCompetitors.length
+    ? `Top competitor recommendations included ${topRankedCompetitors.join("; ")}.`
+    : returnedCompetitors.length
+      ? `Competitor recommendations appeared: ${returnedCompetitors.slice(0, 5).join(", ")}.`
+      : "No concrete competitor recommendations were captured in the normalized output.";
+  const missingMerchantProductSummary = testedOrganicQueries.length
+    ? `${targetProduct} appeared in ${
+        testedOrganicQueries.filter((item) => item.merchant_product_appeared).length
+      } of ${testedOrganicQueries.length} normalized organic query example(s); ${targetBrand} appeared in ${
+        testedOrganicQueries.filter((item) => item.merchant_brand_appeared).length
+      } of ${testedOrganicQueries.length}.`
+    : `No normalized organic query examples were available for ${targetProduct}.`;
+  const likelyReasons = unique(
+    input.parsed
+      .flatMap((item) => item.mentioned_products.map((product) => product.reason))
+      .filter(Boolean)
+      .map((reason) => {
+        const lower = asLower(reason);
+        if (lower.includes("ingredient") || lower.includes("claim")) {
+          return "stronger ingredient/claim evidence";
+        }
+        if (lower.includes("use") || lower.includes("intent")) {
+          return "clearer use-case wording";
+        }
+        if (lower.includes("metadata") || lower.includes("page")) {
+          return "clearer product page metadata";
+        }
+        if (lower.includes("path") || lower.includes("buy")) {
+          return "more obvious buying path";
+        }
+        if (lower.includes("public") || lower.includes("known")) {
+          return "stronger public web presence";
+        }
+        return "stronger category association";
+      })
+      .concat(DISCOVERY_COMPETITOR_LIKELY_REASONS)
+  ).slice(0, 6);
+
+  return {
+    tested_organic_queries: testedOrganicQueries,
+    returned_products: returnedProducts,
+    returned_brands: returnedBrands,
+    returned_competitors: returnedCompetitors,
+    competitor_rank_summary: competitorRankSummary,
+    missing_merchant_product_summary: missingMerchantProductSummary,
+    likely_competitor_advantage_summary:
+      competitorWins.length || returnedCompetitors.length
+        ? `Competitors likely dominated because of ${likelyReasons.slice(0, 4).join(", ")}.`
+        : "The normalized output did not provide enough competitor evidence to infer a concrete advantage.",
+    discovery_interpretation:
+      competitorWins.length || returnedCompetitors.length
+        ? "Organic no-context discovery did not surface the merchant product/brand in the tested examples, while competitor products occupied the answer surface."
+        : "Organic discovery evidence is limited; retesting with additional organic category prompts is recommended before external sharing.",
+    competitor_dominance_evidence: {
+      dominant_competitors: dominantCompetitors,
+      competitor_products: returnedCompetitors,
+      query_clusters_where_competitors_won: unique(
+        competitorWins.map((item) => input.cluster.cluster_name || item.query_cluster_id)
+      ),
+      likely_reasons: likelyReasons,
+      recommended_differentiation_angles: BEAUTY_DISCOVERY_DIFFERENTIATION_ANGLES,
+    },
+  };
 }
 
 function merchantNarrative(input: {
@@ -2932,6 +3131,14 @@ export class IssueEngine {
     const competitorRecommendationList = topCompetitorRecommendations(
       input.input.matches
     );
+    const discoveryEvidence = merchantSafeDiscoveryEvidence({
+      scanTargetId: input.input.scanTarget.id,
+      cluster: input.input.cluster,
+      parsed: input.input.parsed,
+      matches: input.input.matches,
+      product: input.product,
+      store,
+    });
     const narrative = merchantNarrative({
       issueType: input.issueType,
       rootCause: input.rootCause,
@@ -2995,6 +3202,19 @@ export class IssueEngine {
           )
         ).slice(0, 3),
         top_competitor_recommendations: competitorRecommendationList,
+        discovery_evidence: discoveryEvidence,
+        tested_organic_queries: discoveryEvidence.tested_organic_queries,
+        returned_products: discoveryEvidence.returned_products,
+        returned_brands: discoveryEvidence.returned_brands,
+        returned_competitors: discoveryEvidence.returned_competitors,
+        competitor_rank_summary: discoveryEvidence.competitor_rank_summary,
+        missing_merchant_product_summary:
+          discoveryEvidence.missing_merchant_product_summary,
+        likely_competitor_advantage_summary:
+          discoveryEvidence.likely_competitor_advantage_summary,
+        discovery_interpretation: discoveryEvidence.discovery_interpretation,
+        competitor_dominance_evidence:
+          discoveryEvidence.competitor_dominance_evidence,
         missing_attributes: input.missingAttributes,
         aggregate_scores: input.input.score.aggregate_scores,
         score_explanations: input.input.score.score_explanations,
@@ -6707,11 +6927,21 @@ export class IssueResolutionService {
             product_entity_ids: issue.affected_product_entities,
             structured_data: ["Product", "Offer", "Brand", "Seller"],
             content_signals: [
-              "product title",
-              "canonical URL",
-              "availability",
-              "price",
+              "full searchable product name in PDP title",
+              "category/use-case language",
+              "Product structured data",
+              "Offer structured data where applicable",
+              "clear canonical PDP URL",
+              "machine-readable price",
+              "machine-readable availability",
+              "brand and seller identity",
               "product description",
+              "ingredient/claim/review evidence if available",
+            ],
+            example_use_case_terms: [
+              "tone brightening cleansing gel foam",
+              "centella cleanser",
+              "daily brightening cleanser",
             ],
             source_issue: issue.id,
           },
@@ -6735,6 +6965,9 @@ export class IssueResolutionService {
               "overview",
               "product_intelligence_module",
               "canonical_product_object_id",
+              "verified_source_references",
+              "organic_query_cluster_mappings",
+              "competitor_substitute_relationships",
             ],
           },
           expected_impact:
@@ -6820,6 +7053,8 @@ export class IssueResolutionService {
               "texture",
               "target skin type",
               "proof points",
+              "review proof",
+              "comparison/substitute mapping",
             ],
             merchant_patch_required: true,
           },
@@ -7287,7 +7522,7 @@ const COMPETITOR_DOMINANCE_NEXT_ACTION =
   "Analyze dominant competitor matches, add differentiation evidence, update substitute/query mappings, then rerun Organic Product Discovery Test.";
 
 const DISCOVERY_VS_READINESS_CONTEXTUAL_PASSED =
-  "Your merchant-owned and Pivota paths were returned correctly when product/PDP context was provided. However, the product did not appear in no-context organic discovery prompts, and competitors dominated those prompts. This means the buying paths are ready when surfaced, but discovery signals need to improve before AI users can naturally reach this product.";
+  "Your merchant-owned and Pivota paths were returned correctly when product/PDP context was provided. However, the product did not appear in no-context organic discovery prompts, and competitors dominated those prompts. This means the buying paths appear ready when surfaced, but discovery signals need to improve before AI users can naturally reach this product. Contextual attribution passed does not mean organic discovery passed. Search-grounded discovery is separate from both organic discovery and contextual attribution.";
 
 function isPivotaPdpQualityFinding(value: string) {
   return (PIVOTA_PDP_QUALITY_FINDING_TYPES as readonly string[]).includes(value);
@@ -9504,6 +9739,26 @@ export class MerchantFacingReportService {
       `Status: ${report.path_readiness.discoverability.status.replace(/_/g, " ")}`,
       report.path_readiness.discoverability.summary,
       "",
+      "## Discovery Result",
+      `Organic product discovery: ${reportScoreLabel(report.discovery_result.organic_product_discovery.score)} (${reportStatusLabel(report.discovery_result.organic_product_discovery.status)})`,
+      `Organic brand discovery: ${reportScoreLabel(report.discovery_result.organic_brand_discovery.score)} (${reportStatusLabel(report.discovery_result.organic_brand_discovery.status)})`,
+      `Competitor dominance: ${reportScoreLabel(report.discovery_result.competitor_dominance.score)} (${reportStatusLabel(report.discovery_result.competitor_dominance.status)})`,
+      `Search-grounded merchant PDP discovery: ${reportScoreLabel(report.discovery_result.search_grounded_merchant_pdp_discovery.score)} (${reportStatusLabel(report.discovery_result.search_grounded_merchant_pdp_discovery.status)})`,
+      report.discovery_result.search_grounded_merchant_pdp_discovery.summary,
+      `Search-grounded Pivota PDP discovery: ${reportScoreLabel(report.discovery_result.search_grounded_pivota_pdp_discovery.score)} (${reportStatusLabel(report.discovery_result.search_grounded_pivota_pdp_discovery.status)})`,
+      report.discovery_result.search_grounded_pivota_pdp_discovery.summary,
+      `Buying-path discovery: ${reportScoreLabel(report.discovery_result.buying_path_discovery.score)} (${reportStatusLabel(report.discovery_result.buying_path_discovery.status)})`,
+      report.discovery_result.interpretation,
+      "",
+      "## Discovery Evidence",
+      report.discovery_evidence.missing_merchant_product_summary,
+      report.discovery_evidence.competitor_rank_summary,
+      report.discovery_evidence.likely_competitor_advantage_summary,
+      ...report.discovery_evidence.tested_organic_queries.map(
+        (item) =>
+          `- Query: "${item.query}" | merchant product appeared: ${item.merchant_product_appeared ? "yes" : "no"} | merchant brand appeared: ${item.merchant_brand_appeared ? "yes" : "no"} | competitors: ${item.returned_competitors.join(", ") || "none"}`
+      ),
+      "",
       "## Merchant-Owned Path",
       `Merchant PDP URL: ${report.path_readiness.merchant_owned_path.merchant_pdp_url}`,
       `PDP preflight: ${report.path_readiness.merchant_owned_path.preflight_status.replace(/_/g, " ")}`,
@@ -9521,6 +9776,8 @@ export class MerchantFacingReportService {
       report.path_readiness.pivota_agent_facing_path.summary,
       "",
       "## Readiness",
+      `Contextual merchant attribution: ${reportStatusLabel(report.readiness_result.contextual_merchant_attribution.status)}. ${report.readiness_result.contextual_merchant_attribution.summary}`,
+      `Contextual Pivota attribution: ${reportStatusLabel(report.readiness_result.contextual_pivota_attribution.status)}. ${report.readiness_result.contextual_pivota_attribution.summary}`,
       `Product/SKU readiness: ${report.path_readiness.product_sku_readiness.status.replace(/_/g, " ")}`,
       `Offer readiness: ${report.path_readiness.offer_readiness.status.replace(/_/g, " ")}`,
       `Checkout readiness: ${report.path_readiness.checkout_readiness.status.replace(/_/g, " ")}`,
@@ -9531,6 +9788,17 @@ export class MerchantFacingReportService {
           `- ${titleCase(blocker.blocker_type)} (${blocker.severity}) on ${blocker.affected_layer}: ${blocker.recommended_action}`
       ),
       ...(report.blockers.length ? [] : ["- No high-severity blocker was generated."]),
+      "",
+      "## Recommended Fixes",
+      "Merchant-owned fixes:",
+      ...report.recommended_fix_sections.merchant_owned_fixes.map((item) => `- ${item}`),
+      "Pivota-owned fixes:",
+      ...report.recommended_fix_sections.pivota_owned_fixes.map((item) => `- ${item}`),
+      "Shared fixes:",
+      ...report.recommended_fix_sections.shared_fixes.map((item) => `- ${item}`),
+      "",
+      "## Retest Plan",
+      ...report.retest_plan.map((item) => `- ${item}`),
       "",
       "## Usage Preview",
       report.usage_statement.merchant_copy,
@@ -9592,6 +9860,19 @@ export class MerchantFacingReportService {
       discovery?.competitor_dominance_status.status,
     ]);
     const blockers = this.blockers(report);
+    const recommendedFixes = this.recommendedFixes(blockers);
+    const discoveryEvidence = this.discoveryEvidence(run, report);
+    const discoveryResult = this.discoveryResult(report, discoveryEvidence);
+    const readinessResult = this.readinessResult({
+      report,
+      productSkuStatus,
+      productDataStatus,
+      skuVariantStatus,
+      merchantAttribution,
+      pivotaAttribution,
+      offerStatus,
+      checkoutStatus,
+    });
     const now = nowIso();
 
     const draft: MerchantFacingValidationReport = {
@@ -9607,6 +9888,9 @@ export class MerchantFacingReportService {
       title: `${report.target_summary.brand || report.target_summary.merchant_name} Agent Center validation report`,
       executive_summary: this.executiveSummary(report, discoveryStatus),
       discovery_vs_readiness: this.discoveryVsReadinessSummary(report),
+      discovery_result: discoveryResult,
+      readiness_result: readinessResult,
+      discovery_evidence: discoveryEvidence,
       tested_product: {
         merchant_name: report.target_summary.merchant_name,
         store_url: report.target_summary.store_url,
@@ -9665,7 +9949,11 @@ export class MerchantFacingReportService {
         },
       },
       blockers,
-      recommended_fixes: this.recommendedFixes(blockers),
+      recommended_fixes: recommendedFixes,
+      recommended_fix_sections: this.recommendedFixSections(
+        blockers,
+        recommendedFixes
+      ),
       retest_plan: this.retestPlan(report, blockers),
       usage_statement: {
         ...report.usage_summary,
@@ -9736,15 +10024,29 @@ export class MerchantFacingReportService {
     const readinessPassed =
       demand?.product_visibility_status.status === "passed" &&
       offer?.offer_readiness_status.status === "passed";
+    const checkoutNotTested =
+      snapshot?.checkout_verification_summary.checkout_readiness_status.status ===
+      "not_tested";
+    const safetyTail = [
+      checkoutNotTested
+        ? "Checkout readiness was not tested because checkout metadata was missing."
+        : "",
+      "V1 does not prove payment authorization, PSP success, order placement, settlement, final GMV attribution, or real billing.",
+    ]
+      .filter(Boolean)
+      .join(" ");
 
     if (organicFailed && competitorDominated && contextualPathsPassed && readinessPassed) {
-      return DISCOVERY_VS_READINESS_CONTEXTUAL_PASSED;
+      return `${DISCOVERY_VS_READINESS_CONTEXTUAL_PASSED} ${safetyTail}`;
     }
 
     return [
       "Discoverability answers whether AI users can naturally find the product without injected merchant/Pivota URL context.",
       "Readiness answers whether the merchant-owned and Pivota agent-facing paths work once surfaced.",
       `Organic discovery is ${reportStatusLabel(discovery?.organic_product_discovery_status.status)}; merchant attribution is ${reportStatusLabel(demand?.merchant_attribution_status.status)}; Pivota attribution is ${reportStatusLabel(demand?.pivota_attribution_status.status)}; offer readiness is ${reportStatusLabel(offer?.offer_readiness_status.status)}.`,
+      "Contextual attribution passed does not mean organic discovery passed.",
+      "Search-grounded discovery is separate from both organic discovery and contextual attribution.",
+      safetyTail,
     ].join(" ");
   }
 
@@ -9763,6 +10065,303 @@ export class MerchantFacingReportService {
       `Pivota PDP discovery: ${reportScoreLabel(discovery.pivota_pdp_discovery_status.score)}.`,
       "Search-grounded discovery is distinct from contextual attribution and only counts URLs returned by Gemini or grounding metadata.",
     ].join(" ");
+  }
+
+  private parsedForMode(run: ProductionValidationRun, scanMode: ScanMode) {
+    const state = getAgentCenterState();
+    const jobIds = new Set(
+      state.jobs
+        .filter(
+          (job) =>
+            job.scan_target_id === run.scan_target_id &&
+            job.scan_mode === scanMode
+        )
+        .map((job) => job.id)
+    );
+    const runIds = new Set(
+      state.testRuns.filter((testRun) => jobIds.has(testRun.job_id)).map((testRun) => testRun.id)
+    );
+    return state.parsedRecommendations.filter((item) =>
+      runIds.has(item.test_run_id)
+    );
+  }
+
+  private reportTargetContext(run: ProductionValidationRun) {
+    const state = getAgentCenterState();
+    const target = run.scan_target_id
+      ? state.scanTargets.find((item) => item.id === run.scan_target_id)
+      : undefined;
+    const store = target
+      ? state.stores.find((item) => item.id === target.store_id)
+      : state.stores.find((item) => item.merchant_id === productionValidationMerchantId(run.id));
+    const product =
+      store?.products.find((item) => item.title === run.product_name) ||
+      store?.products[0];
+    const cluster =
+      (target
+        ? state.queryClusters.find(
+            (item) =>
+              item.scan_target_id === target.id &&
+              item.intent_type === "category_recommendation"
+          )
+        : undefined) ||
+      (target
+        ? state.queryClusters.find((item) => item.scan_target_id === target.id)
+        : undefined) || {
+        id: run.scan_target_id || run.id,
+        merchant_id: productionValidationMerchantId(run.id),
+        store_id: store?.id || "",
+        scan_target_id: run.scan_target_id || "",
+        product_entity_id: run.pivota_product_entity_id,
+        target_skus: run.sku_name ? [run.sku_name] : [],
+        cluster_name: `${run.product_name} organic discovery`,
+        intent_type: "category_recommendation" as const,
+        category: run.category || "skincare",
+        queries: [
+          `${run.category || "skincare"} recommendations`,
+          `${run.brand || run.merchant_name} product alternatives`,
+        ],
+        priority: "high" as const,
+        estimated_demand_value: 0,
+        created_by: "demand_test_agent" as const,
+        required_attributes: [],
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      };
+
+    return { target, store, product, cluster };
+  }
+
+  private discoveryEvidence(
+    run: ProductionValidationRun,
+    report: ProductionValidationReport
+  ): MerchantFacingValidationReport["discovery_evidence"] {
+    const context = this.reportTargetContext(run);
+    const organicParsed = this.parsedForMode(run, "organic_product_discovery_test");
+    const organicEvidence = merchantSafeDiscoveryEvidence({
+      scanTargetId: run.scan_target_id,
+      cluster: context.cluster,
+      parsed: organicParsed,
+      product: context.product,
+      store: context.store,
+    });
+    const discovery = report.gmv_assurance_snapshot?.discovery_readiness_summary;
+    const searchMerchant =
+      discovery?.merchant_pdp_discovery_status.score;
+    const searchPivota =
+      discovery?.pivota_pdp_discovery_status.score;
+
+    return {
+      ...organicEvidence,
+      discovery_interpretation: this.discoveryInterpretation({
+        organicScore: discovery?.organic_product_discovery_status.score,
+        searchMerchantScore: searchMerchant,
+        searchPivotaScore: searchPivota,
+        searchMerchantStatus: discovery?.merchant_pdp_discovery_status.status,
+        searchPivotaStatus: discovery?.pivota_pdp_discovery_status.status,
+      }),
+    };
+  }
+
+  private discoveryInterpretation(input: {
+    organicScore?: VisibilityScoreValue;
+    searchMerchantScore?: VisibilityScoreValue;
+    searchPivotaScore?: VisibilityScoreValue;
+    searchMerchantStatus?: GMVAssuranceDimensionStatus;
+    searchPivotaStatus?: GMVAssuranceDimensionStatus;
+  }) {
+    const organicFailed =
+      typeof input.organicScore === "number" && input.organicScore < 50;
+    const merchantFound =
+      typeof input.searchMerchantScore === "number" &&
+      input.searchMerchantScore >= 80;
+    const pivotaFound =
+      typeof input.searchPivotaScore === "number" &&
+      input.searchPivotaScore >= 80;
+    const searchNotConfigured =
+      input.searchMerchantScore === "not_configured" ||
+      input.searchPivotaScore === "not_configured" ||
+      input.searchMerchantStatus === "not_configured" ||
+      input.searchPivotaStatus === "not_configured";
+
+    if (searchNotConfigured) {
+      return "Search-grounded discovery was not configured in this run.";
+    }
+    if (organicFailed && merchantFound && !pivotaFound) {
+      return "The product does not yet appear in no-context organic category prompts, but the official merchant PDP can be found when the product name is specified. The merchant-owned PDP is discoverable, but the Pivota agent-facing path is not yet discoverable. Pivota should improve public discoverability and source references for the Pivota PDP.";
+    }
+    if (organicFailed && merchantFound) {
+      return "The product does not yet appear in no-context organic category prompts, but the official merchant PDP can be found when the product name is specified.";
+    }
+    if (organicFailed && !merchantFound && input.searchMerchantScore !== "not_tested") {
+      return "Neither organic discovery nor search-grounded product discovery returned the official merchant PDP. This indicates a stronger discoverability gap.";
+    }
+    if (merchantFound) {
+      return "Search-grounded Gemini found the official merchant PDP when the product name was specified.";
+    }
+    return "Discovery and readiness should be interpreted separately: contextual attribution can pass even when natural discovery still needs work.";
+  }
+
+  private discoveryResult(
+    report: ProductionValidationReport,
+    evidence: MerchantFacingValidationReport["discovery_evidence"]
+  ): MerchantFacingValidationReport["discovery_result"] {
+    const discovery = report.gmv_assurance_snapshot?.discovery_readiness_summary;
+    const organicAggregate = report.demand_test_summary.modes_run.find(
+      (summary) => summary.scan_mode === "organic_product_discovery_test"
+    )?.aggregate_scores;
+    const organicBrandScore =
+      organicAggregate?.organic_brand_discovery_score || "not_tested";
+    const organicBrandStatus: GMVAssuranceDimensionStatus =
+      typeof organicBrandScore === "number"
+        ? organicBrandScore >= 80
+          ? "passed"
+          : organicBrandScore > 0
+            ? "needs_work"
+            : "blocked"
+        : organicBrandScore === "not_configured"
+          ? "not_configured"
+          : "not_tested";
+    const searchParsed = report.target_summary.scan_target_id
+      ? this.parsedForMode(
+          {
+            ...({} as ProductionValidationRun),
+            id: report.target_summary.production_validation_run_id,
+            scan_target_id: report.target_summary.scan_target_id,
+          },
+          "search_grounded_product_discovery_test"
+        )
+      : [];
+    const returnedUrls = unique(searchParsed.flatMap((item) => item.returned_urls));
+    const groundingSources = unique(
+      searchParsed.flatMap((item) => item.grounding_sources || [])
+    );
+    const merchantScore =
+      discovery?.merchant_pdp_discovery_status.score || "not_tested";
+    const pivotaScore =
+      discovery?.pivota_pdp_discovery_status.score || "not_tested";
+
+    return {
+      organic_product_discovery: {
+        status: discovery?.organic_product_discovery_status.status || "not_tested",
+        score: discovery?.organic_product_discovery_status.score,
+        summary:
+          typeof discovery?.organic_product_discovery_status.score === "number"
+            ? `Organic no-context product discovery score was ${discovery.organic_product_discovery_status.score}%.`
+            : "Organic no-context product discovery was not tested.",
+      },
+      organic_brand_discovery: {
+        status: organicBrandStatus,
+        score: organicBrandScore,
+        summary:
+          typeof organicBrandScore === "number"
+            ? `Organic brand discovery score was ${organicBrandScore}%.`
+            : "Organic brand discovery was not tested.",
+      },
+      competitor_dominance: {
+        status: discovery?.competitor_dominance_status.status || "not_tested",
+        score: discovery?.competitor_dominance_status.score,
+        summary: evidence.competitor_rank_summary,
+      },
+      search_grounded_merchant_pdp_discovery: {
+        status: discovery?.merchant_pdp_discovery_status.status || "not_tested",
+        score: merchantScore,
+        summary: this.searchGroundedMerchantSummary(merchantScore),
+        returned_urls: returnedUrls,
+        grounding_sources_count: groundingSources.length,
+      },
+      search_grounded_pivota_pdp_discovery: {
+        status: discovery?.pivota_pdp_discovery_status.status || "not_tested",
+        score: pivotaScore,
+        summary: this.searchGroundedPivotaSummary(merchantScore, pivotaScore),
+        returned_urls: returnedUrls,
+        grounding_sources_count: groundingSources.length,
+      },
+      buying_path_discovery: {
+        status: discovery?.buying_path_discovery_status.status || "not_tested",
+        score: discovery?.buying_path_discovery_status.score,
+        summary:
+          discovery?.buying_path_discovery_status.status === "passed"
+            ? "Buying-path discovery returned a buying option or URL."
+            : "Buying-path discovery did not prove a complete buying path in this report.",
+      },
+      interpretation: evidence.discovery_interpretation,
+    };
+  }
+
+  private searchGroundedMerchantSummary(score?: VisibilityScoreValue) {
+    if (score === "not_configured") {
+      return "Search-grounded discovery was not configured in this run.";
+    }
+    if (typeof score === "number" && score >= 80) {
+      return "Search-grounded Gemini found the official merchant PDP when the product name was specified.";
+    }
+    if (typeof score === "number") {
+      return "Search-grounded Gemini did not return the official merchant PDP. This indicates a discovery gap at product-name / buying-path search level.";
+    }
+    return "Search-grounded merchant PDP discovery was not tested.";
+  }
+
+  private searchGroundedPivotaSummary(
+    merchantScore?: VisibilityScoreValue,
+    pivotaScore?: VisibilityScoreValue
+  ) {
+    if (pivotaScore === "not_configured") {
+      return "Search-grounded discovery was not configured in this run.";
+    }
+    if (typeof pivotaScore === "number" && pivotaScore >= 80) {
+      return "Search-grounded Gemini found the Pivota agent-facing PDP when the product name was specified.";
+    }
+    if (typeof merchantScore === "number" && merchantScore >= 80) {
+      return "The merchant-owned PDP is discoverable, but the Pivota agent-facing path is not yet discoverable. Pivota should improve public discoverability and source references for the Pivota PDP.";
+    }
+    if (typeof pivotaScore === "number") {
+      return "Search-grounded Gemini did not return the Pivota PDP.";
+    }
+    return "Search-grounded Pivota PDP discovery was not tested.";
+  }
+
+  private readinessResult(input: {
+    report: ProductionValidationReport;
+    productSkuStatus: GMVAssuranceDimensionStatus;
+    productDataStatus: GMVAssuranceDimensionStatus;
+    skuVariantStatus: GMVAssuranceDimensionStatus;
+    merchantAttribution: GMVAssuranceDimensionStatus;
+    pivotaAttribution: GMVAssuranceDimensionStatus;
+    offerStatus: GMVAssuranceDimensionStatus;
+    checkoutStatus: GMVAssuranceDimensionStatus;
+  }): MerchantFacingValidationReport["readiness_result"] {
+    const demand = input.report.gmv_assurance_snapshot?.demand_test_summary;
+    return {
+      contextual_merchant_attribution: {
+        status: input.merchantAttribution,
+        score: demand?.merchant_attribution_status.score,
+        summary:
+          input.merchantAttribution === "passed"
+            ? "Merchant contextual attribution passed: the merchant-owned path was returned when product/PDP context was provided."
+            : `Merchant contextual attribution is ${reportStatusLabel(input.merchantAttribution)}.`,
+      },
+      contextual_pivota_attribution: {
+        status: input.pivotaAttribution,
+        score: demand?.pivota_attribution_status.score,
+        summary:
+          input.pivotaAttribution === "passed"
+            ? "Pivota contextual attribution passed: the Pivota agent-facing path was returned when Pivota context was provided."
+            : `Pivota contextual attribution is ${reportStatusLabel(input.pivotaAttribution)}.`,
+      },
+      product_sku_readiness: {
+        status: input.productSkuStatus,
+        summary: this.productSkuSummary(input.productDataStatus, input.skuVariantStatus),
+      },
+      offer_readiness: {
+        status: input.offerStatus,
+        summary: this.offerSummary(input.report, input.offerStatus),
+      },
+      checkout_readiness: {
+        status: input.checkoutStatus,
+        summary: this.checkoutSummary(input.report, input.checkoutStatus),
+      },
+    };
   }
 
   private merchantPathSummary(
@@ -9887,6 +10486,58 @@ export class MerchantFacingReportService {
             target_layer: "monitoring",
           },
         ];
+  }
+
+  private recommendedFixSections(
+    blockers: MerchantFacingValidationReport["blockers"],
+    fixes: MerchantFacingValidationReport["recommended_fixes"]
+  ): MerchantFacingValidationReport["recommended_fix_sections"] {
+    const blockerTypes = new Set(blockers.map((blocker) => blocker.blocker_type));
+    if (
+      blockerTypes.has("organic_product_not_discovered") ||
+      blockerTypes.has("competitor_dominance")
+    ) {
+      return {
+        merchant_owned_fixes: [
+          "Strengthen PDP title with full searchable product name.",
+          "Add category/use-case language, e.g. tone brightening cleansing gel foam, centella cleanser, daily brightening cleanser.",
+          "Add or verify Product structured data.",
+          "Add or verify Offer structured data where applicable.",
+          "Ensure canonical PDP URL is clear.",
+          "Make price, availability, brand, seller identity, and product description machine-readable.",
+          "Add stronger ingredient/claim/review evidence if available.",
+        ],
+        pivota_owned_fixes: [
+          "Strengthen Pivota PDP identity.",
+          "Generate stronger product overview from merchant description.",
+          "Populate product intelligence module.",
+          "Add organic query-cluster mappings.",
+          "Add competitor/substitute graph relationships.",
+          "Add merchant PDP as verified source reference.",
+          "Rerun Organic Product Discovery Test.",
+        ],
+        shared_fixes: [
+          "Identify which competitors dominated which queries.",
+          "Add product differentiation evidence.",
+          "Clarify use cases where the product should win.",
+          "Add comparison/substitute graph relationships.",
+          "Update query-cluster mapping.",
+          "Rerun Organic Product Discovery Test.",
+        ],
+      };
+    }
+
+    return {
+      merchant_owned_fixes: fixes
+        .filter((fix) => /merchant/i.test(fix.target_layer))
+        .map((fix) => fix.title),
+      pivota_owned_fixes: fixes
+        .filter((fix) => /pivota/i.test(fix.target_layer))
+        .map((fix) => fix.title),
+      shared_fixes: fixes
+        .filter((fix) => !/merchant|pivota/i.test(fix.target_layer))
+        .map((fix) => fix.title),
+    };
   }
 
   private retestPlan(
