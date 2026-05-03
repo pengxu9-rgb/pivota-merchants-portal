@@ -47,9 +47,9 @@ function label(value?: string | number | null) {
 }
 
 function statusTone(status?: string) {
-  if (status === "passed" || status === "approved_to_share") return "success";
+  if (status === "passed" || status === "approved_to_share" || status === "found") return "success";
   if (status === "blocked" || status === "critical") return "critical";
-  if (status === "needs_work" || status === "reviewed" || status === "warning") return "warning";
+  if (status === "needs_work" || status === "reviewed" || status === "warning" || status === "not_found") return "warning";
   return "neutral";
 }
 
@@ -102,7 +102,7 @@ function MetricStatus({
     <div className="border-b border-[color:var(--merchant-line)] px-5 py-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
       <p className="merchant-overline">{metricLabel}</p>
       <div className="mt-2">
-        <StatusBadge tone={statusTone(String(status || ""))}>{label(status)}</StatusBadge>
+        <StatusBadge tone={statusTone(String(status ?? ""))}>{label(status)}</StatusBadge>
       </div>
       {helper ? <p className="mt-2 text-sm text-[color:var(--merchant-muted)]">{helper}</p> : null}
     </div>
@@ -281,6 +281,11 @@ function ReportPreview({
             status={readiness.discoverability.buying_path_discovery}
             helper={report.discovery_result.buying_path_discovery.summary}
           />
+          <MetricStatus
+            label="URL match accuracy"
+            status={report.discovery_result.url_match_accuracy.score}
+            helper={report.discovery_result.url_match_accuracy.summary}
+          />
         </div>
         <p className="border-t border-[color:var(--merchant-line)] px-5 py-4 text-sm text-[color:var(--merchant-muted-strong)]">
           {report.discovery_result.interpretation}
@@ -350,6 +355,79 @@ function ReportPreview({
             </tbody>
           </table>
         </div>
+      </SurfaceCard>
+
+      <SurfaceCard title="Discoverability Fix Plan">
+        <div className="border-b border-[color:var(--merchant-line)] px-5 py-4">
+          <p className="text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+            {report.discoverability_fix_plan.summary}
+          </p>
+        </div>
+        <div className="grid gap-4 px-5 py-4 lg:grid-cols-2">
+          <div>
+            <p className="merchant-overline">Merchant PDP audit findings</p>
+            <ul className="mt-2 space-y-2 text-sm text-[color:var(--merchant-muted-strong)]">
+              {report.discoverability_fix_plan.merchant_pdp_audit.findings.length ? (
+                report.discoverability_fix_plan.merchant_pdp_audit.findings.map((finding) => (
+                  <li key={finding.finding_type}>
+                    <span className="font-medium text-[color:var(--merchant-ink)]">
+                      {label(finding.finding_type)}:
+                    </span>{" "}
+                    {finding.summary}
+                  </li>
+                ))
+              ) : (
+                <li>No merchant PDP audit findings.</li>
+              )}
+            </ul>
+          </div>
+          <div>
+            <p className="merchant-overline">Pivota PDP audit findings</p>
+            <ul className="mt-2 space-y-2 text-sm text-[color:var(--merchant-muted-strong)]">
+              {report.discoverability_fix_plan.pivota_pdp_audit.findings.length ? (
+                report.discoverability_fix_plan.pivota_pdp_audit.findings.map((finding) => (
+                  <li key={finding.finding_type}>
+                    <span className="font-medium text-[color:var(--merchant-ink)]">
+                      {label(finding.finding_type)}:
+                    </span>{" "}
+                    {finding.summary}
+                  </li>
+                ))
+              ) : (
+                <li>No Pivota PDP audit findings.</li>
+              )}
+            </ul>
+          </div>
+        </div>
+        <div className="grid gap-4 border-t border-[color:var(--merchant-line)] px-5 py-4 lg:grid-cols-3">
+          <div>
+            <p className="merchant-overline">Merchant-owned fixes</p>
+            <ul className="mt-2 space-y-2 text-sm text-[color:var(--merchant-muted-strong)]">
+              {report.discoverability_fix_plan.merchant_owned_fixes.map((fix) => (
+                <li key={fix}>{fix}</li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <p className="merchant-overline">Pivota-owned fixes</p>
+            <ul className="mt-2 space-y-2 text-sm text-[color:var(--merchant-muted-strong)]">
+              {report.discoverability_fix_plan.pivota_owned_fixes.map((fix) => (
+                <li key={fix}>{fix}</li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <p className="merchant-overline">Retest plan</p>
+            <ul className="mt-2 space-y-2 text-sm text-[color:var(--merchant-muted-strong)]">
+              {report.discoverability_fix_plan.retest_plan.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        <p className="border-t border-[color:var(--merchant-line)] px-5 py-4 text-sm text-[color:var(--merchant-muted)]">
+          {report.discoverability_fix_plan.returned_url_evidence_summary}
+        </p>
       </SurfaceCard>
 
       <div className="grid gap-6 xl:grid-cols-2">

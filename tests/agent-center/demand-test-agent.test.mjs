@@ -41,6 +41,7 @@ const {
   InputReadinessService,
   IssueEngine,
   IssueResolutionService,
+  mapDiscoveryScoreToReportStatus,
   MerchantFacingReportService,
   MerchantStoreService,
   OfferExecutionService,
@@ -53,6 +54,8 @@ const {
   ScoringService,
   UsageMeteringService,
   VerificationService,
+  auditMerchantPDPDiscoverability,
+  auditPivotaPDPDiscoverability,
 } = services;
 const {
   handleAgentCenterRequest,
@@ -2124,6 +2127,107 @@ test("search-grounded product discovery flags wrong buying path URL", () => {
     if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
     else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
   }
+});
+
+test("discovery report score-state mapping treats numeric zero as tested not found", () => {
+  assert.equal(mapDiscoveryScoreToReportStatus(100), "found");
+  assert.equal(mapDiscoveryScoreToReportStatus(1), "found");
+  assert.equal(mapDiscoveryScoreToReportStatus(0), "not_found");
+  assert.equal(mapDiscoveryScoreToReportStatus("not_configured"), "not_configured");
+  assert.equal(mapDiscoveryScoreToReportStatus("not_tested"), "not_tested");
+  assert.equal(mapDiscoveryScoreToReportStatus(null), "not_tested");
+  assert.equal(mapDiscoveryScoreToReportStatus(undefined), "not_tested");
+});
+
+test("merchant PDP discoverability audit produces concrete schema, canonical, and copy findings", () => {
+  const audit = auditMerchantPDPDiscoverability({
+    merchant_pdp_url: "https://isntree.example/products/watery-sun-gel",
+    expected_merchant_pdp_url: "https://isntree.example/products/watery-sun-gel",
+    product_name: "Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml",
+    brand: "Isntree",
+    sku: "50ml",
+    category: "skincare sunscreen",
+    returned_urls: [],
+    issue_types: ["merchant_pdp_not_discovered"],
+    preflight_status: "passed",
+    preflight_status_code: 200,
+    signals: {
+      canonical_url: "https://isntree.example/products/old-sun-gel",
+      title: "Daily sunscreen",
+      h1: "Hydrating sunscreen",
+      product_jsonld_present: false,
+      offer_jsonld_present: false,
+      price_present: false,
+      availability_present: false,
+      seller_present: false,
+      sitemap_included: false,
+    },
+  });
+
+  const findingTypes = audit.findings.map((finding) => finding.finding_type);
+  assert.ok(findingTypes.includes("missing_product_schema"));
+  assert.ok(findingTypes.includes("missing_offer_schema"));
+  assert.ok(findingTypes.includes("canonical_gap"));
+  assert.ok(findingTypes.includes("thin_content_gap"));
+  assert.ok(findingTypes.includes("missing_price_or_availability_signal"));
+  assert.ok(findingTypes.includes("missing_seller_signal"));
+  assert.ok(findingTypes.includes("sitemap_gap"));
+  assert.ok(audit.recommended_action_types.includes("merchant_product_schema_patch"));
+  assert.ok(audit.recommended_action_types.includes("merchant_offer_schema_patch"));
+  assert.ok(audit.recommended_action_types.includes("merchant_canonical_url_patch"));
+  assert.ok(audit.recommended_action_types.includes("merchant_pdp_copy_patch"));
+});
+
+test("Pivota PDP discoverability audit produces source reference and product intelligence findings", () => {
+  const audit = auditPivotaPDPDiscoverability({
+    pivota_pdp_url: verifiedPivotaPdpUrl,
+    expected_pivota_pdp_url: verifiedPivotaPdpUrl,
+    product_name: "Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml",
+    brand: "Isntree",
+    returned_urls: [],
+    issue_types: ["pivota_pdp_not_discovered"],
+    preflight_status: "passed",
+    preflight_status_code: 200,
+    signals: {
+      title: "Pivota Product",
+      h1: "Product details",
+      product_jsonld_present: false,
+      offer_jsonld_present: false,
+      source_reference_present: false,
+      offer_source_url_present: false,
+      product_intelligence_populated: false,
+      similar_card_highlight_present: false,
+      product_object_id_present: true,
+    },
+  });
+
+  const findingTypes = audit.findings.map((finding) => finding.finding_type);
+  assert.ok(findingTypes.includes("missing_source_reference"));
+  assert.ok(findingTypes.includes("pivota_product_intelligence_gap"));
+  assert.ok(findingTypes.includes("similar_card_missing_highlight"));
+  assert.ok(findingTypes.includes("missing_product_schema"));
+  assert.ok(findingTypes.includes("missing_offer_schema"));
+  assert.ok(audit.recommended_action_types.includes("pivota_source_reference_patch"));
+  assert.ok(audit.recommended_action_types.includes("pivota_product_intelligence_patch"));
+});
+
+test("wrong buying path discoverability audit recommends URL analysis and canonical fixes", () => {
+  const audit = auditMerchantPDPDiscoverability({
+    merchant_pdp_url: "https://isntree.example/products/watery-sun-gel",
+    expected_merchant_pdp_url: "https://isntree.example/products/watery-sun-gel",
+    product_name: "Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml",
+    brand: "Isntree",
+    returned_urls: ["https://marketplace.example/isntree-watery-sun-gel"],
+    issue_types: ["wrong_buying_path_returned"],
+    preflight_status: "passed",
+    preflight_status_code: 200,
+  });
+
+  assert.ok(
+    audit.findings.some((finding) => finding.finding_type === "wrong_url_returned")
+  );
+  assert.ok(audit.recommended_action_types.includes("wrong_url_analysis"));
+  assert.ok(audit.recommended_action_types.includes("canonical_buying_path_patch"));
 });
 
 test("grounded merchant domain with wrong PDP URL creates partial discovery failure", () => {
@@ -4656,6 +4760,151 @@ test("issue resolution plan generation handles competitor dominance blockers", (
   );
 });
 
+test("issue resolution plan generation handles search-grounded merchant PDP discovery gaps", () => {
+  resetAgentCenterState();
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  try {
+    const result = scoreAttributionFixture({
+      scanMode: "search_grounded_product_discovery_test",
+      output: {
+        mentioned_brands: ["Isntree"],
+        mentioned_products: [
+          {
+            name: "Isntree Hyaluronic Acid Watery Sun Gel",
+            brand: "Isntree",
+            rank: 1,
+            reason: "Product was mentioned but no official PDP URL was returned.",
+          },
+        ],
+        returned_urls: [],
+        missing_attributes_identified: [],
+      },
+    });
+    const issue = result.issues.find(
+      (item) => item.issue_type === "merchant_pdp_not_discovered"
+    );
+    const plan = new IssueResolutionService().generate(issue.id);
+    const actionTypes = plan.recommended_actions.map((action) => action.action_type);
+
+    assert.equal(plan.blocker_type, "merchant_pdp_not_discovered");
+    assert.equal(plan.owner_type, "shared");
+    assert.ok(actionTypes.includes("merchant_indexability_patch"));
+    assert.ok(actionTypes.includes("merchant_product_schema_patch"));
+    assert.ok(actionTypes.includes("merchant_offer_schema_patch"));
+    assert.ok(actionTypes.includes("merchant_canonical_url_patch"));
+    assert.ok(actionTypes.includes("merchant_pdp_copy_patch"));
+    assert.ok(actionTypes.includes("merchant_sitemap_submission"));
+    assert.ok(actionTypes.includes("rerun_search_grounded_product_discovery_test"));
+    assert.equal(
+      plan.verification_plan.scan_mode,
+      "search_grounded_product_discovery_test"
+    );
+    assert.equal(
+      plan.verification_plan.success_metric,
+      "search_grounded_merchant_pdp_discovery_score"
+    );
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  }
+});
+
+test("issue resolution plan generation handles search-grounded Pivota PDP discovery gaps", () => {
+  resetAgentCenterState();
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  try {
+    const result = scoreAttributionFixture({
+      scanMode: "search_grounded_product_discovery_test",
+      output: {
+        mentioned_brands: ["Isntree"],
+        mentioned_products: [
+          {
+            name: "Isntree Hyaluronic Acid Watery Sun Gel",
+            brand: "Isntree",
+            rank: 1,
+            reason: "Product was mentioned but no Pivota PDP URL was returned.",
+          },
+        ],
+        returned_urls: [],
+        missing_attributes_identified: [],
+      },
+    });
+    const issue = result.issues.find(
+      (item) => item.issue_type === "pivota_pdp_not_discovered"
+    );
+    const plan = new IssueResolutionService().generate(issue.id);
+    const actionTypes = plan.recommended_actions.map((action) => action.action_type);
+
+    assert.equal(plan.blocker_type, "pivota_pdp_not_discovered");
+    assert.equal(plan.owner_type, "pivota_ops");
+    assert.ok(actionTypes.includes("pivota_indexability_patch"));
+    assert.ok(actionTypes.includes("pivota_product_schema_patch"));
+    assert.ok(actionTypes.includes("pivota_offer_schema_patch"));
+    assert.ok(actionTypes.includes("pivota_source_reference_patch"));
+    assert.ok(actionTypes.includes("pivota_sitemap_submission"));
+    assert.ok(actionTypes.includes("pivota_product_intelligence_patch"));
+    assert.ok(actionTypes.includes("rerun_search_grounded_product_discovery_test"));
+    assert.equal(
+      plan.verification_plan.scan_mode,
+      "search_grounded_product_discovery_test"
+    );
+    assert.equal(
+      plan.verification_plan.success_metric,
+      "search_grounded_pivota_pdp_discovery_score"
+    );
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  }
+});
+
+test("issue resolution plan generation handles wrong buying path discovery gaps", () => {
+  resetAgentCenterState();
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  try {
+    const result = scoreAttributionFixture({
+      scanMode: "search_grounded_product_discovery_test",
+      output: {
+        mentioned_brands: ["Isntree"],
+        mentioned_products: [
+          {
+            name: "Isntree Hyaluronic Acid Watery Sun Gel",
+            brand: "Isntree",
+            rank: 1,
+            reason: "A marketplace URL was returned.",
+            product_url: "https://marketplace.example/isntree-watery-sun-gel",
+          },
+        ],
+        returned_urls: ["https://marketplace.example/isntree-watery-sun-gel"],
+        missing_attributes_identified: [],
+      },
+    });
+    const issue = result.issues.find(
+      (item) => item.issue_type === "wrong_buying_path_returned"
+    );
+    const plan = new IssueResolutionService().generate(issue.id);
+    const actionTypes = plan.recommended_actions.map((action) => action.action_type);
+
+    assert.equal(plan.blocker_type, "wrong_buying_path_returned");
+    assert.equal(plan.owner_type, "shared");
+    assert.ok(actionTypes.includes("wrong_url_analysis"));
+    assert.ok(actionTypes.includes("canonical_buying_path_patch"));
+    assert.ok(actionTypes.includes("competitor_or_retailer_confusion_patch"));
+    assert.ok(actionTypes.includes("rerun_search_grounded_product_discovery_test"));
+    assert.equal(
+      plan.verification_plan.scan_mode,
+      "search_grounded_product_discovery_test"
+    );
+    assert.equal(plan.verification_plan.success_metric, "url_match_accuracy_score");
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  }
+});
+
 test("issue resolution plan generation handles Pivota attribution gaps", () => {
   const fixture = runIsntreeProductUnderstandingCase({
     issueType: "pivota_pdp_attribution_gap",
@@ -5377,6 +5626,160 @@ test("merchant-facing report handles search-grounded discovery interpretations",
   });
 });
 
+test("merchant-facing report maps scoped numeric zero search-grounded scores as not found", async () => {
+  resetAgentCenterState();
+  await withMockProductionValidationFetch(async () => {
+    const run = new ProductionValidationRunService().create(
+      productionValidationPayload({
+        demand_scan_modes: ["search_grounded_product_discovery_test"],
+      })
+    );
+    const completed = await new ProductionValidationRunService().run(run.id);
+    const modeSummary =
+      completed.validation_report.demand_test_summary.modes_run[0];
+    Object.assign(modeSummary.aggregate_scores, {
+      search_grounded_merchant_pdp_discovery_score: 0,
+      search_grounded_pivota_pdp_discovery_score: 0,
+      url_match_accuracy_score: 0,
+      organic_product_discovery_score: "not_tested",
+      organic_brand_discovery_score: "not_tested",
+      buying_path_discovery_score: "not_tested",
+    });
+
+    const state = getAgentCenterState();
+    const baseIssue = state.issues.find((issue) =>
+      modeSummary.issue_ids.includes(issue.id)
+    );
+    assert.ok(baseIssue, "expected production validation to create a base issue");
+    const merchantIssue = {
+      ...baseIssue,
+      id: "issue_report_merchant_pdp_not_discovered",
+      issue_type: "merchant_pdp_not_discovered",
+      severity: "high",
+      merchant_facing_summary:
+        "Search-grounded Gemini did not return the expected merchant PDP.",
+      evidence: {
+        ...baseIssue.evidence,
+        summary: "Expected merchant PDP URL was not returned by Gemini or grounding metadata.",
+      },
+    };
+    const pivotaIssue = {
+      ...baseIssue,
+      id: "issue_report_pivota_pdp_not_discovered",
+      issue_type: "pivota_pdp_not_discovered",
+      severity: "high",
+      merchant_facing_summary:
+        "Search-grounded Gemini did not return the expected Pivota PDP.",
+      evidence: {
+        ...baseIssue.evidence,
+        summary: "Expected Pivota PDP URL was not returned by Gemini or grounding metadata.",
+      },
+    };
+    const wrongPathIssue = {
+      ...baseIssue,
+      id: "issue_report_wrong_buying_path",
+      issue_type: "wrong_buying_path_returned",
+      severity: "medium",
+      merchant_facing_summary:
+        "Gemini returned a URL, but it did not match the expected merchant or Pivota PDP.",
+      evidence: {
+        ...baseIssue.evidence,
+        summary:
+          "A returned URL was captured, but it did not match the expected merchant or Pivota PDP.",
+      },
+    };
+    state.issues.push(merchantIssue, pivotaIssue, wrongPathIssue);
+    modeSummary.issue_ids = [merchantIssue.id, pivotaIssue.id, wrongPathIssue.id];
+    completed.issue_ids = [...modeSummary.issue_ids];
+
+    const report = new MerchantFacingReportService().generate(completed.id, {
+      regenerate: true,
+    });
+
+    assert.equal(
+      report.discovery_result.search_grounded_merchant_pdp_discovery.status,
+      "not_found"
+    );
+    assert.equal(
+      report.discovery_result.search_grounded_pivota_pdp_discovery.status,
+      "not_found"
+    );
+    assert.equal(report.discovery_result.url_match_accuracy.status, "not_found");
+    assert.equal(
+      report.discovery_result.search_grounded_merchant_pdp_discovery.score,
+      0
+    );
+    assert.equal(
+      report.discovery_result.search_grounded_pivota_pdp_discovery.score,
+      0
+    );
+    assert.equal(report.discovery_result.url_match_accuracy.score, 0);
+    assert.equal(report.discovery_result.organic_product_discovery.status, "not_tested");
+    assert.equal(report.discovery_result.buying_path_discovery.status, "not_tested");
+    assert.equal(
+      report.discovery_result.search_grounded_merchant_pdp_discovery.summary,
+      "Search-grounded Gemini did not return the expected merchant PDP."
+    );
+    assert.equal(
+      report.discovery_result.search_grounded_pivota_pdp_discovery.summary,
+      "Search-grounded Gemini did not return the expected Pivota PDP."
+    );
+    assert.match(report.discovery_result.url_match_accuracy.summary, /0%/);
+    assert.equal(
+      report.discovery_result.search_grounded_merchant_pdp_discovery.issue_id,
+      merchantIssue.id
+    );
+    assert.equal(
+      report.discovery_result.search_grounded_pivota_pdp_discovery.issue_id,
+      pivotaIssue.id
+    );
+    assert.match(
+      report.discovery_result.search_grounded_merchant_pdp_discovery.evidence,
+      /Expected merchant PDP URL was not returned/
+    );
+    assert.match(report.discoverability_fix_plan.summary, /official merchant PDP/i);
+    assert.match(report.discoverability_fix_plan.summary, /Pivota PDP/i);
+    assert.ok(
+      report.discoverability_fix_plan.merchant_pdp_audit.findings.some(
+        (finding) => finding.finding_type === "missing_product_schema"
+      )
+    );
+    assert.ok(
+      report.discoverability_fix_plan.pivota_pdp_audit.findings.some(
+        (finding) => finding.finding_type === "missing_source_reference"
+      )
+    );
+    assert.ok(
+      report.discoverability_fix_plan.merchant_owned_fixes.some((fix) =>
+        /Product structured data/i.test(fix)
+      )
+    );
+    assert.ok(
+      report.discoverability_fix_plan.pivota_owned_fixes.some((fix) =>
+        /verified source reference/i.test(fix)
+      )
+    );
+    assert.ok(
+      report.discoverability_fix_plan.shared_fixes.some((fix) =>
+        /wrong URLs/i.test(fix)
+      )
+    );
+    assert.ok(
+      report.discoverability_fix_plan.retest_plan.some((step) =>
+        /Search-Grounded Product Discovery Test/i.test(step)
+      )
+    );
+    assert.equal(
+      report.readiness_result.contextual_merchant_attribution.status,
+      "not_tested"
+    );
+    assert.equal(
+      report.readiness_result.contextual_pivota_attribution.status,
+      "not_tested"
+    );
+  });
+});
+
 test("merchant-facing report draft API is internal and idempotent", async () => {
   resetAgentCenterState();
   await withInternalProductionValidationEnv(async () => {
@@ -5810,6 +6213,10 @@ test("internal report preview page renders report review controls", async () => 
   assert.match(source, /Discoverability/);
   assert.match(source, /Discovery Result/);
   assert.match(source, /Discovery Evidence/);
+  assert.match(source, /Discoverability Fix Plan/);
+  assert.match(source, /Merchant PDP audit findings/);
+  assert.match(source, /Pivota PDP audit findings/);
+  assert.match(source, /status \\?\\?/);
   assert.match(source, /Merchant-owned fixes/);
   assert.match(source, /Pivota-owned fixes/);
   assert.match(source, /Shared fixes/);

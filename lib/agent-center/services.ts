@@ -34,6 +34,9 @@ import type {
   DemandTestJob,
   DemandTestJobStatus,
   DemandVisibilityScore,
+  DiscoverabilityAuditInput,
+  DiscoverabilityAuditFinding,
+  DiscoverabilityAuditFindingType,
   EntityMappingFinding,
   FixTarget,
   GMVAssuranceBlocker,
@@ -45,8 +48,10 @@ import type {
   InventoryStatus,
   IssueResolutionOwnerType,
   IssueResolutionPlan,
+  MerchantFacingDiscoveryReportStatus,
   LLMSurfaceResult,
   LLMSurfaceTestRun,
+  MerchantPDPDiscoverabilityAudit,
   MerchantFacingValidationReport,
   MerchantStore,
   MerchantCheckoutPath,
@@ -62,6 +67,7 @@ import type {
   OfferPatchRecommendation,
   PivotaOffer,
   PivotaCheckoutPath,
+  PivotaPDPDiscoverabilityAudit,
   ProductLayerComparison,
   ProductMatchLevel,
   ProductMatchResult,
@@ -6415,6 +6421,9 @@ export class CheckoutVerificationService {
 const supportedResolutionBlockers = new Set([
   "organic_product_not_discovered",
   "competitor_dominance",
+  "merchant_pdp_not_discovered",
+  "pivota_pdp_not_discovered",
+  "wrong_buying_path_returned",
   "merchant_store_attribution_gap",
   "pivota_pdp_attribution_gap",
   "unverified_pivota_attribution",
@@ -6451,6 +6460,15 @@ function discoveryResolutionNextAction(blockerType: string) {
   }
   if (blockerType === "competitor_dominance") {
     return COMPETITOR_DOMINANCE_NEXT_ACTION;
+  }
+  if (blockerType === "merchant_pdp_not_discovered") {
+    return "Fix merchant PDP indexability, structured data, canonical URL, and PDP copy, then rerun Search-Grounded Product Discovery Test.";
+  }
+  if (blockerType === "pivota_pdp_not_discovered") {
+    return "Fix Pivota PDP indexability, source references, structured data, and product intelligence, then rerun Search-Grounded Product Discovery Test.";
+  }
+  if (blockerType === "wrong_buying_path_returned") {
+    return "Analyze wrong returned URLs, strengthen canonical buying-path signals, then rerun Search-Grounded Product Discovery Test.";
   }
   return "";
 }
@@ -6578,6 +6596,9 @@ export class IssueResolutionService {
     let result: Record<string, unknown>;
     if (
       blockerType === "merchant_store_attribution_gap" ||
+      blockerType === "merchant_pdp_not_discovered" ||
+      blockerType === "pivota_pdp_not_discovered" ||
+      blockerType === "wrong_buying_path_returned" ||
       blockerType === "pivota_pdp_attribution_gap" ||
       blockerType === "unverified_pivota_attribution" ||
       blockerType === "pivota_pdp_content_quality_gap" ||
@@ -6590,6 +6611,10 @@ export class IssueResolutionService {
         scan_mode:
           blockerType === "merchant_store_attribution_gap"
             ? "merchant_store_attribution_test"
+            : blockerType === "merchant_pdp_not_discovered" ||
+                blockerType === "pivota_pdp_not_discovered" ||
+                blockerType === "wrong_buying_path_returned"
+              ? "search_grounded_product_discovery_test"
             : "pivota_pdp_attribution_test",
         verification_run_id: verification.id,
       };
@@ -6673,7 +6698,9 @@ export class IssueResolutionService {
   private ownerForBlocker(blockerType: string): IssueResolutionOwnerType {
     if (
       blockerType === "organic_product_not_discovered" ||
-      blockerType === "competitor_dominance"
+      blockerType === "competitor_dominance" ||
+      blockerType === "merchant_pdp_not_discovered" ||
+      blockerType === "wrong_buying_path_returned"
     ) {
       return "shared";
     }
@@ -6685,6 +6712,7 @@ export class IssueResolutionService {
     if (
       blockerType === "pivota_pdp_attribution_gap" ||
       blockerType === "unverified_pivota_attribution" ||
+      blockerType === "pivota_pdp_not_discovered" ||
       blockerType === "pivota_pdp_content_quality_gap" ||
       blockerType === "pivota_product_intelligence_gap" ||
       blockerType === "pivota_pdp_readiness_gap" ||
@@ -6699,6 +6727,9 @@ export class IssueResolutionService {
     const map: Record<string, string> = {
       organic_product_not_discovered: "Merchant Growth + Pivota Discovery Ops",
       competitor_dominance: "Merchant Growth + Pivota Discovery Ops",
+      merchant_pdp_not_discovered: "Merchant Growth + Pivota Discovery Ops",
+      pivota_pdp_not_discovered: "Pivota Discovery Ops",
+      wrong_buying_path_returned: "Merchant Growth + Pivota Discovery Ops",
       merchant_store_attribution_gap: "Merchant PDP + Pivota Product Ops",
       pivota_pdp_attribution_gap: "Pivota Product Ops",
       unverified_pivota_attribution: "Pivota Product Ops",
@@ -6727,6 +6758,21 @@ export class IssueResolutionService {
         "pivota_unified_pdp",
         "pivota_product_graph",
         "pivota_query_mapping",
+      ],
+      merchant_pdp_not_discovered: [
+        "merchant_pdp",
+        "merchant_structured_data",
+        "pivota_product_graph",
+      ],
+      pivota_pdp_not_discovered: [
+        "pivota_unified_pdp",
+        "pivota_product_graph",
+      ],
+      wrong_buying_path_returned: [
+        "merchant_pdp",
+        "merchant_structured_data",
+        "pivota_unified_pdp",
+        "pivota_product_graph",
       ],
       merchant_store_attribution_gap: [
         "merchant_structured_data",
@@ -6759,6 +6805,12 @@ export class IssueResolutionService {
         "Organic no-context prompts did not naturally surface the product. Merchant-owned and Pivota buying paths can be ready when context is provided, but the product needs stronger public discovery signals and query-cluster mapping before AI users can naturally reach it.",
       competitor_dominance:
         "Organic discovery prompts were dominated by competitor brands/products while the target product was absent. The likely gap is weak differentiation evidence, substitute mapping, and category/query coverage for natural AI discovery.",
+      merchant_pdp_not_discovered:
+        "Search-grounded Gemini did not return the expected merchant PDP. The likely causes are weak indexability, canonical URL, structured data, sitemap, or PDP copy signals on the merchant-owned buying page.",
+      pivota_pdp_not_discovered:
+        "Search-grounded Gemini did not return the expected Pivota PDP. The likely causes are weak Pivota PDP indexability, source references, product identity, structured data, or product intelligence signals.",
+      wrong_buying_path_returned:
+        "Search-grounded Gemini returned a different buying path than expected. The likely causes are canonical ambiguity, stronger third-party retailer pages, or missing source/buying-path bindings for the expected merchant/Pivota PDP.",
       merchant_store_attribution_gap:
         "The product can be visible to the model, but the merchant store/PDP was not returned as the buying path. The likely cause is weak merchant buying-path structured data or a missing Pivota binding from product entity to merchant PDP.",
       pivota_pdp_attribution_gap:
@@ -6815,6 +6867,23 @@ export class IssueResolutionService {
           blockerType === "competitor_dominance"
             ? "competitor_dominance_score"
             : "organic_product_discovery_score",
+      };
+    }
+    if (
+      blockerType === "merchant_pdp_not_discovered" ||
+      blockerType === "pivota_pdp_not_discovered" ||
+      blockerType === "wrong_buying_path_returned"
+    ) {
+      return {
+        ...base,
+        source_agent: "demand_test_agent",
+        scan_mode: "search_grounded_product_discovery_test",
+        success_metric:
+          blockerType === "pivota_pdp_not_discovered"
+            ? "search_grounded_pivota_pdp_discovery_score"
+            : blockerType === "wrong_buying_path_returned"
+              ? "url_match_accuracy_score"
+              : "search_grounded_merchant_pdp_discovery_score",
       };
     }
     if (
@@ -7093,6 +7162,332 @@ export class IssueResolutionService {
           },
           expected_impact:
             "Verifies whether competitor dominance decreases after differentiation and graph updates.",
+        }),
+      ];
+    }
+
+    if (blockerType === "merchant_pdp_not_discovered") {
+      return [
+        action({
+          index: 1,
+          action_type: "merchant_indexability_patch",
+          title: "Verify merchant PDP indexability",
+          description:
+            "Make sure the PDP is indexable, canonical, and accessible to search-grounded AI.",
+          target_layer: "merchant_owned_path",
+          owner_type: "merchant",
+          owner_team: "Merchant Growth",
+          requires_merchant_approval: true,
+          can_apply_automatically: false,
+          patch_payload: {
+            merchant_pdp_url: issue.store_url,
+            checks: ["HTTP 200", "robots/meta robots indexability", "canonical URL"],
+          },
+          expected_impact:
+            "Allows search-grounded Gemini to access and treat the official PDP as eligible evidence.",
+        }),
+        action({
+          index: 2,
+          action_type: "merchant_product_schema_patch",
+          title: "Add or fix merchant Product schema",
+          description:
+            "Add or fix Product structured data with name, brand, SKU, canonical URL, description, and image.",
+          target_layer: "merchant_structured_data",
+          owner_type: "merchant",
+          owner_team: "Merchant Growth",
+          requires_merchant_approval: true,
+          can_apply_automatically: false,
+          patch_payload: {
+            schema_type: "Product",
+            required_fields: ["name", "brand", "sku", "url", "description", "image"],
+            product_entity_ids: issue.affected_product_entities,
+          },
+          expected_impact:
+            "Makes the product identity machine-readable for search-grounded discovery.",
+        }),
+        action({
+          index: 3,
+          action_type: "merchant_offer_schema_patch",
+          title: "Add or fix merchant Offer schema",
+          description:
+            "Add or fix Offer structured data with price, currency, availability, seller, and URL where applicable.",
+          target_layer: "merchant_structured_data",
+          owner_type: "merchant",
+          owner_team: "Merchant Growth",
+          requires_merchant_approval: true,
+          can_apply_automatically: false,
+          patch_payload: {
+            schema_type: "Offer",
+            required_fields: ["price", "priceCurrency", "availability", "seller", "url"],
+          },
+          expected_impact:
+            "Clarifies the official buying path and offer evidence on the merchant PDP.",
+        }),
+        action({
+          index: 4,
+          action_type: "merchant_canonical_url_patch",
+          title: "Confirm merchant canonical URL",
+          description:
+            "Ensure the canonical URL points to the official merchant PDP.",
+          target_layer: "merchant_pdp",
+          owner_type: "merchant",
+          owner_team: "Merchant Growth",
+          requires_merchant_approval: true,
+          can_apply_automatically: false,
+          patch_payload: {
+            canonical_url: issue.store_url,
+          },
+          expected_impact:
+            "Reduces ambiguity between official PDP, third-party retailer pages, and duplicate URLs.",
+        }),
+        action({
+          index: 5,
+          action_type: "merchant_pdp_copy_patch",
+          title: "Strengthen merchant PDP copy",
+          description:
+            "Strengthen page title, H1, product description, and use-case language so the PDP clearly matches relevant search queries.",
+          target_layer: "merchant_pdp",
+          owner_type: "merchant",
+          owner_team: "Merchant Growth",
+          requires_merchant_approval: true,
+          can_apply_automatically: false,
+          patch_payload: {
+            content_fields: ["title", "h1", "description", "use_case_language"],
+            product_entity_ids: issue.affected_product_entities,
+          },
+          expected_impact:
+            "Improves product-name and category association for search-grounded discovery.",
+        }),
+        action({
+          index: 6,
+          action_type: "merchant_sitemap_submission",
+          title: "Confirm merchant sitemap inclusion",
+          description:
+            "Ensure the PDP is included in sitemap and eligible for indexing.",
+          target_layer: "merchant_owned_path",
+          owner_type: "merchant",
+          owner_team: "Merchant Growth",
+          requires_merchant_approval: true,
+          can_apply_automatically: false,
+          patch_payload: {
+            merchant_pdp_url: issue.store_url,
+            sitemap_required: true,
+          },
+          expected_impact:
+            "Improves the chance that public search-grounded systems can discover the official PDP.",
+        }),
+        action({
+          index: 7,
+          action_type: "rerun_search_grounded_product_discovery_test",
+          title: "Rerun Search-Grounded Product Discovery Test",
+          description:
+            "Rerun search-grounded discovery after indexability and structured data fixes.",
+          target_layer: "validation",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Validation Ops",
+          patch_payload: {
+            ...rerunPayload,
+            scan_mode: "search_grounded_product_discovery_test",
+          },
+          expected_impact:
+            "Verifies whether Gemini with search grounding returns the expected merchant PDP.",
+        }),
+      ];
+    }
+
+    if (blockerType === "pivota_pdp_not_discovered") {
+      return [
+        action({
+          index: 1,
+          action_type: "pivota_indexability_patch",
+          title: "Verify Pivota PDP indexability",
+          description:
+            "Make sure the Pivota PDP is public, indexable, canonical, and accessible.",
+          target_layer: "pivota_unified_pdp",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Discovery Ops",
+          patch_payload: {
+            checks: ["HTTP 200", "robots/meta robots indexability", "canonical URL"],
+            product_entity_ids: issue.affected_product_entities,
+          },
+          expected_impact:
+            "Allows search-grounded Gemini to access the Pivota agent-facing PDP as public evidence.",
+        }),
+        action({
+          index: 2,
+          action_type: "pivota_product_schema_patch",
+          title: "Add or fix Pivota Product schema",
+          description: "Add or fix Product structured data for the Pivota PDP.",
+          target_layer: "pivota_unified_pdp",
+          owner_type: "pivota_eng",
+          owner_team: "Pivota Product Engineering",
+          patch_payload: {
+            schema_type: "Product",
+            product_entity_ids: issue.affected_product_entities,
+          },
+          expected_impact:
+            "Makes Pivota product identity machine-readable for search-grounded discovery.",
+        }),
+        action({
+          index: 3,
+          action_type: "pivota_offer_schema_patch",
+          title: "Add or fix Pivota Offer schema",
+          description:
+            "Add or fix Offer/AggregateOffer structured data for merchant offers.",
+          target_layer: "pivota_offer_layer",
+          owner_type: "pivota_eng",
+          owner_team: "Pivota Product Engineering",
+          patch_payload: {
+            schema_types: ["Offer", "AggregateOffer"],
+            product_entity_ids: issue.affected_product_entities,
+          },
+          expected_impact:
+            "Clarifies Pivota-managed merchant offer evidence on the agent-facing PDP.",
+        }),
+        action({
+          index: 4,
+          action_type: "pivota_source_reference_patch",
+          title: "Add merchant source reference",
+          description:
+            "Add merchant PDP as a verified source reference on the Pivota PDP.",
+          target_layer: "pivota_unified_pdp",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Discovery Ops",
+          patch_payload: {
+            source_references: [issue.store_url],
+            product_entity_ids: issue.affected_product_entities,
+          },
+          expected_impact:
+            "Connects the Pivota PDP to the merchant-owned source path for discoverability.",
+        }),
+        action({
+          index: 5,
+          action_type: "pivota_sitemap_submission",
+          title: "Confirm Pivota sitemap inclusion",
+          description:
+            "Ensure the Pivota PDP appears in the agent.pivota.cc sitemap and is submitted for indexing.",
+          target_layer: "pivota_unified_pdp",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Discovery Ops",
+          patch_payload: {
+            product_entity_ids: issue.affected_product_entities,
+            sitemap_required: true,
+          },
+          expected_impact:
+            "Improves public discoverability of the Pivota agent-facing PDP.",
+        }),
+        action({
+          index: 6,
+          action_type: "pivota_product_intelligence_patch",
+          title: "Complete Pivota product intelligence",
+          description:
+            "Complete product identity, overview, product intelligence module, and similar/substitute highlights.",
+          target_layer: "pivota_product_graph",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Product Ops",
+          patch_payload: {
+            product_entity_ids: issue.affected_product_entities,
+            sections: [
+              "identity",
+              "overview",
+              "product_intelligence_module",
+              "similar_substitute_highlights",
+            ],
+          },
+          expected_impact:
+            "Makes the Pivota PDP more clearly associated with the product and merchant offer.",
+        }),
+        action({
+          index: 7,
+          action_type: "rerun_search_grounded_product_discovery_test",
+          title: "Rerun Search-Grounded Product Discovery Test",
+          description:
+            "Rerun search-grounded discovery after Pivota PDP discoverability fixes.",
+          target_layer: "validation",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Validation Ops",
+          patch_payload: {
+            ...rerunPayload,
+            scan_mode: "search_grounded_product_discovery_test",
+          },
+          expected_impact:
+            "Verifies whether Gemini with search grounding returns the expected Pivota PDP.",
+        }),
+      ];
+    }
+
+    if (blockerType === "wrong_buying_path_returned") {
+      return [
+        action({
+          index: 1,
+          action_type: "wrong_url_analysis",
+          title: "Analyze wrong returned URLs",
+          description:
+            "Identify which wrong URLs/domains were returned and why they may be outranking the expected PDP.",
+          target_layer: "discovery_analysis",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Discovery Ops",
+          patch_payload: {
+            returned_urls: issue.evidence?.returned_urls || [],
+            returned_domains: issue.evidence?.returned_domains || [],
+          },
+          expected_impact:
+            "Identifies whether third-party retailers, duplicate URLs, or unrelated pages are confusing search-grounded discovery.",
+        }),
+        action({
+          index: 2,
+          action_type: "canonical_buying_path_patch",
+          title: "Strengthen canonical buying-path signals",
+          description:
+            "Strengthen canonical source references and buying path metadata for the expected merchant/Pivota PDP.",
+          target_layer: "merchant_pdp_and_pivota_pdp",
+          owner_type: "shared",
+          owner_team: "Merchant Growth + Pivota Discovery Ops",
+          requires_merchant_approval: true,
+          can_apply_automatically: false,
+          patch_payload: {
+            merchant_pdp_url: issue.store_url,
+            product_entity_ids: issue.affected_product_entities,
+            metadata: ["canonical URL", "source references", "buying path schema"],
+          },
+          expected_impact:
+            "Clarifies which PDP should be treated as the official or agent-facing buying path.",
+        }),
+        action({
+          index: 3,
+          action_type: "competitor_or_retailer_confusion_patch",
+          title: "Reduce competitor or retailer URL confusion",
+          description:
+            "Update Pivota product graph and source references to reduce confusion with third-party retailers or competitor pages.",
+          target_layer: "pivota_product_graph",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Discovery Ops",
+          patch_payload: {
+            product_entity_ids: issue.affected_product_entities,
+            graph_updates: [
+              "verified source references",
+              "retailer disambiguation",
+              "competitor/substitute relationships",
+            ],
+          },
+          expected_impact:
+            "Reduces the chance that search-grounded Gemini selects the wrong buying path.",
+        }),
+        action({
+          index: 4,
+          action_type: "rerun_search_grounded_product_discovery_test",
+          title: "Rerun Search-Grounded Product Discovery Test",
+          description:
+            "Rerun search-grounded discovery after canonical buying-path fixes.",
+          target_layer: "validation",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Validation Ops",
+          patch_payload: {
+            ...rerunPayload,
+            scan_mode: "search_grounded_product_discovery_test",
+          },
+          expected_impact:
+            "Verifies whether Gemini with search grounding returns the expected merchant or Pivota PDP.",
         }),
       ];
     }
@@ -9658,12 +10053,683 @@ function reportScoreLabel(score?: VisibilityScoreValue) {
   return typeof score === "number" ? `${score}%` : score.replace(/_/g, " ");
 }
 
-function reportStatusLabel(status?: GMVAssuranceDimensionStatus) {
+function reportStatusLabel(status?: string) {
   return (status || "not_tested").replace(/_/g, " ");
 }
 
 function reportPreflightLabel(status?: ProductionValidationUrlPreflight["status"]) {
   return (status || "not_provided").replace(/_/g, " ");
+}
+
+type DiscoveryScoreValue = VisibilityScoreValue | null | undefined;
+
+export function mapDiscoveryScoreToReportStatus(
+  score: DiscoveryScoreValue
+): MerchantFacingDiscoveryReportStatus {
+  if (score === "not_configured") return "not_configured";
+  if (score === "not_tested" || score === null || score === undefined) {
+    return "not_tested";
+  }
+  return score > 0 ? "found" : "not_found";
+}
+
+function safeUrlHost(value?: string) {
+  if (!value) return "";
+  try {
+    return new URL(value).host.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function normalizeUrlForCompare(value?: string) {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    const normalized = url.toString().replace(/\/$/, "");
+    return normalized.toLowerCase();
+  } catch {
+    return value.toLowerCase().replace(/\/$/, "");
+  }
+}
+
+function textContainsCoreProduct(text: string | undefined, productName: string) {
+  if (!text) return false;
+  const normalizer = new ProductNameNormalizer();
+  const normalizedText = normalizer.normalizeForCompare(text);
+  const normalizedProduct = normalizer.normalizeForCompare(productName);
+  const coreProduct = normalizer.normalizedCoreName(productName);
+  return (
+    normalizedText.includes(normalizedProduct) ||
+    Boolean(coreProduct && normalizedText.includes(coreProduct))
+  );
+}
+
+function hasJsonLdType(input: DiscoverabilityAuditInput, type: string) {
+  return (input.signals?.json_ld_types || []).some(
+    (item) => item.toLowerCase() === type.toLowerCase()
+  );
+}
+
+function auditFinding(
+  findingType: DiscoverabilityAuditFindingType,
+  summary: string,
+  recommendedActionTypes: string[],
+  severity: Severity = "medium"
+): DiscoverabilityAuditFinding {
+  return {
+    finding_type: findingType,
+    severity,
+    summary,
+    recommended_action_types: recommendedActionTypes,
+  };
+}
+
+function addFindingOnce(
+  findings: DiscoverabilityAuditFinding[],
+  finding: DiscoverabilityAuditFinding
+) {
+  if (!findings.some((item) => item.finding_type === finding.finding_type)) {
+    findings.push(finding);
+  }
+}
+
+function auditStatus(findings: DiscoverabilityAuditFinding[], url?: string) {
+  if (!url) return "not_tested" as const;
+  return findings.length ? ("needs_work" as const) : ("passed" as const);
+}
+
+function recommendedActionTypes(findings: DiscoverabilityAuditFinding[]) {
+  return unique(findings.flatMap((finding) => finding.recommended_action_types));
+}
+
+function expectedUrlReturned(expectedUrl: string | undefined, returnedUrls: string[]) {
+  if (!expectedUrl) return false;
+  const expected = normalizeUrlForCompare(expectedUrl);
+  return returnedUrls.some((url) => normalizeUrlForCompare(url) === expected);
+}
+
+export function auditMerchantPDPDiscoverability(
+  input: DiscoverabilityAuditInput
+): MerchantPDPDiscoverabilityAudit {
+  const url = input.merchant_pdp_url || input.expected_merchant_pdp_url;
+  const expectedUrl = input.expected_merchant_pdp_url || url;
+  const issueTypes = new Set(input.issue_types || []);
+  const returnedUrls = input.returned_urls || [];
+  const signals = input.signals || {};
+  const findings: DiscoverabilityAuditFinding[] = [];
+  const checks: MerchantPDPDiscoverabilityAudit["checks"] = {};
+  const statusCode = signals.http_status ?? input.preflight_status_code;
+  const notDiscovered = issueTypes.has("merchant_pdp_not_discovered");
+  const wrongUrl = issueTypes.has("wrong_buying_path_returned");
+
+  checks.http_status =
+    statusCode === undefined || statusCode === null
+      ? input.preflight_status === "passed"
+        ? "passed"
+        : input.preflight_status === "failed"
+          ? "needs_work"
+          : "unknown"
+      : statusCode >= 200 && statusCode < 400
+        ? "passed"
+        : "needs_work";
+  if (checks.http_status === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "indexability_gap",
+        "Merchant PDP did not have a confirmed successful public preflight.",
+        ["merchant_indexability_patch"],
+        "high"
+      )
+    );
+  }
+
+  const robotsMeta = String(signals.robots_meta || "").toLowerCase();
+  checks.indexability = robotsMeta
+    ? robotsMeta.includes("noindex") || robotsMeta.includes("none")
+      ? "needs_work"
+      : "passed"
+    : notDiscovered
+      ? "unknown"
+      : "unknown";
+  if (checks.indexability === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "indexability_gap",
+        "Merchant PDP appears to include robots directives that may prevent indexing.",
+        ["merchant_indexability_patch"],
+        "high"
+      )
+    );
+  }
+
+  checks.canonical_url = signals.canonical_url
+    ? normalizeUrlForCompare(signals.canonical_url) === normalizeUrlForCompare(expectedUrl)
+      ? "passed"
+      : "needs_work"
+    : notDiscovered
+      ? "needs_work"
+      : "unknown";
+  if (checks.canonical_url === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "canonical_gap",
+        "Merchant PDP canonical URL was missing, unavailable, or did not match the expected official PDP.",
+        ["merchant_canonical_url_patch"],
+        "medium"
+      )
+    );
+  }
+
+  const titleAndH1 = [signals.title, signals.h1, signals.visible_product_name]
+    .filter(Boolean)
+    .join(" ");
+  checks.product_identity =
+    titleAndH1 || signals.visible_description
+      ? textContainsCoreProduct(
+          [titleAndH1, signals.visible_description].join(" "),
+          input.product_name
+        )
+        ? "passed"
+        : "needs_work"
+      : notDiscovered
+        ? "needs_work"
+        : "unknown";
+  if (checks.product_identity === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "thin_content_gap",
+        "Merchant PDP title, H1, visible product name, or description did not clearly confirm the core product identity.",
+        ["merchant_pdp_copy_patch"],
+        "medium"
+      )
+    );
+  }
+
+  checks.brand_identity =
+    signals.visible_brand || titleAndH1
+      ? asLower([signals.visible_brand, titleAndH1].join(" ")).includes(
+          asLower(input.brand || "")
+        )
+        ? "passed"
+        : input.brand
+          ? "needs_work"
+          : "not_applicable"
+      : notDiscovered
+        ? "needs_work"
+        : "unknown";
+
+  const productSchemaPresent =
+    signals.product_jsonld_present === true || hasJsonLdType(input, "Product");
+  checks.product_jsonld = productSchemaPresent
+    ? "passed"
+    : signals.product_jsonld_present === false || notDiscovered
+      ? "needs_work"
+      : "unknown";
+  if (checks.product_jsonld === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "missing_product_schema",
+        "Product JSON-LD was missing or not confirmed for the merchant PDP.",
+        ["merchant_product_schema_patch"],
+        "high"
+      )
+    );
+  }
+
+  const offerSchemaPresent =
+    signals.offer_jsonld_present === true || hasJsonLdType(input, "Offer");
+  checks.offer_jsonld = offerSchemaPresent
+    ? "passed"
+    : signals.offer_jsonld_present === false || notDiscovered
+      ? "needs_work"
+      : "unknown";
+  if (checks.offer_jsonld === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "missing_offer_schema",
+        "Offer JSON-LD was missing or not confirmed for the merchant PDP.",
+        ["merchant_offer_schema_patch"],
+        "medium"
+      )
+    );
+  }
+
+  checks.price_availability =
+    signals.price_present === false ||
+    signals.currency_present === false ||
+    signals.availability_present === false ||
+    notDiscovered
+      ? "needs_work"
+      : signals.price_present || signals.currency_present || signals.availability_present
+        ? "passed"
+        : "unknown";
+  if (checks.price_availability === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "missing_price_or_availability_signal",
+        "Price, currency, or availability signals were missing or not confirmed on the merchant PDP.",
+        ["merchant_offer_schema_patch"],
+        "medium"
+      )
+    );
+  }
+
+  checks.seller_signal =
+    signals.seller_present === true
+      ? "passed"
+      : signals.seller_present === false || notDiscovered
+        ? "needs_work"
+        : "unknown";
+  if (checks.seller_signal === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "missing_seller_signal",
+        "Seller or official store identity was missing or not confirmed on the merchant PDP.",
+        ["merchant_offer_schema_patch"],
+        "medium"
+      )
+    );
+  }
+
+  checks.sitemap_inclusion =
+    signals.sitemap_included === true
+      ? "passed"
+      : signals.sitemap_included === false || notDiscovered
+        ? "needs_work"
+        : "unknown";
+  if (checks.sitemap_inclusion === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "sitemap_gap",
+        "Merchant PDP sitemap inclusion was missing or not confirmed.",
+        ["merchant_sitemap_submission"],
+        "medium"
+      )
+    );
+  }
+
+  checks.expected_url_returned = expectedUrlReturned(expectedUrl, returnedUrls)
+    ? "passed"
+    : notDiscovered
+      ? "needs_work"
+      : "unknown";
+  if (wrongUrl) {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "wrong_url_returned",
+        "Search-grounded Gemini returned a different buying path than the expected merchant/Pivota PDP.",
+        [
+          "wrong_url_analysis",
+          "canonical_buying_path_patch",
+          "competitor_or_retailer_confusion_patch",
+        ],
+        "medium"
+      )
+    );
+  }
+
+  return {
+    audit_type: "merchant_pdp",
+    url,
+    expected_url: expectedUrl,
+    status: auditStatus(findings, url),
+    summary: notDiscovered
+      ? "Search-grounded Gemini did not return the official merchant PDP. Recommended fixes focus on making the official PDP easier for search-grounded AI to identify as the canonical buying page."
+      : "Merchant PDP discoverability audit checks source-layer indexability, canonical, structured data, and buying-path signals.",
+    checks,
+    findings,
+    recommended_action_types: recommendedActionTypes(findings),
+  };
+}
+
+export function auditPivotaPDPDiscoverability(
+  input: DiscoverabilityAuditInput
+): PivotaPDPDiscoverabilityAudit {
+  const url = input.pivota_pdp_url || input.expected_pivota_pdp_url;
+  const expectedUrl = input.expected_pivota_pdp_url || url;
+  const issueTypes = new Set(input.issue_types || []);
+  const returnedUrls = input.returned_urls || [];
+  const signals = input.signals || {};
+  const findings: DiscoverabilityAuditFinding[] = [];
+  const checks: PivotaPDPDiscoverabilityAudit["checks"] = {};
+  const statusCode = signals.http_status ?? input.preflight_status_code;
+  const notDiscovered = issueTypes.has("pivota_pdp_not_discovered");
+  const wrongUrl = issueTypes.has("wrong_buying_path_returned");
+  const productObjectId = extractPivotaProductObjectId(url);
+
+  checks.http_status =
+    !url
+      ? "not_applicable"
+      : statusCode === undefined || statusCode === null
+        ? input.preflight_status === "passed"
+          ? "passed"
+          : input.preflight_status === "failed"
+            ? "needs_work"
+            : "unknown"
+        : statusCode >= 200 && statusCode < 400
+          ? "passed"
+          : "needs_work";
+  if (checks.http_status === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "indexability_gap",
+        "Pivota PDP did not have a confirmed successful public preflight.",
+        ["pivota_indexability_patch"],
+        "high"
+      )
+    );
+  }
+
+  const robotsMeta = String(signals.robots_meta || "").toLowerCase();
+  checks.indexability = robotsMeta
+    ? robotsMeta.includes("noindex") || robotsMeta.includes("none")
+      ? "needs_work"
+      : "passed"
+    : notDiscovered
+      ? "unknown"
+      : "unknown";
+  if (checks.indexability === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "indexability_gap",
+        "Pivota PDP appears to include robots directives that may prevent indexing.",
+        ["pivota_indexability_patch"],
+        "high"
+      )
+    );
+  }
+
+  checks.public_agent_url =
+    url && safeUrlHost(url) === "agent.pivota.cc" && productObjectId
+      ? "passed"
+      : url
+        ? "needs_work"
+        : "not_applicable";
+  if (checks.public_agent_url === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "pivota_product_identity_gap",
+        "Pivota PDP URL does not match the public agent.pivota.cc/products/{object_id} pattern.",
+        ["pivota_indexability_patch", "pivota_product_intelligence_patch"],
+        "high"
+      )
+    );
+  }
+
+  checks.canonical_url = signals.canonical_url
+    ? normalizeUrlForCompare(signals.canonical_url) === normalizeUrlForCompare(expectedUrl)
+      ? "passed"
+      : "needs_work"
+    : notDiscovered
+      ? "needs_work"
+      : "unknown";
+  if (checks.canonical_url === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "canonical_gap",
+        "Pivota PDP canonical URL was missing, unavailable, or did not match the expected agent-facing PDP.",
+        ["pivota_indexability_patch"],
+        "medium"
+      )
+    );
+  }
+
+  const identityText = [
+    signals.title,
+    signals.h1,
+    signals.visible_product_name,
+    signals.visible_description,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  checks.product_identity =
+    identityText || signals.visible_brand
+      ? textContainsCoreProduct(identityText, input.product_name)
+        ? "passed"
+        : "needs_work"
+      : notDiscovered
+        ? "needs_work"
+        : "unknown";
+  if (checks.product_identity === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "pivota_product_identity_gap",
+        "Pivota PDP did not clearly expose the product identity, brand, title, H1, or overview.",
+        ["pivota_product_intelligence_patch"],
+        "high"
+      )
+    );
+  }
+
+  const productSchemaPresent =
+    signals.product_jsonld_present === true || hasJsonLdType(input, "Product");
+  checks.product_jsonld = productSchemaPresent
+    ? "passed"
+    : signals.product_jsonld_present === false || notDiscovered
+      ? "needs_work"
+      : "unknown";
+  if (checks.product_jsonld === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "missing_product_schema",
+        "Product JSON-LD was missing or not confirmed for the Pivota PDP.",
+        ["pivota_product_schema_patch"],
+        "high"
+      )
+    );
+  }
+
+  const offerSchemaPresent =
+    signals.offer_jsonld_present === true ||
+    signals.aggregate_offer_jsonld_present === true ||
+    hasJsonLdType(input, "Offer") ||
+    hasJsonLdType(input, "AggregateOffer");
+  checks.offer_jsonld = offerSchemaPresent
+    ? "passed"
+    : signals.offer_jsonld_present === false ||
+        signals.aggregate_offer_jsonld_present === false ||
+        notDiscovered
+      ? "needs_work"
+      : "unknown";
+  if (checks.offer_jsonld === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "missing_offer_schema",
+        "Offer or AggregateOffer JSON-LD was missing or not confirmed for the Pivota PDP.",
+        ["pivota_offer_schema_patch"],
+        "medium"
+      )
+    );
+  }
+
+  checks.source_reference =
+    signals.source_reference_present === true
+      ? "passed"
+      : signals.source_reference_present === false || notDiscovered
+        ? "needs_work"
+        : "unknown";
+  if (checks.source_reference === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "missing_source_reference",
+        "Merchant PDP source reference was missing or not confirmed on the Pivota PDP.",
+        ["pivota_source_reference_patch"],
+        "high"
+      )
+    );
+  }
+
+  checks.offer_source_url =
+    signals.offer_source_url_present === true
+      ? "passed"
+      : signals.offer_source_url_present === false || notDiscovered
+        ? "needs_work"
+        : "unknown";
+  if (checks.offer_source_url === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "pivota_offer_reference_gap",
+        "Pivota PDP did not confirm an offer source URL for the merchant offer.",
+        ["pivota_offer_schema_patch", "pivota_source_reference_patch"],
+        "medium"
+      )
+    );
+  }
+
+  checks.product_intelligence =
+    signals.product_intelligence_populated === true
+      ? "passed"
+      : signals.product_intelligence_populated === false || notDiscovered
+        ? "needs_work"
+        : "unknown";
+  if (checks.product_intelligence === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "pivota_product_intelligence_gap",
+        "Pivota product intelligence module, overview, or normalized product content was missing or thin.",
+        ["pivota_product_intelligence_patch"],
+        "high"
+      )
+    );
+  }
+
+  checks.similar_card_highlight =
+    signals.similar_card_highlight_present === true
+      ? "passed"
+      : signals.similar_card_highlight_present === false || notDiscovered
+        ? "needs_work"
+        : "unknown";
+  if (checks.similar_card_highlight === "needs_work") {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "similar_card_missing_highlight",
+        "Similar/substitute/related product module did not have a meaningful highlight.",
+        ["pivota_product_intelligence_patch"],
+        "medium"
+      )
+    );
+  }
+
+  checks.product_object_id =
+    signals.product_object_id_present === true || Boolean(productObjectId)
+      ? "passed"
+      : signals.product_object_id_present === false || notDiscovered
+        ? "needs_work"
+        : "unknown";
+
+  checks.expected_url_returned = expectedUrlReturned(expectedUrl, returnedUrls)
+    ? "passed"
+    : notDiscovered
+      ? "needs_work"
+      : "unknown";
+  if (wrongUrl) {
+    addFindingOnce(
+      findings,
+      auditFinding(
+        "wrong_url_returned",
+        "Search-grounded Gemini returned a different buying path than the expected merchant/Pivota PDP.",
+        [
+          "wrong_url_analysis",
+          "canonical_buying_path_patch",
+          "competitor_or_retailer_confusion_patch",
+        ],
+        "medium"
+      )
+    );
+  }
+
+  return {
+    audit_type: "pivota_pdp",
+    url,
+    expected_url: expectedUrl,
+    status: auditStatus(findings, url),
+    summary: notDiscovered
+      ? "Search-grounded Gemini did not return the Pivota PDP. Recommended fixes focus on making the Pivota agent-facing PDP indexable, source-backed, and clearly associated with the product and merchant offer."
+      : "Pivota PDP discoverability audit checks agent-facing indexability, source references, structured data, product identity, and product intelligence signals.",
+    checks,
+    findings,
+    recommended_action_types: recommendedActionTypes(findings),
+  };
+}
+
+const merchantDiscoverabilityFixCopy: Record<string, string> = {
+  merchant_indexability_patch:
+    "Make sure the PDP is indexable, canonical, and accessible to search-grounded AI.",
+  merchant_product_schema_patch:
+    "Add or fix Product structured data with name, brand, SKU, canonical URL, description, and image.",
+  merchant_offer_schema_patch:
+    "Add or fix Offer structured data with price, currency, availability, seller, and URL where applicable.",
+  merchant_canonical_url_patch:
+    "Ensure the canonical URL points to the official merchant PDP.",
+  merchant_pdp_copy_patch:
+    "Strengthen page title, H1, product description, and use-case language so the PDP clearly matches relevant search queries.",
+  merchant_sitemap_submission:
+    "Ensure the PDP is included in sitemap and eligible for indexing.",
+};
+
+const pivotaDiscoverabilityFixCopy: Record<string, string> = {
+  pivota_indexability_patch:
+    "Make sure the Pivota PDP is public, indexable, canonical, and accessible.",
+  pivota_product_schema_patch:
+    "Add or fix Product structured data for the Pivota PDP.",
+  pivota_offer_schema_patch:
+    "Add or fix Offer/AggregateOffer structured data for merchant offers.",
+  pivota_source_reference_patch:
+    "Add merchant PDP as a verified source reference on the Pivota PDP.",
+  pivota_sitemap_submission:
+    "Ensure the Pivota PDP appears in the agent.pivota.cc sitemap and is submitted for indexing.",
+  pivota_product_intelligence_patch:
+    "Complete product identity, overview, product intelligence module, and similar/substitute highlights.",
+};
+
+const sharedDiscoverabilityFixCopy: Record<string, string> = {
+  wrong_url_analysis:
+    "Identify which wrong URLs/domains were returned and why they may be outranking the expected PDP.",
+  canonical_buying_path_patch:
+    "Strengthen canonical source references and buying path metadata for the expected merchant/Pivota PDP.",
+  competitor_or_retailer_confusion_patch:
+    "Update Pivota product graph and source references to reduce confusion with third-party retailers or competitor pages.",
+};
+
+function fixesForActionTypes(
+  actionTypes: string[],
+  copyByActionType: Record<string, string>
+) {
+  return unique(actionTypes).flatMap((actionType) =>
+    copyByActionType[actionType] ? [copyByActionType[actionType]] : []
+  );
+}
+
+function returnedUrlEvidenceSummary(returnedUrls: string[], returnedDomains: string[]) {
+  if (!returnedUrls.length && !returnedDomains.length) {
+    return "No returned URLs were captured from model output or grounding metadata.";
+  }
+  const urlText = returnedUrls.slice(0, 5).join("; ") || "No full URLs captured";
+  const domainText = returnedDomains.slice(0, 5).join(", ") || "No domains captured";
+  return `Returned URLs: ${urlText}. Returned domains: ${domainText}.`;
 }
 
 export class MerchantFacingReportService {
@@ -9716,6 +10782,69 @@ export class MerchantFacingReportService {
     return report;
   }
 
+  private modeRan(report: ProductionValidationReport, scanMode: ScanMode) {
+    return report.demand_test_summary.modes_run.some(
+      (summary) => summary.scan_mode === scanMode
+    );
+  }
+
+  private demandScoreForMode(
+    report: ProductionValidationReport,
+    scanMode: ScanMode,
+    key: keyof DemandVisibilityScore["aggregate_scores"]
+  ): VisibilityScoreValue | undefined {
+    const value = report.demand_test_summary.modes_run.find(
+      (summary) => summary.scan_mode === scanMode
+    )?.aggregate_scores[key];
+    return value as VisibilityScoreValue | undefined;
+  }
+
+  private reportIssues(report: ProductionValidationReport) {
+    const issueIds = new Set(
+      report.demand_test_summary.modes_run.flatMap((summary) => summary.issue_ids)
+    );
+    for (const blocker of report.top_blockers) {
+      if (blocker.issue_id) issueIds.add(blocker.issue_id);
+    }
+    return getAgentCenterState().issues.filter((issue) => issueIds.has(issue.id));
+  }
+
+  private reportIssueForTypes(
+    report: ProductionValidationReport,
+    issueTypes: AgenticGMVIssueType[]
+  ) {
+    return issueForTypes(this.reportIssues(report), issueTypes);
+  }
+
+  private reportIssueEvidence(issue?: AgenticGMVIssue) {
+    if (!issue) return undefined;
+    return (
+      stringInput(issue.evidence?.summary) ||
+      stringInput(issue.evidence?.discovery_interpretation) ||
+      issue.merchant_facing_summary
+    );
+  }
+
+  private contextualMerchantAttributionStatus(report: ProductionValidationReport) {
+    if (!this.modeRan(report, "merchant_store_attribution_test")) {
+      return "not_tested" as GMVAssuranceDimensionStatus;
+    }
+    return (
+      report.gmv_assurance_snapshot?.demand_test_summary
+        .merchant_attribution_status.status || "not_tested"
+    );
+  }
+
+  private contextualPivotaAttributionStatus(report: ProductionValidationReport) {
+    if (!this.modeRan(report, "pivota_pdp_attribution_test")) {
+      return "not_tested" as GMVAssuranceDimensionStatus;
+    }
+    return (
+      report.gmv_assurance_snapshot?.demand_test_summary
+        .pivota_attribution_status.status || "not_tested"
+    );
+  }
+
   markdownForRun(runId: string) {
     const report = this.latestForRun(runId);
     if (!report) return "";
@@ -9748,6 +10877,8 @@ export class MerchantFacingReportService {
       `Search-grounded Pivota PDP discovery: ${reportScoreLabel(report.discovery_result.search_grounded_pivota_pdp_discovery.score)} (${reportStatusLabel(report.discovery_result.search_grounded_pivota_pdp_discovery.status)})`,
       report.discovery_result.search_grounded_pivota_pdp_discovery.summary,
       `Buying-path discovery: ${reportScoreLabel(report.discovery_result.buying_path_discovery.score)} (${reportStatusLabel(report.discovery_result.buying_path_discovery.status)})`,
+      `URL match accuracy: ${reportScoreLabel(report.discovery_result.url_match_accuracy.score)} (${reportStatusLabel(report.discovery_result.url_match_accuracy.status)})`,
+      report.discovery_result.url_match_accuracy.summary,
       report.discovery_result.interpretation,
       "",
       "## Discovery Evidence",
@@ -9758,6 +10889,28 @@ export class MerchantFacingReportService {
         (item) =>
           `- Query: "${item.query}" | merchant product appeared: ${item.merchant_product_appeared ? "yes" : "no"} | merchant brand appeared: ${item.merchant_brand_appeared ? "yes" : "no"} | competitors: ${item.returned_competitors.join(", ") || "none"}`
       ),
+      "",
+      "## Discoverability Fix Plan",
+      report.discoverability_fix_plan.summary,
+      "",
+      "Merchant PDP audit findings:",
+      ...report.discoverability_fix_plan.merchant_pdp_audit.findings.map(
+        (finding) => `- ${titleCase(finding.finding_type)}: ${finding.summary}`
+      ),
+      "Pivota PDP audit findings:",
+      ...report.discoverability_fix_plan.pivota_pdp_audit.findings.map(
+        (finding) => `- ${titleCase(finding.finding_type)}: ${finding.summary}`
+      ),
+      "Returned/wrong URL evidence:",
+      report.discoverability_fix_plan.returned_url_evidence_summary,
+      "Merchant-owned fixes:",
+      ...report.discoverability_fix_plan.merchant_owned_fixes.map((fix) => `- ${fix}`),
+      "Pivota-owned fixes:",
+      ...report.discoverability_fix_plan.pivota_owned_fixes.map((fix) => `- ${fix}`),
+      "Shared fixes:",
+      ...report.discoverability_fix_plan.shared_fixes.map((fix) => `- ${fix}`),
+      "Retest plan:",
+      ...report.discoverability_fix_plan.retest_plan.map((step) => `- ${step}`),
       "",
       "## Merchant-Owned Path",
       `Merchant PDP URL: ${report.path_readiness.merchant_owned_path.merchant_pdp_url}`,
@@ -9838,8 +10991,8 @@ export class MerchantFacingReportService {
     const demand = snapshot?.demand_test_summary;
     const offer = snapshot?.offer_execution_summary;
     const checkout = snapshot?.checkout_verification_summary;
-    const merchantAttribution = demand?.merchant_attribution_status.status || "not_tested";
-    const pivotaAttribution = demand?.pivota_attribution_status.status || "not_tested";
+    const merchantAttribution = this.contextualMerchantAttributionStatus(report);
+    const pivotaAttribution = this.contextualPivotaAttributionStatus(report);
     const offerStatus = offer?.offer_readiness_status.status || "not_tested";
     const checkoutStatus = checkout?.checkout_readiness_status.status || "not_tested";
     const productDataStatus =
@@ -9863,6 +11016,10 @@ export class MerchantFacingReportService {
     const recommendedFixes = this.recommendedFixes(blockers);
     const discoveryEvidence = this.discoveryEvidence(run, report);
     const discoveryResult = this.discoveryResult(report, discoveryEvidence);
+    const discoverabilityFixPlan = this.discoverabilityFixPlan(
+      report,
+      discoveryResult
+    );
     const readinessResult = this.readinessResult({
       report,
       productSkuStatus,
@@ -9891,6 +11048,7 @@ export class MerchantFacingReportService {
       discovery_result: discoveryResult,
       readiness_result: readinessResult,
       discovery_evidence: discoveryEvidence,
+      discoverability_fix_plan: discoverabilityFixPlan,
       tested_product: {
         merchant_name: report.target_summary.merchant_name,
         store_url: report.target_summary.store_url,
@@ -10018,9 +11176,10 @@ export class MerchantFacingReportService {
     const competitorDominated =
       discovery?.competitor_dominance_status.status === "blocked" ||
       discovery?.competitor_dominance_status.status === "needs_work";
+    const merchantAttribution = this.contextualMerchantAttributionStatus(report);
+    const pivotaAttribution = this.contextualPivotaAttributionStatus(report);
     const contextualPathsPassed =
-      demand?.merchant_attribution_status.status === "passed" &&
-      demand?.pivota_attribution_status.status === "passed";
+      merchantAttribution === "passed" && pivotaAttribution === "passed";
     const readinessPassed =
       demand?.product_visibility_status.status === "passed" &&
       offer?.offer_readiness_status.status === "passed";
@@ -10043,7 +11202,7 @@ export class MerchantFacingReportService {
     return [
       "Discoverability answers whether AI users can naturally find the product without injected merchant/Pivota URL context.",
       "Readiness answers whether the merchant-owned and Pivota agent-facing paths work once surfaced.",
-      `Organic discovery is ${reportStatusLabel(discovery?.organic_product_discovery_status.status)}; merchant attribution is ${reportStatusLabel(demand?.merchant_attribution_status.status)}; Pivota attribution is ${reportStatusLabel(demand?.pivota_attribution_status.status)}; offer readiness is ${reportStatusLabel(offer?.offer_readiness_status.status)}.`,
+      `Organic discovery is ${reportStatusLabel(discovery?.organic_product_discovery_status.status)}; merchant attribution is ${reportStatusLabel(merchantAttribution)}; Pivota attribution is ${reportStatusLabel(pivotaAttribution)}; offer readiness is ${reportStatusLabel(offer?.offer_readiness_status.status)}.`,
       "Contextual attribution passed does not mean organic discovery passed.",
       "Search-grounded discovery is separate from both organic discovery and contextual attribution.",
       safetyTail,
@@ -10207,21 +11366,52 @@ export class MerchantFacingReportService {
     evidence: MerchantFacingValidationReport["discovery_evidence"]
   ): MerchantFacingValidationReport["discovery_result"] {
     const discovery = report.gmv_assurance_snapshot?.discovery_readiness_summary;
-    const organicAggregate = report.demand_test_summary.modes_run.find(
-      (summary) => summary.scan_mode === "organic_product_discovery_test"
-    )?.aggregate_scores;
+    const organicProductScore =
+      this.demandScoreForMode(
+        report,
+        "organic_product_discovery_test",
+        "organic_product_discovery_score"
+      ) ??
+      discovery?.organic_product_discovery_status.score ??
+      "not_tested";
     const organicBrandScore =
-      organicAggregate?.organic_brand_discovery_score || "not_tested";
-    const organicBrandStatus: GMVAssuranceDimensionStatus =
-      typeof organicBrandScore === "number"
-        ? organicBrandScore >= 80
-          ? "passed"
-          : organicBrandScore > 0
-            ? "needs_work"
-            : "blocked"
-        : organicBrandScore === "not_configured"
-          ? "not_configured"
-          : "not_tested";
+      this.demandScoreForMode(
+        report,
+        "organic_product_discovery_test",
+        "organic_brand_discovery_score"
+      ) ?? "not_tested";
+    const merchantScore =
+      this.demandScoreForMode(
+        report,
+        "search_grounded_product_discovery_test",
+        "search_grounded_merchant_pdp_discovery_score"
+      ) ?? "not_tested";
+    const pivotaScore =
+      this.demandScoreForMode(
+        report,
+        "search_grounded_product_discovery_test",
+        "search_grounded_pivota_pdp_discovery_score"
+      ) ?? "not_tested";
+    const buyingPathScore =
+      this.demandScoreForMode(
+        report,
+        "buying_path_discovery_test",
+        "buying_path_discovery_score"
+      ) ??
+      discovery?.buying_path_discovery_status.score ??
+      "not_tested";
+    const urlMatchScore =
+      this.demandScoreForMode(
+        report,
+        "search_grounded_product_discovery_test",
+        "url_match_accuracy_score"
+      ) ??
+      this.demandScoreForMode(
+        report,
+        "buying_path_discovery_test",
+        "url_match_accuracy_score"
+      ) ??
+      "not_tested";
     const searchParsed = report.target_summary.scan_target_id
       ? this.parsedForMode(
           {
@@ -10236,27 +11426,47 @@ export class MerchantFacingReportService {
     const groundingSources = unique(
       searchParsed.flatMap((item) => item.grounding_sources || [])
     );
-    const merchantScore =
-      discovery?.merchant_pdp_discovery_status.score || "not_tested";
-    const pivotaScore =
-      discovery?.pivota_pdp_discovery_status.score || "not_tested";
+    const merchantIssue = this.reportIssueForTypes(report, [
+      "merchant_pdp_not_discovered",
+      "wrong_buying_path_returned",
+      "search_grounding_not_configured",
+    ]);
+    const pivotaIssue = this.reportIssueForTypes(report, [
+      "pivota_pdp_not_discovered",
+      "wrong_buying_path_returned",
+      "search_grounding_not_configured",
+    ]);
+    const buyingPathIssue = this.reportIssueForTypes(report, [
+      "buying_path_missing",
+      "wrong_buying_path_returned",
+      "offer_not_discovered",
+    ]);
+    const organicIssue = this.reportIssueForTypes(report, [
+      "organic_product_not_discovered",
+      "organic_brand_not_discovered",
+      "competitor_dominance",
+    ]);
 
     return {
       organic_product_discovery: {
-        status: discovery?.organic_product_discovery_status.status || "not_tested",
-        score: discovery?.organic_product_discovery_status.score,
-        summary:
-          typeof discovery?.organic_product_discovery_status.score === "number"
-            ? `Organic no-context product discovery score was ${discovery.organic_product_discovery_status.score}%.`
-            : "Organic no-context product discovery was not tested.",
+        status: mapDiscoveryScoreToReportStatus(organicProductScore),
+        score: organicProductScore,
+        summary: this.discoveryScoreSummary(
+          organicProductScore,
+          "Organic no-context product discovery"
+        ),
+        issue_id: organicIssue?.id,
+        evidence: this.reportIssueEvidence(organicIssue),
       },
       organic_brand_discovery: {
-        status: organicBrandStatus,
+        status: mapDiscoveryScoreToReportStatus(organicBrandScore),
         score: organicBrandScore,
-        summary:
-          typeof organicBrandScore === "number"
-            ? `Organic brand discovery score was ${organicBrandScore}%.`
-            : "Organic brand discovery was not tested.",
+        summary: this.discoveryScoreSummary(
+          organicBrandScore,
+          "Organic brand discovery"
+        ),
+        issue_id: organicIssue?.id,
+        evidence: this.reportIssueEvidence(organicIssue),
       },
       competitor_dominance: {
         status: discovery?.competitor_dominance_status.status || "not_tested",
@@ -10264,29 +11474,52 @@ export class MerchantFacingReportService {
         summary: evidence.competitor_rank_summary,
       },
       search_grounded_merchant_pdp_discovery: {
-        status: discovery?.merchant_pdp_discovery_status.status || "not_tested",
+        status: mapDiscoveryScoreToReportStatus(merchantScore),
         score: merchantScore,
         summary: this.searchGroundedMerchantSummary(merchantScore),
         returned_urls: returnedUrls,
         grounding_sources_count: groundingSources.length,
+        issue_id: merchantIssue?.id,
+        evidence: this.reportIssueEvidence(merchantIssue),
       },
       search_grounded_pivota_pdp_discovery: {
-        status: discovery?.pivota_pdp_discovery_status.status || "not_tested",
+        status: mapDiscoveryScoreToReportStatus(pivotaScore),
         score: pivotaScore,
         summary: this.searchGroundedPivotaSummary(merchantScore, pivotaScore),
         returned_urls: returnedUrls,
         grounding_sources_count: groundingSources.length,
+        issue_id: pivotaIssue?.id,
+        evidence: this.reportIssueEvidence(pivotaIssue),
       },
       buying_path_discovery: {
-        status: discovery?.buying_path_discovery_status.status || "not_tested",
-        score: discovery?.buying_path_discovery_status.score,
-        summary:
-          discovery?.buying_path_discovery_status.status === "passed"
-            ? "Buying-path discovery returned a buying option or URL."
-            : "Buying-path discovery did not prove a complete buying path in this report.",
+        status: mapDiscoveryScoreToReportStatus(buyingPathScore),
+        score: buyingPathScore,
+        summary: this.buyingPathDiscoverySummary(buyingPathScore),
+        issue_id: buyingPathIssue?.id,
+        evidence: this.reportIssueEvidence(buyingPathIssue),
+      },
+      url_match_accuracy: {
+        status: mapDiscoveryScoreToReportStatus(urlMatchScore),
+        score: urlMatchScore,
+        summary: this.urlMatchAccuracySummary(urlMatchScore, returnedUrls),
+        issue_id: buyingPathIssue?.id || merchantIssue?.id || pivotaIssue?.id,
+        evidence:
+          this.reportIssueEvidence(buyingPathIssue) ||
+          this.reportIssueEvidence(merchantIssue) ||
+          this.reportIssueEvidence(pivotaIssue),
       },
       interpretation: evidence.discovery_interpretation,
     };
+  }
+
+  private discoveryScoreSummary(score: VisibilityScoreValue, label: string) {
+    if (score === "not_configured") {
+      return `${label} was not configured in this run.`;
+    }
+    if (score === "not_tested") {
+      return `${label} was not tested in this run.`;
+    }
+    return `${label} score was ${score}%.`;
   }
 
   private searchGroundedMerchantSummary(score?: VisibilityScoreValue) {
@@ -10297,9 +11530,9 @@ export class MerchantFacingReportService {
       return "Search-grounded Gemini found the official merchant PDP when the product name was specified.";
     }
     if (typeof score === "number") {
-      return "Search-grounded Gemini did not return the official merchant PDP. This indicates a discovery gap at product-name / buying-path search level.";
+      return "Search-grounded Gemini did not return the expected merchant PDP.";
     }
-    return "Search-grounded merchant PDP discovery was not tested.";
+    return "Search-grounded discovery was not tested in this run.";
   }
 
   private searchGroundedPivotaSummary(
@@ -10316,9 +11549,162 @@ export class MerchantFacingReportService {
       return "The merchant-owned PDP is discoverable, but the Pivota agent-facing path is not yet discoverable. Pivota should improve public discoverability and source references for the Pivota PDP.";
     }
     if (typeof pivotaScore === "number") {
-      return "Search-grounded Gemini did not return the Pivota PDP.";
+      return "Search-grounded Gemini did not return the expected Pivota PDP.";
     }
-    return "Search-grounded Pivota PDP discovery was not tested.";
+    return "Search-grounded discovery was not tested in this run.";
+  }
+
+  private buyingPathDiscoverySummary(score: VisibilityScoreValue) {
+    if (score === "not_configured") {
+      return "Buying-path discovery was not configured in this run.";
+    }
+    if (score === "not_tested") {
+      return "Buying-path discovery was not tested in this run.";
+    }
+    if (score > 0) {
+      return "Buying-path discovery returned a buying option or URL.";
+    }
+    return "Buying-path discovery did not return a buying option or URL.";
+  }
+
+  private urlMatchAccuracySummary(score: VisibilityScoreValue, returnedUrls: string[]) {
+    if (score === "not_configured") {
+      return "URL match accuracy was not configured in this run.";
+    }
+    if (score === "not_tested") {
+      return "URL match accuracy was not tested in this run.";
+    }
+    if (score > 0) {
+      return `URL match accuracy was ${score}% based on exact expected merchant/Pivota PDP URL matches.`;
+    }
+    const suffix = returnedUrls.length
+      ? ` Returned URLs were captured, but none exactly matched the expected merchant or Pivota PDP.`
+      : "";
+    return `URL match accuracy was 0%; no expected merchant or Pivota PDP URL was returned.${suffix}`;
+  }
+
+  private searchGroundedEvidence(report: ProductionValidationReport) {
+    const parsed = report.target_summary.scan_target_id
+      ? this.parsedForMode(
+          {
+            ...({} as ProductionValidationRun),
+            id: report.target_summary.production_validation_run_id,
+            scan_target_id: report.target_summary.scan_target_id,
+          },
+          "search_grounded_product_discovery_test"
+        )
+      : [];
+    const returnedUrls = unique(parsed.flatMap((item) => item.returned_urls));
+    const returnedDomains = unique([
+      ...parsed.flatMap((item) => item.returned_domains || []),
+      ...returnedUrls.map(safeUrlHost).filter(Boolean),
+    ]);
+    const groundingSources = unique(
+      parsed.flatMap((item) => item.grounding_sources || [])
+    );
+    return { parsed, returnedUrls, returnedDomains, groundingSources };
+  }
+
+  private discoverabilityFixPlan(
+    report: ProductionValidationReport,
+    discoveryResult: MerchantFacingValidationReport["discovery_result"]
+  ): MerchantFacingValidationReport["discoverability_fix_plan"] {
+    const { returnedUrls, returnedDomains, groundingSources } =
+      this.searchGroundedEvidence(report);
+    const issues = this.reportIssues(report);
+    const issueTypes = unique(issues.map((issue) => issue.issue_type));
+    const merchantAudit = auditMerchantPDPDiscoverability({
+      merchant_pdp_url: report.target_summary.merchant_pdp_url,
+      expected_merchant_pdp_url: report.target_summary.merchant_pdp_url,
+      product_name: report.target_summary.product_name,
+      brand: report.target_summary.brand,
+      sku: report.target_summary.sku_name,
+      category: report.target_summary.category,
+      merchant_domain: safeUrlHost(report.target_summary.merchant_pdp_url),
+      returned_urls: returnedUrls,
+      returned_domains: returnedDomains,
+      grounding_sources: groundingSources,
+      issue_types: issueTypes,
+      preflight_status: report.url_preflight_results.merchant_pdp.status,
+      preflight_status_code: report.url_preflight_results.merchant_pdp.status_code,
+    });
+    const pivotaAudit = auditPivotaPDPDiscoverability({
+      pivota_pdp_url: report.target_summary.pivota_pdp_url,
+      expected_pivota_pdp_url: report.target_summary.pivota_pdp_url,
+      product_name: report.target_summary.product_name,
+      brand: report.target_summary.brand,
+      sku: report.target_summary.sku_name,
+      category: report.target_summary.category,
+      merchant_domain: safeUrlHost(report.target_summary.merchant_pdp_url),
+      returned_urls: returnedUrls,
+      returned_domains: returnedDomains,
+      grounding_sources: groundingSources,
+      issue_types: issueTypes,
+      preflight_status: report.url_preflight_results.pivota_pdp.status,
+      preflight_status_code: report.url_preflight_results.pivota_pdp.status_code,
+    });
+    const wrongPathIssue = issues.find(
+      (issue) => issue.issue_type === "wrong_buying_path_returned"
+    );
+    const merchantOwnedFixes = fixesForActionTypes(
+      merchantAudit.recommended_action_types,
+      merchantDiscoverabilityFixCopy
+    );
+    const pivotaOwnedFixes = fixesForActionTypes(
+      pivotaAudit.recommended_action_types,
+      pivotaDiscoverabilityFixCopy
+    );
+    const sharedActionTypes = unique([
+      ...(wrongPathIssue
+        ? [
+            "wrong_url_analysis",
+            "canonical_buying_path_patch",
+            "competitor_or_retailer_confusion_patch",
+          ]
+        : []),
+      ...merchantAudit.findings
+        .filter((finding) => finding.finding_type === "wrong_url_returned")
+        .flatMap((finding) => finding.recommended_action_types),
+      ...pivotaAudit.findings
+        .filter((finding) => finding.finding_type === "wrong_url_returned")
+        .flatMap((finding) => finding.recommended_action_types),
+    ]);
+    const sharedFixes = fixesForActionTypes(
+      sharedActionTypes,
+      sharedDiscoverabilityFixCopy
+    );
+    const merchantNotFound =
+      discoveryResult.search_grounded_merchant_pdp_discovery.status === "not_found";
+    const pivotaNotFound =
+      discoveryResult.search_grounded_pivota_pdp_discovery.status === "not_found";
+    const summaryParts = [
+      merchantNotFound
+        ? "Search-grounded Gemini did not return the official merchant PDP. Recommended fixes focus on making the official PDP easier for search-grounded AI to identify as the canonical buying page."
+        : "",
+      pivotaNotFound
+        ? "Search-grounded Gemini did not return the Pivota PDP. Recommended fixes focus on making the Pivota agent-facing PDP indexable, source-backed, and clearly associated with the product and merchant offer."
+        : "",
+      wrongPathIssue
+        ? "Search-grounded Gemini returned a different buying path than expected. Recommended fixes focus on clarifying canonical buying-path signals and reducing confusion with third-party or unrelated URLs."
+        : "",
+    ].filter(Boolean);
+
+    return {
+      summary:
+        summaryParts.join(" ") ||
+        "Discoverability fix plan checks merchant-owned and Pivota agent-facing PDP signals before retesting search-grounded discovery.",
+      merchant_pdp_audit: merchantAudit,
+      pivota_pdp_audit: pivotaAudit,
+      returned_url_evidence_summary: returnedUrlEvidenceSummary(returnedUrls, returnedDomains),
+      merchant_owned_fixes: merchantOwnedFixes,
+      pivota_owned_fixes: pivotaOwnedFixes,
+      shared_fixes: sharedFixes,
+      retest_plan: [
+        "Apply applicable merchant-owned and Pivota-owned discoverability fixes.",
+        "Rerun Search-Grounded Product Discovery Test.",
+        "Regenerate the GMV Assurance Snapshot and merchant-facing report draft.",
+      ],
+    };
   }
 
   private readinessResult(input: {
@@ -10335,7 +11721,10 @@ export class MerchantFacingReportService {
     return {
       contextual_merchant_attribution: {
         status: input.merchantAttribution,
-        score: demand?.merchant_attribution_status.score,
+        score:
+          input.merchantAttribution === "not_tested"
+            ? "not_tested"
+            : demand?.merchant_attribution_status.score,
         summary:
           input.merchantAttribution === "passed"
             ? "Merchant contextual attribution passed: the merchant-owned path was returned when product/PDP context was provided."
@@ -10343,7 +11732,10 @@ export class MerchantFacingReportService {
       },
       contextual_pivota_attribution: {
         status: input.pivotaAttribution,
-        score: demand?.pivota_attribution_status.score,
+        score:
+          input.pivotaAttribution === "not_tested"
+            ? "not_tested"
+            : demand?.pivota_attribution_status.score,
         summary:
           input.pivotaAttribution === "passed"
             ? "Pivota contextual attribution passed: the Pivota agent-facing path was returned when Pivota context was provided."

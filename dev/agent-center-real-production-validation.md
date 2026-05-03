@@ -288,11 +288,31 @@ UI or AI Mode ranking.
 
 Interpret search-grounded results as:
 
-- `passed`: the exact expected merchant or Pivota PDP URL was returned by model
+- `found`: the exact expected merchant or Pivota PDP URL was returned by model
   output or grounding metadata.
-- `needs_work`: grounding ran, but the exact expected PDP URL was not returned.
+- `not_found`: grounding ran and produced a numeric score of `0`; the exact
+  expected PDP URL was not returned.
+- `not_tested`: the search-grounded mode did not run.
 - `not_configured`: grounding was not enabled or unavailable; this is not a
   contextual attribution failure.
+
+Numeric `0` means tested and not found. It must not be reported as
+`not_tested`. `not_configured` means the mode could not run because the
+grounding flag/provider config was unavailable.
+
+When a run generates `merchant_pdp_not_discovered`,
+`pivota_pdp_not_discovered`, or `wrong_buying_path_returned`, the merchant-facing
+report should include a Discoverability Fix Plan:
+
+- Merchant PDP audit findings: indexability, canonical URL, Product schema,
+  Offer schema, price/availability/seller signals, sitemap inclusion, and PDP
+  copy.
+- Pivota PDP audit findings: public `agent.pivota.cc/products/{object_id}` URL,
+  indexability, Product/Offer schema, verified merchant source reference, offer
+  source URL, product intelligence, and similar/substitute highlights.
+- Wrong URL evidence summary when Gemini returns another buying path.
+- Merchant-owned fixes, Pivota-owned fixes, shared fixes, and a
+  Search-Grounded Product Discovery retest plan.
 
 If Gemini returns `webSearchQueries` but no `groundingChunks`, keep the search
 queries in internal/debug evidence and score URL discovery only from actual

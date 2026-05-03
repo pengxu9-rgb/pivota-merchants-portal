@@ -1415,6 +1415,102 @@ export type MerchantFacingReportStatus =
   | "shared"
   | "archived";
 
+export type MerchantFacingDiscoveryReportStatus =
+  | "found"
+  | "not_found"
+  | "not_configured"
+  | "not_tested";
+
+export type DiscoverabilityAuditFindingType =
+  | "indexability_gap"
+  | "structured_data_gap"
+  | "canonical_gap"
+  | "thin_content_gap"
+  | "missing_product_schema"
+  | "missing_offer_schema"
+  | "missing_seller_signal"
+  | "missing_price_or_availability_signal"
+  | "missing_source_reference"
+  | "sitemap_gap"
+  | "wrong_url_returned"
+  | "pivota_product_identity_gap"
+  | "pivota_product_intelligence_gap"
+  | "pivota_offer_reference_gap"
+  | "similar_card_missing_highlight";
+
+export type DiscoverabilityAuditFinding = {
+  finding_type: DiscoverabilityAuditFindingType;
+  severity: Severity;
+  summary: string;
+  recommended_action_types: string[];
+};
+
+export type DiscoverabilityAuditSignals = {
+  http_status?: number;
+  robots_meta?: string;
+  canonical_url?: string;
+  title?: string;
+  h1?: string;
+  visible_product_name?: string;
+  visible_brand?: string;
+  visible_description?: string;
+  json_ld_types?: string[];
+  product_jsonld_present?: boolean;
+  offer_jsonld_present?: boolean;
+  aggregate_offer_jsonld_present?: boolean;
+  price_present?: boolean;
+  currency_present?: boolean;
+  availability_present?: boolean;
+  seller_present?: boolean;
+  sitemap_included?: boolean;
+  source_reference_present?: boolean;
+  offer_source_url_present?: boolean;
+  product_intelligence_populated?: boolean;
+  similar_card_highlight_present?: boolean;
+  product_object_id_present?: boolean;
+};
+
+export type DiscoverabilityAuditInput = {
+  merchant_pdp_url?: string;
+  pivota_pdp_url?: string;
+  product_name: string;
+  brand?: string;
+  sku?: string;
+  category?: string;
+  merchant_domain?: string;
+  expected_merchant_pdp_url?: string;
+  expected_pivota_pdp_url?: string;
+  returned_urls?: string[];
+  returned_domains?: string[];
+  grounding_sources?: string[];
+  issue_types?: AgenticGMVIssueType[];
+  preflight_status?: ProductionValidationUrlPreflight["status"];
+  preflight_status_code?: number | null;
+  signals?: DiscoverabilityAuditSignals;
+};
+
+export type MerchantPDPDiscoverabilityAudit = {
+  audit_type: "merchant_pdp";
+  url?: string;
+  expected_url?: string;
+  status: "passed" | "needs_work" | "not_tested";
+  summary: string;
+  checks: Record<string, "passed" | "needs_work" | "unknown" | "not_applicable">;
+  findings: DiscoverabilityAuditFinding[];
+  recommended_action_types: string[];
+};
+
+export type PivotaPDPDiscoverabilityAudit = {
+  audit_type: "pivota_pdp";
+  url?: string;
+  expected_url?: string;
+  status: "passed" | "needs_work" | "not_tested";
+  summary: string;
+  checks: Record<string, "passed" | "needs_work" | "unknown" | "not_applicable">;
+  findings: DiscoverabilityAuditFinding[];
+  recommended_action_types: string[];
+};
+
 export type MerchantFacingValidationReport = Timestamped & {
   id: string;
   production_validation_run_id: string;
@@ -1434,14 +1530,18 @@ export type MerchantFacingValidationReport = Timestamped & {
   discovery_vs_readiness: string;
   discovery_result: {
     organic_product_discovery: {
-      status: GMVAssuranceDimensionStatus;
+      status: MerchantFacingDiscoveryReportStatus;
       score?: VisibilityScoreValue;
       summary: string;
+      issue_id?: string;
+      evidence?: string;
     };
     organic_brand_discovery: {
-      status: GMVAssuranceDimensionStatus;
+      status: MerchantFacingDiscoveryReportStatus;
       score?: VisibilityScoreValue;
       summary: string;
+      issue_id?: string;
+      evidence?: string;
     };
     competitor_dominance: {
       status: GMVAssuranceDimensionStatus;
@@ -1449,23 +1549,36 @@ export type MerchantFacingValidationReport = Timestamped & {
       summary: string;
     };
     search_grounded_merchant_pdp_discovery: {
-      status: GMVAssuranceDimensionStatus;
+      status: MerchantFacingDiscoveryReportStatus;
       score?: VisibilityScoreValue;
       summary: string;
       returned_urls: string[];
       grounding_sources_count: number;
+      issue_id?: string;
+      evidence?: string;
     };
     search_grounded_pivota_pdp_discovery: {
-      status: GMVAssuranceDimensionStatus;
+      status: MerchantFacingDiscoveryReportStatus;
       score?: VisibilityScoreValue;
       summary: string;
       returned_urls: string[];
       grounding_sources_count: number;
+      issue_id?: string;
+      evidence?: string;
     };
     buying_path_discovery: {
-      status: GMVAssuranceDimensionStatus;
+      status: MerchantFacingDiscoveryReportStatus;
       score?: VisibilityScoreValue;
       summary: string;
+      issue_id?: string;
+      evidence?: string;
+    };
+    url_match_accuracy: {
+      status: MerchantFacingDiscoveryReportStatus;
+      score?: VisibilityScoreValue;
+      summary: string;
+      issue_id?: string;
+      evidence?: string;
     };
     interpretation: string;
   };
@@ -1522,6 +1635,16 @@ export type MerchantFacingValidationReport = Timestamped & {
       likely_reasons: string[];
       recommended_differentiation_angles: string[];
     };
+  };
+  discoverability_fix_plan: {
+    summary: string;
+    merchant_pdp_audit: MerchantPDPDiscoverabilityAudit;
+    pivota_pdp_audit: PivotaPDPDiscoverabilityAudit;
+    returned_url_evidence_summary: string;
+    merchant_owned_fixes: string[];
+    pivota_owned_fixes: string[];
+    shared_fixes: string[];
+    retest_plan: string[];
   };
   tested_product: {
     merchant_name: string;

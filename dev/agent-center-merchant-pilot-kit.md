@@ -268,6 +268,7 @@ Operator interpretation:
 
 - `merchant_pdp_not_discovered`: search-grounded discovery did not return the expected merchant PDP URL from model output or Gemini grounding sources.
 - `pivota_pdp_not_discovered`: search-grounded or buying-path discovery did not return the expected Pivota PDP URL from model output or grounding sources.
+- `wrong_buying_path_returned`: search-grounded discovery returned a URL, but it was not the expected merchant-owned PDP or Pivota agent-facing PDP.
 - `search_grounding_not_configured`: `GEMINI_SEARCH_GROUNDING_ENABLED` is not set to `true`, so search-grounded discovery is `not_configured`, not a failed attribution test.
 - `merchant_store_attribution_gap`: the product may be visible, but the model did not return the merchant store or merchant PDP as the buying path.
 - `pivota_pdp_attribution_gap`: the product may be visible, but verified Pivota channel attribution was not proven.
@@ -298,10 +299,16 @@ Search-grounded discovery has three distinct states:
 
 - Found: Gemini with Google Search grounding returned the exact expected PDP URL
   from model output or `groundingMetadata`.
-- Not found: grounding ran, but the expected merchant/Pivota PDP URL was not
-  returned.
+- Not found: grounding ran and produced a numeric score of `0`; the expected
+  merchant/Pivota PDP URL was not returned.
+- Not tested: the search-grounded mode did not run.
 - Not configured: `GEMINI_SEARCH_GROUNDING_ENABLED=true` was not active or the
   adapter could not use grounding. This is not a failed discovery result.
+
+Do not collapse these states. Numeric `0` means the mode was tested and the
+expected URL was not found. `not_tested` means the mode did not run.
+`not_configured` means the mode could not run because grounding/provider config
+was unavailable.
 
 Use this phrasing:
 
@@ -313,6 +320,45 @@ Use this phrasing:
   by search-grounded Gemini when the product name was specified.
 
 Do not claim consumer Gemini UI / AI Mode ranking.
+
+## Discoverability Fix Plan
+
+Search-grounded discovery blockers now generate a deterministic
+Discoverability Fix Plan. This is not a new LLM agent. It is a merchant-safe PDP
+audit and action plan derived from the validated run, URL preflight, returned URL
+evidence, grounding sources, and issue types.
+
+For `merchant_pdp_not_discovered`, the plan should focus on merchant-owned PDP
+signals:
+
+- indexability and public access
+- canonical URL
+- Product structured data
+- Offer structured data where applicable
+- title, H1, product description, and use-case copy
+- price, currency, availability, seller, and buying URL signals
+- sitemap inclusion and indexing eligibility
+
+For `pivota_pdp_not_discovered`, the plan should focus on Pivota-owned
+agent-facing PDP signals:
+
+- public `agent.pivota.cc/products/{object_id}` URL
+- indexability and canonical URL
+- Product structured data
+- Offer/AggregateOffer structured data where merchant offers exist
+- verified merchant PDP source reference
+- offer source URL where available
+- product identity, overview, product intelligence module, and
+  similar/substitute highlight
+
+For `wrong_buying_path_returned`, the plan should include wrong URL analysis,
+canonical buying-path metadata fixes, and product graph/source-reference updates
+to reduce confusion with third-party retailers, competitor pages, or unrelated
+URLs.
+
+Merchant-facing copy should explain that these fixes improve public
+search-grounded discoverability. They still do not prove consumer Gemini UI or
+AI Mode ranking.
 
 ## Merchant-Facing Report Template
 
@@ -446,6 +492,9 @@ new DB table for V1. The report separates:
 - organic discovery, search-grounded discovery, contextual attribution, and readiness
 - normalized competitor evidence without raw provider output
 - recommended fixes, owner, approval requirement, and retest plan
+- Discoverability Fix Plan with merchant PDP audit, Pivota PDP audit,
+  returned/wrong URL evidence, merchant-owned fixes, Pivota-owned fixes, shared
+  fixes, and retest plan
 - usage preview as credits only
 
 The report draft intentionally excludes raw provider payloads, prompt traces,
@@ -457,6 +506,8 @@ Sharing criteria before external merchant delivery:
 - Discovery failures include concrete normalized query and competitor examples.
 - Competitor dominance includes dominant competitors and differentiation angles.
 - Search-grounded discovery state is explicit: found, not found, or not configured.
+- Search-grounded discovery blockers include a Discoverability Fix Plan with
+  concrete merchant-owned and Pivota-owned fixes.
 - Contextual attribution is not described as natural discovery.
 - Checkout readiness is marked not tested when checkout metadata is missing.
 - Usage remains `preview_only` / `not_invoiced`.

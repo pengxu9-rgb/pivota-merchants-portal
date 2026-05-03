@@ -68,8 +68,21 @@ Competitor dominance should list normalized examples:
 Search-grounded discovery should be phrased separately:
 
 - Found: "Search-grounded Gemini found the official merchant PDP when the product name was specified."
-- Not found: "Search-grounded Gemini did not return the official merchant PDP."
+- Not found: "Search-grounded Gemini did not return the expected merchant PDP."
+- Not tested: "Search-grounded discovery was not tested in this run."
 - Not configured: "Search-grounded discovery was not configured in this run."
+
+Numeric `0` is a tested/not found result, not `not_tested`. Use `not_tested`
+only when the mode did not run, and `not_configured` only when grounding or
+provider configuration prevented the mode from running.
+
+When search-grounded discovery returns `merchant_pdp_not_discovered`,
+`pivota_pdp_not_discovered`, or `wrong_buying_path_returned`, the report should
+include a Discoverability Fix Plan. That plan audits merchant-owned PDP signals
+and Pivota agent-facing PDP signals separately, then recommends concrete fixes:
+indexability, canonical URL, Product/Offer structured data, sitemap inclusion,
+PDP copy, verified source references, product intelligence, offer references,
+and wrong URL analysis where applicable.
 
 Do not say contextual attribution equals discovery. Do not claim consumer Gemini
 UI or AI Mode ranking.
