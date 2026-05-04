@@ -74,6 +74,11 @@ import type {
   PivotaOptimizationPatch,
   PivotaOptimizationPatchType,
   PivotaOptimizationTargetLayer,
+  PivotaIndexingTask,
+  PivotaIndexingTaskEvidence,
+  PivotaIndexingTaskStatus,
+  PivotaIndexingTaskType,
+  PilotProductEntityProvisioningRun,
   ProductLayerComparison,
   ProductMatchLevel,
   ProductMatchResult,
@@ -2527,11 +2532,11 @@ export class ScoringService {
       ),
       search_grounded_pivota_pdp_discovery_score: scoreExplanation(
         scores.search_grounded_pivota_pdp_discovery_score,
-        "runs_where_expected_pivota_pdp_url_returned / total_completed_runs * 100",
+        "runs_where_canonical_product_entity_pdp_or_verified_alias_returned / total_completed_runs * 100",
         scoreSearchGroundedDiscovery && !searchGroundingConfigured
           ? "search_grounded_pivota_pdp_discovery_score = not_configured because Gemini search grounding is not configured; no contextual attribution fallback was used."
           : scoreSearchGroundedDiscovery || scoreBuyingPathDiscovery
-            ? `search_grounded_pivota_pdp_discovery_score = ${scores.search_grounded_pivota_pdp_discovery_score} because the expected Pivota PDP URL appeared in ${pivotaPdpDiscoveryRuns} of ${parsed.length} discovery runs.`
+            ? `search_grounded_pivota_pdp_discovery_score = ${scores.search_grounded_pivota_pdp_discovery_score} because the canonical ProductEntity PDP URL or a verified alias URL appeared in ${pivotaPdpDiscoveryRuns} of ${parsed.length} discovery runs. Unrelated ext_* URLs do not count.`
             : "search_grounded_pivota_pdp_discovery_score = not_tested because this was not a search-grounded or buying-path discovery scan.",
         supportingRuns
       ),
@@ -6767,6 +6772,278 @@ function storePivotaOptimizationPatch(
   repository.upsert("issueResolutionPlans", plan);
 }
 
+const PIVOTA_DISCOVERY_INDEXING_TASKS: PivotaIndexingTaskType[] = [
+  "submit_sitemap",
+  "request_indexing",
+  "validate_search_console",
+  "add_internal_link",
+  "wait_for_indexing_window",
+  "scheduled_search_grounded_rerun",
+];
+
+const PIVOTA_DISCOVERY_RERUN_WINDOWS = [
+  { label: "T+24h", hours: 24 },
+  { label: "T+72h", hours: 72 },
+  { label: "T+7d", hours: 168 },
+];
+
+function canonicalPivotaPdpUrlForIssue(issue: AgenticGMVIssue) {
+  const evidence = issue.evidence || {};
+  const candidates = [
+    evidence.canonical_pivota_pdp_url,
+    evidence.expected_pivota_pdp_url,
+    evidence.pivota_pdp_url,
+    evidence.verified_url,
+  ]
+    .map((value) => (typeof value === "string" ? value : ""))
+    .filter(Boolean);
+  const canonical = candidates.find((value) => !/\/products\/ext_/i.test(value));
+  if (canonical) return canonical;
+  const productEntityId = issue.affected_product_entities[0];
+  return productEntityId
+    ? `https://agent.pivota.cc/products/${productEntityId}`
+    : "";
+}
+
+function addHoursIso(baseIso: string, hours: number) {
+  return new Date(new Date(baseIso).getTime() + hours * 60 * 60 * 1000).toISOString();
+}
+
+export class PivotaIndexingTaskService {
+  create(input: {
+    product_entity_id?: string;
+    canonical_pivota_pdp_url?: string;
+    task_type?: PivotaIndexingTaskType;
+    status?: PivotaIndexingTaskStatus;
+    evidence?: PivotaIndexingTaskEvidence;
+  }) {
+    if (!input.product_entity_id) {
+      throw new Error("product_entity_id is required");
+    }
+    if (!input.canonical_pivota_pdp_url) {
+      throw new Error("canonical_pivota_pdp_url is required");
+    }
+    if (!input.task_type) {
+      throw new Error("task_type is required");
+    }
+    const now = nowIso();
+    const task: PivotaIndexingTask = {
+      id: nextId("pivota_indexing_task"),
+      product_entity_id: input.product_entity_id,
+      canonical_pivota_pdp_url: input.canonical_pivota_pdp_url,
+      task_type: input.task_type,
+      status: input.status || "proposed",
+      evidence: this.normalizeEvidence(input.evidence || {}),
+      created_at: now,
+      updated_at: now,
+      completed_at: input.status === "completed" ? now : undefined,
+    };
+    getAgentCenterRepository().upsert("pivotaIndexingTasks", task);
+    return task;
+  }
+
+  get(taskId: string) {
+    const task = getAgentCenterState().pivotaIndexingTasks.find(
+      (item) => item.id === taskId
+    );
+    if (!task) throw new Error(`Pivota indexing task not found: ${taskId}`);
+    return task;
+  }
+
+  update(
+    taskId: string,
+    patch: {
+      status?: PivotaIndexingTaskStatus;
+      evidence?: PivotaIndexingTaskEvidence;
+    }
+  ) {
+    const task = this.get(taskId);
+    if (patch.status) {
+      task.status = patch.status;
+      if (patch.status === "completed" && !task.completed_at) {
+        task.completed_at = nowIso();
+      }
+    }
+    if (patch.evidence) {
+      task.evidence = {
+        ...(task.evidence || {}),
+        ...this.normalizeEvidence(patch.evidence),
+      };
+    }
+    touch(task);
+    getAgentCenterRepository().upsert("pivotaIndexingTasks", task);
+    return task;
+  }
+
+  list(input: { product_entity_id?: string } = {}) {
+    const tasks = getAgentCenterState().pivotaIndexingTasks;
+    return input.product_entity_id
+      ? tasks.filter((task) => task.product_entity_id === input.product_entity_id)
+      : [...tasks];
+  }
+
+  summaries(input: { product_entity_id?: string } = {}) {
+    const productEntityIds = unique(
+      this.list(input).map((task) => task.product_entity_id)
+    );
+    return productEntityIds.map((productEntityId) => this.summary(productEntityId));
+  }
+
+  summary(productEntityId: string) {
+    const tasks = this.list({ product_entity_id: productEntityId }).sort(
+      (left, right) =>
+        new Date(left.created_at).getTime() - new Date(right.created_at).getTime()
+    );
+    const latestDiscovery = this.latestSearchGroundedDiscovery(productEntityId);
+    const nextRerunTime = tasks
+      .filter(
+        (task) =>
+          ["proposed", "in_progress"].includes(task.status) &&
+          typeof task.evidence?.next_rerun_at === "string"
+      )
+      .map((task) => task.evidence?.next_rerun_at as string)
+      .sort()[0];
+    const currentStatus = this.currentStatus(tasks);
+    return {
+      product_entity_id: productEntityId,
+      canonical_pivota_pdp_url:
+        tasks[0]?.canonical_pivota_pdp_url ||
+        latestDiscovery.canonical_pivota_pdp_url ||
+        "",
+      current_status: currentStatus,
+      task_count: tasks.length,
+      tasks,
+      next_rerun_time: nextRerunTime,
+      last_search_grounded_discovery_score:
+        latestDiscovery.last_search_grounded_discovery_score,
+      last_returned_urls: latestDiscovery.last_returned_urls,
+      uplift_claim_allowed: latestDiscovery.uplift_claim_allowed,
+    };
+  }
+
+  generateForIssue(issueId: string) {
+    const issue = findIssue(issueId);
+    if (issue.issue_type !== "pivota_pdp_not_discovered") return [];
+    const productEntityId = issue.affected_product_entities[0];
+    const canonicalUrl = canonicalPivotaPdpUrlForIssue(issue);
+    if (!productEntityId || !canonicalUrl) return [];
+
+    const state = getAgentCenterState();
+    const createdAt = nowIso();
+    const taskSpecs = PIVOTA_DISCOVERY_INDEXING_TASKS.flatMap((taskType) => {
+      if (taskType === "wait_for_indexing_window") {
+        return PIVOTA_DISCOVERY_RERUN_WINDOWS.map((window) => ({
+          taskType,
+          rerunWindow: window,
+        }));
+      }
+      if (taskType === "scheduled_search_grounded_rerun") {
+        return PIVOTA_DISCOVERY_RERUN_WINDOWS.map((window) => ({
+          taskType,
+          rerunWindow: window,
+        }));
+      }
+      return [{ taskType, rerunWindow: undefined }];
+    });
+
+    return taskSpecs.map(({ taskType, rerunWindow }) => {
+      const existing = state.pivotaIndexingTasks.find(
+        (task) =>
+          task.product_entity_id === productEntityId &&
+          task.task_type === taskType &&
+          task.evidence?.issue_id === issue.id &&
+          (task.evidence?.rerun_window || "") === (rerunWindow?.label || "")
+      );
+      if (existing) return existing;
+      return this.create({
+        product_entity_id: productEntityId,
+        canonical_pivota_pdp_url: canonicalUrl,
+        task_type: taskType,
+        evidence: {
+          issue_id: issue.id,
+          issue_type: issue.issue_type,
+          scan_target_id: issue.scan_target_id,
+          no_uplift_claim_allowed: true,
+          uplift_claim_allowed: false,
+          search_grounded_score: issue.evidence?.search_grounded_pivota_pdp_discovery_score,
+          rerun_window: rerunWindow?.label,
+          delay_hours: rerunWindow?.hours,
+          next_rerun_at: rerunWindow
+            ? addHoursIso(createdAt, rerunWindow.hours)
+            : undefined,
+          operator_note:
+            "Complete public indexing/discoverability work before rerunning search-grounded discovery.",
+        },
+      });
+    });
+  }
+
+  private normalizeEvidence(evidence: PivotaIndexingTaskEvidence) {
+    const normalized = { ...evidence };
+    if (normalized.indexing_requested && !normalized.indexing_requested_at) {
+      normalized.indexing_requested_at = nowIso();
+    }
+    return normalized;
+  }
+
+  private currentStatus(tasks: PivotaIndexingTask[]) {
+    if (!tasks.length) return "not_started";
+    if (tasks.some((task) => task.status === "blocked")) return "blocked";
+    if (tasks.some((task) => task.status === "in_progress")) return "in_progress";
+    if (tasks.some((task) => task.status === "proposed")) return "proposed";
+    if (tasks.every((task) => task.status === "skipped")) return "skipped";
+    if (tasks.every((task) => task.status === "completed")) return "completed";
+    return "in_progress";
+  }
+
+  private latestSearchGroundedDiscovery(productEntityId: string) {
+    const state = getAgentCenterState();
+    const latestScore = latestByCreatedAt(
+      state.scores.filter((score) => {
+        if (score.product_entity_id !== productEntityId) return false;
+        const job = score.job_id
+          ? state.jobs.find((item) => item.id === score.job_id)
+          : undefined;
+        const target = state.scanTargets.find(
+          (item) => item.id === score.scan_target_id
+        );
+        return (
+          job?.scan_mode === "search_grounded_product_discovery_test" ||
+          target?.scan_mode === "search_grounded_product_discovery_test"
+        );
+      })
+    );
+    const score =
+      latestScore?.aggregate_scores.search_grounded_pivota_pdp_discovery_score ??
+      "not_tested";
+    const relatedJobIds = new Set(
+      state.jobs
+        .filter(
+          (job) =>
+            job.scan_mode === "search_grounded_product_discovery_test" &&
+            (!latestScore || job.id === latestScore.job_id)
+        )
+        .map((job) => job.id)
+    );
+    const relatedRunIds = new Set(
+      state.testRuns
+        .filter((run) => relatedJobIds.has(run.job_id))
+        .map((run) => run.id)
+    );
+    const returnedUrls = unique(
+      state.parsedRecommendations
+        .filter((parsed) => relatedRunIds.has(parsed.test_run_id))
+        .flatMap((parsed) => parsed.returned_urls || [])
+    );
+    return {
+      canonical_pivota_pdp_url: "",
+      last_search_grounded_discovery_score: score,
+      last_returned_urls: returnedUrls,
+      uplift_claim_allowed: typeof score === "number" && score > 0,
+    };
+  }
+}
+
 export class IssueResolutionService {
   latest(issueId: string) {
     findIssue(issueId);
@@ -6813,6 +7090,9 @@ export class IssueResolutionService {
       updated_at: now,
     };
     getAgentCenterRepository().upsert("issueResolutionPlans", plan);
+    if (blockerType === "pivota_pdp_not_discovered") {
+      new PivotaIndexingTaskService().generateForIssue(issue.id);
+    }
     return plan;
   }
 
@@ -7666,6 +7946,55 @@ export class IssueResolutionService {
         }),
         action({
           index: 6,
+          action_type: "pivota_search_console_indexing_request",
+          title: "Request indexing for canonical Pivota PDP",
+          description:
+            "Validate the canonical ProductEntity PDP in Google Search Console and request indexing after sitemap submission.",
+          target_layer: "pivota_sitemap",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Discovery Ops",
+          patch_payload: {
+            product_entity_ids: issue.affected_product_entities,
+            canonical_pivota_pdp_url: canonicalPivotaPdpUrlForIssue(issue),
+            search_console_required: true,
+          },
+          expected_impact:
+            "Starts external search ingestion for the canonical Pivota ProductEntity PDP; no uplift should be claimed until a rerun improves.",
+        }),
+        action({
+          index: 7,
+          action_type: "pivota_internal_link_patch",
+          title: "Add internal links to canonical Pivota PDP",
+          description:
+            "Add crawlable internal links from public Pivota product index/category surfaces to the canonical ProductEntity PDP.",
+          target_layer: "pivota_product_graph",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Discovery Ops",
+          patch_payload: {
+            product_entity_ids: issue.affected_product_entities,
+            canonical_pivota_pdp_url: canonicalPivotaPdpUrlForIssue(issue),
+          },
+          expected_impact:
+            "Gives crawlers a public internal path to the canonical Pivota PDP.",
+        }),
+        action({
+          index: 8,
+          action_type: "pivota_search_console_url_inspection",
+          title: "Validate Search Console URL inspection",
+          description:
+            "Confirm the canonical Pivota PDP is inspectable in Google Search Console and record indexing status.",
+          target_layer: "pivota_sitemap",
+          owner_type: "pivota_ops",
+          owner_team: "Pivota Discovery Ops",
+          patch_payload: {
+            product_entity_ids: issue.affected_product_entities,
+            canonical_pivota_pdp_url: canonicalPivotaPdpUrlForIssue(issue),
+          },
+          expected_impact:
+            "Creates operator evidence that the canonical Pivota PDP can be inspected and submitted.",
+        }),
+        action({
+          index: 9,
           action_type: "pivota_product_intelligence_patch",
           title: "Complete Pivota product intelligence",
           description:
@@ -7686,11 +8015,11 @@ export class IssueResolutionService {
             "Makes the Pivota PDP more clearly associated with the product and merchant offer.",
         }),
         action({
-          index: 7,
+          index: 10,
           action_type: "rerun_search_grounded_product_discovery_test",
           title: "Rerun Search-Grounded Product Discovery Test",
           description:
-            "Rerun search-grounded discovery after Pivota PDP discoverability fixes.",
+            "Rerun search-grounded discovery after Pivota PDP discoverability fixes and indexing window.",
           target_layer: "validation",
           owner_type: "pivota_ops",
           owner_team: "Pivota Validation Ops",
@@ -9998,6 +10327,12 @@ type CreateProductionValidationRunInput = Partial<
     | "language"
     | "currency"
     | "pivota_product_entity_id"
+    | "canonical_product_slug"
+    | "canonical_pivota_pdp_url"
+    | "external_seed_id"
+    | "merchant_product_id"
+    | "merchant_sku_id"
+    | "merchant_offer_id"
     | "pivota_pdp_url"
     | "pivota_offer_id"
     | "merchant_offer_input"
@@ -10073,6 +10408,20 @@ function extractPivotaProductObjectId(value?: string) {
   } catch {
     return "";
   }
+}
+
+function isExternalSeedId(value?: string) {
+  return /^ext_[a-z0-9_]+$/i.test(String(value || "").trim());
+}
+
+function canonicalPivotaProductEntityUrl(input: {
+  product_entity_id?: string;
+  canonical_product_slug?: string;
+  canonical_pivota_pdp_url?: string;
+}) {
+  if (input.canonical_pivota_pdp_url) return input.canonical_pivota_pdp_url;
+  const pathId = input.canonical_product_slug || input.product_entity_id;
+  return pathId ? `https://agent.pivota.cc/products/${encodeURIComponent(pathId)}` : "";
 }
 
 async function preflightPublicUrl(
@@ -10256,6 +10605,17 @@ function fieldPresent(record: Record<string, unknown> | undefined, field: string
   return value !== undefined && value !== null && String(value).trim().length > 0;
 }
 
+function stringField(record: Record<string, unknown> | undefined, field: string) {
+  if (!record) return "";
+  const value = record[field];
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return stringInput((value as Record<string, unknown>).name);
+  }
+  return "";
+}
+
 function htmlContainsUrl(html: string, url?: string) {
   if (!url) return false;
   const variants = unique(
@@ -10384,12 +10744,34 @@ export class PivotaPDPIndexabilityAuditService {
     brand?: string;
     merchant_pdp_url?: string;
     offers_exist?: boolean;
+    product_entity_id?: string;
+    canonical_product_slug?: string;
+    canonical_pivota_pdp_url?: string;
+    external_seed_id?: string;
+    merchant_offer_id?: string;
+    pivota_offer_id?: string;
+    promoted_external_seed_ids?: string[];
   }): Promise<PivotaPDPIndexabilityAudit> {
     if (!input.url) throw new Error("Pivota PDP URL is required");
     const requestedUrl = input.url;
     const productName = input.product_name || "";
     const brand = input.brand || "";
     const objectId = extractPivotaProductObjectId(requestedUrl);
+    const expectedEntityId = stringInput(input.product_entity_id);
+    const expectedExternalSeedId = stringInput(input.external_seed_id);
+    const promotedExternalSeedIds = new Set(
+      arrayOfStringInput(input.promoted_external_seed_ids).map((item) =>
+        item.toLowerCase()
+      )
+    );
+    const requestedPathIsExternalSeed = isExternalSeedId(objectId);
+    const requestedExternalSeedPromoted =
+      requestedPathIsExternalSeed && promotedExternalSeedIds.has(objectId.toLowerCase());
+    const expectedCanonicalUrl = canonicalPivotaProductEntityUrl({
+      product_entity_id: expectedEntityId,
+      canonical_product_slug: input.canonical_product_slug,
+      canonical_pivota_pdp_url: input.canonical_pivota_pdp_url,
+    });
     const baseUrl = new URL(requestedUrl);
     const origin = baseUrl.origin;
     const robotsUrl = `${origin}/robots.txt`;
@@ -10477,6 +10859,18 @@ export class PivotaPDPIndexabilityAuditService {
     const jsonLd = extractJsonLd(html);
     const productJsonLd = jsonLd.products[0];
     const offerJsonLd = jsonLd.offers[0];
+    const productJsonLdUrl = stringField(productJsonLd, "url");
+    const productJsonLdName = stringField(productJsonLd, "name");
+    const productJsonLdBrand = stringField(productJsonLd, "brand");
+    const renderedEntityId =
+      extractPivotaProductObjectId(canonicalUrl) ||
+      extractPivotaProductObjectId(productJsonLdUrl) ||
+      "";
+    const canonicalPathId = extractPivotaProductObjectId(canonicalUrl);
+    const canonicalUsesExternalSeed =
+      isExternalSeedId(canonicalPathId) && !promotedExternalSeedIds.has(canonicalPathId.toLowerCase());
+    const externalSeedAliasCanonicalized =
+      requestedPathIsExternalSeed && Boolean(canonicalPathId) && !isExternalSeedId(canonicalPathId);
     const productFields = {
       name: fieldPresent(productJsonLd, "name"),
       brand: fieldPresent(productJsonLd, "brand"),
@@ -10507,10 +10901,38 @@ export class PivotaPDPIndexabilityAuditService {
       lowerVisible.includes("official merchant") ||
       htmlContainsUrl(html, input.merchant_pdp_url);
     const merchantUrlVisible = htmlContainsUrl(html, input.merchant_pdp_url);
+    const externalSeedSourcePresent = Boolean(
+      expectedExternalSeedId &&
+        (html.includes(expectedExternalSeedId) ||
+          jsonLd.nodes.some((node) =>
+            JSON.stringify(node).toLowerCase().includes(expectedExternalSeedId.toLowerCase())
+          ))
+    );
     const objectIdVisible = Boolean(objectId && html.includes(objectId));
+    const expectedOfferIds = unique([
+      stringInput(input.merchant_offer_id),
+      stringInput(input.pivota_offer_id),
+    ].filter(Boolean));
+    const renderedOfferIds = unique(
+      jsonLd.offers
+        .flatMap((offer) => [
+          stringField(offer, "identifier"),
+          stringField(offer, "sku"),
+          stringField(offer, "url"),
+        ])
+        .filter(Boolean)
+    );
+    const merchantOfferAttached =
+      !expectedOfferIds.length ||
+      expectedOfferIds.some((offerId) =>
+        html.toLowerCase().includes(offerId.toLowerCase()) ||
+        renderedOfferIds.some((rendered) =>
+          rendered.toLowerCase().includes(offerId.toLowerCase())
+        )
+      );
     const sitemapIncludes = Boolean(
       sitemapText &&
-        [requestedUrl, finalUrl, canonicalUrl]
+        [requestedUrl, finalUrl, canonicalUrl, expectedCanonicalUrl]
           .filter(Boolean)
           .some((url) => htmlContainsUrl(sitemapText, url))
     );
@@ -10538,6 +10960,17 @@ export class PivotaPDPIndexabilityAuditService {
         )
       );
     }
+    if (expectedEntityId && !expectedCanonicalUrl) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "canonical_product_url_missing",
+          "Expected canonical ProductEntity URL was not provided or derivable.",
+          "pivota_indexability_patch",
+          "high"
+        )
+      );
+    }
     if (!canonicalUrl) {
       addIndexabilityFinding(
         findings,
@@ -10548,14 +10981,65 @@ export class PivotaPDPIndexabilityAuditService {
           "high"
         )
       );
-    } else if (!canonicalMatchesAuditedUrl(canonicalUrl, finalUrl, requestedUrl)) {
+    } else if (
+      expectedCanonicalUrl
+        ? !canonicalMatchesAuditedUrl(canonicalUrl, expectedCanonicalUrl)
+        : !canonicalMatchesAuditedUrl(canonicalUrl, finalUrl, requestedUrl) &&
+          !externalSeedAliasCanonicalized
+    ) {
       addIndexabilityFinding(
         findings,
         indexabilityFinding(
           "canonical_mismatch",
-          "Pivota PDP canonical URL points to a different URL than the audited public PDP.",
+          "Pivota PDP canonical URL does not point to the expected canonical ProductEntity PDP URL.",
           "pivota_indexability_patch",
           "high"
+        )
+      );
+    }
+    if (
+      requestedPathIsExternalSeed &&
+      !requestedExternalSeedPromoted &&
+      normalizeUrlForCompare(canonicalUrl) === normalizeUrlForCompare(requestedUrl)
+    ) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "external_seed_used_as_canonical",
+          "The audited /products/ext_* URL is being used as the canonical PDP identity instead of a ProductEntity URL.",
+          "pivota_indexability_patch",
+          "high"
+        )
+      );
+    }
+    if (canonicalUsesExternalSeed) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "canonical_url_points_to_external_seed",
+          "The canonical URL points to an external seed alias rather than a canonical ProductEntity PDP.",
+          "pivota_indexability_patch",
+          "high"
+        )
+      );
+    }
+    if (
+      expectedEntityId &&
+      renderedEntityId &&
+      renderedEntityId !== expectedEntityId &&
+      !(
+        isExternalSeedId(renderedEntityId) &&
+        expectedExternalSeedId &&
+        renderedEntityId === expectedExternalSeedId
+      )
+    ) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "product_entity_binding_mismatch",
+          `Pivota PDP resolved to ${renderedEntityId}, not expected ProductEntity ${expectedEntityId}.`,
+          "pivota_product_intelligence_patch",
+          "critical"
         )
       );
     }
@@ -10563,7 +11047,7 @@ export class PivotaPDPIndexabilityAuditService {
       addIndexabilityFinding(
         findings,
         indexabilityFinding(
-          "missing_server_rendered_identity",
+          expectedEntityId ? "rendered_identity_mismatch" : "missing_server_rendered_identity",
           "Product name and brand are not clearly visible in server-rendered HTML.",
           "pivota_discovery_signal_patch",
           "high"
@@ -10627,10 +11111,43 @@ export class PivotaPDPIndexabilityAuditService {
       addIndexabilityFinding(
         findings,
         indexabilityFinding(
-          "missing_source_reference",
+          expectedEntityId ? "product_entity_missing_merchant_source" : "missing_source_reference",
           "Verified merchant PDP source reference is not visible or machine-readable.",
           "pivota_source_reference_patch",
           "high"
+        )
+      );
+    }
+    if (expectedExternalSeedId && !externalSeedSourcePresent) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "product_entity_missing_source_seed",
+          "Expected external seed ID was not listed as a source alias/reference for the ProductEntity PDP.",
+          "pivota_source_reference_patch",
+          "medium"
+        )
+      );
+    }
+    if (!merchantOfferAttached) {
+      if (renderedOfferIds.length) {
+        addIndexabilityFinding(
+          findings,
+          indexabilityFinding(
+            "offer_attached_to_wrong_product_entity",
+            "Rendered offer identifiers did not match the expected merchant/Pivota offer for this ProductEntity.",
+            "pivota_offer_schema_patch",
+            "high"
+          )
+        );
+      }
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "product_entity_missing_merchant_offer",
+          "Expected merchant/Pivota offer ID was not attached to the rendered ProductEntity PDP.",
+          "pivota_offer_schema_patch",
+          "medium"
         )
       );
     }
@@ -10705,6 +11222,27 @@ export class PivotaPDPIndexabilityAuditService {
       internal_product_links_count: unique(internalProductLinks).length,
       auth_gate_detected: authGateDetected,
       html_size: html.length,
+      requested_product_path_id: objectId || undefined,
+      expected_product_entity_id: expectedEntityId || undefined,
+      canonical_product_slug: input.canonical_product_slug || undefined,
+      expected_canonical_url: expectedCanonicalUrl || undefined,
+      rendered_product_entity_id: renderedEntityId || undefined,
+      rendered_product_jsonld_url: productJsonLdUrl || undefined,
+      rendered_product_jsonld_name: productJsonLdName || undefined,
+      rendered_product_jsonld_brand: productJsonLdBrand || undefined,
+      rendered_offer_ids: renderedOfferIds,
+      expected_external_seed_id: expectedExternalSeedId || undefined,
+      expected_merchant_offer_id: input.merchant_offer_id || undefined,
+      expected_pivota_offer_id: input.pivota_offer_id || undefined,
+      external_seed_alias_detected: requestedPathIsExternalSeed,
+      external_seed_used_as_canonical:
+        requestedPathIsExternalSeed &&
+        !requestedExternalSeedPromoted &&
+        normalizeUrlForCompare(canonicalUrl) === normalizeUrlForCompare(requestedUrl),
+      canonical_url_points_to_external_seed: canonicalUsesExternalSeed,
+      source_reference_external_seed_present: externalSeedSourcePresent,
+      source_reference_merchant_pdp_present: merchantUrlVisible,
+      merchant_offer_attached: merchantOfferAttached,
     };
 
     return {
@@ -10715,6 +11253,413 @@ export class PivotaPDPIndexabilityAuditService {
       recommended_fixes: unique(findings.map((finding) => finding.recommended_fix)),
       raw_safe_evidence: rawSafeEvidence,
     };
+  }
+}
+
+type PilotProductEntityProvisioningInput = Partial<
+  Omit<
+    PilotProductEntityProvisioningRun,
+    | "id"
+    | "status"
+    | "source_references"
+    | "external_seed_ids"
+    | "merchant_offer_ids"
+    | "pivota_offer_ids"
+    | "created_at"
+    | "updated_at"
+  >
+> & {
+  merchant_id: string;
+  merchant_name: string;
+  store_url: string;
+  merchant_pdp_url: string;
+  product_name: string;
+  brand: string;
+  category?: string;
+  market?: string;
+  language?: string;
+  currency?: string;
+  source_external_seed_id?: string;
+  existing_product_entity_id?: string;
+};
+
+function pilotCanonicalLabel(productName: string, brand: string) {
+  const normalizedProduct = compactWhitespace(productName).toLowerCase();
+  const normalizedBrand = compactWhitespace(brand).toLowerCase();
+  return normalizedBrand && normalizedProduct.startsWith(normalizedBrand)
+    ? productName
+    : `${brand} ${productName}`;
+}
+
+function pilotCanonicalSlug(productName: string, brand: string) {
+  return slugFrom(pilotCanonicalLabel(productName, brand)).replace(/_/g, "-");
+}
+
+function pilotProductEntityId(productName: string, brand: string) {
+  return `pe_${slugFrom(pilotCanonicalLabel(productName, brand))}`;
+}
+
+function productRecordMatchesPilot(product: ProductRecord, input: {
+  product_name: string;
+  brand: string;
+  merchant_pdp_url?: string;
+}) {
+  const brandMatches =
+    !input.brand ||
+    compactWhitespace(product.brand || "").toLowerCase() ===
+      compactWhitespace(input.brand).toLowerCase();
+  const productMatches = textContainsCoreProduct(
+    product.canonical_product_name || product.title,
+    input.product_name
+  );
+  const sourceMatches =
+    !input.merchant_pdp_url ||
+    product.pdp_url === input.merchant_pdp_url ||
+    (product.source_references || []).some(
+      (source) =>
+        source.source_type === "official_merchant_pdp" &&
+        normalizeUrlForCompare(source.source_url) ===
+          normalizeUrlForCompare(input.merchant_pdp_url)
+    );
+  return brandMatches && productMatches && sourceMatches;
+}
+
+function allProductRecords() {
+  return getAgentCenterState().stores.flatMap((store) => store.products || []);
+}
+
+export class PilotProductEntityProvisioningService {
+  async create(input: PilotProductEntityProvisioningInput) {
+    const merchantPdpUrl = stringInput(input.merchant_pdp_url);
+    const productName = stringInput(input.product_name);
+    const brand = stringInput(input.brand);
+    const merchantId = stringInput(input.merchant_id);
+    const merchantName = stringInput(input.merchant_name);
+    const storeUrl = stringInput(input.store_url);
+    if (!merchantId) throw new Error("merchant_id is required");
+    if (!merchantName) throw new Error("merchant_name is required");
+    if (!storeUrl) throw new Error("store_url is required");
+    if (!merchantPdpUrl) throw new Error("merchant_pdp_url is required");
+    if (!productName) throw new Error("product_name is required");
+    if (!brand) throw new Error("brand is required");
+
+    const now = nowIso();
+    const run: PilotProductEntityProvisioningRun = {
+      id: nextId("pilot_product_entity"),
+      status: "draft",
+      environment: currentFixtureEnvironment(input.environment),
+      merchant_id: merchantId,
+      merchant_name: merchantName,
+      store_url: storeUrl,
+      merchant_pdp_url: merchantPdpUrl,
+      product_name: productName,
+      brand,
+      sku_name: stringInput(input.sku_name) || undefined,
+      category: stringInput(input.category) || "skincare",
+      market: stringInput(input.market) || "US",
+      language: stringInput(input.language) || "en",
+      currency: stringInput(input.currency) || "USD",
+      merchant_product_attributes: hasRecordInput(input.merchant_product_attributes)
+        ? recordInput(input.merchant_product_attributes)
+        : undefined,
+      merchant_offer_input: hasRecordInput(input.merchant_offer_input)
+        ? recordInput(input.merchant_offer_input)
+        : undefined,
+      source_references: [],
+      external_seed_ids: [],
+      merchant_offer_ids: [],
+      pivota_offer_ids: [],
+      created_at: now,
+      updated_at: now,
+    };
+
+    getAgentCenterRepository().upsert("pilotProductEntityProvisioningRuns", run);
+    const merchantPreflight = await preflightPublicUrl(merchantPdpUrl);
+    if (merchantPreflight.status !== "passed") {
+      return this.fail(
+        run,
+        `Merchant PDP preflight failed with status ${merchantPreflight.status_code ?? "unavailable"}.`
+      );
+    }
+    run.status = "source_validated";
+    touch(run);
+    return this.validateAndBind(run.id, input);
+  }
+
+  get(runId: string) {
+    const run = getAgentCenterRepository().getById(
+      "pilotProductEntityProvisioningRuns",
+      runId
+    );
+    if (!run) {
+      throw new Error(`Pilot ProductEntity provisioning run not found: ${runId}`);
+    }
+    return run;
+  }
+
+  async publish(runId: string) {
+    const run = this.get(runId);
+    if (!run.canonical_pivota_pdp_url) {
+      return this.fail(run, "Canonical Pivota PDP URL has not been created.");
+    }
+    const audit = await this.runAudit(run);
+    if (audit.audit_status !== "passed") {
+      return this.fail(
+        run,
+        "Public Pivota PDP cannot render the expected ProductEntity without binding/indexability findings."
+      );
+    }
+    run.status = "published";
+    run.binding_audit_id = run.binding_audit_id || nextId("pivota_binding_audit");
+    run.binding_audit = audit;
+    run.indexability_audit = audit;
+    touch(run);
+    return run;
+  }
+
+  async audit(runId: string) {
+    const run = this.get(runId);
+    const audit = await this.runAudit(run);
+    run.binding_audit_id = run.binding_audit_id || nextId("pivota_binding_audit");
+    run.binding_audit = audit;
+    run.indexability_audit = audit;
+    if (audit.audit_status === "passed") {
+      run.status = "audit_passed";
+      run.completed_at = nowIso();
+      run.failure_reason = undefined;
+    } else {
+      run.status = "failed";
+      run.failure_reason =
+        "Pivota PDP binding/indexability audit did not pass; do not use this PDP for pilot validation.";
+    }
+    touch(run);
+    return run;
+  }
+
+  private validateAndBind(
+    runId: string,
+    input: PilotProductEntityProvisioningInput
+  ) {
+    const run = this.get(runId);
+    const sourceExternalSeedId = stringInput(input.source_external_seed_id);
+    const existingProductEntityId = stringInput(input.existing_product_entity_id);
+    const products = allProductRecords();
+    const conflictingSeedProduct = sourceExternalSeedId
+      ? products.find(
+          (product) =>
+            (product.external_seed_id === sourceExternalSeedId ||
+              (product.external_seed_ids || []).includes(sourceExternalSeedId)) &&
+            !productRecordMatchesPilot(product, {
+              product_name: run.product_name,
+              brand: run.brand,
+              merchant_pdp_url: run.merchant_pdp_url,
+            })
+        )
+      : undefined;
+    if (conflictingSeedProduct) {
+      return this.fail(
+        run,
+        `External seed ${sourceExternalSeedId} maps to a different product and was rejected.`
+      );
+    }
+
+    const existingEntity = existingProductEntityId
+      ? products.find((product) => product.product_entity_id === existingProductEntityId)
+      : products.find((product) =>
+          productRecordMatchesPilot(product, {
+            product_name: run.product_name,
+            brand: run.brand,
+            merchant_pdp_url: run.merchant_pdp_url,
+          })
+        );
+
+    if (
+      existingProductEntityId &&
+      existingEntity &&
+      !productRecordMatchesPilot(existingEntity, {
+        product_name: run.product_name,
+        brand: run.brand,
+        merchant_pdp_url: run.merchant_pdp_url,
+      })
+    ) {
+      return this.fail(
+        run,
+        `Existing ProductEntity ${existingProductEntityId} renders a different product or brand.`
+      );
+    }
+    if (existingProductEntityId && !existingEntity) {
+      return this.fail(
+        run,
+        `Existing ProductEntity ${existingProductEntityId} was not found in Agent Center state.`
+      );
+    }
+
+    const productEntityId =
+      existingEntity?.product_entity_id || pilotProductEntityId(run.product_name, run.brand);
+    const canonicalSlug =
+      existingEntity?.canonical_slug || pilotCanonicalSlug(run.product_name, run.brand);
+    const canonicalUrl = canonicalPivotaProductEntityUrl({
+      product_entity_id: productEntityId,
+      canonical_product_slug: canonicalSlug,
+    });
+    const merchantOfferInput = recordInput(run.merchant_offer_input);
+    const merchantOfferId =
+      stringInput(merchantOfferInput.id) ||
+      stringInput(merchantOfferInput.offer_id) ||
+      stringInput((input as Record<string, unknown>).merchant_offer_id);
+    const pivotaOfferId =
+      stringInput((input as Record<string, unknown>).pivota_offer_id) ||
+      stringInput(merchantOfferInput.pivota_offer_id);
+
+    run.status = existingEntity ? "product_entity_bound" : "product_entity_created";
+    run.product_entity_id = productEntityId;
+    run.canonical_product_slug = canonicalSlug;
+    run.canonical_pivota_pdp_url = canonicalUrl;
+    run.external_seed_ids = sourceExternalSeedId ? [sourceExternalSeedId] : [];
+    run.merchant_offer_ids = merchantOfferId ? [merchantOfferId] : [];
+    run.pivota_offer_ids = pivotaOfferId ? [pivotaOfferId] : [];
+    run.source_references = [
+      {
+        source_type: "official_merchant_pdp",
+        source_url: run.merchant_pdp_url,
+        merchant_id: run.merchant_id,
+        merchant_name: run.merchant_name,
+        verified_at: nowIso(),
+        confidence: "merchant_approved",
+        maps_to_product_entity_id: productEntityId,
+      },
+      ...(sourceExternalSeedId
+        ? [
+            {
+              source_type: "external_seed" as const,
+              source_id: sourceExternalSeedId,
+              confidence: "pilot_verified_source_alias",
+              maps_to_product_entity_id: productEntityId,
+            },
+          ]
+        : [
+            {
+              source_type: "manual_pilot_mapping" as const,
+              source_id: run.id,
+              confidence: "pilot_only",
+              maps_to_product_entity_id: productEntityId,
+            },
+          ]),
+    ];
+    this.upsertPilotStoreProduct(run);
+    touch(run);
+    return run;
+  }
+
+  private upsertPilotStoreProduct(run: PilotProductEntityProvisioningRun) {
+    const state = getAgentCenterState();
+    let store = state.stores.find(
+      (item) =>
+        item.merchant_id === run.merchant_id &&
+        normalizeUrlForCompare(item.store_url) === normalizeUrlForCompare(run.store_url)
+    );
+    if (!store) {
+      store = new MerchantStoreService().create(
+        {
+          store_name: run.merchant_name,
+          store_url: run.store_url,
+          platform: "custom",
+          integration_status: "url_only",
+          market: run.market,
+          language: run.language,
+          currency: run.currency,
+          primary_category: run.category,
+          optional_pdp_urls: [run.merchant_pdp_url],
+          products: [],
+        },
+        run.merchant_id
+      );
+    }
+    const existing = (store.products || []).find(
+      (product) => product.product_entity_id === run.product_entity_id
+    );
+    const merchantOfferInput = recordInput(run.merchant_offer_input);
+    const product: ProductRecord = {
+      ...(existing || {}),
+      id: existing?.id || nextId("pilot_product"),
+      product_entity_id: run.product_entity_id || "",
+      canonical_slug: run.canonical_product_slug,
+      canonical_url: run.canonical_pivota_pdp_url,
+      canonical_product_name: run.product_name,
+      external_seed_id: run.external_seed_ids[0],
+      external_seed_ids: run.external_seed_ids,
+      source_references: run.source_references,
+      merchant_product_mappings: [
+        {
+          merchant_id: run.merchant_id,
+          merchant_sku_id: run.sku_name,
+          source_product_id: run.external_seed_ids[0],
+        },
+      ],
+      merchant_offers: run.merchant_offer_ids.map((offerId) => ({
+        merchant_id: run.merchant_id,
+        merchant_sku_id: run.sku_name,
+        source_product_id: run.external_seed_ids[0],
+        offer_id: offerId,
+      })),
+      pivota_offers: run.pivota_offer_ids.map((pivotaOfferId) => ({
+        pivota_offer_id: pivotaOfferId,
+        merchant_id: run.merchant_id,
+        merchant_sku_id: run.sku_name,
+      })),
+      sku: run.sku_name || "pilot_sku",
+      title: run.product_name,
+      brand: run.brand,
+      category: run.category,
+      price:
+        merchantOfferInput.price === undefined
+          ? existing?.price
+          : numberInput(merchantOfferInput.price),
+      currency: run.currency,
+      pdp_url: run.merchant_pdp_url,
+      attributes: {
+        ...(run.merchant_product_attributes || {}),
+        purchase_path: run.merchant_pdp_url,
+      },
+      pivota_attributes: {
+        canonical_pivota_pdp_url: run.canonical_pivota_pdp_url,
+        canonical_product_slug: run.canonical_product_slug,
+        source_references: run.source_references,
+      },
+      agent_summary: existing?.agent_summary,
+      priority: existing?.priority || "high",
+    };
+    if (existing) Object.assign(existing, product);
+    else {
+      store.products = [...(store.products || []), product];
+    }
+    touch(store);
+  }
+
+  private async runAudit(run: PilotProductEntityProvisioningRun) {
+    if (!run.canonical_pivota_pdp_url) {
+      throw new Error("canonical_pivota_pdp_url is required before audit");
+    }
+    return new PivotaPDPIndexabilityAuditService().audit({
+      url: run.canonical_pivota_pdp_url,
+      product_name: run.product_name,
+      brand: run.brand,
+      merchant_pdp_url: run.merchant_pdp_url,
+      offers_exist: Boolean(run.merchant_offer_ids.length || run.pivota_offer_ids.length),
+      product_entity_id: run.product_entity_id,
+      canonical_product_slug: run.canonical_product_slug,
+      canonical_pivota_pdp_url: run.canonical_pivota_pdp_url,
+      external_seed_id: run.external_seed_ids[0],
+      merchant_offer_id: run.merchant_offer_ids[0],
+      pivota_offer_id: run.pivota_offer_ids[0],
+    });
+  }
+
+  private fail(run: PilotProductEntityProvisioningRun, reason: string) {
+    run.status = "failed";
+    run.failure_reason = reason;
+    touch(run);
+    return run;
   }
 }
 
@@ -10773,6 +11718,14 @@ export class ProductionValidationRunService {
       currency: stringInput(input.currency) || "USD",
       pivota_product_entity_id:
         stringInput(input.pivota_product_entity_id) || undefined,
+      canonical_product_slug:
+        stringInput(input.canonical_product_slug) || undefined,
+      canonical_pivota_pdp_url:
+        stringInput(input.canonical_pivota_pdp_url) || undefined,
+      external_seed_id: stringInput(input.external_seed_id) || undefined,
+      merchant_product_id: stringInput(input.merchant_product_id) || undefined,
+      merchant_sku_id: stringInput(input.merchant_sku_id) || undefined,
+      merchant_offer_id: stringInput(input.merchant_offer_id) || undefined,
       pivota_pdp_url: stringInput(input.pivota_pdp_url) || undefined,
       pivota_offer_id: stringInput(input.pivota_offer_id) || undefined,
       merchant_offer_input: hasRecordInput(input.merchant_offer_input)
@@ -11080,6 +12033,14 @@ export class ProductionValidationRunService {
         market: run.market,
         language: run.language,
         currency: run.currency,
+        product_entity_id: product.product_entity_id,
+        canonical_product_slug: product.canonical_slug,
+        canonical_pivota_pdp_url: product.canonical_url,
+        external_seed_id: product.external_seed_id,
+        merchant_product_id: run.merchant_product_id,
+        merchant_sku_id: run.merchant_sku_id,
+        merchant_offer_id: run.merchant_offer_id,
+        pivota_offer_id: run.pivota_offer_id,
         scan_target_id: target.id,
       },
       url_preflight_results: {
@@ -11154,8 +12115,18 @@ export class ProductionValidationRunService {
     const productSlug = slugFrom(run.product_name);
     const productEntityId =
       run.pivota_product_entity_id || `pe_${productSlug}_${run.id}`;
+    const externalSeedId =
+      run.external_seed_id ||
+      (isExternalSeedId(extractPivotaProductObjectId(run.pivota_pdp_url))
+        ? extractPivotaProductObjectId(run.pivota_pdp_url)
+        : undefined);
+    const canonicalUrl = canonicalPivotaProductEntityUrl({
+      product_entity_id: productEntityId,
+      canonical_product_slug: run.canonical_product_slug,
+      canonical_pivota_pdp_url: run.canonical_pivota_pdp_url,
+    });
     const pivotaProductObjectId =
-      extractPivotaProductObjectId(run.pivota_pdp_url) || productEntityId;
+      run.canonical_product_slug || productEntityId;
     const pivotaOfferInput = recordInput(run.pivota_offer_input);
     const expectedPivotaOfferId =
       run.pivota_offer_id || stringInput(pivotaOfferInput.id);
@@ -11169,7 +12140,15 @@ export class ProductionValidationRunService {
       ...(run.pivota_pdp_url
         ? {
             pivota_pdp_url: run.pivota_pdp_url,
+            canonical_pivota_pdp_url: canonicalUrl,
+            canonical_product_slug: run.canonical_product_slug,
             pivota_product_object_id: pivotaProductObjectId,
+            external_seed_id: externalSeedId,
+            external_seed_ids: externalSeedId ? [externalSeedId] : [],
+            pivota_pdp_alias_urls:
+              run.pivota_pdp_url && run.pivota_pdp_url !== canonicalUrl
+                ? [run.pivota_pdp_url]
+                : [],
           }
         : {}),
       ...(expectedPivotaOfferId
@@ -11188,6 +12167,59 @@ export class ProductionValidationRunService {
     return {
       id: nextId("prod_validation_product"),
       product_entity_id: productEntityId,
+      canonical_slug: run.canonical_product_slug,
+      canonical_url: canonicalUrl || undefined,
+      canonical_product_name: run.product_name,
+      external_seed_id: externalSeedId,
+      external_seed_ids: externalSeedId ? [externalSeedId] : [],
+      source_references: [
+        ...(externalSeedId
+          ? [
+              {
+                source_type: "external_seed" as const,
+                source_id: externalSeedId,
+                maps_to_product_entity_id: productEntityId,
+                confidence: "production_validation_input",
+              },
+            ]
+          : []),
+        {
+          source_type: "official_merchant_pdp" as const,
+          source_id: run.merchant_product_id,
+          source_url: run.merchant_pdp_url,
+          merchant_id: productionValidationMerchantId(run.id),
+          merchant_name: run.merchant_name,
+          maps_to_product_entity_id: productEntityId,
+          confidence: "production_validation_input",
+        },
+      ],
+      merchant_product_mappings: [
+        {
+          merchant_id: productionValidationMerchantId(run.id),
+          merchant_product_id: run.merchant_product_id,
+          merchant_sku_id: run.merchant_sku_id || run.sku_name,
+          source_product_id: externalSeedId,
+        },
+      ],
+      merchant_offers: run.merchant_offer_id
+        ? [
+            {
+              merchant_id: productionValidationMerchantId(run.id),
+              merchant_sku_id: run.merchant_sku_id || run.sku_name,
+              source_product_id: externalSeedId,
+              offer_id: run.merchant_offer_id,
+            },
+          ]
+        : [],
+      pivota_offers: expectedPivotaOfferId
+        ? [
+            {
+              pivota_offer_id: expectedPivotaOfferId,
+              merchant_id: productionValidationMerchantId(run.id),
+              merchant_sku_id: run.merchant_sku_id || run.sku_name,
+            },
+          ]
+        : [],
       sku: run.sku_name || `${productSlug}_default_sku`,
       title: run.product_name,
       brand: run.brand || run.merchant_name,
@@ -11244,8 +12276,18 @@ export class ProductionValidationRunService {
         id: stringInput(merchantInput.id) || nextId("merchant_offer"),
         merchant_id: store.merchant_id,
         store_id: store.id,
+        product_entity_id: product.product_entity_id,
         product_id: product.id,
         sku_id: stringInput(merchantInput.sku_id) || product.sku,
+        merchant_sku_id:
+          stringInput(merchantInput.merchant_sku_id) || product.sku,
+        source_product_id:
+          stringInput(merchantInput.source_product_id) || product.external_seed_id,
+        offer_id:
+          stringInput(merchantInput.offer_id) ||
+          stringInput(merchantInput.id) ||
+          run.merchant_offer_id,
+        checkout_path_id: stringInput(merchantInput.checkout_path_id) || undefined,
         price: numberInput(merchantInput.price, product.price || 0),
         currency: stringInput(merchantInput.currency) || run.currency,
         promo_price:
@@ -12292,7 +13334,7 @@ export function auditPivotaPDPDiscoverability(
       findings,
       auditFinding(
         "pivota_product_identity_gap",
-        "Pivota PDP URL does not match the public agent.pivota.cc/products/{object_id} pattern.",
+        "Pivota PDP URL does not match the public agent.pivota.cc/products/{canonical_product_slug_or_product_entity_id} pattern.",
         ["pivota_indexability_patch", "pivota_product_intelligence_patch"],
         "high"
       )
@@ -12496,7 +13538,7 @@ export function auditPivotaPDPDiscoverability(
     status: auditStatus(findings, url),
     summary: notDiscovered
       ? "Search-grounded Gemini did not return the Pivota PDP. Recommended fixes focus on making the Pivota agent-facing PDP indexable, source-backed, and clearly associated with the product and merchant offer."
-      : "Pivota PDP discoverability audit checks agent-facing indexability, source references, structured data, product identity, and product intelligence signals.",
+      : "Pivota PDP discoverability audit checks canonical ProductEntity PDP indexability, source references, merchant offers, structured data, product identity, and product intelligence signals.",
     checks,
     findings,
     recommended_action_types: recommendedActionTypes(findings),
@@ -12529,6 +13571,12 @@ const pivotaDiscoverabilityFixCopy: Record<string, string> = {
     "Add merchant PDP as a verified source reference on the Pivota PDP.",
   pivota_sitemap_submission:
     "Ensure the Pivota PDP appears in the agent.pivota.cc sitemap and is submitted for indexing.",
+  pivota_search_console_indexing_request:
+    "Request indexing for the canonical Pivota ProductEntity PDP in Google Search Console after sitemap submission.",
+  pivota_internal_link_patch:
+    "Add crawlable internal links from public Pivota index/category surfaces to the canonical ProductEntity PDP.",
+  pivota_search_console_url_inspection:
+    "Validate the canonical Pivota PDP with Search Console URL Inspection and record indexing status.",
   pivota_product_intelligence_patch:
     "Complete product identity, overview, product intelligence module, and similar/substitute highlights.",
 };
@@ -12750,7 +13798,12 @@ export class MerchantFacingReportService {
       report.path_readiness.merchant_owned_path.summary,
       "",
       "## Pivota Agent-Facing Path",
-      `Pivota PDP URL: ${report.path_readiness.pivota_agent_facing_path.pivota_pdp_url || "Not provided"}`,
+      "Pivota PDP represents a canonical product entity with merchant offers; it does not replace the merchant-owned PDP.",
+      `Canonical Pivota PDP URL: ${report.path_readiness.pivota_agent_facing_path.canonical_pivota_pdp_url || report.path_readiness.pivota_agent_facing_path.pivota_pdp_url || "Not provided"}`,
+      `ProductEntity ID: ${report.path_readiness.pivota_agent_facing_path.product_entity_id || "Not provided"}`,
+      `Source alias / external seed ID: ${report.path_readiness.pivota_agent_facing_path.external_seed_id || "Not provided"}`,
+      `Tested merchant offer ID: ${report.path_readiness.pivota_agent_facing_path.merchant_offer_id || "Not provided"}`,
+      `Tested Pivota offer ID: ${report.path_readiness.pivota_agent_facing_path.pivota_offer_id || "Not provided"}`,
       `Pivota preflight: ${report.path_readiness.pivota_agent_facing_path.preflight_status.replace(/_/g, " ")}`,
       `Pivota attribution: ${report.path_readiness.pivota_agent_facing_path.attribution_status.replace(/_/g, " ")}`,
       `Pivota offer state: ${report.path_readiness.pivota_agent_facing_path.offer_state_status.replace(/_/g, " ")}`,
@@ -12938,6 +13991,13 @@ export class MerchantFacingReportService {
         },
         pivota_agent_facing_path: {
           pivota_pdp_url: report.target_summary.pivota_pdp_url,
+          canonical_pivota_pdp_url:
+            report.target_summary.canonical_pivota_pdp_url,
+          product_entity_id: report.target_summary.product_entity_id,
+          canonical_product_slug: report.target_summary.canonical_product_slug,
+          external_seed_id: report.target_summary.external_seed_id,
+          merchant_offer_id: report.target_summary.merchant_offer_id,
+          pivota_offer_id: report.target_summary.pivota_offer_id,
           preflight_status: report.url_preflight_results.pivota_pdp.status,
           attribution_status: pivotaAttribution,
           offer_state_status: offerStatus,
@@ -13031,6 +14091,14 @@ export class MerchantFacingReportService {
     const pivotaAttribution = this.contextualPivotaAttributionStatus(report);
     const contextualPathsPassed =
       merchantAttribution === "passed" && pivotaAttribution === "passed";
+    const searchGroundedPivotaScore = this.demandScoreForMode(
+      report,
+      "search_grounded_product_discovery_test",
+      "search_grounded_pivota_pdp_discovery_score"
+    );
+    const searchGroundedPivotaFailed =
+      typeof searchGroundedPivotaScore === "number" &&
+      searchGroundedPivotaScore === 0;
     const readinessPassed =
       demand?.product_visibility_status.status === "passed" &&
       offer?.offer_readiness_status.status === "passed";
@@ -13048,6 +14116,15 @@ export class MerchantFacingReportService {
 
     if (organicFailed && competitorDominated && contextualPathsPassed && readinessPassed) {
       return `${DISCOVERY_VS_READINESS_CONTEXTUAL_PASSED} ${safetyTail}`;
+    }
+
+    if (pivotaAttribution === "passed" && searchGroundedPivotaFailed) {
+      return [
+        "Pivota PDP is ready when surfaced, but search-grounded Gemini has not yet returned the canonical Pivota PDP.",
+        "No discovery uplift is claimed.",
+        "Next step: complete indexing/public discoverability tasks and rerun search-grounded discovery.",
+        safetyTail,
+      ].join(" ");
     }
 
     return [
@@ -13337,7 +14414,7 @@ export class MerchantFacingReportService {
       search_grounded_pivota_pdp_discovery: {
         status: mapDiscoveryScoreToReportStatus(pivotaScore),
         score: pivotaScore,
-        summary: this.searchGroundedPivotaSummary(merchantScore, pivotaScore),
+        summary: this.searchGroundedPivotaSummary(report, merchantScore, pivotaScore),
         returned_urls: returnedUrls,
         grounding_sources_count: groundingSources.length,
         issue_id: pivotaIssue?.id,
@@ -13388,6 +14465,7 @@ export class MerchantFacingReportService {
   }
 
   private searchGroundedPivotaSummary(
+    report: ProductionValidationReport,
     merchantScore?: VisibilityScoreValue,
     pivotaScore?: VisibilityScoreValue
   ) {
@@ -13401,9 +14479,30 @@ export class MerchantFacingReportService {
       return "The merchant-owned PDP is discoverable, but the Pivota agent-facing path is not yet discoverable. Pivota should improve public discoverability and source references for the Pivota PDP.";
     }
     if (typeof pivotaScore === "number") {
+      if (pivotaScore === 0 && this.hasCompletedPivotaIndexingWork(report)) {
+        return "Indexing work was recorded, but search-grounded Gemini has not yet returned the Pivota PDP. No discovery uplift is claimed yet.";
+      }
+      if (this.contextualPivotaAttributionStatus(report) === "passed") {
+        return "Pivota PDP is ready when surfaced, but search-grounded Gemini has not yet returned the canonical Pivota PDP. No discovery uplift is claimed. Next step: complete indexing/public discoverability tasks and rerun search-grounded discovery.";
+      }
       return "Search-grounded Gemini did not return the expected Pivota PDP.";
     }
     return "Search-grounded discovery was not tested in this run.";
+  }
+
+  private hasCompletedPivotaIndexingWork(report: ProductionValidationReport) {
+    const productEntityId = report.target_summary.product_entity_id;
+    if (!productEntityId) return false;
+    return getAgentCenterState().pivotaIndexingTasks.some(
+      (task) =>
+        task.product_entity_id === productEntityId &&
+        task.status === "completed" &&
+        (task.evidence?.indexing_requested ||
+          task.evidence?.sitemap_submitted ||
+          task.evidence?.search_console_property_verified ||
+          task.task_type === "request_indexing" ||
+          task.task_type === "submit_sitemap")
+    );
   }
 
   private buyingPathDiscoverySummary(score: VisibilityScoreValue) {
@@ -13482,7 +14581,9 @@ export class MerchantFacingReportService {
     });
     const pivotaAudit = auditPivotaPDPDiscoverability({
       pivota_pdp_url: report.target_summary.pivota_pdp_url,
-      expected_pivota_pdp_url: report.target_summary.pivota_pdp_url,
+      expected_pivota_pdp_url:
+        report.target_summary.canonical_pivota_pdp_url ||
+        report.target_summary.pivota_pdp_url,
       product_name: report.target_summary.product_name,
       brand: report.target_summary.brand,
       sku: report.target_summary.sku_name,
@@ -13494,6 +14595,9 @@ export class MerchantFacingReportService {
       issue_types: issueTypes,
       preflight_status: report.url_preflight_results.pivota_pdp.status,
       preflight_status_code: report.url_preflight_results.pivota_pdp.status_code,
+      signals: {
+        canonical_url: report.target_summary.canonical_pivota_pdp_url,
+      },
     });
     const wrongPathIssue = issues.find(
       (issue) => issue.issue_type === "wrong_buying_path_returned"
@@ -13502,8 +14606,19 @@ export class MerchantFacingReportService {
       merchantAudit.recommended_action_types,
       merchantDiscoverabilityFixCopy
     );
+    const pivotaActionTypes = unique([
+      ...pivotaAudit.recommended_action_types,
+      ...(issueTypes.includes("pivota_pdp_not_discovered")
+        ? [
+            "pivota_sitemap_submission",
+            "pivota_search_console_indexing_request",
+            "pivota_internal_link_patch",
+            "pivota_search_console_url_inspection",
+          ]
+        : []),
+    ]);
     const pivotaOwnedFixes = fixesForActionTypes(
-      pivotaAudit.recommended_action_types,
+      pivotaActionTypes,
       pivotaDiscoverabilityFixCopy
     );
     const sharedActionTypes = unique([
@@ -13553,6 +14668,8 @@ export class MerchantFacingReportService {
       shared_fixes: sharedFixes,
       retest_plan: [
         "Apply applicable merchant-owned and Pivota-owned discoverability fixes.",
+        "Submit or verify the canonical Pivota PDP in sitemap and request indexing when Search Console access is available.",
+        "Wait for an indexing window before interpreting search-grounded discovery deltas.",
         "Rerun Search-Grounded Product Discovery Test.",
         "Regenerate the GMV Assurance Snapshot and merchant-facing report draft.",
       ],
@@ -13729,9 +14846,9 @@ export class MerchantFacingReportService {
       return `Pivota agent-facing PDP preflight is ${reportPreflightLabel(preflight)}. Pivota path attribution cannot be proven until the public PDP is reachable.`;
     }
     if (attributionStatus === "passed") {
-      return "Pivota agent-facing PDP is reachable and Pivota attribution passed in the relevant attribution test.";
+      return "Pivota agent-facing PDP is reachable and Pivota attribution passed in the relevant attribution test. Pivota PDP represents a canonical product entity with merchant offers and source references; it does not replace the merchant-owned PDP.";
     }
-    return `Pivota agent-facing PDP is reachable, but Pivota attribution is ${reportStatusLabel(attributionStatus)}. Pivota does not replace the merchant PDP; it provides an additional agent-facing execution layer.`;
+    return `Pivota agent-facing PDP is reachable, but Pivota attribution is ${reportStatusLabel(attributionStatus)}. Pivota PDP represents a canonical product entity with merchant offers and source references; it provides an additional agent-facing execution layer on top of the merchant-owned source layer.`;
   }
 
   private productSkuSummary(

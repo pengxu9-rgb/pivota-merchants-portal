@@ -13,6 +13,7 @@ import type {
   DemoFixture,
   GMVAssuranceSnapshot,
   MerchantStore,
+  PilotProductEntityProvisioningRun,
   ProductRecord,
   ProductionValidationRun,
   ProviderRegistry,
@@ -310,6 +311,8 @@ export function createInitialAgentCenterState(): AgentCenterState {
     gmvAssuranceSnapshots: [],
     demoFixtures: [],
     productionValidationRuns: [],
+    pilotProductEntityProvisioningRuns: [],
+    pivotaIndexingTasks: [],
     usageEvents: [],
     usagePlan: {
       included_credits: 1000,
@@ -374,6 +377,8 @@ const ARRAY_COLLECTION_KEYS: AgentCenterCollectionKey[] = [
   "gmvAssuranceSnapshots",
   "demoFixtures",
   "productionValidationRuns",
+  "pilotProductEntityProvisioningRuns",
+  "pivotaIndexingTasks",
   "usageEvents",
 ];
 
@@ -740,6 +745,8 @@ type PersistedCollectionKey =
   | "issueResolutionPlans"
   | "usageEvents"
   | "productionValidationRuns"
+  | "pilotProductEntityProvisioningRuns"
+  | "pivotaIndexingTasks"
   | "demoFixtures";
 
 const DB_COLLECTION_TABLES: Record<PersistedCollectionKey, string> = {
@@ -755,6 +762,9 @@ const DB_COLLECTION_TABLES: Record<PersistedCollectionKey, string> = {
   issueResolutionPlans: "agent_center_issue_resolution_plans",
   usageEvents: "agent_center_usage_events",
   productionValidationRuns: "agent_center_production_validation_runs",
+  pilotProductEntityProvisioningRuns:
+    "agent_center_production_validation_runs",
+  pivotaIndexingTasks: "agent_center_production_validation_runs",
   demoFixtures: "agent_center_demo_fixtures",
 };
 
@@ -834,6 +844,8 @@ function productEntityForRecord(collection: PersistedCollectionKey, record: Reco
     firstString(record.affected_product_entities) ||
     (collection === "productionValidationRuns"
       ? (record.pivota_product_entity_id as string | undefined)
+      : collection === "pilotProductEntityProvisioningRuns"
+        ? (record.product_entity_id as string | undefined)
       : undefined)
   );
 }
@@ -843,6 +855,9 @@ function runIdForRecord(collection: PersistedCollectionKey, record: RecordLike) 
     (record.production_validation_run_id as string | undefined) ||
     (collection === "productionValidationRuns"
       ? (record.id as string | undefined)
+      : collection === "pivotaIndexingTasks"
+        ? (record.evidence as RecordLike | undefined)
+            ?.production_validation_run_id as string | undefined
       : undefined)
   );
 }
@@ -898,6 +913,20 @@ function rowValuesForRecord(
   };
 }
 
+function collectionHydrateWhere(collection: PersistedCollectionKey) {
+  if (collection === "productionValidationRuns") {
+    return "WHERE id NOT LIKE 'pilot_product_entity_%' AND id NOT LIKE 'pivota_indexing_task_%'";
+  }
+  if (collection === "pilotProductEntityProvisioningRuns") {
+    return "WHERE id LIKE 'pilot_product_entity_%'";
+  }
+  if (collection === "pivotaIndexingTasks") {
+    return "WHERE id LIKE 'pivota_indexing_task_%' AND deleted_at IS NULL";
+  }
+  if (collection === "demoFixtures") return "";
+  return "WHERE deleted_at IS NULL";
+}
+
 function deriveCounters(state: AgentCenterState) {
   const counters: Record<string, number> = { ...state.counters };
   for (const key of ARRAY_COLLECTION_KEYS) {
@@ -943,12 +972,10 @@ export class DbAgentCenterRepository extends BaseAgentCenterRepository {
     const hydratedState = createInitialAgentCenterState();
     this.baselineIds = new Map();
     for (const collection of DB_COLLECTION_KEYS) {
-      const includeDeleted =
-        collection === "productionValidationRuns" || collection === "demoFixtures";
       const result = await pool.query(
-        `SELECT payload FROM ${qualifiedTable(collection)} ${
-          includeDeleted ? "" : "WHERE deleted_at IS NULL"
-        } ORDER BY created_at ASC`
+        `SELECT payload FROM ${qualifiedTable(collection)} ${collectionHydrateWhere(
+          collection
+        )} ORDER BY created_at ASC`
       );
       (hydratedState as unknown as Record<PersistedCollectionKey, unknown[]>)[
         collection

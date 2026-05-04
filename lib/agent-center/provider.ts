@@ -132,6 +132,75 @@ function sameUrlPath(a?: string | null, b?: string | null) {
   return Boolean(left && right && left === right);
 }
 
+function pathProductId(url?: string | null) {
+  if (!url) return "";
+  try {
+    const match = new URL(url).pathname.match(/\/products\/([^/?#]+)/);
+    return match?.[1] || "";
+  } catch {
+    return "";
+  }
+}
+
+function isExternalSeedId(value?: string | null) {
+  return /^ext_[a-z0-9_]+$/i.test(String(value || "").trim());
+}
+
+function canonicalPivotaPdpUrlForInput(input: DemandTestInput) {
+  const attrs = input.merchantContext?.product?.pivota_attributes || {};
+  const explicitCanonical =
+    stringValue(attrs.canonical_pivota_pdp_url) ||
+    stringValue(attrs.pivota_canonical_pdp_url) ||
+    stringValue(attrs.canonical_url);
+  if (explicitCanonical) return explicitCanonical;
+  const slug = stringValue(attrs.canonical_product_slug);
+  if (slug) return `https://agent.pivota.cc/products/${slug}`;
+  const entityId = input.merchantContext?.product?.product_entity_id || "";
+  if (entityId && !isExternalSeedId(entityId)) {
+    return `https://agent.pivota.cc/products/${entityId}`;
+  }
+  return "";
+}
+
+function pivotaAliasUrlsForInput(input: DemandTestInput) {
+  const attrs = input.merchantContext?.product?.pivota_attributes || {};
+  return uniqueStrings(
+    arrayOfStrings(attrs.pivota_pdp_alias_urls)
+      .concat(arrayOfStrings(attrs.alias_urls))
+      .concat(stringValue(attrs.pivota_pdp_url))
+  );
+}
+
+function externalSeedIdsForInput(input: DemandTestInput) {
+  const attrs = input.merchantContext?.product?.pivota_attributes || {};
+  return new Set(
+    uniqueStrings(
+      arrayOfStrings(attrs.external_seed_ids)
+        .concat(stringValue(attrs.external_seed_id))
+        .concat(input.merchantContext?.product?.external_seed_id || "")
+        .concat(input.merchantContext?.product?.external_seed_ids || [])
+    ).map((item) => item.toLowerCase())
+  );
+}
+
+function returnedPivotaUrlMatchesExpected(input: DemandTestInput, url?: string) {
+  const canonicalUrl = canonicalPivotaPdpUrlForInput(input);
+  if (canonicalUrl && sameUrlPath(url, canonicalUrl)) return true;
+
+  const aliasUrls = pivotaAliasUrlsForInput(input);
+  const externalSeedIds = externalSeedIdsForInput(input);
+  if (aliasUrls.some((aliasUrl) => sameUrlPath(url, aliasUrl))) {
+    const aliasId = pathProductId(url);
+    return !isExternalSeedId(aliasId) || externalSeedIds.has(aliasId.toLowerCase());
+  }
+
+  const returnedId = pathProductId(url);
+  if (returnedId && returnedId === input.merchantContext?.product?.product_entity_id) {
+    return true;
+  }
+  return false;
+}
+
 function urlsFromText(value: string) {
   return (
     value
@@ -265,10 +334,12 @@ function extractGroundingMetadata(payload: Record<string, unknown>) {
 
 function candidatePivotaPdpUrl(input: DemandTestInput) {
   const attrs = input.merchantContext?.product?.pivota_attributes || {};
+  const canonicalUrl = canonicalPivotaPdpUrlForInput(input);
+  if (canonicalUrl) return canonicalUrl;
   const explicitUrl = stringValue(attrs.pivota_pdp_url);
   if (explicitUrl) return explicitUrl;
   const objectId = stringValue(attrs.pivota_product_object_id);
-  if (/^ext_[a-z0-9_]+$/i.test(objectId)) {
+  if (objectId && !isExternalSeedId(objectId)) {
     return `https://agent.pivota.cc/products/${objectId}`;
   }
   return "";
@@ -281,17 +352,27 @@ function expectedPivotaOfferIds(input: DemandTestInput) {
 
 function expectedPivotaProductObjectId(input: DemandTestInput) {
   const attrs = input.merchantContext?.product?.pivota_attributes || {};
-  return stringValue(attrs.pivota_product_object_id);
+  const explicitObjectId = stringValue(attrs.pivota_product_object_id);
+  if (explicitObjectId && !isExternalSeedId(explicitObjectId)) return explicitObjectId;
+  return (
+    stringValue(attrs.canonical_product_slug) ||
+    input.merchantContext?.product?.product_entity_id ||
+    explicitObjectId ||
+    ""
+  );
 }
 
 function matchesExpectedPivotaProduct(input: DemandTestInput, url?: string, finalUrl?: string) {
   const product = input.merchantContext?.product;
-  const explicitUrl = stringValue(product?.pivota_attributes?.pivota_pdp_url);
+  const explicitUrl = canonicalPivotaPdpUrlForInput(input);
   const objectId = expectedPivotaProductObjectId(input);
   const entityId = product?.product_entity_id || "";
   const urlText = `${url || ""} ${finalUrl || ""}`.toLowerCase();
 
   if (explicitUrl && (sameUrlPath(url, explicitUrl) || sameUrlPath(finalUrl, explicitUrl))) {
+    return true;
+  }
+  if (returnedPivotaUrlMatchesExpected(input, url) || returnedPivotaUrlMatchesExpected(input, finalUrl)) {
     return true;
   }
   if (objectId && urlText.includes(objectId.toLowerCase())) return true;
@@ -528,9 +609,10 @@ function mockGeminiOutput(input: DemandTestInput) {
     input.scanMode === "buying_path_discovery_test" && shouldMentionMerchant;
   const merchantPdpUrl = input.merchantContext?.product?.pdp_url || "";
   const pivotaPdpUrl =
-    typeof input.merchantContext?.product?.pivota_attributes?.pivota_pdp_url === "string"
+    canonicalPivotaPdpUrlForInput(input) ||
+    (typeof input.merchantContext?.product?.pivota_attributes?.pivota_pdp_url === "string"
       ? input.merchantContext.product.pivota_attributes.pivota_pdp_url
-      : "";
+      : "");
   const pivotaProductObjectId = expectedPivotaProductObjectId(input);
   const pivotaOfferIds = Array.isArray(
     input.merchantContext?.product?.pivota_attributes?.offer_ids
@@ -572,8 +654,12 @@ function mockGeminiOutput(input: DemandTestInput) {
     merchant_pdp_url_found: returnedUrls.some((url) => sameUrlPath(url, merchantPdpUrl)),
     merchant_pdp_url_exact_match: returnedUrls.some((url) => sameUrlPath(url, merchantPdpUrl)),
     pivota_domain_found: returnedUrls.some((url) => domainOf(url) === "agent.pivota.cc"),
-    pivota_pdp_url_found: returnedUrls.some((url) => sameUrlPath(url, pivotaPdpUrl)),
-    pivota_pdp_url_exact_match: returnedUrls.some((url) => sameUrlPath(url, pivotaPdpUrl)),
+    pivota_pdp_url_found: returnedUrls.some((url) =>
+      returnedPivotaUrlMatchesExpected(input, url)
+    ),
+    pivota_pdp_url_exact_match: returnedUrls.some((url) =>
+      returnedPivotaUrlMatchesExpected(input, url)
+    ),
     competitor_products: shouldMentionMerchant
       ? []
       : mentionedProducts.map((item) => `${item.brand} ${item.name}`),
@@ -884,15 +970,17 @@ export function parseProviderOutput(
   const merchantPdpUrlExactMatch =
     returnedUrls.some((url) => sameUrlPath(url, merchantProduct?.pdp_url));
   const pivotaPdpUrl =
-    typeof merchantProduct?.pivota_attributes?.pivota_pdp_url === "string"
+    canonicalPivotaPdpUrlForInput(input) ||
+    (typeof merchantProduct?.pivota_attributes?.pivota_pdp_url === "string"
       ? merchantProduct.pivota_attributes.pivota_pdp_url
-      : "";
+      : "");
   const pivotaPdpDomain = domainOf(pivotaPdpUrl);
   const pivotaDomainFound =
     Boolean(pivotaPdpDomain && returnedDomains.includes(pivotaPdpDomain)) ||
     returnedDomains.some((domain) => domain === "agent.pivota.cc" || domain === "pivota.cc");
-  const pivotaPdpUrlExactMatch =
-    returnedUrls.some((url) => sameUrlPath(url, pivotaPdpUrl));
+  const pivotaPdpUrlExactMatch = returnedUrls.some((url) =>
+    returnedPivotaUrlMatchesExpected(input, url)
+  );
   const expectedProductObjectId = expectedPivotaProductObjectId(input);
   const preflight = input.pivotaAttributionPreflight;
   const verifiedPivotaUrl = preflight?.verified_url;
@@ -955,7 +1043,8 @@ export function parseProviderOutput(
     (verifiedPivotaUrl && includesLoose(allText, verifiedPivotaUrl)
       ? verifiedPivotaUrl
       : "") ||
-    modelPivotaUrl;
+    modelPivotaUrl ||
+    returnedUrls.find((url) => returnedPivotaUrlMatchesExpected(input, url));
   const pivotaPdpUrlPresent =
     Boolean(parsedPivotaPdpUrl) ||
     pivotaPdpUrlExactMatch ||
@@ -967,7 +1056,8 @@ export function parseProviderOutput(
     Boolean(
       (verifiedPivotaUrl && sameUrlPath(parsedPivotaPdpUrl, verifiedPivotaUrl)) ||
         (preflight?.status === "verified" &&
-          matchesExpectedPivotaProduct(input, parsedPivotaPdpUrl, parsedPivotaPdpUrl))
+          (returnedPivotaUrlMatchesExpected(input, parsedPivotaPdpUrl) ||
+            matchesExpectedPivotaProduct(input, parsedPivotaPdpUrl, parsedPivotaPdpUrl)))
     );
   const outputProductObjectId = stringValue(output.pivota_product_object_id);
   const parsedProductObjectId =

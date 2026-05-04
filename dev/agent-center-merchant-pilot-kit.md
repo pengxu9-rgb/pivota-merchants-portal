@@ -83,7 +83,9 @@ Recommended inputs:
 
 - merchant product attributes
 - Pivota ProductEntity ID
+- Pivota canonical product slug or canonical ProductEntity PDP URL
 - Pivota PDP URL, when Pivota PDP Attribution Test is not in scope
+- external seed ID or source alias ID when the current public URL is `/products/ext_*`
 - merchant domain for discovery evaluation
 - expected merchant/Pivota PDP URLs for discovery evaluation only, not prompt context
 - merchant offer metadata
@@ -126,7 +128,11 @@ POST /api/internal/agent-center/production-validation-runs
   "language": "en",
   "currency": "USD",
   "pivota_product_entity_id": "pe_example_daily_sunscreen",
-  "pivota_pdp_url": "https://agent.pivota.cc/products/ext_example_product",
+  "canonical_product_slug": "example-brand-daily-sunscreen",
+  "canonical_pivota_pdp_url": "https://agent.pivota.cc/products/example-brand-daily-sunscreen",
+  "external_seed_id": "ext_example_source_seed",
+  "pivota_pdp_url": "https://agent.pivota.cc/products/ext_example_source_seed",
+  "merchant_offer_id": "merchant_offer_example_50ml",
   "pivota_offer_id": "offer_example_merchant_50ml",
   "merchant_product_attributes": {
     "spf_level": "SPF50+",
@@ -348,6 +354,10 @@ agent-facing PDP signals:
 - Offer/AggregateOffer structured data where merchant offers exist
 - verified merchant PDP source reference
 - offer source URL where available
+- canonical ProductEntity URL in sitemap
+- Google Search Console sitemap submission and URL inspection
+- indexing request for the canonical ProductEntity PDP
+- public internal links to the canonical ProductEntity PDP
 - product identity, overview, product intelligence module, and
   similar/substitute highlight
 
@@ -357,6 +367,26 @@ discovery still remains `0` / `not_found`, follow
 before claiming uplift. The next operational step is to verify that the public
 Pivota PDP is crawlable, indexable, canonical, structured, sitemap-listed, and
 eligible for search ingestion.
+
+Operators can record that work through the internal Pivota indexing task tracker:
+
+```text
+POST /api/internal/agent-center/pivota-indexing-tasks
+GET /api/internal/agent-center/pivota-indexing-tasks/:taskId
+PATCH /api/internal/agent-center/pivota-indexing-tasks/:taskId
+```
+
+Supported task types are `submit_sitemap`, `request_indexing`,
+`validate_search_console`, `add_internal_link`, `wait_for_indexing_window`,
+`scheduled_search_grounded_rerun`, and `rerun_search_grounded_discovery`. The
+task summary exposes current status, next rerun time, last search-grounded
+discovery score, last returned URLs, and `uplift_claim_allowed`.
+
+These tasks document operational work only; they do not prove search-grounded
+discovery uplift until a rerun returns the canonical Pivota PDP or a verified
+alias. If indexing work is complete but the score remains `0`, the report should
+say: "Indexing work was recorded, but search-grounded Gemini has not yet
+returned the Pivota PDP. No discovery uplift is claimed yet."
 
 Operators can also run the internal Pivota PDP indexability audit endpoint:
 
@@ -679,6 +709,25 @@ Agent Center V1 can separately prove:
 
 Merchant PDP attribution and Pivota PDP attribution are separate results. Product/entity visibility alone does not prove either buying path.
 
+### ProductEntity-First Pivota PDP Binding
+
+Pivota PDPs should be treated as canonical ProductEntity / Unified PDP pages with merchant offers and source references.
+
+Do not model the Pivota PDP as a single external seed row. A path such as `/products/ext_*` is a source alias unless that ID has been explicitly promoted to a ProductEntity ID. Preferred public PDP paths are:
+
+- `https://agent.pivota.cc/products/{canonical_product_slug}`
+- `https://agent.pivota.cc/products/{product_entity_id}`
+
+If an `/products/ext_*` URL exists, it should redirect to the canonical ProductEntity URL, render a canonical tag pointing to that URL, or be marked as an alias. Reports should show:
+
+- canonical Pivota ProductEntity PDP
+- source alias / external seed ID
+- verified merchant PDP source references
+- merchant offers included under the ProductEntity
+- which merchant offer was tested
+
+Search-grounded Pivota PDP discovery counts only when the canonical ProductEntity PDP URL is returned, or when a returned alias URL resolves or canonicalizes to the expected ProductEntity. An unrelated `/products/ext_*` URL must not count.
+
 ## Known Limitations
 
 V1 limitations:
@@ -756,3 +805,29 @@ npm run lint
 npm run build
 git diff --check
 ```
+
+## Pilot ProductEntity Provisioning
+
+Before a merchant pilot uses a Pivota PDP URL, Pivota must create or bind a correct ProductEntity-first PDP for the pilot product. Do not point a pilot report at an unrelated `ext_*` seed URL, even if that URL is public and indexable for another product.
+
+Internal route family:
+
+```bash
+POST /api/internal/agent-center/pilot-product-entities
+GET /api/internal/agent-center/pilot-product-entities/:id
+POST /api/internal/agent-center/pilot-product-entities/:id/publish
+POST /api/internal/agent-center/pilot-product-entities/:id/audit
+```
+
+The route is internal-only and requires the production validation secret plus `ENABLE_INTERNAL_PRODUCTION_VALIDATION=true`. It accepts merchant-approved metadata, validates the merchant PDP preflight, creates or binds the ProductEntity, attaches the merchant PDP as `official_merchant_pdp`, and uses `manual_pilot_mapping` with `confidence = pilot_only` when no stronger source exists.
+
+Provisioning rules:
+
+- `product_entity_id` is the canonical Pivota product identity.
+- `canonical_product_slug` or `product_entity_id` forms the public canonical PDP URL.
+- `external_seed_id` is only a source alias and must not become canonical unless explicitly promoted.
+- If an external seed already maps to a different product or brand, provisioning fails.
+- If an existing ProductEntity renders a different product or brand, provisioning fails.
+- If the public PDP cannot render real product-specific data without fallback or fabricated content, audit fails.
+
+A pilot may use the Pivota PDP only after the binding/indexability audit passes. If no correct Pivota ProductEntity/PDP exists, report the Pivota agent-facing path as `not_ready` or `not_tested` and say: "Pivota PDP is not yet created or not correctly bound for this product." This is not a merchant-owned PDP failure.

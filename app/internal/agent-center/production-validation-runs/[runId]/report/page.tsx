@@ -516,7 +516,17 @@ function ReportPreview({
 
         <SurfaceCard title="Pivota Agent-Facing Path">
           <dl>
-            <FieldRow label="Pivota PDP URL" value={readiness.pivota_agent_facing_path.pivota_pdp_url} />
+            <FieldRow
+              label="Canonical Pivota PDP"
+              value={
+                readiness.pivota_agent_facing_path.canonical_pivota_pdp_url ||
+                readiness.pivota_agent_facing_path.pivota_pdp_url
+              }
+            />
+            <FieldRow label="ProductEntity ID" value={readiness.pivota_agent_facing_path.product_entity_id} />
+            <FieldRow label="Source alias / external seed" value={readiness.pivota_agent_facing_path.external_seed_id} />
+            <FieldRow label="Tested merchant offer" value={readiness.pivota_agent_facing_path.merchant_offer_id} />
+            <FieldRow label="Tested Pivota offer" value={readiness.pivota_agent_facing_path.pivota_offer_id} />
             <FieldRow label="Pivota preflight" value={label(readiness.pivota_agent_facing_path.preflight_status)} />
             <FieldRow label="Pivota attribution" value={label(readiness.pivota_agent_facing_path.attribution_status)} />
             <FieldRow label="Pivota offer state" value={label(readiness.pivota_agent_facing_path.offer_state_status)} />

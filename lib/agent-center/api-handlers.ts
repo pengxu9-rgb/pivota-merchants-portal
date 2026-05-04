@@ -20,8 +20,10 @@ import {
   MerchantFacingReportService,
   MerchantStoreService,
   OfferExecutionService,
+  PivotaIndexingTaskService,
   PivotaPDPIndexabilityAuditService,
   PivotaOptimizationService,
+  PilotProductEntityProvisioningService,
   ProductionValidationRunService,
   ProductUnderstandingService,
   ScanTargetService,
@@ -176,6 +178,95 @@ export async function handleInternalProductionValidationRunsRequest(
   return withAgentCenterRepositorySession(() =>
     handleInternalProductionValidationRunsRequestInner(req, params)
   );
+}
+
+export async function handleInternalPilotProductEntitiesRequest(
+  req: NextRequest,
+  params?: { runId?: string; action?: string }
+) {
+  return withAgentCenterRepositorySession(() =>
+    handleInternalPilotProductEntitiesRequestInner(req, params)
+  );
+}
+
+export async function handleInternalPivotaIndexingTasksRequest(
+  req: NextRequest,
+  params?: { taskId?: string }
+) {
+  return withAgentCenterRepositorySession(() =>
+    handleInternalPivotaIndexingTasksRequestInner(req, params)
+  );
+}
+
+async function handleInternalPivotaIndexingTasksRequestInner(
+  req: NextRequest,
+  params?: { taskId?: string }
+) {
+  const gate = internalProductionValidationGate(req);
+  if (!gate.allowed) return json({ error: gate.error }, 403);
+
+  const service = new PivotaIndexingTaskService();
+  const taskId = params?.taskId;
+
+  try {
+    if (req.method === "POST" && !taskId) {
+      return json({ pivota_indexing_task: service.create(await requestBody(req)) }, 201);
+    }
+    if (req.method === "GET" && !taskId) {
+      const productEntityId =
+        req.nextUrl.searchParams.get("product_entity_id") || undefined;
+      return json({
+        pivota_indexing_tasks: service.list({
+          product_entity_id: productEntityId,
+        }),
+        product_entity_summaries: service.summaries({
+          product_entity_id: productEntityId,
+        }),
+      });
+    }
+    if (req.method === "GET" && taskId) {
+      return json({ pivota_indexing_task: service.get(taskId) });
+    }
+    if (req.method === "PATCH" && taskId) {
+      return json({
+        pivota_indexing_task: service.update(taskId, await requestBody(req)),
+      });
+    }
+    return json({ error: "Unsupported internal Pivota indexing task route" }, 404);
+  } catch (error) {
+    return routeError(error);
+  }
+}
+
+async function handleInternalPilotProductEntitiesRequestInner(
+  req: NextRequest,
+  params?: { runId?: string; action?: string }
+) {
+  const gate = internalProductionValidationGate(req);
+  if (!gate.allowed) return json({ error: gate.error }, 403);
+
+  const service = new PilotProductEntityProvisioningService();
+  const runId = params?.runId;
+  const action = params?.action;
+
+  try {
+    if (req.method === "POST" && !runId) {
+      const body = await requestBody(req);
+      return json({ run: await service.create(body) }, 201);
+    }
+    if (req.method === "GET" && runId && !action) {
+      return json({ run: service.get(runId) });
+    }
+    if (req.method === "POST" && runId && action === "publish") {
+      return json({ run: await service.publish(runId) });
+    }
+    if (req.method === "POST" && runId && action === "audit") {
+      return json({ run: await service.audit(runId) });
+    }
+    return json({ error: "Unsupported internal pilot ProductEntity route" }, 404);
+  } catch (error) {
+    return routeError(error);
+  }
 }
 
 async function handleInternalProductionValidationRunsRequestInner(
@@ -343,6 +434,20 @@ async function handleAgentCenterRequestInner(
       );
     }
 
+    if (resource === "internal-pilot-product-entities") {
+      return handleInternalPilotProductEntitiesRequest(
+        req,
+        id ? { runId: id, action } : undefined
+      );
+    }
+
+    if (resource === "internal-pivota-indexing-tasks") {
+      return handleInternalPivotaIndexingTasksRequest(
+        req,
+        id ? { taskId: id } : undefined
+      );
+    }
+
     if (
       resource === "internal-config-status" ||
       resource === "internal-runtime-config"
@@ -375,6 +480,24 @@ async function handleAgentCenterRequestInner(
             brand,
             merchant_pdp_url: merchantPdpUrl,
             offers_exist: offersExist,
+            product_entity_id:
+              req.nextUrl.searchParams.get("product_entity_id") || undefined,
+            canonical_product_slug:
+              req.nextUrl.searchParams.get("canonical_product_slug") || undefined,
+            canonical_pivota_pdp_url:
+              req.nextUrl.searchParams.get("canonical_pivota_pdp_url") || undefined,
+            external_seed_id:
+              req.nextUrl.searchParams.get("external_seed_id") || undefined,
+            merchant_offer_id:
+              req.nextUrl.searchParams.get("merchant_offer_id") || undefined,
+            pivota_offer_id:
+              req.nextUrl.searchParams.get("pivota_offer_id") || undefined,
+            promoted_external_seed_ids: (
+              req.nextUrl.searchParams.get("promoted_external_seed_ids") || ""
+            )
+              .split(",")
+              .map((item) => item.trim())
+              .filter(Boolean),
           }),
         });
       }

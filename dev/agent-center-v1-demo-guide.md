@@ -8,6 +8,8 @@ Pivota Agent Center V1 helps merchants verify whether agentic demand can become 
 
 The core message for V1 is simple: Pivota does not only test whether an LLM mentions a product. It first separates natural discoverability from contextual attribution, then tests whether demand can be routed to the merchant or Pivota layer and whether the product, offer, and checkout path are ready before payment.
 
+Pivota PDP should be explained as a canonical ProductEntity / Unified PDP with merchant offers and source references. It is not a replacement for the merchant PDP; it is an agent-facing execution layer on top of the merchant-owned source layer.
+
 ## Current Validated Baseline
 
 Agent Center V1 currently includes:
@@ -86,6 +88,8 @@ and wrong URL analysis where applicable.
 
 Do not say contextual attribution equals discovery. Do not claim consumer Gemini
 UI or AI Mode ranking.
+
+For Pivota PDP URLs, avoid describing `/products/ext_*` as canonical product identity. Treat `ext_*` as an external seed/source alias unless it has been explicitly promoted to a ProductEntity ID. Search-grounded Pivota discovery counts a returned alias only when it canonicalizes or maps to the expected ProductEntity; unrelated `ext_*` URLs do not count.
 
 ## Demo Flow
 
@@ -168,7 +172,9 @@ It supports:
 - retest and before/after verification
 - usage preview
 
-Important distinction: contextual attribution is not natural discovery. "Merchant PDP was returned in contextual attribution test" is different from "Merchant PDP was discovered in search-grounded discovery test." Search-grounded discovery evaluates URLs returned by the model or Gemini `groundingMetadata`, without injecting expected merchant/Pivota PDP URLs as source context. It does not prove consumer Gemini UI or AI Mode ranking. Product/entity visibility does not prove merchant store visibility or Pivota channel visibility. Pivota attribution only counts when a verified public Pivota PDP URL, verified product object ID, or verified offer ID is returned.
+Important distinction: contextual attribution is not natural discovery. "Merchant PDP was returned in contextual attribution test" is different from "Merchant PDP was discovered in search-grounded discovery test." Search-grounded discovery evaluates URLs returned by the model or Gemini `groundingMetadata`, without injecting expected merchant/Pivota PDP URLs as source context. It does not prove consumer Gemini UI or AI Mode ranking. Product/entity visibility does not prove merchant store visibility or Pivota channel visibility. Pivota attribution only counts when a verified public canonical ProductEntity PDP URL, verified alias URL, verified product object ID, or verified offer ID is returned.
+
+For pilots, "verified alias URL" means the alias resolves or canonicalizes to the expected ProductEntity. Product JSON-LD should use the canonical ProductEntity URL, and Offer/AggregateOffer JSON-LD should describe merchant offers under that ProductEntity.
 
 ### Product Understanding + SKU Match Agent
 

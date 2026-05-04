@@ -205,9 +205,64 @@ export type PurchasePathType =
 
 export type VisibilityScoreValue = number | "not_tested" | "not_configured";
 
+export type SourceReference = {
+  source_type:
+    | "external_seed"
+    | "official_merchant_pdp"
+    | "merchant_catalog"
+    | "manual_mapping"
+    | "manual_pilot_mapping";
+  source_id?: string;
+  source_url?: string;
+  merchant_id?: string;
+  merchant_name?: string;
+  verified_at?: string;
+  confidence?: string;
+  maps_to_product_entity_id?: string;
+};
+
+export type ProductEntity = {
+  product_entity_id: string;
+  canonical_slug?: string;
+  canonical_url?: string;
+  canonical_product_name: string;
+  brand: string;
+  category?: string;
+  normalized_attributes?: Record<string, unknown>;
+  source_references: SourceReference[];
+  external_seed_ids: string[];
+  merchant_product_mappings: Array<{
+    merchant_id?: string;
+    merchant_product_id?: string;
+    merchant_sku_id?: string;
+    source_product_id?: string;
+  }>;
+  merchant_offers: Array<{
+    merchant_id?: string;
+    merchant_sku_id?: string;
+    source_product_id?: string;
+    offer_id?: string;
+    checkout_path_id?: string;
+  }>;
+  pivota_offers: Array<{
+    pivota_offer_id?: string;
+    merchant_id?: string;
+    merchant_sku_id?: string;
+  }>;
+};
+
 export type ProductRecord = DemoFixtureMetadata & {
   id: string;
   product_entity_id: string;
+  canonical_slug?: string;
+  canonical_url?: string;
+  canonical_product_name?: string;
+  external_seed_id?: string;
+  external_seed_ids?: string[];
+  source_references?: SourceReference[];
+  merchant_product_mappings?: ProductEntity["merchant_product_mappings"];
+  merchant_offers?: ProductEntity["merchant_offers"];
+  pivota_offers?: ProductEntity["pivota_offers"];
   sku: string;
   title: string;
   brand: string;
@@ -945,8 +1000,13 @@ export type MerchantOffer = Timestamped & DemoFixtureMetadata & {
   id: string;
   merchant_id: string;
   store_id: string;
+  product_entity_id?: string;
   product_id: string;
   sku_id: string;
+  merchant_sku_id?: string;
+  source_product_id?: string;
+  offer_id?: string;
+  checkout_path_id?: string;
   price: number;
   currency: string;
   promo_price?: number | null;
@@ -1395,6 +1455,97 @@ export type ProductionValidationRunStatus =
   | "failed"
   | "deleted";
 
+export type PilotProductEntityProvisioningRunStatus =
+  | "draft"
+  | "source_validated"
+  | "product_entity_created"
+  | "product_entity_bound"
+  | "published"
+  | "audit_passed"
+  | "failed";
+
+export type PilotProductEntityProvisioningRun = Timestamped & {
+  id: string;
+  status: PilotProductEntityProvisioningRunStatus;
+  environment: string;
+  merchant_id: string;
+  merchant_name: string;
+  store_url: string;
+  merchant_pdp_url: string;
+  product_name: string;
+  brand: string;
+  sku_name?: string;
+  category: string;
+  market: string;
+  language: string;
+  currency: string;
+  merchant_product_attributes?: Record<string, unknown>;
+  merchant_offer_input?: Record<string, unknown>;
+  source_references: SourceReference[];
+  external_seed_ids: string[];
+  product_entity_id?: string;
+  canonical_product_slug?: string;
+  canonical_pivota_pdp_url?: string;
+  merchant_offer_ids: string[];
+  pivota_offer_ids: string[];
+  binding_audit_id?: string;
+  binding_audit?: PivotaPDPIndexabilityAudit;
+  indexability_audit?: PivotaPDPIndexabilityAudit;
+  completed_at?: string;
+  failure_reason?: string;
+};
+
+export type PivotaIndexingTaskType =
+  | "submit_sitemap"
+  | "request_indexing"
+  | "validate_search_console"
+  | "add_internal_link"
+  | "wait_for_indexing_window"
+  | "scheduled_search_grounded_rerun"
+  | "rerun_search_grounded_discovery";
+
+export type PivotaIndexingTaskStatus =
+  | "proposed"
+  | "in_progress"
+  | "completed"
+  | "blocked"
+  | "skipped";
+
+export type PivotaIndexingTaskEvidence = {
+  search_console_property_verified?: boolean;
+  sitemap_submitted?: boolean;
+  sitemap_url?: string;
+  url_inspection_status?: string;
+  indexing_requested?: boolean;
+  indexing_requested_at?: string;
+  operator?: string;
+  evidence_note?: string;
+  screenshot_or_reference_url?: string;
+  next_rerun_at?: string;
+  rerun_window?: "T+24h" | "T+72h" | "T+7d" | string;
+  delay_hours?: number;
+  issue_id?: string;
+  issue_type?: string;
+  scan_target_id?: string;
+  production_validation_run_id?: string;
+  last_search_grounded_discovery_score?: VisibilityScoreValue;
+  last_returned_urls?: string[];
+  uplift_claim_allowed?: boolean;
+  no_uplift_claim_allowed?: boolean;
+  [key: string]: unknown;
+};
+
+export type PivotaIndexingTask = Timestamped & {
+  id: string;
+  product_entity_id: string;
+  canonical_pivota_pdp_url: string;
+  task_type: PivotaIndexingTaskType;
+  status: PivotaIndexingTaskStatus;
+  evidence?: PivotaIndexingTaskEvidence;
+  created_at: string;
+  completed_at?: string;
+};
+
 export type ProductionValidationUrlPreflight = {
   url?: string;
   status: "not_provided" | "passed" | "failed";
@@ -1418,6 +1569,14 @@ export type ProductionValidationReport = {
     market: string;
     language: string;
     currency: string;
+    product_entity_id?: string;
+    canonical_product_slug?: string;
+    canonical_pivota_pdp_url?: string;
+    external_seed_id?: string;
+    merchant_product_id?: string;
+    merchant_sku_id?: string;
+    merchant_offer_id?: string;
+    pivota_offer_id?: string;
     scan_target_id?: string;
   };
   url_preflight_results: {
@@ -1579,7 +1738,16 @@ export type PivotaPDPIndexabilityFindingType =
   | "missing_source_reference"
   | "missing_product_object_id"
   | "missing_sitemap_entry"
-  | "auth_wall_detected";
+  | "auth_wall_detected"
+  | "product_entity_missing_source_seed"
+  | "product_entity_missing_merchant_source"
+  | "product_entity_missing_merchant_offer"
+  | "external_seed_used_as_canonical"
+  | "canonical_product_url_missing"
+  | "canonical_url_points_to_external_seed"
+  | "product_entity_binding_mismatch"
+  | "rendered_identity_mismatch"
+  | "offer_attached_to_wrong_product_entity";
 
 export type PivotaPDPIndexabilityFinding = {
   finding_type: PivotaPDPIndexabilityFindingType;
@@ -1623,6 +1791,24 @@ export type PivotaPDPIndexabilityAudit = {
     internal_product_links_count: number;
     auth_gate_detected: boolean;
     html_size: number;
+    requested_product_path_id?: string;
+    expected_product_entity_id?: string;
+    canonical_product_slug?: string;
+    expected_canonical_url?: string;
+    rendered_product_entity_id?: string;
+    rendered_product_jsonld_url?: string;
+    rendered_product_jsonld_name?: string;
+    rendered_product_jsonld_brand?: string;
+    rendered_offer_ids: string[];
+    expected_external_seed_id?: string;
+    expected_merchant_offer_id?: string;
+    expected_pivota_offer_id?: string;
+    external_seed_alias_detected: boolean;
+    external_seed_used_as_canonical: boolean;
+    canonical_url_points_to_external_seed: boolean;
+    source_reference_external_seed_present: boolean;
+    source_reference_merchant_pdp_present: boolean;
+    merchant_offer_attached: boolean;
   };
 };
 
@@ -1820,6 +2006,12 @@ export type MerchantFacingValidationReport = Timestamped & {
     };
     pivota_agent_facing_path: {
       pivota_pdp_url?: string;
+      canonical_pivota_pdp_url?: string;
+      product_entity_id?: string;
+      canonical_product_slug?: string;
+      external_seed_id?: string;
+      merchant_offer_id?: string;
+      pivota_offer_id?: string;
       preflight_status: ProductionValidationUrlPreflight["status"];
       attribution_status: GMVAssuranceDimensionStatus;
       offer_state_status: GMVAssuranceDimensionStatus;
@@ -1930,6 +2122,12 @@ export type ProductionValidationRun = Timestamped & {
   language: string;
   currency: string;
   pivota_product_entity_id?: string;
+  canonical_product_slug?: string;
+  canonical_pivota_pdp_url?: string;
+  external_seed_id?: string;
+  merchant_product_id?: string;
+  merchant_sku_id?: string;
+  merchant_offer_id?: string;
   pivota_pdp_url?: string;
   pivota_offer_id?: string;
   merchant_offer_input?: Record<string, unknown>;
@@ -2005,6 +2203,8 @@ export type AgentCenterState = {
   gmvAssuranceSnapshots: GMVAssuranceSnapshot[];
   demoFixtures: DemoFixture[];
   productionValidationRuns: ProductionValidationRun[];
+  pilotProductEntityProvisioningRuns: PilotProductEntityProvisioningRun[];
+  pivotaIndexingTasks: PivotaIndexingTask[];
   usageEvents: UsageEvent[];
   usagePlan: {
     included_credits: number;

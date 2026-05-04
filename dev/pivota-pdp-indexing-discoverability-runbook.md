@@ -23,6 +23,25 @@ Use this runbook when:
 
 Do not claim discovery uplift until a rerun shows a measured score improvement.
 
+## Search Console Readiness
+
+Current Agent Center runtime can verify public crawlability signals, sitemap
+presence, and canonical ProductEntity URLs. It cannot verify Google Search
+Console ownership unless an operator with Search Console access records that
+evidence.
+
+Before treating indexing work as operationally complete, record:
+
+- Whether a Google Search Console property exists for `agent.pivota.cc`.
+- Whether `https://agent.pivota.cc/sitemap.xml` has been submitted.
+- Whether the canonical ProductEntity PDP URL is inspectable through URL
+  Inspection.
+- Whether indexing can be requested for that canonical URL.
+
+If any item cannot be verified, mark the corresponding indexing task as
+`blocked` or keep it `proposed`. Do not infer Search Console readiness from an
+HTTP 200 PDP audit alone.
+
 ## Checklist
 
 - `robots.txt` allows crawling `agent.pivota.cc/products/*`.
@@ -52,10 +71,10 @@ indexability audit endpoint:
 
 ```bash
 BASE_URL="https://pivota-merchants-portal-clean.vercel.app"
-PIVOTA_PDP_URL="https://agent.pivota.cc/products/ext_d7c74bcb380cbc2bdd5d5d90"
+PIVOTA_PDP_URL="https://agent.pivota.cc/products/pe_isntree_watery_sun_gel"
 MERCHANT_PDP_URL="https://www.isntree.com/products/hyaluronic-acid-watery-sun-gel"
 
-curl "$BASE_URL/api/internal/agent-center/pivota-pdp-indexability-audit?url=$(node -e 'console.log(encodeURIComponent(process.argv[1]))' "$PIVOTA_PDP_URL")&product_name=$(node -e 'console.log(encodeURIComponent(process.argv[1]))' "Isntree Hyaluronic Acid Watery Sun Gel")&brand=Isntree&merchant_pdp_url=$(node -e 'console.log(encodeURIComponent(process.argv[1]))' "$MERCHANT_PDP_URL")&offers_exist=true" \
+curl "$BASE_URL/api/internal/agent-center/pivota-pdp-indexability-audit?url=$(node -e 'console.log(encodeURIComponent(process.argv[1]))' "$PIVOTA_PDP_URL")&product_name=$(node -e 'console.log(encodeURIComponent(process.argv[1]))' "Isntree Hyaluronic Acid Watery Sun Gel")&brand=Isntree&merchant_pdp_url=$(node -e 'console.log(encodeURIComponent(process.argv[1]))' "$MERCHANT_PDP_URL")&offers_exist=true&product_entity_id=pe_isntree_watery_sun_gel&external_seed_id=ext_d7c74bcb380cbc2bdd5d5d90&canonical_pivota_pdp_url=$(node -e 'console.log(encodeURIComponent(process.argv[1]))' "$PIVOTA_PDP_URL")" \
   -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET"
 ```
 
@@ -83,13 +102,24 @@ Recommended fix mapping:
 - `missing_source_reference` -> `pivota_source_reference_patch`
 - `missing_server_rendered_identity` or `missing_product_object_id` ->
   `pivota_discovery_signal_patch`
+- `external_seed_used_as_canonical`, `canonical_url_points_to_external_seed`,
+  or `product_entity_binding_mismatch` -> `pivota_indexability_patch` plus
+  ProductEntity binding review
+- `product_entity_missing_source_seed`,
+  `product_entity_missing_merchant_source`, or
+  `product_entity_missing_merchant_offer` -> source/offer binding patches
+
+Pivota PDPs are ProductEntity-first. A `/products/ext_*` route is a source alias
+unless the ID has been explicitly promoted to a ProductEntity. Alias routes
+should redirect to the canonical ProductEntity PDP or render a canonical tag
+pointing to it. Product JSON-LD should use the canonical ProductEntity URL.
 
 ## Validation Commands And Manual Checks
 
 Set the URL first:
 
 ```bash
-PIVOTA_PDP_URL="https://agent.pivota.cc/products/ext_d7c74bcb380cbc2bdd5d5d90"
+PIVOTA_PDP_URL="https://agent.pivota.cc/products/pe_isntree_watery_sun_gel"
 PIVOTA_HOST="https://agent.pivota.cc"
 PRODUCT_NAME="Isntree Hyaluronic Acid Watery Sun Gel"
 ```
@@ -143,7 +173,7 @@ Verify source reference and product object ID:
 
 ```bash
 grep -Ei 'official_merchant_pdp|source reference|merchant source|isntree.com' /tmp/pivota-pdp.html
-grep -Ei 'ext_[a-z0-9]+' /tmp/pivota-pdp.html
+grep -Ei 'pe_[a-z0-9_]+|sig_[a-z0-9_]+|ext_[a-z0-9_]+' /tmp/pivota-pdp.html
 ```
 
 Manual checks:
@@ -152,6 +182,105 @@ Manual checks:
 - Run the PDP through Google Rich Results Test or schema validation tooling.
 - Confirm Google Search Console has the sitemap submitted for `agent.pivota.cc`.
 - Request indexing for the specific Pivota PDP URL when appropriate.
+
+## Internal Indexing Task Tracker
+
+Use the internal task tracker to record the operational indexing work that
+cannot be proven from the public PDP audit alone:
+
+```bash
+BASE_URL="https://pivota-merchants-portal-clean.vercel.app"
+PIVOTA_PDP_URL="https://agent.pivota.cc/products/sig_7ad40676c42fb9c96e2a8136"
+
+curl -X POST "$BASE_URL/api/internal/agent-center/pivota-indexing-tasks" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET" \
+  -H "content-type: application/json" \
+  --data "{
+    \"product_entity_id\": \"sig_7ad40676c42fb9c96e2a8136\",
+    \"canonical_pivota_pdp_url\": \"$PIVOTA_PDP_URL\",
+    \"task_type\": \"submit_sitemap\",
+    \"status\": \"proposed\",
+    \"evidence\": {
+      \"source\": \"operator_runbook\",
+      \"search_console_property_verified\": false,
+      \"sitemap_submitted\": false,
+      \"sitemap_url\": \"https://agent.pivota.cc/sitemap.xml\",
+      \"url_inspection_status\": \"not_checked\",
+      \"indexing_requested\": false,
+      \"operator\": \"pivota_ops\",
+      \"evidence_note\": \"Created before Search Console verification.\",
+      \"no_uplift_claim_allowed\": true
+    }
+  }"
+```
+
+Supported task types:
+
+- `submit_sitemap`
+- `request_indexing`
+- `validate_search_console`
+- `add_internal_link`
+- `wait_for_indexing_window`
+- `scheduled_search_grounded_rerun`
+- `rerun_search_grounded_discovery`
+
+Supported statuses:
+
+- `proposed`
+- `in_progress`
+- `completed`
+- `blocked`
+- `skipped`
+
+Fetch or update a task:
+
+```bash
+curl "$BASE_URL/api/internal/agent-center/pivota-indexing-tasks/$TASK_ID" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET"
+
+curl -X PATCH "$BASE_URL/api/internal/agent-center/pivota-indexing-tasks/$TASK_ID" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET" \
+  -H "content-type: application/json" \
+  --data '{
+    "status": "completed",
+    "evidence": {
+      "operator": "pivota_ops",
+      "search_console_property_verified": true,
+      "sitemap_submitted": true,
+      "sitemap_url": "https://agent.pivota.cc/sitemap.xml",
+      "url_inspection_status": "inspectable",
+      "indexing_requested": true,
+      "indexing_requested_at": "2026-05-04T00:00:00.000Z",
+      "evidence_note": "Sitemap submitted and URL inspection request recorded.",
+      "screenshot_or_reference_url": "https://search.google.com/search-console/..."
+    }
+  }'
+```
+
+List ProductEntity task status and rerun state:
+
+```bash
+curl "$BASE_URL/api/internal/agent-center/pivota-indexing-tasks?product_entity_id=sig_7ad40676c42fb9c96e2a8136" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET"
+```
+
+The list response includes current task status, next rerun time, last
+search-grounded Pivota PDP discovery score, last returned URLs, and
+`uplift_claim_allowed`. Completing Search Console tasks does not set
+`uplift_claim_allowed=true`; only a measured rerun where the canonical Pivota PDP
+or verified alias is returned can do that.
+
+Manual rerun plan:
+
+- T+24h: rerun `search_grounded_product_discovery_test`.
+- T+72h: rerun `search_grounded_product_discovery_test`.
+- T+7d: rerun `search_grounded_product_discovery_test`.
+
+No background scheduler is required for V1. Use `wait_for_indexing_window` and
+`scheduled_search_grounded_rerun` tasks to track the manual windows.
+
+The task tracker is internal-only. It records operational evidence, not measured
+Gemini discovery uplift.
 
 ## Agent Center Rerun Plan
 
@@ -195,3 +324,19 @@ Also keep these distinctions clear:
 - Some search systems may need additional public links before surfacing the PDP.
 - V1 does not prove payment authorization, PSP success, order placement, settlement,
   final GMV attribution, or real billing.
+
+## ProductEntity Binding Prerequisite
+
+Indexability work starts only after the pilot product has a correct ProductEntity binding. Use the internal Pilot ProductEntity Provisioning flow before indexing checks for a new merchant SKU.
+
+Binding prerequisites:
+
+- Merchant PDP preflight passes.
+- Product name, brand, SKU, category, market, language, and currency are merchant-approved.
+- The canonical Pivota PDP URL is ProductEntity-first: `/products/{canonical_product_slug}` or `/products/{product_entity_id}`.
+- External seeds are source aliases only.
+- The merchant PDP is attached as an `official_merchant_pdp` source reference.
+- Manual pilot mappings are marked `manual_pilot_mapping` with `confidence = pilot_only`.
+- Binding and indexability audit passes before the PDP is used in a pilot report.
+
+If a Pivota PDP does not exist or fails binding audit, the report should say the Pivota agent-facing path is not ready or not tested. It should not count an unrelated Pivota PDP as attribution or discovery success.

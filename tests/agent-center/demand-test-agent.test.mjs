@@ -45,8 +45,10 @@ const {
   MerchantFacingReportService,
   MerchantStoreService,
   OfferExecutionService,
+  PivotaIndexingTaskService,
   PivotaPDPIndexabilityAuditService,
   PivotaOptimizationService,
+  PilotProductEntityProvisioningService,
   ProductionValidationRunService,
   ProductNameNormalizer,
   ProductMatchService,
@@ -62,6 +64,7 @@ const {
 const {
   handleAgentCenterRequest,
   handleInternalDemoFixturesRequest,
+  handleInternalPivotaIndexingTasksRequest,
   handleInternalProductionValidationRunsRequest,
 } = apiHandlers;
 const {
@@ -71,7 +74,10 @@ const {
 
 const verifiedPivotaPdpUrl =
   "https://agent.pivota.cc/products/ext_d7c74bcb380cbc2bdd5d5d90?return=%2Fproducts%2Fext_0281be2868f91dcf200fa248%3Freturn%3D%252F";
-const verifiedPivotaObjectId = "ext_d7c74bcb380cbc2bdd5d5d90";
+const canonicalPivotaProductEntityUrl =
+  "https://agent.pivota.cc/products/pe_isntree_watery_sun_gel";
+const verifiedExternalSeedId = "ext_d7c74bcb380cbc2bdd5d5d90";
+const verifiedPivotaObjectId = "pe_isntree_watery_sun_gel";
 const verifiedPivotaOfferId = "offer_isntree_direct_50ml";
 
 function pivotaPreflight(overrides = {}) {
@@ -394,6 +400,10 @@ function createIsntreeSunscreenTarget(extraProducts = [], scanMode = "open_produ
       finish: "fresh finish",
       active_ingredients: "chemical UV filters",
       agent_summary: "A hydrating Korean sun gel with SPF50+ PA++++.",
+      canonical_pivota_pdp_url: canonicalPivotaProductEntityUrl,
+      canonical_product_slug: "pe_isntree_watery_sun_gel",
+      external_seed_id: verifiedExternalSeedId,
+      external_seed_ids: [verifiedExternalSeedId],
       pivota_pdp_url: verifiedPivotaPdpUrl,
       pivota_product_object_id: verifiedPivotaObjectId,
       offer_ids: [verifiedPivotaOfferId],
@@ -909,6 +919,8 @@ function productionValidationPayload(overrides = {}) {
 
 const indexablePivotaUrl =
   "https://agent.pivota.cc/products/ext_d7c74bcb380cbc2bdd5d5d90";
+const canonicalIndexablePivotaUrl =
+  "https://agent.pivota.cc/products/pe_isntree_watery_sun_gel";
 const indexabilityMerchantUrl =
   "https://www.isntree.com/products/hyaluronic-acid-watery-sun-gel";
 const indexabilityProductName =
@@ -921,7 +933,7 @@ function productJsonLd(overrides = {}) {
     name: indexabilityProductName,
     brand: { "@type": "Brand", name: "Isntree" },
     sku: "isntree_watery_sun_gel_50ml",
-    url: indexablePivotaUrl,
+    url: canonicalIndexablePivotaUrl,
     description:
       "Daily hydrating sunscreen with a watery gel texture and hyaluronic acid.",
     ...overrides,
@@ -932,11 +944,12 @@ function offerJsonLd(overrides = {}) {
   return JSON.stringify({
     "@context": "https://schema.org",
     "@type": "Offer",
+    identifier: verifiedPivotaOfferId,
     price: "18.99",
     priceCurrency: "USD",
     availability: "https://schema.org/InStock",
     seller: { "@type": "Organization", name: "Isntree Official" },
-    url: indexablePivotaUrl,
+    url: canonicalIndexablePivotaUrl,
     ...overrides,
   });
 }
@@ -957,15 +970,28 @@ function indexabilityHtml(options = {}) {
   const sourceReference =
     options.sourceReference === false
       ? ""
-      : `<a href="${indexabilityMerchantUrl}">Verified official merchant source</a>`;
+      : `<a href="${indexabilityMerchantUrl}">Verified official merchant source</a>
+        <script type="application/json" data-pivota-product-source-references>${JSON.stringify([
+          {
+            source_type: "external_seed",
+            source_id: verifiedExternalSeedId,
+            maps_to_product_entity_id: "pe_isntree_watery_sun_gel",
+          },
+          {
+            source_type: "official_merchant_pdp",
+            source_url: indexabilityMerchantUrl,
+            source_merchant_name: "Isntree Official",
+            maps_to_product_entity_id: "pe_isntree_watery_sun_gel",
+          },
+        ])}</script>`;
   const productObjectId =
     options.productObjectId === false
       ? ""
-      : `<meta name="pivota-product-object-id" content="ext_d7c74bcb380cbc2bdd5d5d90">`;
+      : `<meta name="pivota-product-object-id" content="${options.productObjectId || verifiedPivotaObjectId}">`;
   const canonical =
     options.canonical === false
       ? ""
-      : `<link rel="canonical" href="${options.canonical || indexablePivotaUrl}">`;
+      : `<link rel="canonical" href="${options.canonical || canonicalIndexablePivotaUrl}">`;
   const metaRobots = options.metaRobots
     ? `<meta name="robots" content="${options.metaRobots}">`
     : `<meta name="robots" content="index, follow">`;
@@ -1007,7 +1033,7 @@ async function withMockPivotaIndexabilityFetch(config, callback) {
         url,
         text: async () =>
           config.sitemap ??
-          `<?xml version="1.0"?><urlset><url><loc>${indexablePivotaUrl}</loc></url></urlset>`,
+          `<?xml version="1.0"?><urlset><url><loc>${canonicalIndexablePivotaUrl}</loc></url></urlset>`,
       };
     }
     return {
@@ -1026,7 +1052,7 @@ async function withMockPivotaIndexabilityFetch(config, callback) {
 async function runPivotaIndexabilityAudit(config = {}) {
   return withMockPivotaIndexabilityFetch(config, () =>
     new PivotaPDPIndexabilityAuditService().audit({
-      url: indexablePivotaUrl,
+      url: canonicalIndexablePivotaUrl,
       product_name: indexabilityProductName,
       brand: "Isntree",
       merchant_pdp_url: indexabilityMerchantUrl,
@@ -1197,6 +1223,7 @@ test("AgentCenterRepository CRUD and query helpers cover persisted core records"
     "issueResolutionPlans",
     "usageEvents",
     "productionValidationRuns",
+    "pivotaIndexingTasks",
     "demoFixtures",
   ];
 
@@ -1674,6 +1701,97 @@ test("internal config status API is gated and reports grounding configuration", 
   else process.env.GEMINI_API_KEY = previousGemini;
 });
 
+test("internal Pivota indexing task API creates fetches and updates gated tasks", async () => {
+  resetAgentCenterState();
+  await withInternalProductionValidationEnv(async () => {
+    const createResponse = await handleInternalPivotaIndexingTasksRequest(
+      internalProductionValidationRequest(
+        "https://example.test/api/internal/agent-center/pivota-indexing-tasks",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            product_entity_id: "sig_7ad40676c42fb9c96e2a8136",
+            canonical_pivota_pdp_url:
+              "https://agent.pivota.cc/products/sig_7ad40676c42fb9c96e2a8136",
+            task_type: "submit_sitemap",
+            evidence: {
+              search_console_property_verified: false,
+              sitemap_submitted: false,
+              sitemap_url: "https://agent.pivota.cc/sitemap.xml",
+              operator: "pivota_ops",
+              evidence_note: "Created during internal test.",
+            },
+          }),
+        }
+      )
+    );
+    const createPayload = await createResponse.json();
+    const task = createPayload.pivota_indexing_task;
+
+    assert.equal(createResponse.status, 201);
+    assert.equal(task.task_type, "submit_sitemap");
+    assert.equal(task.status, "proposed");
+    assert.equal(task.evidence.search_console_property_verified, false);
+    assert.equal(task.evidence.sitemap_url, "https://agent.pivota.cc/sitemap.xml");
+
+    const fetchResponse = await handleAgentCenterRequest(
+      internalProductionValidationRequest(
+        `https://example.test/api/agent-center/internal-pivota-indexing-tasks/${task.id}`
+      ),
+      { path: ["internal-pivota-indexing-tasks", task.id] }
+    );
+    const fetchPayload = await fetchResponse.json();
+    assert.equal(fetchResponse.status, 200);
+    assert.equal(fetchPayload.pivota_indexing_task.id, task.id);
+
+    const updateResponse = await handleAgentCenterRequest(
+      internalProductionValidationRequest(
+        `https://example.test/api/agent-center/internal-pivota-indexing-tasks/${task.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "completed",
+            evidence: {
+              search_console_property_verified: true,
+              sitemap_submitted: true,
+              url_inspection_status: "inspectable",
+              indexing_requested: true,
+              operator: "pivota_ops",
+              screenshot_or_reference_url:
+                "https://search.google.com/search-console/example",
+            },
+          }),
+        }
+      ),
+      { path: ["internal-pivota-indexing-tasks", task.id] }
+    );
+    const updatePayload = await updateResponse.json();
+    assert.equal(updateResponse.status, 200);
+    assert.equal(updatePayload.pivota_indexing_task.status, "completed");
+    assert.ok(updatePayload.pivota_indexing_task.completed_at);
+    assert.equal(
+      updatePayload.pivota_indexing_task.evidence.search_console_property_verified,
+      true
+    );
+    assert.equal(updatePayload.pivota_indexing_task.evidence.sitemap_submitted, true);
+    assert.equal(updatePayload.pivota_indexing_task.evidence.indexing_requested, true);
+    assert.ok(updatePayload.pivota_indexing_task.evidence.indexing_requested_at);
+
+    const listResponse = await handleAgentCenterRequest(
+      internalProductionValidationRequest(
+        "https://example.test/api/agent-center/internal-pivota-indexing-tasks?product_entity_id=sig_7ad40676c42fb9c96e2a8136"
+      ),
+      { path: ["internal-pivota-indexing-tasks"] }
+    );
+    const listPayload = await listResponse.json();
+    assert.equal(listResponse.status, 200);
+    assert.equal(listPayload.pivota_indexing_tasks.length, 1);
+    assert.equal(listPayload.product_entity_summaries.length, 1);
+    assert.equal(listPayload.product_entity_summaries[0].current_status, "completed");
+    assert.equal(listPayload.product_entity_summaries[0].uplift_claim_allowed, false);
+  });
+});
+
 test("Pivota PDP indexability audit passes clean indexable PDP", async () => {
   const audit = await runPivotaIndexabilityAudit();
 
@@ -1685,6 +1803,127 @@ test("Pivota PDP indexability audit passes clean indexable PDP", async () => {
   assert.equal(audit.raw_safe_evidence.product_jsonld_present, true);
   assert.equal(audit.raw_safe_evidence.offer_jsonld_present, true);
   assert.equal(JSON.stringify(audit).includes("<html"), false);
+});
+
+test("canonical ProductEntity PDP passes binding audit with source seed and merchant offer", async () => {
+  const audit = await withMockPivotaIndexabilityFetch(
+    {
+      sitemap: `<?xml version="1.0"?><urlset><url><loc>${canonicalIndexablePivotaUrl}</loc></url></urlset>`,
+      html: indexabilityHtml({
+        canonical: canonicalIndexablePivotaUrl,
+        productObjectId: "pe_isntree_watery_sun_gel",
+        productJsonLd: productJsonLd({ url: canonicalIndexablePivotaUrl }),
+        offerJsonLd: offerJsonLd({ url: canonicalIndexablePivotaUrl }),
+      }),
+    },
+    () =>
+      new PivotaPDPIndexabilityAuditService().audit({
+        url: canonicalIndexablePivotaUrl,
+        product_name: indexabilityProductName,
+        brand: "Isntree",
+        merchant_pdp_url: indexabilityMerchantUrl,
+        offers_exist: true,
+        product_entity_id: "pe_isntree_watery_sun_gel",
+        external_seed_id: verifiedExternalSeedId,
+        merchant_offer_id: verifiedPivotaOfferId,
+      })
+  );
+
+  assert.equal(audit.audit_status, "passed");
+  assert.deepEqual(audit.findings, []);
+  assert.equal(audit.raw_safe_evidence.expected_product_entity_id, "pe_isntree_watery_sun_gel");
+  assert.equal(audit.raw_safe_evidence.source_reference_external_seed_present, true);
+  assert.equal(audit.raw_safe_evidence.source_reference_merchant_pdp_present, true);
+  assert.equal(audit.raw_safe_evidence.merchant_offer_attached, true);
+});
+
+test("external seed alias canonicalizes to ProductEntity PDP without becoming canonical", async () => {
+  const audit = await withMockPivotaIndexabilityFetch(
+    {
+      sitemap: `<?xml version="1.0"?><urlset><url><loc>${canonicalIndexablePivotaUrl}</loc></url></urlset>`,
+      html: indexabilityHtml({
+        canonical: canonicalIndexablePivotaUrl,
+        productObjectId: "pe_isntree_watery_sun_gel",
+        productJsonLd: productJsonLd({ url: canonicalIndexablePivotaUrl }),
+      }),
+    },
+    () =>
+      new PivotaPDPIndexabilityAuditService().audit({
+        url: indexablePivotaUrl,
+        product_name: indexabilityProductName,
+        brand: "Isntree",
+        merchant_pdp_url: indexabilityMerchantUrl,
+        offers_exist: true,
+        product_entity_id: "pe_isntree_watery_sun_gel",
+        external_seed_id: verifiedExternalSeedId,
+      })
+  );
+
+  assert.equal(audit.audit_status, "passed");
+  assert.equal(audit.raw_safe_evidence.external_seed_alias_detected, true);
+  assert.equal(audit.raw_safe_evidence.external_seed_used_as_canonical, false);
+  assert.equal(
+    audit.findings.some((finding) => finding.finding_type === "external_seed_used_as_canonical"),
+    false
+  );
+});
+
+test("external seed used as canonical triggers ProductEntity warning", async () => {
+  const audit = await withMockPivotaIndexabilityFetch(
+    {
+      html: indexabilityHtml({
+        canonical: indexablePivotaUrl,
+        productJsonLd: productJsonLd({ url: indexablePivotaUrl }),
+      }),
+    },
+    () =>
+      new PivotaPDPIndexabilityAuditService().audit({
+        url: indexablePivotaUrl,
+        product_name: indexabilityProductName,
+        brand: "Isntree",
+        merchant_pdp_url: indexabilityMerchantUrl,
+        offers_exist: true,
+        product_entity_id: "pe_isntree_watery_sun_gel",
+        external_seed_id: verifiedExternalSeedId,
+      })
+  );
+  const findingTypes = audit.findings.map((finding) => finding.finding_type);
+
+  assert.equal(audit.raw_safe_evidence.external_seed_used_as_canonical, true);
+  assert.ok(findingTypes.includes("external_seed_used_as_canonical"));
+  assert.ok(findingTypes.includes("canonical_url_points_to_external_seed"));
+});
+
+test("merchant offer attached to wrong ProductEntity triggers binding finding", async () => {
+  const audit = await withMockPivotaIndexabilityFetch(
+    {
+      sitemap: `<?xml version="1.0"?><urlset><url><loc>${canonicalIndexablePivotaUrl}</loc></url></urlset>`,
+      html: indexabilityHtml({
+        canonical: canonicalIndexablePivotaUrl,
+        productObjectId: "pe_isntree_watery_sun_gel",
+        productJsonLd: productJsonLd({ url: canonicalIndexablePivotaUrl }),
+        offerJsonLd: offerJsonLd({ identifier: "offer_other_product" }),
+      }),
+    },
+    () =>
+      new PivotaPDPIndexabilityAuditService().audit({
+        url: canonicalIndexablePivotaUrl,
+        product_name: indexabilityProductName,
+        brand: "Isntree",
+        merchant_pdp_url: indexabilityMerchantUrl,
+        offers_exist: true,
+        product_entity_id: "pe_isntree_watery_sun_gel",
+        external_seed_id: verifiedExternalSeedId,
+        merchant_offer_id: verifiedPivotaOfferId,
+      })
+  );
+
+  assert.ok(
+    audit.findings.some((finding) => finding.finding_type === "offer_attached_to_wrong_product_entity")
+  );
+  assert.ok(
+    audit.findings.some((finding) => finding.finding_type === "product_entity_missing_merchant_offer")
+  );
 });
 
 test("Pivota PDP indexability audit maps missing JSON-LD to schema patches", async () => {
@@ -1740,6 +1979,278 @@ test("Pivota PDP indexability audit accepts clean canonical for return-param PDP
     audit.findings.some((finding) => finding.finding_type === "canonical_mismatch"),
     false
   );
+});
+
+test("pilot ProductEntity provisioning creates ProductEntity from merchant-approved metadata", async () => {
+  resetAgentCenterState();
+  const run = await withMockPivotaIndexabilityFetch({}, () =>
+    new PilotProductEntityProvisioningService().create({
+      merchant_id: "merchant_isntree",
+      merchant_name: "Isntree Official",
+      store_url: "https://www.isntree.com",
+      merchant_pdp_url: indexabilityMerchantUrl,
+      product_name: indexabilityProductName,
+      brand: "Isntree",
+      sku_name: "isntree_watery_sun_gel_50ml",
+      category: "Skincare > Sunscreen",
+      market: "US",
+      language: "en",
+      currency: "USD",
+      merchant_product_attributes: {
+        spf: "SPF50+",
+        pa_rating: "PA++++",
+      },
+    })
+  );
+  const product = getAgentCenterState()
+    .stores.flatMap((store) => store.products || [])
+    .find((item) => item.product_entity_id === run.product_entity_id);
+
+  assert.equal(run.status, "product_entity_created");
+  assert.equal(run.product_entity_id, "pe_isntree_hyaluronic_acid_watery_sun_gel_spf50_pa_50ml");
+  assert.equal(
+    run.canonical_pivota_pdp_url,
+    "https://agent.pivota.cc/products/isntree-hyaluronic-acid-watery-sun-gel-spf50-pa-50ml"
+  );
+  assert.ok(
+    run.source_references.some(
+      (source) =>
+        source.source_type === "official_merchant_pdp" &&
+        source.source_url === indexabilityMerchantUrl
+    )
+  );
+  assert.ok(
+    run.source_references.some(
+      (source) => source.source_type === "manual_pilot_mapping"
+    )
+  );
+  assert.equal(product?.canonical_url, run.canonical_pivota_pdp_url);
+  assert.equal(JSON.stringify(product).includes("Pivota product intelligence summary"), false);
+});
+
+test("pilot ProductEntity provisioning binds merchant PDP as official source reference", async () => {
+  resetAgentCenterState();
+  const run = await withMockPivotaIndexabilityFetch({}, () =>
+    new PilotProductEntityProvisioningService().create({
+      merchant_id: "merchant_isntree",
+      merchant_name: "Isntree Official",
+      store_url: "https://www.isntree.com",
+      merchant_pdp_url: indexabilityMerchantUrl,
+      product_name: indexabilityProductName,
+      brand: "Isntree",
+      category: "Skincare > Sunscreen",
+      market: "US",
+      language: "en",
+      currency: "USD",
+      source_external_seed_id: verifiedExternalSeedId,
+    })
+  );
+
+  assert.deepEqual(run.external_seed_ids, [verifiedExternalSeedId]);
+  assert.ok(
+    run.source_references.some(
+      (source) =>
+        source.source_type === "external_seed" &&
+        source.source_id === verifiedExternalSeedId &&
+        source.maps_to_product_entity_id === run.product_entity_id
+    )
+  );
+  assert.ok(
+    run.source_references.some(
+      (source) =>
+        source.source_type === "official_merchant_pdp" &&
+        source.confidence === "merchant_approved"
+    )
+  );
+});
+
+test("pilot ProductEntity provisioning rejects external seed mapped to wrong product", async () => {
+  resetAgentCenterState();
+  const store = getAgentCenterState().stores[0];
+  store.products.push({
+    id: "wrong_seed_product",
+    product_entity_id: "pe_wrong_product",
+    external_seed_id: verifiedExternalSeedId,
+    external_seed_ids: [verifiedExternalSeedId],
+    sku: "wrong_sku",
+    title: "Multi-Peptide Lash and Brow Serum",
+    brand: "the ordinary",
+    category: "Serum",
+    currency: "USD",
+    pdp_url: "https://theordinary.com/en-us/multi-peptide-lash-brow-serum-100111.html",
+    attributes: {},
+    pivota_attributes: {},
+  });
+
+  const run = await withMockPivotaIndexabilityFetch({}, () =>
+    new PilotProductEntityProvisioningService().create({
+      merchant_id: "merchant_isntree",
+      merchant_name: "Isntree Official",
+      store_url: "https://www.isntree.com",
+      merchant_pdp_url: indexabilityMerchantUrl,
+      product_name: indexabilityProductName,
+      brand: "Isntree",
+      category: "Skincare > Sunscreen",
+      market: "US",
+      language: "en",
+      currency: "USD",
+      source_external_seed_id: verifiedExternalSeedId,
+    })
+  );
+
+  assert.equal(run.status, "failed");
+  assert.match(run.failure_reason, /different product/);
+});
+
+test("pilot ProductEntity provisioning rejects mismatched existing ProductEntity", async () => {
+  resetAgentCenterState();
+  const run = await withMockPivotaIndexabilityFetch({}, () =>
+    new PilotProductEntityProvisioningService().create({
+      merchant_id: "merchant_isntree",
+      merchant_name: "Isntree Official",
+      store_url: "https://www.isntree.com",
+      merchant_pdp_url: indexabilityMerchantUrl,
+      product_name: indexabilityProductName,
+      brand: "Isntree",
+      category: "Skincare > Sunscreen",
+      market: "US",
+      language: "en",
+      currency: "USD",
+      existing_product_entity_id: "pe_vitamin_c_serum",
+    })
+  );
+
+  assert.equal(run.status, "failed");
+  assert.match(run.failure_reason, /different product|not found/);
+});
+
+test("pilot ProductEntity provisioning publishes and audits canonical PDP only when binding passes", async () => {
+  resetAgentCenterState();
+  const service = new PilotProductEntityProvisioningService();
+  const run = await withMockPivotaIndexabilityFetch(
+    {
+      sitemap: `<?xml version="1.0"?><urlset><url><loc>${canonicalIndexablePivotaUrl}</loc></url></urlset>`,
+      html: indexabilityHtml({
+        canonical: canonicalIndexablePivotaUrl,
+        productObjectId: "pe_isntree_watery_sun_gel",
+        productJsonLd: productJsonLd({ url: canonicalIndexablePivotaUrl }),
+        offerJsonLd: offerJsonLd({ url: canonicalIndexablePivotaUrl }),
+      }),
+    },
+    () =>
+      service.create({
+        merchant_id: "merchant_isntree",
+        merchant_name: "Isntree Official",
+        store_url: "https://www.isntree.com",
+        merchant_pdp_url: indexabilityMerchantUrl,
+        product_name: indexabilityProductName,
+        brand: "Isntree",
+        category: "Skincare > Sunscreen",
+        market: "US",
+        language: "en",
+        currency: "USD",
+        source_external_seed_id: verifiedExternalSeedId,
+        existing_product_entity_id: undefined,
+        merchant_offer_input: {
+          id: verifiedPivotaOfferId,
+          price: 18.99,
+          currency: "USD",
+        },
+      })
+  );
+  run.product_entity_id = "pe_isntree_watery_sun_gel";
+  run.canonical_product_slug = undefined;
+  run.canonical_pivota_pdp_url = canonicalIndexablePivotaUrl;
+
+  const published = await withMockPivotaIndexabilityFetch(
+    {
+      sitemap: `<?xml version="1.0"?><urlset><url><loc>${canonicalIndexablePivotaUrl}</loc></url></urlset>`,
+      html: indexabilityHtml({
+        canonical: canonicalIndexablePivotaUrl,
+        productObjectId: "pe_isntree_watery_sun_gel",
+        productJsonLd: productJsonLd({ url: canonicalIndexablePivotaUrl }),
+        offerJsonLd: offerJsonLd({ url: canonicalIndexablePivotaUrl }),
+      }),
+    },
+    () => service.publish(run.id)
+  );
+
+  assert.equal(published.status, "published");
+  assert.equal(published.binding_audit.audit_status, "passed");
+  const audited = await withMockPivotaIndexabilityFetch(
+    {
+      sitemap: `<?xml version="1.0"?><urlset><url><loc>${canonicalIndexablePivotaUrl}</loc></url></urlset>`,
+      html: indexabilityHtml({
+        canonical: canonicalIndexablePivotaUrl,
+        productObjectId: "pe_isntree_watery_sun_gel",
+        productJsonLd: productJsonLd({ url: canonicalIndexablePivotaUrl }),
+        offerJsonLd: offerJsonLd({ url: canonicalIndexablePivotaUrl }),
+      }),
+    },
+    () => service.audit(run.id)
+  );
+  assert.equal(audited.status, "audit_passed");
+  assert.equal(audited.binding_audit.audit_status, "passed");
+  assert.equal(audited.binding_audit.raw_safe_evidence.external_seed_used_as_canonical, false);
+});
+
+test("pilot ProductEntity provisioning API is internal-gated and production validation can use canonical URL", async () => {
+  resetAgentCenterState();
+  process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION = "true";
+  process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET = "pilot-secret";
+
+  const denied = await handleAgentCenterRequest(
+    new NextRequest("https://example.test/api/agent-center/internal-pilot-product-entities", {
+      method: "POST",
+    }),
+    { path: ["internal-pilot-product-entities"] }
+  );
+  assert.equal(denied.status, 403);
+
+  const created = await withMockPivotaIndexabilityFetch({}, () =>
+    handleAgentCenterRequest(
+      new NextRequest("https://example.test/api/agent-center/internal-pilot-product-entities", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer pilot-secret",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          merchant_id: "merchant_isntree",
+          merchant_name: "Isntree Official",
+          store_url: "https://www.isntree.com",
+          merchant_pdp_url: indexabilityMerchantUrl,
+          product_name: indexabilityProductName,
+          brand: "Isntree",
+          category: "Skincare > Sunscreen",
+          market: "US",
+          language: "en",
+          currency: "USD",
+        }),
+      }),
+      { path: ["internal-pilot-product-entities"] }
+    )
+  );
+  const payload = await created.json();
+  const validationRun = new ProductionValidationRunService().create({
+    merchant_name: "Isntree Official",
+    store_url: "https://www.isntree.com",
+    merchant_pdp_url: indexabilityMerchantUrl,
+    product_name: indexabilityProductName,
+    brand: "Isntree",
+    market: "US",
+    language: "en",
+    currency: "USD",
+    pivota_pdp_url: payload.run.canonical_pivota_pdp_url,
+    pivota_product_entity_id: payload.run.product_entity_id,
+    canonical_product_slug: payload.run.canonical_product_slug,
+    canonical_pivota_pdp_url: payload.run.canonical_pivota_pdp_url,
+  });
+
+  assert.equal(created.status, 201);
+  assert.equal(payload.run.status, "product_entity_created");
+  assert.equal(validationRun.pivota_pdp_url, payload.run.canonical_pivota_pdp_url);
+  assert.equal(validationRun.pivota_product_entity_id, payload.run.product_entity_id);
 });
 
 test("Pivota PDP indexability audit detects missing source reference", async () => {
@@ -2617,6 +3128,91 @@ test("grounded Pivota PDP URL passes Pivota discovery", () => {
   }
 });
 
+test("returned Pivota alias URL counts only when mapped to expected ProductEntity", () => {
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  try {
+    const aliasResult = scoreAttributionFixture({
+      scanMode: "search_grounded_product_discovery_test",
+      output: {
+        mentioned_brands: ["Isntree"],
+        mentioned_products: [
+          {
+            name: "Isntree Hyaluronic Acid Watery Sun Gel",
+            brand: "Isntree",
+            rank: 1,
+            reason: "Grounding returned an external seed alias mapped to the ProductEntity.",
+          },
+        ],
+        returned_urls: [verifiedPivotaPdpUrl],
+        missing_attributes_identified: [],
+      },
+    });
+    const unrelatedResult = scoreAttributionFixture({
+      scanMode: "search_grounded_product_discovery_test",
+      output: {
+        mentioned_brands: ["Isntree"],
+        mentioned_products: [
+          {
+            name: "Isntree Hyaluronic Acid Watery Sun Gel",
+            brand: "Isntree",
+            rank: 1,
+            reason: "Grounding returned an unrelated Pivota external seed URL.",
+          },
+        ],
+        returned_urls: ["https://agent.pivota.cc/products/ext_unrelated_product"],
+        missing_attributes_identified: [],
+      },
+    });
+
+    assert.equal(
+      aliasResult.score.aggregate_scores.search_grounded_pivota_pdp_discovery_score,
+      100
+    );
+    assert.equal(aliasResult.parsed[0].pivota_pdp_url_exact_match, true);
+    assert.equal(
+      unrelatedResult.score.aggregate_scores.search_grounded_pivota_pdp_discovery_score,
+      0
+    );
+    assert.equal(unrelatedResult.parsed[0].pivota_pdp_url_exact_match, false);
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  }
+});
+
+test("canonical ProductEntity PDP URL counts for Pivota discovery", () => {
+  const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  try {
+    const result = scoreAttributionFixture({
+      scanMode: "search_grounded_product_discovery_test",
+      output: {
+        mentioned_brands: ["Isntree"],
+        mentioned_products: [
+          {
+            name: "Isntree Hyaluronic Acid Watery Sun Gel",
+            brand: "Isntree",
+            rank: 1,
+            reason: "Grounding returned the canonical ProductEntity PDP.",
+          },
+        ],
+        returned_urls: [canonicalPivotaProductEntityUrl],
+        missing_attributes_identified: [],
+      },
+    });
+
+    assert.equal(
+      result.score.aggregate_scores.search_grounded_pivota_pdp_discovery_score,
+      100
+    );
+    assert.equal(result.parsed[0].pivota_pdp_url_exact_match, true);
+  } finally {
+    if (previous === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
+  }
+});
+
 test("search-grounded discovery marks not_configured instead of contextual fallback", () => {
   const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
   delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
@@ -3050,7 +3646,7 @@ test("Pivota preflight verifies agent.pivota.cc PDP URL with 200 response", asyn
 
     assert.equal(preflight.status, "verified");
     assert.equal(preflight.status_code, 200);
-    assert.equal(preflight.verified_url, verifiedPivotaPdpUrl);
+    assert.equal(preflight.verified_url, canonicalPivotaProductEntityUrl);
     assert.deepEqual(preflight.verified_product_object_ids, [verifiedPivotaObjectId]);
     assert.deepEqual(preflight.verified_offer_ids, [verifiedPivotaOfferId]);
   } finally {
@@ -5122,8 +5718,54 @@ test("issue resolution plan generation handles search-grounded Pivota PDP discov
     assert.ok(actionTypes.includes("pivota_offer_schema_patch"));
     assert.ok(actionTypes.includes("pivota_source_reference_patch"));
     assert.ok(actionTypes.includes("pivota_sitemap_submission"));
+    assert.ok(actionTypes.includes("pivota_search_console_indexing_request"));
+    assert.ok(actionTypes.includes("pivota_internal_link_patch"));
+    assert.ok(actionTypes.includes("pivota_search_console_url_inspection"));
     assert.ok(actionTypes.includes("pivota_product_intelligence_patch"));
     assert.ok(actionTypes.includes("rerun_search_grounded_product_discovery_test"));
+    const indexingTasks = getAgentCenterState().pivotaIndexingTasks.filter(
+      (task) => task.evidence?.issue_id === issue.id
+    );
+    assert.deepEqual(
+      indexingTasks.map((task) => task.task_type).sort(),
+      [
+        "add_internal_link",
+        "request_indexing",
+        "scheduled_search_grounded_rerun",
+        "scheduled_search_grounded_rerun",
+        "scheduled_search_grounded_rerun",
+        "submit_sitemap",
+        "validate_search_console",
+        "wait_for_indexing_window",
+        "wait_for_indexing_window",
+        "wait_for_indexing_window",
+      ].sort()
+    );
+    const rerunWindows = indexingTasks
+      .filter((task) => task.task_type === "scheduled_search_grounded_rerun")
+      .map((task) => task.evidence?.rerun_window)
+      .sort();
+    assert.deepEqual(rerunWindows, ["T+24h", "T+72h", "T+7d"].sort());
+    assert.equal(
+      indexingTasks
+        .filter((task) => task.task_type === "scheduled_search_grounded_rerun")
+        .every((task) => Boolean(task.evidence?.next_rerun_at)),
+      true
+    );
+    assert.equal(
+      indexingTasks.every(
+        (task) =>
+          task.status === "proposed" &&
+          task.billing_mode === undefined &&
+          task.canonical_pivota_pdp_url.includes(task.product_entity_id)
+      ),
+      true
+    );
+    const taskSummary = new PivotaIndexingTaskService().summary(
+      issue.affected_product_entities[0]
+    );
+    assert.equal(taskSummary.uplift_claim_allowed, false);
+    assert.ok(taskSummary.next_rerun_time);
     assert.equal(
       plan.verification_plan.scan_mode,
       "search_grounded_product_discovery_test"
@@ -5994,6 +6636,20 @@ test("merchant-facing report draft summarizes dual-path readiness safely", async
       report.path_readiness.pivota_agent_facing_path.pivota_pdp_url,
       completed.pivota_pdp_url
     );
+    assert.ok(report.path_readiness.pivota_agent_facing_path.product_entity_id);
+    assert.ok(
+      report.path_readiness.pivota_agent_facing_path.canonical_pivota_pdp_url.includes(
+        "/products/pe_"
+      )
+    );
+    assert.notEqual(
+      report.path_readiness.pivota_agent_facing_path.canonical_pivota_pdp_url,
+      completed.pivota_pdp_url
+    );
+    assert.match(
+      new MerchantFacingReportService().toMarkdown(report),
+      /canonical product entity with merchant offers/i
+    );
     assert.match(
       report.path_readiness.pivota_agent_facing_path.summary,
       /agent-facing/
@@ -6271,6 +6927,16 @@ test("merchant-facing report maps scoped numeric zero search-grounded scores as 
       )
     );
     assert.ok(
+      report.discoverability_fix_plan.pivota_owned_fixes.some((fix) =>
+        /Request indexing/i.test(fix)
+      )
+    );
+    assert.ok(
+      report.discoverability_fix_plan.pivota_owned_fixes.some((fix) =>
+        /internal links/i.test(fix)
+      )
+    );
+    assert.ok(
       report.discoverability_fix_plan.shared_fixes.some((fix) =>
         /wrong URLs/i.test(fix)
       )
@@ -6294,6 +6960,131 @@ test("merchant-facing report maps scoped numeric zero search-grounded scores as 
     assert.equal(blockerTypes.includes("low_product_visibility"), false);
     assert.equal(blockerTypes.includes("merchant_store_attribution_gap"), false);
     assert.equal(blockerTypes.includes("pivota_attribution_gap"), false);
+  });
+});
+
+test("merchant-facing report states Pivota surfaced-readiness passed while search-grounded discovery failed", async () => {
+  resetAgentCenterState();
+  await withMockProductionValidationFetch(async () => {
+    const run = new ProductionValidationRunService().create(
+      productionValidationPayload({
+        demand_scan_modes: ["search_grounded_product_discovery_test"],
+        pivota_pdp_url: verifiedPivotaPdpUrl,
+        canonical_pivota_pdp_url: canonicalPivotaProductEntityUrl,
+      })
+    );
+    const completed = await new ProductionValidationRunService().run(run.id);
+    const searchMode = completed.validation_report.demand_test_summary.modes_run[0];
+    Object.assign(searchMode.aggregate_scores, {
+      search_grounded_pivota_pdp_discovery_score: 0,
+      search_grounded_merchant_pdp_discovery_score: 0,
+      url_match_accuracy_score: 0,
+    });
+    completed.validation_report.demand_test_summary.modes_run.push({
+      ...searchMode,
+      scan_mode: "pivota_pdp_attribution_test",
+      issue_ids: [],
+      aggregate_scores: {
+        ...searchMode.aggregate_scores,
+        product_entity_visibility_score: 100,
+        pivota_pdp_visibility_score: 100,
+        pivota_offer_visibility_score: 100,
+      },
+    });
+    completed.validation_report.gmv_assurance_snapshot.demand_test_summary.pivota_attribution_status = {
+      status: "passed",
+      score: 100,
+      issue_id: undefined,
+      recommended_next_action: "Monitor Pivota attribution.",
+      evidence: "Pivota contextual attribution score is 100.",
+    };
+
+    const report = new MerchantFacingReportService().generate(completed.id, {
+      regenerate: true,
+    });
+
+    assert.match(
+      report.discovery_result.search_grounded_pivota_pdp_discovery.summary,
+      /ready when surfaced/i
+    );
+    assert.match(
+      report.discovery_result.search_grounded_pivota_pdp_discovery.summary,
+      /No discovery uplift is claimed/i
+    );
+    assert.match(report.discovery_vs_readiness, /ready when surfaced/i);
+    assert.match(report.discovery_vs_readiness, /No discovery uplift is claimed/i);
+    assert.equal(
+      report.discovery_result.search_grounded_pivota_pdp_discovery.status,
+      "not_found"
+    );
+    assert.equal(report.usage_statement.billing_mode, "preview_only");
+    assert.equal(report.usage_statement.billing_status, "not_invoiced");
+  });
+});
+
+test("merchant-facing report records indexing work without claiming uplift when discovery score remains zero", async () => {
+  resetAgentCenterState();
+  await withMockProductionValidationFetch(async () => {
+    const completed = await new ProductionValidationRunService().run(
+      new ProductionValidationRunService().create(
+        productionValidationPayload({
+          demand_scan_modes: ["search_grounded_product_discovery_test"],
+          pivota_pdp_url: verifiedPivotaPdpUrl,
+          canonical_pivota_pdp_url: canonicalPivotaProductEntityUrl,
+        })
+      ).id
+    );
+    const searchMode = completed.validation_report.demand_test_summary.modes_run[0];
+    Object.assign(searchMode.aggregate_scores, {
+      search_grounded_pivota_pdp_discovery_score: 0,
+      search_grounded_merchant_pdp_discovery_score: 0,
+      url_match_accuracy_score: 0,
+    });
+    for (const score of getAgentCenterState().scores.filter(
+      (item) => item.scan_target_id === completed.scan_target_id
+    )) {
+      Object.assign(score.aggregate_scores, searchMode.aggregate_scores);
+    }
+    new PivotaIndexingTaskService().create({
+      product_entity_id: completed.validation_report.target_summary.product_entity_id,
+      canonical_pivota_pdp_url:
+        completed.validation_report.target_summary.canonical_pivota_pdp_url,
+      task_type: "request_indexing",
+      status: "completed",
+      evidence: {
+        search_console_property_verified: true,
+        sitemap_submitted: true,
+        sitemap_url: "https://agent.pivota.cc/sitemap.xml",
+        url_inspection_status: "inspectable",
+        indexing_requested: true,
+        operator: "pivota_ops",
+        evidence_note: "Indexing request recorded after public PDP fixes.",
+      },
+    });
+
+    const report = new MerchantFacingReportService().generate(completed.id, {
+      regenerate: true,
+    });
+    const summary = new PivotaIndexingTaskService().summary(
+      completed.validation_report.target_summary.product_entity_id
+    );
+
+    assert.equal(
+      report.discovery_result.search_grounded_pivota_pdp_discovery.status,
+      "not_found"
+    );
+    assert.match(
+      report.discovery_result.search_grounded_pivota_pdp_discovery.summary,
+      /Indexing work was recorded/i
+    );
+    assert.match(
+      report.discovery_result.search_grounded_pivota_pdp_discovery.summary,
+      /No discovery uplift is claimed yet/i
+    );
+    assert.equal(summary.last_search_grounded_discovery_score, 0);
+    assert.equal(summary.uplift_claim_allowed, false);
+    assert.equal(report.usage_statement.billing_mode, "preview_only");
+    assert.equal(report.usage_statement.billing_status, "not_invoiced");
   });
 });
 

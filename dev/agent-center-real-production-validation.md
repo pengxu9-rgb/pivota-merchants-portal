@@ -108,7 +108,7 @@ Discovery evaluation inputs:
 {
   "merchant_domain": "isntree.com",
   "expected_merchant_pdp_url": "https://www.isntree.com/products/hyaluronic-acid-watery-sun-gel",
-  "expected_pivota_pdp_url": "https://agent.pivota.cc/products/ext_d7c74bcb380cbc2bdd5d5d90",
+  "expected_pivota_pdp_url": "https://agent.pivota.cc/products/pe_isntree_watery_sun_gel",
   "competitor_brands": ["Beauty of Joseon", "COSRX", "Laneige", "Anua"]
 }
 ```
@@ -120,7 +120,11 @@ Optional Pivota fields:
 ```json
 {
   "pivota_product_entity_id": "pe_isntree_watery_sun_gel",
+  "canonical_product_slug": "pe_isntree_watery_sun_gel",
+  "canonical_pivota_pdp_url": "https://agent.pivota.cc/products/pe_isntree_watery_sun_gel",
+  "external_seed_id": "ext_d7c74bcb380cbc2bdd5d5d90",
   "pivota_pdp_url": "https://agent.pivota.cc/products/ext_d7c74bcb380cbc2bdd5d5d90",
+  "merchant_offer_id": "merchant_offer_isntree_direct_50ml",
   "pivota_offer_id": "offer_isntree_direct_50ml"
 }
 ```
@@ -288,8 +292,9 @@ UI or AI Mode ranking.
 
 Interpret search-grounded results as:
 
-- `found`: the exact expected merchant or Pivota PDP URL was returned by model
-  output or grounding metadata.
+- `found`: the exact expected merchant PDP URL, canonical Pivota ProductEntity
+  PDP URL, or a Pivota alias URL that resolves/canonicalizes to the expected
+  ProductEntity was returned by model output or grounding metadata.
 - `not_found`: grounding ran and produced a numeric score of `0`; the exact
   expected PDP URL was not returned.
 - `not_tested`: the search-grounded mode did not run.
@@ -307,12 +312,21 @@ report should include a Discoverability Fix Plan:
 - Merchant PDP audit findings: indexability, canonical URL, Product schema,
   Offer schema, price/availability/seller signals, sitemap inclusion, and PDP
   copy.
-- Pivota PDP audit findings: public `agent.pivota.cc/products/{object_id}` URL,
-  indexability, Product/Offer schema, verified merchant source reference, offer
-  source URL, product intelligence, and similar/substitute highlights.
+- Pivota PDP audit findings: public
+  `agent.pivota.cc/products/{canonical_product_slug}` or
+  `agent.pivota.cc/products/{product_entity_id}` URL, indexability,
+  Product/Offer schema, verified merchant source reference, merchant offers,
+  offer source URL, product intelligence, and similar/substitute highlights.
 - Wrong URL evidence summary when Gemini returns another buying path.
 - Merchant-owned fixes, Pivota-owned fixes, shared fixes, and a
   Search-Grounded Product Discovery retest plan.
+
+Pivota PDPs are ProductEntity-first. `/products/ext_*` paths are external
+seed/source aliases unless explicitly promoted to ProductEntity IDs. They should
+redirect to the canonical ProductEntity URL, render a canonical tag pointing to
+it, or be marked as aliases. JSON-LD should use the canonical ProductEntity URL,
+while source references should keep external seed IDs and merchant PDP URLs
+separate.
 
 If Gemini returns `webSearchQueries` but no `groundingChunks`, keep the search
 queries in internal/debug evidence and score URL discovery only from actual
@@ -481,3 +495,30 @@ npm run lint
 npm run build
 git diff --check
 ```
+
+## ProductEntity Provisioning Before Real Validation
+
+Real production validation must use a correctly bound canonical Pivota ProductEntity PDP. For a new pilot SKU, first run the internal Pilot ProductEntity Provisioning flow:
+
+```bash
+BASE_URL="https://pivota-merchants-portal-clean.vercel.app"
+
+curl -X POST "$BASE_URL/api/internal/agent-center/pilot-product-entities" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET" \
+  -H "content-type: application/json" \
+  --data '{
+    "merchant_id": "merchant_isntree",
+    "merchant_name": "Isntree Official",
+    "store_url": "https://www.isntree.com",
+    "merchant_pdp_url": "https://www.isntree.com/products/hyaluronic-acid-watery-sun-gel",
+    "product_name": "Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml",
+    "brand": "Isntree",
+    "sku_name": "50ml",
+    "category": "Skincare > Sunscreen",
+    "market": "US",
+    "language": "en",
+    "currency": "USD"
+  }'
+```
+
+Then publish/audit the returned run. Only pass `canonical_pivota_pdp_url` into a production validation payload after the audit passes. If the audit fails, skip Pivota PDP attribution/discovery or mark the Pivota path `not_ready`; do not substitute a public but unrelated `ext_*` URL.
