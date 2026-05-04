@@ -45,6 +45,7 @@ const {
   MerchantFacingReportService,
   MerchantStoreService,
   OfferExecutionService,
+  PivotaPDPIndexabilityAuditService,
   PivotaOptimizationService,
   ProductionValidationRunService,
   ProductNameNormalizer,
@@ -906,6 +907,134 @@ function productionValidationPayload(overrides = {}) {
   };
 }
 
+const indexablePivotaUrl =
+  "https://agent.pivota.cc/products/ext_d7c74bcb380cbc2bdd5d5d90";
+const indexabilityMerchantUrl =
+  "https://www.isntree.com/products/hyaluronic-acid-watery-sun-gel";
+const indexabilityProductName =
+  "Isntree Hyaluronic Acid Watery Sun Gel SPF50+ PA++++ 50ml";
+
+function productJsonLd(overrides = {}) {
+  return JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: indexabilityProductName,
+    brand: { "@type": "Brand", name: "Isntree" },
+    sku: "isntree_watery_sun_gel_50ml",
+    url: indexablePivotaUrl,
+    description:
+      "Daily hydrating sunscreen with a watery gel texture and hyaluronic acid.",
+    ...overrides,
+  });
+}
+
+function offerJsonLd(overrides = {}) {
+  return JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "Offer",
+    price: "18.99",
+    priceCurrency: "USD",
+    availability: "https://schema.org/InStock",
+    seller: { "@type": "Organization", name: "Isntree Official" },
+    url: indexablePivotaUrl,
+    ...overrides,
+  });
+}
+
+function indexabilityHtml(options = {}) {
+  const description =
+    options.description === false
+      ? ""
+      : `<p>${"Daily hydrating sunscreen with watery gel texture, hyaluronic acid, SPF50+ PA++++ protection, source-backed merchant offer, and product intelligence context. ".repeat(5)}</p>`;
+  const productSchema =
+    options.productJsonLd === false
+      ? ""
+      : `<script type="application/ld+json">${options.productJsonLd || productJsonLd()}</script>`;
+  const offerSchema =
+    options.offerJsonLd === false
+      ? ""
+      : `<script type="application/ld+json">${options.offerJsonLd || offerJsonLd()}</script>`;
+  const sourceReference =
+    options.sourceReference === false
+      ? ""
+      : `<a href="${indexabilityMerchantUrl}">Verified official merchant source</a>`;
+  const productObjectId =
+    options.productObjectId === false
+      ? ""
+      : `<meta name="pivota-product-object-id" content="ext_d7c74bcb380cbc2bdd5d5d90">`;
+  const canonical =
+    options.canonical === false
+      ? ""
+      : `<link rel="canonical" href="${options.canonical || indexablePivotaUrl}">`;
+  const metaRobots = options.metaRobots
+    ? `<meta name="robots" content="${options.metaRobots}">`
+    : `<meta name="robots" content="index, follow">`;
+  return `<!doctype html>
+    <html>
+      <head>
+        <title>${options.title || indexabilityProductName}</title>
+        <meta name="description" content="Daily hydrating sunscreen with watery gel finish.">
+        ${metaRobots}
+        ${canonical}
+        ${productObjectId}
+        ${productSchema}
+        ${offerSchema}
+      </head>
+      <body>
+        <h1>${options.h1 || indexabilityProductName}</h1>
+        <p>Brand: Isntree</p>
+        ${description}
+        ${sourceReference}
+        <a href="/products/ext_related">Related sunscreen</a>
+      </body>
+    </html>`;
+}
+
+async function withMockPivotaIndexabilityFetch(config, callback) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/robots.txt")) {
+      return {
+        status: config.robotsStatus ?? 200,
+        url,
+        text: async () => config.robots ?? "User-agent: *\nAllow: /products/\n",
+      };
+    }
+    if (url.endsWith("/sitemap.xml")) {
+      return {
+        status: config.sitemapStatus ?? 200,
+        url,
+        text: async () =>
+          config.sitemap ??
+          `<?xml version="1.0"?><urlset><url><loc>${indexablePivotaUrl}</loc></url></urlset>`,
+      };
+    }
+    return {
+      status: config.status ?? 200,
+      url: config.finalUrl || url,
+      text: async () => config.html ?? indexabilityHtml(),
+    };
+  };
+  try {
+    return await callback();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+async function runPivotaIndexabilityAudit(config = {}) {
+  return withMockPivotaIndexabilityFetch(config, () =>
+    new PivotaPDPIndexabilityAuditService().audit({
+      url: indexablePivotaUrl,
+      product_name: indexabilityProductName,
+      brand: "Isntree",
+      merchant_pdp_url: indexabilityMerchantUrl,
+      offers_exist: true,
+    })
+  );
+}
+
 const pivotaLivePdpQualityFindings = [
   "missing_pdp_identity",
   "product_intel_module_empty_or_blocked",
@@ -1543,6 +1672,136 @@ test("internal config status API is gated and reports grounding configuration", 
   else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previous;
   if (previousGemini === undefined) delete process.env.GEMINI_API_KEY;
   else process.env.GEMINI_API_KEY = previousGemini;
+});
+
+test("Pivota PDP indexability audit passes clean indexable PDP", async () => {
+  const audit = await runPivotaIndexabilityAudit();
+
+  assert.equal(audit.audit_status, "passed");
+  assert.deepEqual(audit.findings, []);
+  assert.equal(audit.raw_safe_evidence.http_status, 200);
+  assert.equal(audit.raw_safe_evidence.robots_blocked, false);
+  assert.equal(audit.raw_safe_evidence.sitemap_includes_pdp_url, true);
+  assert.equal(audit.raw_safe_evidence.product_jsonld_present, true);
+  assert.equal(audit.raw_safe_evidence.offer_jsonld_present, true);
+  assert.equal(JSON.stringify(audit).includes("<html"), false);
+});
+
+test("Pivota PDP indexability audit maps missing JSON-LD to schema patches", async () => {
+  const audit = await runPivotaIndexabilityAudit({
+    html: indexabilityHtml({ productJsonLd: false, offerJsonLd: false }),
+  });
+  const findingTypes = audit.findings.map((finding) => finding.finding_type);
+
+  assert.equal(audit.audit_status, "needs_work");
+  assert.ok(findingTypes.includes("missing_product_jsonld"));
+  assert.ok(findingTypes.includes("missing_offer_jsonld"));
+  assert.ok(audit.recommended_fixes.includes("pivota_product_schema_patch"));
+  assert.ok(audit.recommended_fixes.includes("pivota_offer_schema_patch"));
+});
+
+test("Pivota PDP indexability audit detects noindex robots meta", async () => {
+  const audit = await runPivotaIndexabilityAudit({
+    html: indexabilityHtml({ metaRobots: "noindex, nofollow" }),
+  });
+
+  assert.equal(audit.audit_status, "failed");
+  assert.ok(audit.findings.some((finding) => finding.finding_type === "noindex"));
+  assert.ok(audit.recommended_fixes.includes("pivota_indexability_patch"));
+});
+
+test("Pivota PDP indexability audit detects canonical mismatch", async () => {
+  const audit = await runPivotaIndexabilityAudit({
+    html: indexabilityHtml({
+      canonical: "https://agent.pivota.cc/products/different_product",
+    }),
+  });
+
+  assert.equal(audit.audit_status, "needs_work");
+  assert.ok(
+    audit.findings.some((finding) => finding.finding_type === "canonical_mismatch")
+  );
+  assert.ok(audit.recommended_fixes.includes("pivota_indexability_patch"));
+});
+
+test("Pivota PDP indexability audit detects missing source reference", async () => {
+  const audit = await runPivotaIndexabilityAudit({
+    html: indexabilityHtml({ sourceReference: false }),
+  });
+
+  assert.equal(audit.audit_status, "needs_work");
+  assert.ok(
+    audit.findings.some((finding) => finding.finding_type === "missing_source_reference")
+  );
+  assert.ok(audit.recommended_fixes.includes("pivota_source_reference_patch"));
+});
+
+test("Pivota PDP indexability audit detects missing sitemap entry", async () => {
+  const audit = await runPivotaIndexabilityAudit({
+    sitemap: "<?xml version=\"1.0\"?><urlset></urlset>",
+  });
+
+  assert.equal(audit.audit_status, "needs_work");
+  assert.ok(
+    audit.findings.some((finding) => finding.finding_type === "missing_sitemap_entry")
+  );
+  assert.ok(audit.recommended_fixes.includes("pivota_sitemap_submission"));
+});
+
+test("Pivota PDP indexability audit detects thin server-rendered content", async () => {
+  const audit = await runPivotaIndexabilityAudit({
+    html: indexabilityHtml({ description: false }),
+  });
+
+  assert.equal(audit.audit_status, "needs_work");
+  assert.ok(audit.findings.some((finding) => finding.finding_type === "thin_content"));
+  assert.ok(audit.recommended_fixes.includes("pivota_product_intelligence_patch"));
+});
+
+test("Pivota PDP indexability audit detects robots block and auth wall", async () => {
+  const audit = await runPivotaIndexabilityAudit({
+    robots: "User-agent: *\nDisallow: /products/",
+    html: indexabilityHtml({
+      title: "Login required",
+      h1: "Sign in to preview this product",
+      description: false,
+    }),
+  });
+
+  assert.equal(audit.audit_status, "failed");
+  assert.ok(audit.findings.some((finding) => finding.finding_type === "robots_blocked"));
+  assert.ok(
+    audit.findings.some((finding) => finding.finding_type === "auth_wall_detected")
+  );
+  assert.ok(audit.recommended_fixes.includes("pivota_indexability_patch"));
+});
+
+test("internal Pivota PDP indexability audit route is gated and returns safe output", async () => {
+  resetAgentCenterState();
+  const blocked = await handleAgentCenterRequest(
+    new NextRequest(
+      `${indexablePivotaUrl.replace("https://agent.pivota.cc/products/", "https://example.test/api/agent-center/internal-pivota-pdp-indexability-audit?url=https://agent.pivota.cc/products/")}`
+    ),
+    { path: ["internal-pivota-pdp-indexability-audit"] }
+  );
+  assert.equal(blocked.status, 403);
+
+  await withInternalProductionValidationEnv(async () => {
+    await withMockPivotaIndexabilityFetch({}, async () => {
+      const response = await handleAgentCenterRequest(
+        internalProductionValidationRequest(
+          `https://example.test/api/agent-center/internal-pivota-pdp-indexability-audit?url=${encodeURIComponent(indexablePivotaUrl)}&product_name=${encodeURIComponent(indexabilityProductName)}&brand=Isntree&merchant_pdp_url=${encodeURIComponent(indexabilityMerchantUrl)}&offers_exist=true`
+        ),
+        { path: ["internal-pivota-pdp-indexability-audit"] }
+      );
+      const payload = await response.json();
+
+      assert.equal(response.status, 200);
+      assert.equal(payload.audit.audit_status, "passed");
+      assert.equal(JSON.stringify(payload).includes("validation-secret"), false);
+      assert.equal(JSON.stringify(payload).includes("<html"), false);
+    });
+  });
 });
 
 test("Gemini parser fallback preserves grounding URLs when grounded text is not JSON", () => {
@@ -6544,7 +6803,8 @@ test("internal report preview page renders report review controls", async () => 
   assert.match(source, /Discovery Evidence/);
   assert.match(source, /Discoverability Fix Plan/);
   assert.match(source, /Merchant PDP audit findings/);
-  assert.match(source, /Pivota PDP audit findings/);
+  assert.match(source, /Pivota PDP \/ Indexability audit findings/);
+  assert.match(source, /Indexability Audit/);
   assert.match(source, /status \\?\\?/);
   assert.match(source, /Merchant-owned fixes/);
   assert.match(source, /Pivota-owned fixes/);

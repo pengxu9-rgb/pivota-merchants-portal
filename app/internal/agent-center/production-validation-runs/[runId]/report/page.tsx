@@ -382,7 +382,10 @@ function ReportPreview({
             </ul>
           </div>
           <div>
-            <p className="merchant-overline">Pivota PDP audit findings</p>
+            <p className="merchant-overline">Pivota PDP / Indexability audit findings</p>
+            <p className="mt-1 text-xs text-[color:var(--merchant-muted)]">
+              Indexability Audit: {label(report.discoverability_fix_plan.pivota_pdp_audit.status)}
+            </p>
             <ul className="mt-2 space-y-2 text-sm text-[color:var(--merchant-muted-strong)]">
               {report.discoverability_fix_plan.pivota_pdp_audit.findings.length ? (
                 report.discoverability_fix_plan.pivota_pdp_audit.findings.map((finding) => (

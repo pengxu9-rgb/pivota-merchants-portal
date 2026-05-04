@@ -68,6 +68,9 @@ import type {
   PivotaOffer,
   PivotaCheckoutPath,
   PivotaPDPDiscoverabilityAudit,
+  PivotaPDPIndexabilityAudit,
+  PivotaPDPIndexabilityFinding,
+  PivotaPDPIndexabilityFindingType,
   PivotaOptimizationPatch,
   PivotaOptimizationPatchType,
   PivotaOptimizationTargetLayer,
@@ -10111,6 +10114,583 @@ async function preflightPublicUrl(
   }
 }
 
+function htmlDecode(value: string) {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, " ")
+    .replace(/&nbsp;/g, " ");
+}
+
+function stripHtml(value: string) {
+  return compactWhitespace(
+    htmlDecode(
+      value
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+    )
+  );
+}
+
+function firstHtmlMatch(html: string, pattern: RegExp) {
+  const match = html.match(pattern);
+  return compactWhitespace(htmlDecode(match?.[1] || ""));
+}
+
+function htmlAttributeValue(tag: string, attribute: string) {
+  const pattern = new RegExp(`${attribute}\\s*=\\s*["']([^"']+)["']`, "i");
+  return htmlDecode(tag.match(pattern)?.[1] || "");
+}
+
+function extractMetaContent(html: string, name: string) {
+  const tags = html.match(/<meta\b[^>]*>/gi) || [];
+  const target = name.toLowerCase();
+  for (const tag of tags) {
+    const tagName = htmlAttributeValue(tag, "name").toLowerCase();
+    const property = htmlAttributeValue(tag, "property").toLowerCase();
+    if (tagName === target || property === target) {
+      return htmlAttributeValue(tag, "content");
+    }
+  }
+  return "";
+}
+
+function extractCanonicalUrl(html: string) {
+  const tags = html.match(/<link\b[^>]*>/gi) || [];
+  for (const tag of tags) {
+    if (htmlAttributeValue(tag, "rel").toLowerCase() === "canonical") {
+      return htmlAttributeValue(tag, "href");
+    }
+  }
+  return "";
+}
+
+function extractHrefs(html: string) {
+  return (html.match(/<a\b[^>]*>/gi) || [])
+    .map((tag) => htmlAttributeValue(tag, "href"))
+    .filter(Boolean);
+}
+
+function flattenJsonLdTypes(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return unique(value.flatMap(flattenJsonLdTypes));
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const ownType = record["@type"];
+    const ownTypes = Array.isArray(ownType)
+      ? ownType.filter((item): item is string => typeof item === "string")
+      : typeof ownType === "string"
+        ? [ownType]
+        : [];
+    return unique([
+      ...ownTypes,
+      ...flattenJsonLdTypes(record["@graph"]),
+      ...Object.values(record).flatMap((item) =>
+        typeof item === "object" ? flattenJsonLdTypes(item) : []
+      ),
+    ]);
+  }
+  return [];
+}
+
+function jsonLdNodes(value: unknown): Record<string, unknown>[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.flatMap(jsonLdNodes);
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return [
+      record,
+      ...jsonLdNodes(record["@graph"]),
+      ...Object.values(record).flatMap((item) =>
+        typeof item === "object" ? jsonLdNodes(item) : []
+      ),
+    ];
+  }
+  return [];
+}
+
+function nodeHasJsonLdType(node: Record<string, unknown>, expected: string) {
+  const type = node["@type"];
+  if (Array.isArray(type)) {
+    return type.some((item) => String(item).toLowerCase() === expected.toLowerCase());
+  }
+  return String(type || "").toLowerCase() === expected.toLowerCase();
+}
+
+function extractJsonLd(html: string) {
+  const blocks = [
+    ...html.matchAll(
+      /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+    ),
+  ]
+    .map((match) => htmlDecode(match[1] || "").trim())
+    .filter(Boolean);
+  const parsed: unknown[] = [];
+  for (const block of blocks) {
+    try {
+      parsed.push(JSON.parse(block));
+    } catch {
+      // Invalid JSON-LD is handled as missing/incomplete structured data.
+    }
+  }
+  const nodes = parsed.flatMap(jsonLdNodes);
+  return {
+    blocks,
+    nodes,
+    types: unique(parsed.flatMap(flattenJsonLdTypes)),
+    products: nodes.filter((node) => nodeHasJsonLdType(node, "Product")),
+    offers: nodes.filter(
+      (node) =>
+        nodeHasJsonLdType(node, "Offer") ||
+        nodeHasJsonLdType(node, "AggregateOffer")
+    ),
+  };
+}
+
+function fieldPresent(record: Record<string, unknown> | undefined, field: string) {
+  if (!record) return false;
+  const value = record[field];
+  return value !== undefined && value !== null && String(value).trim().length > 0;
+}
+
+function htmlContainsUrl(html: string, url?: string) {
+  if (!url) return false;
+  const variants = unique(
+    [
+      url,
+      normalizeUrlForCompare(url),
+      url.replace(/&/g, "&amp;"),
+      (() => {
+        try {
+          const parsed = new URL(url);
+          parsed.search = "";
+          parsed.hash = "";
+          return parsed.toString().replace(/\/$/, "");
+        } catch {
+          return "";
+        }
+      })(),
+    ].filter(Boolean)
+  );
+  const haystack = html.toLowerCase();
+  return variants.some((variant) =>
+    haystack.includes(String(variant).toLowerCase())
+  );
+}
+
+function robotsPathBlocked(robotsText: string, path: string) {
+  const lines = robotsText
+    .split(/\r?\n/)
+    .map((line) => line.replace(/#.*/, "").trim())
+    .filter(Boolean);
+  let applies = false;
+  const disallows: string[] = [];
+  const allows: string[] = [];
+  for (const line of lines) {
+    const [rawKey, ...rest] = line.split(":");
+    const key = rawKey?.trim().toLowerCase();
+    const value = rest.join(":").trim();
+    if (key === "user-agent") {
+      applies = value === "*" || value.toLowerCase().includes("googlebot");
+    }
+    if (!applies) continue;
+    if (key === "disallow" && value) disallows.push(value);
+    if (key === "allow" && value) allows.push(value);
+  }
+  const allowed = allows.some((rule) => path.startsWith(rule));
+  const blocked = disallows.some((rule) => rule === "/" || path.startsWith(rule));
+  return blocked && !allowed;
+}
+
+function indexabilityFinding(
+  findingType: PivotaPDPIndexabilityFindingType,
+  summary: string,
+  recommendedFix: PivotaPDPIndexabilityFinding["recommended_fix"],
+  severity: Severity = "medium"
+): PivotaPDPIndexabilityFinding {
+  return {
+    finding_type: findingType,
+    severity,
+    summary,
+    recommended_fix: recommendedFix,
+  };
+}
+
+function addIndexabilityFinding(
+  findings: PivotaPDPIndexabilityFinding[],
+  finding: PivotaPDPIndexabilityFinding
+) {
+  if (!findings.some((item) => item.finding_type === finding.finding_type)) {
+    findings.push(finding);
+  }
+}
+
+function auditStatusForIndexability(
+  findings: PivotaPDPIndexabilityFinding[]
+): PivotaPDPIndexabilityAudit["audit_status"] {
+  if (
+    findings.some((finding) =>
+      ["http_status_failed", "robots_blocked", "noindex", "auth_wall_detected"].includes(
+        finding.finding_type
+      )
+    )
+  ) {
+    return "failed";
+  }
+  return findings.length ? "needs_work" : "passed";
+}
+
+function safeEvidenceText(value: string, max = 220) {
+  return compactWhitespace(value).slice(0, max);
+}
+
+export class PivotaPDPIndexabilityAuditService {
+  async audit(input: {
+    url: string;
+    product_name?: string;
+    brand?: string;
+    merchant_pdp_url?: string;
+    offers_exist?: boolean;
+  }): Promise<PivotaPDPIndexabilityAudit> {
+    if (!input.url) throw new Error("Pivota PDP URL is required");
+    const requestedUrl = input.url;
+    const productName = input.product_name || "";
+    const brand = input.brand || "";
+    const objectId = extractPivotaProductObjectId(requestedUrl);
+    const baseUrl = new URL(requestedUrl);
+    const origin = baseUrl.origin;
+    const robotsUrl = `${origin}/robots.txt`;
+    const sitemapUrl = `${origin}/sitemap.xml`;
+    const findings: PivotaPDPIndexabilityFinding[] = [];
+
+    let html = "";
+    let httpStatus: number | null = null;
+    let finalUrl = requestedUrl;
+    try {
+      const response = await fetch(requestedUrl, { method: "GET", redirect: "follow" });
+      httpStatus = response.status;
+      finalUrl = response.url || requestedUrl;
+      html = await response.text();
+    } catch (error) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "http_status_failed",
+          `Pivota PDP could not be fetched: ${error instanceof Error ? error.message : "request failed"}.`,
+          "pivota_indexability_patch",
+          "critical"
+        )
+      );
+    }
+
+    if (httpStatus === null || httpStatus < 200 || httpStatus >= 400) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "http_status_failed",
+          `Pivota PDP HTTP status was ${httpStatus ?? "unavailable"}, not a public 2xx/3xx response.`,
+          "pivota_indexability_patch",
+          "critical"
+        )
+      );
+    }
+
+    let robotsStatus: number | null = null;
+    let robotsText = "";
+    try {
+      const robotsResponse = await fetch(robotsUrl, {
+        method: "GET",
+        redirect: "follow",
+      });
+      robotsStatus = robotsResponse.status;
+      robotsText = await robotsResponse.text();
+    } catch {
+      robotsStatus = null;
+    }
+    const robotsBlocked = robotsText
+      ? robotsPathBlocked(robotsText, new URL(finalUrl || requestedUrl).pathname)
+      : false;
+    if (robotsBlocked) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "robots_blocked",
+          "robots.txt appears to block crawling of this Pivota product path.",
+          "pivota_indexability_patch",
+          "critical"
+        )
+      );
+    }
+
+    let sitemapStatus: number | null = null;
+    let sitemapText = "";
+    try {
+      const sitemapResponse = await fetch(sitemapUrl, {
+        method: "GET",
+        redirect: "follow",
+      });
+      sitemapStatus = sitemapResponse.status;
+      sitemapText = await sitemapResponse.text();
+    } catch {
+      sitemapStatus = null;
+    }
+
+    const title = firstHtmlMatch(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
+    const h1 = firstHtmlMatch(html, /<h1[^>]*>([\s\S]*?)<\/h1>/i);
+    const metaRobots = extractMetaContent(html, "robots");
+    const canonicalUrl = extractCanonicalUrl(html);
+    const visibleText = stripHtml(html);
+    const lowerVisible = visibleText.toLowerCase();
+    const jsonLd = extractJsonLd(html);
+    const productJsonLd = jsonLd.products[0];
+    const offerJsonLd = jsonLd.offers[0];
+    const productFields = {
+      name: fieldPresent(productJsonLd, "name"),
+      brand: fieldPresent(productJsonLd, "brand"),
+      sku: fieldPresent(productJsonLd, "sku"),
+      url: fieldPresent(productJsonLd, "url"),
+      description: fieldPresent(productJsonLd, "description"),
+    };
+    const offerFields = {
+      price: fieldPresent(offerJsonLd, "price") || fieldPresent(offerJsonLd, "lowPrice"),
+      currency:
+        fieldPresent(offerJsonLd, "priceCurrency") ||
+        fieldPresent(offerJsonLd, "currency"),
+      availability: fieldPresent(offerJsonLd, "availability"),
+      seller: fieldPresent(offerJsonLd, "seller"),
+      url: fieldPresent(offerJsonLd, "url"),
+    };
+    const productNameVisible = productName
+      ? textContainsCoreProduct([title, h1, visibleText].join(" "), productName)
+      : Boolean(title || h1);
+    const brandVisible = brand
+      ? lowerVisible.includes(brand.toLowerCase()) ||
+        title.toLowerCase().includes(brand.toLowerCase()) ||
+        h1.toLowerCase().includes(brand.toLowerCase())
+      : true;
+    const descriptionVisible = visibleText.length > 500;
+    const sourceReferenceVisible =
+      lowerVisible.includes("source") ||
+      lowerVisible.includes("official merchant") ||
+      htmlContainsUrl(html, input.merchant_pdp_url);
+    const merchantUrlVisible = htmlContainsUrl(html, input.merchant_pdp_url);
+    const objectIdVisible = Boolean(objectId && html.includes(objectId));
+    const sitemapIncludes = Boolean(
+      sitemapText &&
+        [requestedUrl, finalUrl, canonicalUrl]
+          .filter(Boolean)
+          .some((url) => htmlContainsUrl(sitemapText, url))
+    );
+    const internalProductLinks = extractHrefs(html).filter((href) => {
+      try {
+        const linked = new URL(href, origin);
+        return linked.origin === origin && linked.pathname.startsWith("/products/");
+      } catch {
+        return false;
+      }
+    });
+    const authGateDetected =
+      /sign in|log in|login|required authentication|password|preview access|not authorized/i.test(
+        [title, h1, visibleText.slice(0, 2000)].join(" ")
+      );
+
+    if (metaRobots && /noindex|none/i.test(metaRobots)) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "noindex",
+          "Pivota PDP has a meta robots directive that prevents indexing.",
+          "pivota_indexability_patch",
+          "critical"
+        )
+      );
+    }
+    if (!canonicalUrl) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "missing_canonical",
+          "Pivota PDP does not expose a canonical URL in server-rendered HTML.",
+          "pivota_indexability_patch",
+          "high"
+        )
+      );
+    } else if (
+      normalizeUrlForCompare(canonicalUrl) !== normalizeUrlForCompare(finalUrl) &&
+      normalizeUrlForCompare(canonicalUrl) !== normalizeUrlForCompare(requestedUrl)
+    ) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "canonical_mismatch",
+          "Pivota PDP canonical URL points to a different URL than the audited public PDP.",
+          "pivota_indexability_patch",
+          "high"
+        )
+      );
+    }
+    if (!productNameVisible || !brandVisible) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "missing_server_rendered_identity",
+          "Product name and brand are not clearly visible in server-rendered HTML.",
+          "pivota_discovery_signal_patch",
+          "high"
+        )
+      );
+    }
+    if (!descriptionVisible) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "thin_content",
+          "Pivota PDP overview or product description is missing or too thin in server-rendered HTML.",
+          "pivota_product_intelligence_patch",
+          "medium"
+        )
+      );
+    }
+    if (!jsonLd.products.length) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "missing_product_jsonld",
+          "Product JSON-LD is missing from the Pivota PDP.",
+          "pivota_product_schema_patch",
+          "high"
+        )
+      );
+    } else if (!Object.values(productFields).every(Boolean)) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "incomplete_product_jsonld",
+          "Product JSON-LD is present but is missing name, brand, SKU, URL, or description.",
+          "pivota_product_schema_patch",
+          "medium"
+        )
+      );
+    }
+    if (input.offers_exist && !jsonLd.offers.length) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "missing_offer_jsonld",
+          "Offer or AggregateOffer JSON-LD is missing even though offers exist.",
+          "pivota_offer_schema_patch",
+          "medium"
+        )
+      );
+    } else if (jsonLd.offers.length && !Object.values(offerFields).every(Boolean)) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "incomplete_offer_jsonld",
+          "Offer/AggregateOffer JSON-LD is present but missing price, currency, availability, seller, or URL.",
+          "pivota_offer_schema_patch",
+          "medium"
+        )
+      );
+    }
+    if (!sourceReferenceVisible || !merchantUrlVisible) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "missing_source_reference",
+          "Verified merchant PDP source reference is not visible or machine-readable.",
+          "pivota_source_reference_patch",
+          "high"
+        )
+      );
+    }
+    if (!objectIdVisible) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "missing_product_object_id",
+          "Pivota product object ID is not visible or machine-readable on the PDP.",
+          "pivota_discovery_signal_patch",
+          "medium"
+        )
+      );
+    }
+    if (!sitemapIncludes) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "missing_sitemap_entry",
+          "Pivota sitemap does not include the audited public PDP URL.",
+          "pivota_sitemap_submission",
+          "medium"
+        )
+      );
+    }
+    if (authGateDetected) {
+      addIndexabilityFinding(
+        findings,
+        indexabilityFinding(
+          "auth_wall_detected",
+          "The PDP appears to show an auth, login, password, or preview gate.",
+          "pivota_indexability_patch",
+          "critical"
+        )
+      );
+    }
+
+    const rawSafeEvidence: PivotaPDPIndexabilityAudit["raw_safe_evidence"] = {
+      requested_url: requestedUrl,
+      final_url: finalUrl,
+      http_status: httpStatus,
+      robots_url: robotsUrl,
+      robots_status: robotsStatus,
+      robots_summary: robotsText
+        ? safeEvidenceText(
+            robotsText
+              .split(/\r?\n/)
+              .filter((line) => /user-agent|allow|disallow|sitemap/i.test(line))
+              .slice(0, 12)
+              .join("; ")
+          )
+        : "robots.txt was not available or empty.",
+      robots_blocked: robotsBlocked,
+      meta_robots: metaRobots || undefined,
+      canonical_url: canonicalUrl || undefined,
+      title: title || undefined,
+      h1: h1 || undefined,
+      product_name_visible: productNameVisible,
+      brand_visible: brandVisible,
+      description_visible: descriptionVisible,
+      jsonld_types: jsonLd.types,
+      product_jsonld_present: jsonLd.products.length > 0,
+      product_jsonld_fields: productFields,
+      offer_jsonld_present: jsonLd.offers.length > 0,
+      offer_jsonld_fields: offerFields,
+      merchant_source_reference_visible: sourceReferenceVisible,
+      source_merchant_pdp_url_visible: merchantUrlVisible,
+      product_object_id_visible: objectIdVisible,
+      sitemap_url: sitemapUrl,
+      sitemap_status: sitemapStatus,
+      sitemap_includes_pdp_url: sitemapIncludes,
+      internal_product_links_count: unique(internalProductLinks).length,
+      auth_gate_detected: authGateDetected,
+      html_size: html.length,
+    };
+
+    return {
+      audit_type: "pivota_pdp_indexability",
+      url: requestedUrl,
+      audit_status: auditStatusForIndexability(findings),
+      findings,
+      recommended_fixes: unique(findings.map((finding) => finding.recommended_fix)),
+      raw_safe_evidence: rawSafeEvidence,
+    };
+  }
+}
+
 function checkoutUrlFromRun(run: ProductionValidationRun) {
   const pivotaCheckout = recordInput(run.pivota_checkout_input);
   const merchantCheckout = recordInput(run.merchant_checkout_input);
@@ -12118,7 +12698,8 @@ export class MerchantFacingReportService {
       ...report.discoverability_fix_plan.merchant_pdp_audit.findings.map(
         (finding) => `- ${titleCase(finding.finding_type)}: ${finding.summary}`
       ),
-      "Pivota PDP audit findings:",
+      `Indexability Audit: ${report.discoverability_fix_plan.pivota_pdp_audit.status.replace(/_/g, " ")}`,
+      "Pivota PDP / Indexability audit findings:",
       ...report.discoverability_fix_plan.pivota_pdp_audit.findings.map(
         (finding) => `- ${titleCase(finding.finding_type)}: ${finding.summary}`
       ),

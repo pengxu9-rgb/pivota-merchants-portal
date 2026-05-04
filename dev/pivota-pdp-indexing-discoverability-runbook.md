@@ -45,6 +45,45 @@ Do not claim discovery uplift until a rerun shows a measured score improvement.
   surfaces.
 - No duplicate canonical conflict points search systems to a different URL.
 
+## Internal Agent Center Audit
+
+Pivota operators can run the same checklist through the internal Agent Center
+indexability audit endpoint:
+
+```bash
+BASE_URL="https://pivota-merchants-portal-clean.vercel.app"
+PIVOTA_PDP_URL="https://agent.pivota.cc/products/ext_d7c74bcb380cbc2bdd5d5d90"
+MERCHANT_PDP_URL="https://www.isntree.com/products/hyaluronic-acid-watery-sun-gel"
+
+curl "$BASE_URL/api/internal/agent-center/pivota-pdp-indexability-audit?url=$(node -e 'console.log(encodeURIComponent(process.argv[1]))' "$PIVOTA_PDP_URL")&product_name=$(node -e 'console.log(encodeURIComponent(process.argv[1]))' "Isntree Hyaluronic Acid Watery Sun Gel")&brand=Isntree&merchant_pdp_url=$(node -e 'console.log(encodeURIComponent(process.argv[1]))' "$MERCHANT_PDP_URL")&offers_exist=true" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET"
+```
+
+The endpoint is internal-only and gated by the production validation secret. It
+returns safe booleans and summaries:
+
+- `audit_status`: `passed`, `needs_work`, or `failed`
+- `findings`
+- `recommended_fixes`
+- `raw_safe_evidence`
+
+It must not return secrets, raw full HTML, raw provider payloads, prompt traces,
+or token-level costs.
+
+Recommended fix mapping:
+
+- `missing_product_jsonld` or `incomplete_product_jsonld` ->
+  `pivota_product_schema_patch`
+- `missing_offer_jsonld` or `incomplete_offer_jsonld` ->
+  `pivota_offer_schema_patch`
+- `missing_canonical`, `canonical_mismatch`, `noindex`, `robots_blocked`,
+  `http_status_failed`, or `auth_wall_detected` -> `pivota_indexability_patch`
+- `missing_sitemap_entry` -> `pivota_sitemap_submission`
+- `thin_content` -> `pivota_product_intelligence_patch`
+- `missing_source_reference` -> `pivota_source_reference_patch`
+- `missing_server_rendered_identity` or `missing_product_object_id` ->
+  `pivota_discovery_signal_patch`
+
 ## Validation Commands And Manual Checks
 
 Set the URL first:

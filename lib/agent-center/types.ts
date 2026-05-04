@@ -1564,6 +1564,68 @@ export type PivotaPDPDiscoverabilityAudit = {
   recommended_action_types: string[];
 };
 
+export type PivotaPDPIndexabilityFindingType =
+  | "http_status_failed"
+  | "robots_blocked"
+  | "noindex"
+  | "missing_canonical"
+  | "canonical_mismatch"
+  | "missing_server_rendered_identity"
+  | "thin_content"
+  | "missing_product_jsonld"
+  | "incomplete_product_jsonld"
+  | "missing_offer_jsonld"
+  | "incomplete_offer_jsonld"
+  | "missing_source_reference"
+  | "missing_product_object_id"
+  | "missing_sitemap_entry"
+  | "auth_wall_detected";
+
+export type PivotaPDPIndexabilityFinding = {
+  finding_type: PivotaPDPIndexabilityFindingType;
+  severity: Severity;
+  summary: string;
+  recommended_fix: PivotaOptimizationPatchType | "pivota_indexability_patch";
+};
+
+export type PivotaPDPIndexabilityAudit = {
+  audit_type: "pivota_pdp_indexability";
+  url: string;
+  audit_status: "passed" | "needs_work" | "failed";
+  findings: PivotaPDPIndexabilityFinding[];
+  recommended_fixes: Array<PivotaOptimizationPatchType | "pivota_indexability_patch">;
+  raw_safe_evidence: {
+    requested_url: string;
+    final_url?: string;
+    http_status?: number | null;
+    robots_url?: string;
+    robots_status?: number | null;
+    robots_summary: string;
+    robots_blocked: boolean;
+    meta_robots?: string;
+    canonical_url?: string;
+    title?: string;
+    h1?: string;
+    product_name_visible: boolean;
+    brand_visible: boolean;
+    description_visible: boolean;
+    jsonld_types: string[];
+    product_jsonld_present: boolean;
+    product_jsonld_fields: Record<string, boolean>;
+    offer_jsonld_present: boolean;
+    offer_jsonld_fields: Record<string, boolean>;
+    merchant_source_reference_visible: boolean;
+    source_merchant_pdp_url_visible: boolean;
+    product_object_id_visible: boolean;
+    sitemap_url?: string;
+    sitemap_status?: number | null;
+    sitemap_includes_pdp_url: boolean;
+    internal_product_links_count: number;
+    auth_gate_detected: boolean;
+    html_size: number;
+  };
+};
+
 export type MerchantFacingValidationReport = Timestamped & {
   id: string;
   production_validation_run_id: string;

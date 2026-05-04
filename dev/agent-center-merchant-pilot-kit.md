@@ -358,6 +358,17 @@ before claiming uplift. The next operational step is to verify that the public
 Pivota PDP is crawlable, indexable, canonical, structured, sitemap-listed, and
 eligible for search ingestion.
 
+Operators can also run the internal Pivota PDP indexability audit endpoint:
+
+```bash
+GET /api/internal/agent-center/pivota-pdp-indexability-audit?url=...
+```
+
+The route is internal-only, requires the production validation secret, and
+returns safe audit status, findings, recommended Pivota fixes, and non-secret
+evidence. Use it before rerunning `search_grounded_product_discovery_test` when
+the blocker is `pivota_pdp_not_discovered`.
+
 For `wrong_buying_path_returned`, the plan should include wrong URL analysis,
 canonical buying-path metadata fixes, and product graph/source-reference updates
 to reduce confusion with third-party retailers, competitor pages, or unrelated

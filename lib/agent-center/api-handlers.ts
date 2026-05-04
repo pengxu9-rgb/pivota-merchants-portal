@@ -20,6 +20,7 @@ import {
   MerchantFacingReportService,
   MerchantStoreService,
   OfferExecutionService,
+  PivotaPDPIndexabilityAuditService,
   PivotaOptimizationService,
   ProductionValidationRunService,
   ProductUnderstandingService,
@@ -352,6 +353,35 @@ async function handleAgentCenterRequestInner(
         return json({ config: getAgentCenterRuntimeConfigStatus() });
       }
       return json({ error: "Unsupported internal config status route" }, 404);
+    }
+
+    if (resource === "internal-pivota-pdp-indexability-audit") {
+      const gate = internalProductionValidationGate(req);
+      if (!gate.allowed) return json({ error: gate.error }, 403);
+      if (req.method === "GET") {
+        const service = new PivotaPDPIndexabilityAuditService();
+        const url = req.nextUrl.searchParams.get("url") || "";
+        if (!url) return json({ error: "Pivota PDP URL is required" }, 400);
+        const productName = req.nextUrl.searchParams.get("product_name") || "";
+        const brand = req.nextUrl.searchParams.get("brand") || "";
+        const merchantPdpUrl =
+          req.nextUrl.searchParams.get("merchant_pdp_url") || "";
+        const offersExist =
+          req.nextUrl.searchParams.get("offers_exist") === "true";
+        return json({
+          audit: await service.audit({
+            url,
+            product_name: productName,
+            brand,
+            merchant_pdp_url: merchantPdpUrl,
+            offers_exist: offersExist,
+          }),
+        });
+      }
+      return json(
+        { error: "Unsupported internal Pivota PDP indexability audit route" },
+        404
+      );
     }
 
     if (!resource || resource === "overview") {

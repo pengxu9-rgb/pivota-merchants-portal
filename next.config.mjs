@@ -46,6 +46,11 @@ const nextConfig = {
           source: "/api/internal/agent-center/runtime-config",
           destination: "/api/agent-center/internal-runtime-config",
         },
+        {
+          source: "/api/internal/agent-center/pivota-pdp-indexability-audit",
+          destination:
+            "/api/agent-center/internal-pivota-pdp-indexability-audit",
+        },
       ],
     };
   },
