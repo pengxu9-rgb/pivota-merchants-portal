@@ -10281,6 +10281,36 @@ function htmlContainsUrl(html: string, url?: string) {
   );
 }
 
+function urlWithoutQueryForCompare(value?: string) {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "").toLowerCase();
+  } catch {
+    return value.toLowerCase().replace(/[?#].*$/, "").replace(/\/$/, "");
+  }
+}
+
+function canonicalMatchesAuditedUrl(
+  canonicalUrl: string,
+  ...auditedUrls: Array<string | undefined>
+) {
+  const canonical = normalizeUrlForCompare(canonicalUrl);
+  const canonicalWithoutQuery = urlWithoutQueryForCompare(canonicalUrl);
+  return auditedUrls.some((url) => {
+    const normalized = normalizeUrlForCompare(url);
+    const withoutQuery = urlWithoutQueryForCompare(url);
+    return (
+      canonical === normalized ||
+      canonical === withoutQuery ||
+      canonicalWithoutQuery === normalized ||
+      canonicalWithoutQuery === withoutQuery
+    );
+  });
+}
+
 function robotsPathBlocked(robotsText: string, path: string) {
   const lines = robotsText
     .split(/\r?\n/)
@@ -10518,10 +10548,7 @@ export class PivotaPDPIndexabilityAuditService {
           "high"
         )
       );
-    } else if (
-      normalizeUrlForCompare(canonicalUrl) !== normalizeUrlForCompare(finalUrl) &&
-      normalizeUrlForCompare(canonicalUrl) !== normalizeUrlForCompare(requestedUrl)
-    ) {
+    } else if (!canonicalMatchesAuditedUrl(canonicalUrl, finalUrl, requestedUrl)) {
       addIndexabilityFinding(
         findings,
         indexabilityFinding(

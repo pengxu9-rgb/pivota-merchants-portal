@@ -1724,6 +1724,24 @@ test("Pivota PDP indexability audit detects canonical mismatch", async () => {
   assert.ok(audit.recommended_fixes.includes("pivota_indexability_patch"));
 });
 
+test("Pivota PDP indexability audit accepts clean canonical for return-param PDP URL", async () => {
+  const audit = await withMockPivotaIndexabilityFetch({}, () =>
+    new PivotaPDPIndexabilityAuditService().audit({
+      url: `${indexablePivotaUrl}?return=%2Fproducts%2Fext_related`,
+      product_name: indexabilityProductName,
+      brand: "Isntree",
+      merchant_pdp_url: indexabilityMerchantUrl,
+      offers_exist: true,
+    })
+  );
+
+  assert.equal(audit.audit_status, "passed");
+  assert.equal(
+    audit.findings.some((finding) => finding.finding_type === "canonical_mismatch"),
+    false
+  );
+});
+
 test("Pivota PDP indexability audit detects missing source reference", async () => {
   const audit = await runPivotaIndexabilityAudit({
     html: indexabilityHtml({ sourceReference: false }),
