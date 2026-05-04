@@ -13971,14 +13971,42 @@ function returnedUrlEvidenceSummary(returnedUrls: string[], returnedDomains: str
 
 export class MerchantFacingReportService {
   latestForRun(runId: string) {
-    return new ProductionValidationRunService().get(runId).merchant_facing_report_draft || null;
+    const report =
+      new ProductionValidationRunService().get(runId).merchant_facing_report_draft ||
+      null;
+    return report ? this.ensurePivotaDiscoveryProgress(report) : null;
   }
 
   get(reportId: string) {
     const run = getAgentCenterState().productionValidationRuns.find(
       (item) => item.merchant_facing_report_draft?.id === reportId
     );
-    return run?.merchant_facing_report_draft || null;
+    return run?.merchant_facing_report_draft
+      ? this.ensurePivotaDiscoveryProgress(run.merchant_facing_report_draft)
+      : null;
+  }
+
+  private ensurePivotaDiscoveryProgress(report: MerchantFacingValidationReport) {
+    if (report.pivota_discovery_progress) return report;
+    report.pivota_discovery_progress = pivotaDiscoveryProgressFor({
+      product_entity_id:
+        report.path_readiness?.pivota_agent_facing_path?.product_entity_id,
+      canonical_pivota_pdp_url:
+        report.path_readiness?.pivota_agent_facing_path
+          ?.canonical_pivota_pdp_url ||
+        report.path_readiness?.pivota_agent_facing_path?.pivota_pdp_url,
+      pivota_preflight_status:
+        report.path_readiness?.pivota_agent_facing_path?.preflight_status,
+      contextual_pivota_attribution_status:
+        report.readiness_result?.contextual_pivota_attribution?.status,
+      pivota_audit: report.discoverability_fix_plan?.pivota_pdp_audit,
+      has_offer: Boolean(
+        report.path_readiness?.pivota_agent_facing_path?.pivota_offer_id ||
+          report.path_readiness?.pivota_agent_facing_path?.merchant_offer_id ||
+          report.path_readiness?.offer_readiness?.readiness_scores?.length
+      ),
+    });
+    return report;
   }
 
   updateStatus(
@@ -14089,6 +14117,7 @@ export class MerchantFacingReportService {
   }
 
   toMarkdown(report: MerchantFacingValidationReport) {
+    report = this.ensurePivotaDiscoveryProgress(report);
     const lines: string[] = [
       `# ${report.title}`,
       "",
