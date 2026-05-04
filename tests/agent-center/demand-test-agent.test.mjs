@@ -1791,9 +1791,13 @@ test("internal Pivota indexing task API creates fetches and updates gated tasks"
     );
     const listPayload = await listResponse.json();
     assert.equal(listResponse.status, 200);
-    assert.equal(listPayload.pivota_indexing_tasks.length, 1);
+    assert.ok(listPayload.pivota_indexing_tasks.length >= 7);
     assert.equal(listPayload.product_entity_summaries.length, 1);
-    assert.equal(listPayload.product_entity_summaries[0].current_status, "completed");
+    assert.ok(listPayload.product_entity_summaries[0].next_rerun_at);
+    assert.equal(
+      listPayload.product_entity_summaries[0].indexing_evidence_status,
+      "waiting_for_indexing"
+    );
     assert.equal(listPayload.product_entity_summaries[0].uplift_claim_allowed, false);
   });
 });

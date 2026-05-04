@@ -6848,6 +6848,7 @@ export class PivotaIndexingTaskService {
     };
     this.validateCompletion(task);
     getAgentCenterRepository().upsert("pivotaIndexingTasks", task);
+    this.ensureTimedRerunTasks(task);
     return task;
   }
 
@@ -6887,6 +6888,7 @@ export class PivotaIndexingTaskService {
     task.evidence = nextTask.evidence;
     touch(task);
     getAgentCenterRepository().upsert("pivotaIndexingTasks", task);
+    this.ensureTimedRerunTasks(task);
     return task;
   }
 
@@ -7117,6 +7119,61 @@ export class PivotaIndexingTaskService {
       return "Uplift is verified in the tested validation scope; do not claim consumer Gemini UI ranking.";
     }
     return "Review indexing evidence and rerun search-grounded discovery.";
+  }
+
+  private indexingEvidenceReady(productEntityId: string) {
+    const evidence = this.list({ product_entity_id: productEntityId }).map(
+      (task) => task.evidence || {}
+    );
+    return (
+      evidence.some((item) => item.search_console_property_verified === true) &&
+      evidence.some((item) => item.sitemap_submitted === true) &&
+      evidence.some(
+        (item) =>
+          item.indexing_requested === true ||
+          item.url_inspection_status === "indexing_requested"
+      )
+    );
+  }
+
+  private ensureTimedRerunTasks(task: PivotaIndexingTask) {
+    if (
+      task.task_type === "wait_for_indexing_window" ||
+      task.task_type === "scheduled_search_grounded_rerun"
+    ) {
+      return;
+    }
+    if (!this.indexingEvidenceReady(task.product_entity_id)) return;
+    const existing = this.list({ product_entity_id: task.product_entity_id });
+    const now = nowIso();
+    for (const window of PIVOTA_DISCOVERY_RERUN_WINDOWS) {
+      for (const taskType of [
+        "wait_for_indexing_window",
+        "scheduled_search_grounded_rerun",
+      ] as PivotaIndexingTaskType[]) {
+        const alreadyExists = existing.some(
+          (item) =>
+            item.task_type === taskType &&
+            item.evidence?.rerun_window === window.label
+        );
+        if (alreadyExists) continue;
+        this.create({
+          product_entity_id: task.product_entity_id,
+          canonical_pivota_pdp_url: task.canonical_pivota_pdp_url,
+          task_type: taskType,
+          evidence: {
+            rerun_window: window.label,
+            delay_hours: window.hours,
+            next_rerun_at: addHoursIso(now, window.hours),
+            source_task_id: task.id,
+            no_uplift_claim_allowed: true,
+            uplift_claim_allowed: false,
+            evidence_note:
+              "Scheduled after Search Console, sitemap, and indexing request evidence was recorded.",
+          },
+        });
+      }
+    }
   }
 
   private latestSearchGroundedDiscovery(productEntityId: string) {
