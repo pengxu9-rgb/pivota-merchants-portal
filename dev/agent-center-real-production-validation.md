@@ -481,6 +481,15 @@ This returns the completed validation run plus a `cleanup` object with `status =
 - Search-grounded discovery requires `GEMINI_SEARCH_GROUNDING_ENABLED=true`. If unavailable, the score is `not_configured` and must not fall back to contextual attribution.
 - Search grounding applies only to `search_grounded_product_discovery_test`; all other Agent Center modes remain ungrounded.
 - Pivota-owned optimization can update Pivota Agent Center/PDP/product graph state, but public search-grounded discovery may still require external indexing time before Gemini returns the Pivota PDP.
+- Search Console evidence is operational evidence only. Property verification,
+  sitemap submission, URL Inspection, and request indexing should be recorded on
+  `PivotaIndexingTask`, but none of these fields prove uplift by themselves.
+- Merchant-facing reports may show Pivota Discovery Progress, but must hide
+  internal task IDs, raw Gemini payloads, prompt traces, token-level costs, DB
+  URLs, secrets, and Search Console screenshots.
+- Timed reruns should stay scoped to `search_grounded_product_discovery_test`
+  at T+24h, T+72h, and T+7d. Do not use contextual attribution results as
+  discovery uplift.
 - The default run scope is intentionally small for production safety: one purchase-ready query cluster, one prompt template, and one repetition unless explicitly overridden.
 - A passed checkout readiness result means pre-payment path readiness only.
 - No real payment, order, settlement, refund, transaction fee, or billing operation is executed.

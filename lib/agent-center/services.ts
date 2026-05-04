@@ -74,6 +74,8 @@ import type {
   PivotaOptimizationPatch,
   PivotaOptimizationPatchType,
   PivotaOptimizationTargetLayer,
+  PivotaDiscoveryProgress,
+  PivotaIndexingEvidenceStatus,
   PivotaIndexingTask,
   PivotaIndexingTaskEvidence,
   PivotaIndexingTaskStatus,
@@ -6787,6 +6789,12 @@ const PIVOTA_DISCOVERY_RERUN_WINDOWS = [
   { label: "T+7d", hours: 168 },
 ];
 
+const INDEXING_REQUEST_ALLOWED_INSPECTION_STATUSES = new Set([
+  "inspectable",
+  "indexed",
+  "indexing_requested",
+]);
+
 function canonicalPivotaPdpUrlForIssue(issue: AgenticGMVIssue) {
   const evidence = issue.evidence || {};
   const candidates = [
@@ -6838,6 +6846,7 @@ export class PivotaIndexingTaskService {
       updated_at: now,
       completed_at: input.status === "completed" ? now : undefined,
     };
+    this.validateCompletion(task);
     getAgentCenterRepository().upsert("pivotaIndexingTasks", task);
     return task;
   }
@@ -6858,18 +6867,24 @@ export class PivotaIndexingTaskService {
     }
   ) {
     const task = this.get(taskId);
-    if (patch.status) {
-      task.status = patch.status;
-      if (patch.status === "completed" && !task.completed_at) {
-        task.completed_at = nowIso();
-      }
-    }
-    if (patch.evidence) {
-      task.evidence = {
-        ...(task.evidence || {}),
-        ...this.normalizeEvidence(patch.evidence),
-      };
-    }
+    const nextTask: PivotaIndexingTask = {
+      ...task,
+      status: patch.status || task.status,
+      evidence: patch.evidence
+        ? {
+            ...(task.evidence || {}),
+            ...this.normalizeEvidence(patch.evidence),
+          }
+        : task.evidence,
+      completed_at:
+        patch.status === "completed" && !task.completed_at
+          ? nowIso()
+          : task.completed_at,
+    };
+    this.validateCompletion(nextTask);
+    task.status = nextTask.status;
+    task.completed_at = nextTask.completed_at;
+    task.evidence = nextTask.evidence;
     touch(task);
     getAgentCenterRepository().upsert("pivotaIndexingTasks", task);
     return task;
@@ -6904,6 +6919,12 @@ export class PivotaIndexingTaskService {
       .map((task) => task.evidence?.next_rerun_at as string)
       .sort()[0];
     const currentStatus = this.currentStatus(tasks);
+    const indexingEvidenceStatus = this.indexingEvidenceStatus(
+      tasks,
+      latestDiscovery.uplift_claim_allowed,
+      latestDiscovery.last_search_grounded_discovery_score,
+      nextRerunTime
+    );
     return {
       product_entity_id: productEntityId,
       canonical_pivota_pdp_url:
@@ -6911,9 +6932,13 @@ export class PivotaIndexingTaskService {
         latestDiscovery.canonical_pivota_pdp_url ||
         "",
       current_status: currentStatus,
+      indexing_evidence_status: indexingEvidenceStatus,
+      next_recommended_operator_action:
+        this.nextRecommendedOperatorAction(indexingEvidenceStatus),
       task_count: tasks.length,
       tasks,
       next_rerun_time: nextRerunTime,
+      next_rerun_at: nextRerunTime,
       last_search_grounded_discovery_score:
         latestDiscovery.last_search_grounded_discovery_score,
       last_returned_urls: latestDiscovery.last_returned_urls,
@@ -6983,7 +7008,47 @@ export class PivotaIndexingTaskService {
     if (normalized.indexing_requested && !normalized.indexing_requested_at) {
       normalized.indexing_requested_at = nowIso();
     }
+    if (
+      normalized.search_console_property_verified &&
+      !normalized.search_console_verified_at
+    ) {
+      normalized.search_console_verified_at = nowIso();
+    }
     return normalized;
+  }
+
+  private validateCompletion(task: PivotaIndexingTask) {
+    if (task.status !== "completed") return;
+    const evidence = task.evidence || {};
+    if (
+      task.task_type === "validate_search_console" &&
+      evidence.search_console_property_verified !== true
+    ) {
+      throw new Error(
+        "validate_search_console cannot be completed until Search Console property verification is recorded"
+      );
+    }
+    if (
+      task.task_type === "submit_sitemap" &&
+      evidence.sitemap_submitted !== true
+    ) {
+      throw new Error(
+        "submit_sitemap cannot be completed until sitemap_submitted is true"
+      );
+    }
+    if (task.task_type === "request_indexing") {
+      const inspectionStatus = evidence.url_inspection_status || "not_checked";
+      if (!INDEXING_REQUEST_ALLOWED_INSPECTION_STATUSES.has(inspectionStatus)) {
+        throw new Error(
+          "request_indexing cannot be completed until URL inspection is inspectable, indexed, or indexing_requested"
+        );
+      }
+      if (evidence.indexing_requested !== true) {
+        throw new Error(
+          "request_indexing cannot be completed until indexing_requested is true"
+        );
+      }
+    }
   }
 
   private currentStatus(tasks: PivotaIndexingTask[]) {
@@ -6994,6 +7059,64 @@ export class PivotaIndexingTaskService {
     if (tasks.every((task) => task.status === "skipped")) return "skipped";
     if (tasks.every((task) => task.status === "completed")) return "completed";
     return "in_progress";
+  }
+
+  private indexingEvidenceStatus(
+    tasks: PivotaIndexingTask[],
+    upliftClaimAllowed: boolean,
+    lastScore: VisibilityScoreValue,
+    nextRerunTime?: string
+  ): PivotaIndexingEvidenceStatus {
+    if (upliftClaimAllowed) return "uplift_verified";
+    if (!tasks.length) return "not_started";
+    const evidence = tasks.map((task) => task.evidence || {});
+    const searchConsoleVerified = evidence.some(
+      (item) => item.search_console_property_verified === true
+    );
+    if (!searchConsoleVerified) return "search_console_needed";
+    const sitemapSubmitted = evidence.some(
+      (item) => item.sitemap_submitted === true
+    );
+    if (!sitemapSubmitted) return "search_console_needed";
+    const indexingRequested = evidence.some(
+      (item) =>
+        item.indexing_requested === true ||
+        item.url_inspection_status === "indexing_requested"
+    );
+    if (!indexingRequested) return "sitemap_submitted";
+    const now = Date.now();
+    const rerunDue = tasks.some((task) => {
+      if (task.task_type !== "scheduled_search_grounded_rerun") return false;
+      if (!["proposed", "in_progress"].includes(task.status)) return false;
+      const next = task.evidence?.next_rerun_at;
+      return typeof next === "string" && new Date(next).getTime() <= now;
+    });
+    if (rerunDue) return "rerun_due";
+    if (typeof lastScore === "number" && lastScore === 0) return "no_uplift_yet";
+    if (nextRerunTime) return "waiting_for_indexing";
+    return "indexing_requested";
+  }
+
+  private nextRecommendedOperatorAction(status: PivotaIndexingEvidenceStatus) {
+    if (status === "not_started" || status === "search_console_needed") {
+      return "Verify Search Console property for agent.pivota.cc.";
+    }
+    if (status === "sitemap_submitted") {
+      return "Inspect the canonical Pivota PDP URL and request indexing when eligible.";
+    }
+    if (status === "indexing_requested" || status === "waiting_for_indexing") {
+      return "Wait for the indexing window, then rerun search-grounded discovery.";
+    }
+    if (status === "rerun_due") {
+      return "Rerun search_grounded_product_discovery_test only.";
+    }
+    if (status === "no_uplift_yet") {
+      return "No uplift yet; continue public discoverability work and rerun after the next indexing window.";
+    }
+    if (status === "uplift_verified") {
+      return "Uplift is verified in the tested validation scope; do not claim consumer Gemini UI ranking.";
+    }
+    return "Review indexing evidence and rerun search-grounded discovery.";
   }
 
   private latestSearchGroundedDiscovery(productEntityId: string) {
@@ -7042,6 +7165,168 @@ export class PivotaIndexingTaskService {
       uplift_claim_allowed: typeof score === "number" && score > 0,
     };
   }
+}
+
+function progressStatusFromAuditCheck(
+  value?: "passed" | "needs_work" | "unknown" | "not_applicable"
+) {
+  if (value === "passed") return "completed";
+  if (value === "needs_work") return "blocked";
+  if (value === "not_applicable") return "not_applicable";
+  return "not_yet_verified";
+}
+
+function evidenceFlag(
+  tasks: PivotaIndexingTask[],
+  predicate: (evidence: PivotaIndexingTaskEvidence) => boolean
+) {
+  return tasks.some((task) => predicate(task.evidence || {}));
+}
+
+function pivotaDiscoveryProgressFor(input: {
+  product_entity_id?: string;
+  canonical_pivota_pdp_url?: string;
+  pivota_preflight_status?: ProductionValidationUrlPreflight["status"];
+  contextual_pivota_attribution_status?: GMVAssuranceDimensionStatus;
+  pivota_audit?: PivotaPDPDiscoverabilityAudit;
+  has_offer?: boolean;
+}): PivotaDiscoveryProgress {
+  const service = new PivotaIndexingTaskService();
+  const summary = input.product_entity_id
+    ? service.summary(input.product_entity_id)
+    : undefined;
+  const tasks = (summary?.tasks || []) as PivotaIndexingTask[];
+  const status =
+    (summary?.indexing_evidence_status as PivotaIndexingEvidenceStatus | undefined) ||
+    "not_started";
+  const score =
+    summary?.last_search_grounded_discovery_score ?? "not_tested";
+  const upliftClaimAllowed = Boolean(summary?.uplift_claim_allowed);
+  const sitemapSubmitted = evidenceFlag(
+    tasks,
+    (evidence) => evidence.sitemap_submitted === true
+  );
+  const indexingRequested = evidenceFlag(
+    tasks,
+    (evidence) =>
+      evidence.indexing_requested === true ||
+      evidence.url_inspection_status === "indexing_requested"
+  );
+  const waitingForIndexing = [
+    "indexing_requested",
+    "waiting_for_indexing",
+    "rerun_due",
+    "no_uplift_yet",
+  ].includes(status);
+  const auditChecks = input.pivota_audit?.checks || {};
+  const pivotaPublished =
+    input.pivota_preflight_status === "passed" ||
+    Boolean(input.canonical_pivota_pdp_url);
+  const bindingVerified = Boolean(
+    input.product_entity_id && input.canonical_pivota_pdp_url
+  );
+  const contextualPassed =
+    input.contextual_pivota_attribution_status === "passed";
+  const searchGroundedFound = typeof score === "number" && score > 0;
+  const summaryText = upliftClaimAllowed
+    ? "Search-grounded discovery improved in the tested validation scope. This does not prove consumer Gemini UI or AI Mode ranking."
+    : typeof score === "number" && score === 0 && status !== "not_started"
+      ? "Indexing work was recorded, but search-grounded Gemini has not yet returned the Pivota PDP. Public indexing and search ingestion may require more time or additional signals."
+      : contextualPassed
+        ? "Pivota PDP is ready when surfaced, but search-grounded Gemini has not yet returned the canonical Pivota PDP. No discovery uplift is claimed yet."
+        : "Pivota discovery progress tracks public indexability, Search Console evidence, and measured search-grounded reruns without claiming uplift prematurely.";
+
+  return {
+    status,
+    summary: summaryText,
+    next_recommended_operator_action:
+      summary?.next_recommended_operator_action ||
+      "Verify Search Console property for agent.pivota.cc.",
+    next_rerun_at: summary?.next_rerun_at || summary?.next_rerun_time,
+    last_search_grounded_discovery_score: score,
+    last_returned_urls: summary?.last_returned_urls || [],
+    uplift_claim_allowed: upliftClaimAllowed,
+    steps: [
+      {
+        step_key: "pivota_pdp_published",
+        label: "Pivota PDP published",
+        status: pivotaPublished ? "completed" : "not_started",
+        summary: pivotaPublished
+          ? "Canonical Pivota PDP is available for the ProductEntity."
+          : "Canonical Pivota PDP has not been confirmed.",
+      },
+      {
+        step_key: "product_entity_binding_verified",
+        label: "ProductEntity binding verified",
+        status: bindingVerified ? "completed" : "not_yet_verified",
+        summary: bindingVerified
+          ? "Pivota PDP uses a ProductEntity-first canonical URL."
+          : "ProductEntity binding has not been confirmed.",
+      },
+      {
+        step_key: "product_schema_added",
+        label: "Product schema added",
+        status: progressStatusFromAuditCheck(auditChecks.product_jsonld),
+        summary: "Product JSON-LD should expose canonical ProductEntity identity.",
+      },
+      {
+        step_key: "offer_schema_added",
+        label: "Offer schema added",
+        status: input.has_offer
+          ? progressStatusFromAuditCheck(auditChecks.offer_jsonld)
+          : "not_applicable",
+        summary: input.has_offer
+          ? "Offer or AggregateOffer JSON-LD should expose verified merchant offers."
+          : "No offer metadata was included in this validation scope.",
+      },
+      {
+        step_key: "merchant_source_reference_added",
+        label: "Merchant source reference added",
+        status: progressStatusFromAuditCheck(auditChecks.source_reference),
+        summary: "Pivota PDP should visibly reference the verified merchant PDP source.",
+      },
+      {
+        step_key: "sitemap_includes_canonical_pdp",
+        label: "Sitemap includes canonical PDP",
+        status: progressStatusFromAuditCheck(auditChecks.sitemap_inclusion),
+        summary: "Sitemap should list canonical ProductEntity PDP URLs, not ext_* aliases.",
+      },
+      {
+        step_key: "search_console_sitemap_submitted",
+        label: "Search Console sitemap submitted",
+        status: sitemapSubmitted ? "completed" : "not_started",
+        summary: "Sitemap submission is evidence only; it does not guarantee indexing.",
+      },
+      {
+        step_key: "url_inspection_indexing_requested",
+        label: "URL inspection / indexing requested",
+        status: indexingRequested ? "completed" : "not_started",
+        summary: "URL Inspection and request indexing are operator-recorded evidence, not uplift proof.",
+      },
+      {
+        step_key: "waiting_for_indexing_window",
+        label: "Waiting for indexing window",
+        status: waitingForIndexing ? "in_progress" : "not_started",
+        summary: "Manual rerun windows are tracked at T+24h, T+72h, and T+7d.",
+      },
+      {
+        step_key: "search_grounded_gemini_returned_pivota_pdp",
+        label: "Search-grounded Gemini returned Pivota PDP",
+        status: searchGroundedFound ? "completed" : "not_yet_verified",
+        summary: searchGroundedFound
+          ? "Canonical Pivota PDP or verified alias appeared in the tested search-grounded result."
+          : "Search-grounded Gemini has not yet returned the canonical Pivota PDP in measured validation.",
+      },
+      {
+        step_key: "uplift_verified",
+        label: "Uplift verified",
+        status: upliftClaimAllowed ? "completed" : "not_yet_verified",
+        summary: upliftClaimAllowed
+          ? "Measured search-grounded Pivota PDP discovery improved in the validation scope."
+          : "No uplift claim is allowed until a rerun score improves.",
+      },
+    ],
+  };
 }
 
 export class IssueResolutionService {
@@ -9605,14 +9890,30 @@ export class GMVAssuranceService {
 
   latest(merchantId = DEMO_MERCHANT_ID) {
     const snapshot = latestByCreatedAt(this.list(merchantId)) || null;
-    return snapshot ? applyResolutionPlansToSnapshot(snapshot) : null;
+    if (!snapshot) return null;
+    const applied = applyResolutionPlansToSnapshot(snapshot);
+    if (applied.product_entity_id) {
+      applied.pivota_discovery_progress = pivotaDiscoveryProgressFor({
+        product_entity_id: applied.product_entity_id,
+      });
+    }
+    return applied;
   }
 
   overview(merchantId = DEMO_MERCHANT_ID) {
     const latest = this.latest(merchantId);
+    const snapshots = this.list(merchantId).slice(-10).reverse().map((snapshot) => {
+      const applied = applyResolutionPlansToSnapshot(snapshot);
+      if (applied.product_entity_id) {
+        applied.pivota_discovery_progress = pivotaDiscoveryProgressFor({
+          product_entity_id: applied.product_entity_id,
+        });
+      }
+      return applied;
+    });
     return {
       latest_snapshot: latest,
-      snapshots: this.list(merchantId).slice(-10).reverse().map(applyResolutionPlansToSnapshot),
+      snapshots,
     };
   }
 
@@ -10303,6 +10604,9 @@ export class GMVAssuranceService {
         ? recommendedNextActions
         : ["Monitor only."],
       usage_summary: usageSummaryForAssurance(usageEvents),
+      pivota_discovery_progress: pivotaDiscoveryProgressFor({
+        product_entity_id: productEntityId,
+      }),
       created_at: now,
       updated_at: now,
     };
@@ -13850,6 +14154,17 @@ export class MerchantFacingReportService {
           ]
         : ["Remaining blockers: none"]),
       "",
+      "## Pivota Discovery Progress",
+      report.pivota_discovery_progress.summary,
+      `Current status: ${titleCase(report.pivota_discovery_progress.status)}`,
+      `Next operator action: ${report.pivota_discovery_progress.next_recommended_operator_action}`,
+      `Next rerun: ${report.pivota_discovery_progress.next_rerun_at || "Not scheduled"}`,
+      `Last search-grounded Pivota PDP discovery score: ${reportScoreLabel(report.pivota_discovery_progress.last_search_grounded_discovery_score)}`,
+      `Uplift claim allowed: ${report.pivota_discovery_progress.uplift_claim_allowed ? "yes" : "no"}`,
+      ...report.pivota_discovery_progress.steps.map(
+        (step) => `- ${step.label}: ${titleCase(step.status)}. ${step.summary}`
+      ),
+      "",
       "## Retest Plan",
       ...report.retest_plan.map((item) => `- ${item}`),
       "",
@@ -13953,6 +14268,20 @@ export class MerchantFacingReportService {
         run,
         report
       ),
+      pivota_discovery_progress: pivotaDiscoveryProgressFor({
+        product_entity_id: report.target_summary.product_entity_id,
+        canonical_pivota_pdp_url:
+          report.target_summary.canonical_pivota_pdp_url ||
+          report.target_summary.pivota_pdp_url,
+        pivota_preflight_status: report.url_preflight_results.pivota_pdp.status,
+        contextual_pivota_attribution_status: pivotaAttribution,
+        pivota_audit: discoverabilityFixPlan.pivota_pdp_audit,
+        has_offer: Boolean(
+          report.target_summary.pivota_offer_id ||
+            report.target_summary.merchant_offer_id ||
+            report.offer_execution_summary.diagnosis_ids.length
+        ),
+      }),
       tested_product: {
         merchant_name: report.target_summary.merchant_name,
         store_url: report.target_summary.store_url,
@@ -16309,6 +16638,12 @@ export function getAgentCenterOverview(merchantId = DEMO_MERCHANT_ID) {
     latest_job: latestJob,
     latest_result: latestResults,
     latest_assurance_snapshot: latestAssuranceSnapshot,
+    pivota_discovery_progress:
+      latestAssuranceSnapshot?.product_entity_id
+        ? pivotaDiscoveryProgressFor({
+            product_entity_id: latestAssuranceSnapshot.product_entity_id,
+          })
+        : latestAssuranceSnapshot?.pivota_discovery_progress,
     discovery_evidence: {
       search_grounded: discoveryEvidence,
     },

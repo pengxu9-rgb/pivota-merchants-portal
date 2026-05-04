@@ -283,6 +283,29 @@ This does not write to merchant production systems. Merchant PDP copy, merchant 
 
 Do not claim discovery uplift unless a rerun score improves. If Pivota PDP readiness improves but search-grounded discovery still does not return the Pivota PDP, explain that external indexing/search ingestion can require more time.
 
+## Pivota Discovery Progress
+
+After Pivota-owned discoverability fixes are applied, the report can show a
+merchant-safe Pivota Discovery Progress section:
+
+- Pivota PDP published
+- ProductEntity binding verified
+- Product schema added
+- Offer schema added when an offer exists
+- Merchant source reference added
+- Sitemap includes canonical PDP
+- Search Console sitemap submitted
+- URL inspection / indexing requested
+- Waiting for indexing window
+- Search-grounded Gemini returned Pivota PDP
+- Uplift verified
+
+This progress proves prerequisites and operator evidence only. It does not prove
+consumer Gemini UI or AI Mode ranking, and it does not allow an uplift claim
+until a measured `search_grounded_product_discovery_test` rerun returns the
+canonical Pivota PDP URL or a verified canonicalized alias. Contextual
+attribution is still separate from discovery.
+
 ## Founder Demo Script
 
 Use this concise script for merchants or investors:

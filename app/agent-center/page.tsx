@@ -29,6 +29,21 @@ type OverviewPayload = {
   latest_job: any | null;
   latest_result: any | null;
   latest_assurance_snapshot: any | null;
+  pivota_discovery_progress?: {
+    status: string;
+    summary: string;
+    next_recommended_operator_action: string;
+    next_rerun_at?: string;
+    last_search_grounded_discovery_score: number | "not_tested" | "not_configured";
+    last_returned_urls: string[];
+    uplift_claim_allowed: boolean;
+    steps: Array<{
+      step_key: string;
+      label: string;
+      status: string;
+      summary: string;
+    }>;
+  };
   discovery_evidence?: {
     search_grounded?: {
       status: string;
@@ -277,6 +292,82 @@ export default function AgentCenterPage() {
           />
         </div>
       </SurfaceCard>
+
+      {overview?.pivota_discovery_progress ? (
+        <SurfaceCard
+          title="Pivota Discovery Progress"
+          description="Tracks public indexability work and measured search-grounded reruns. It does not claim uplift until the Pivota PDP is returned."
+        >
+          <div className="grid sm:grid-cols-2 xl:grid-cols-4">
+            <MetricTile
+              label="Progress status"
+              value={label(overview.pivota_discovery_progress.status)}
+              helper="Search Console and rerun evidence"
+              tone={badgeTone(
+                overview.pivota_discovery_progress.uplift_claim_allowed
+                  ? "passed"
+                  : overview.pivota_discovery_progress.status === "rerun_due"
+                    ? "needs_work"
+                    : "not_tested"
+              ) as any}
+            />
+            <MetricTile
+              label="Last Pivota discovery"
+              value={formatScore(
+                overview.pivota_discovery_progress
+                  .last_search_grounded_discovery_score
+              )}
+              helper="Search-grounded Pivota PDP score"
+              tone={
+                overview.pivota_discovery_progress.uplift_claim_allowed
+                  ? "success"
+                  : "neutral"
+              }
+            />
+            <MetricTile
+              label="Next rerun"
+              value={overview.pivota_discovery_progress.next_rerun_at || "Not scheduled"}
+              helper="Manual T+24h / T+72h / T+7d windows"
+              tone="brand"
+            />
+            <MetricTile
+              label="Uplift claim"
+              value={
+                overview.pivota_discovery_progress.uplift_claim_allowed
+                  ? "Allowed"
+                  : "Not allowed"
+              }
+              helper="Only after measured URL discovery improves"
+              tone={
+                overview.pivota_discovery_progress.uplift_claim_allowed
+                  ? "success"
+                  : "warning"
+              }
+            />
+          </div>
+          <div className="border-t border-[color:var(--merchant-line)] px-5 py-4 text-sm text-[color:var(--merchant-muted-strong)]">
+            {overview.pivota_discovery_progress.summary}
+          </div>
+          <div className="divide-y divide-[color:var(--merchant-line)]">
+            {overview.pivota_discovery_progress.steps.slice(0, 6).map((step) => (
+              <div
+                key={step.step_key}
+                className="grid gap-3 px-5 py-4 text-sm md:grid-cols-[240px_140px_1fr]"
+              >
+                <p className="font-medium text-[color:var(--merchant-ink)]">
+                  {step.label}
+                </p>
+                <StatusBadge tone={badgeTone(step.status) as any}>
+                  {label(step.status)}
+                </StatusBadge>
+                <p className="text-[color:var(--merchant-muted-strong)]">
+                  {step.summary}
+                </p>
+              </div>
+            ))}
+          </div>
+        </SurfaceCard>
+      ) : null}
 
       <SurfaceCard
         title="Discovery Readiness"

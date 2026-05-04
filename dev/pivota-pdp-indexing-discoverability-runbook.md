@@ -37,10 +37,25 @@ Before treating indexing work as operationally complete, record:
 - Whether the canonical ProductEntity PDP URL is inspectable through URL
   Inspection.
 - Whether indexing can be requested for that canonical URL.
+- The user-declared canonical and Google-selected canonical when URL Inspection
+  exposes them.
+- The operator, timestamp, evidence note, and optional screenshot/reference URL.
 
 If any item cannot be verified, mark the corresponding indexing task as
 `blocked` or keep it `proposed`. Do not infer Search Console readiness from an
 HTTP 200 PDP audit alone.
+
+Completion rules are intentionally strict:
+
+- `validate_search_console` cannot be completed until
+  `search_console_property_verified=true`.
+- `submit_sitemap` cannot be completed until `sitemap_submitted=true`.
+- `request_indexing` cannot be completed unless URL Inspection status is
+  `inspectable`, `indexed`, or `indexing_requested`, and
+  `indexing_requested=true`.
+- Search Console evidence, sitemap submission, and indexing requests never set
+  `uplift_claim_allowed=true`. Only a measured search-grounded rerun where the
+  canonical Pivota PDP or verified alias is returned can do that.
 
 ## Checklist
 
@@ -266,9 +281,21 @@ curl "$BASE_URL/api/internal/agent-center/pivota-indexing-tasks?product_entity_i
 
 The list response includes current task status, next rerun time, last
 search-grounded Pivota PDP discovery score, last returned URLs, and
-`uplift_claim_allowed`. Completing Search Console tasks does not set
-`uplift_claim_allowed=true`; only a measured rerun where the canonical Pivota PDP
-or verified alias is returned can do that.
+`uplift_claim_allowed`. It also returns an indexing evidence status and next
+recommended operator action:
+
+- `not_started`
+- `search_console_needed`
+- `sitemap_submitted`
+- `indexing_requested`
+- `waiting_for_indexing`
+- `rerun_due`
+- `uplift_verified`
+- `no_uplift_yet`
+
+Completing Search Console tasks does not set `uplift_claim_allowed=true`; only a
+measured rerun where the canonical Pivota PDP or verified alias is returned can
+do that.
 
 Manual rerun plan:
 
@@ -281,6 +308,29 @@ No background scheduler is required for V1. Use `wait_for_indexing_window` and
 
 The task tracker is internal-only. It records operational evidence, not measured
 Gemini discovery uplift.
+
+## Merchant-Safe Pivota Discovery Progress
+
+Merchant-facing reports may show a Pivota Discovery Progress module with safe
+statuses only:
+
+- Pivota PDP published
+- ProductEntity binding verified
+- Product schema added
+- Offer schema added when an offer exists
+- Merchant source reference added
+- Sitemap includes canonical PDP
+- Search Console sitemap submitted
+- URL inspection or indexing requested
+- Waiting for indexing window
+- Search-grounded Gemini returned Pivota PDP
+- Uplift verified
+
+Do not expose internal task IDs, Search Console screenshots, raw Gemini
+grounding metadata, prompt traces, token-level costs, DB URLs, or secrets. If
+contextual Pivota attribution passes but search-grounded discovery remains `0`,
+use: "Pivota PDP is ready when surfaced, but search-grounded Gemini has not yet
+returned the canonical Pivota PDP. No discovery uplift is claimed yet."
 
 ## Agent Center Rerun Plan
 

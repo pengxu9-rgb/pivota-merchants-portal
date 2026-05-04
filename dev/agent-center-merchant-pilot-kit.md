@@ -380,13 +380,28 @@ Supported task types are `submit_sitemap`, `request_indexing`,
 `validate_search_console`, `add_internal_link`, `wait_for_indexing_window`,
 `scheduled_search_grounded_rerun`, and `rerun_search_grounded_discovery`. The
 task summary exposes current status, next rerun time, last search-grounded
-discovery score, last returned URLs, and `uplift_claim_allowed`.
+discovery score, last returned URLs, indexing evidence status, next recommended
+operator action, and `uplift_claim_allowed`.
 
 These tasks document operational work only; they do not prove search-grounded
 discovery uplift until a rerun returns the canonical Pivota PDP or a verified
 alias. If indexing work is complete but the score remains `0`, the report should
 say: "Indexing work was recorded, but search-grounded Gemini has not yet
 returned the Pivota PDP. No discovery uplift is claimed yet."
+
+Completion rules:
+
+- `validate_search_console` requires `search_console_property_verified=true`.
+- `submit_sitemap` requires `sitemap_submitted=true`.
+- `request_indexing` requires URL Inspection status `inspectable`, `indexed`, or
+  `indexing_requested`, plus `indexing_requested=true`.
+- These evidence fields never allow an uplift claim by themselves.
+
+Merchant-facing reports should include Pivota Discovery Progress when related
+indexing tasks exist. This progress section may show public/indexing statuses
+and next rerun timing, but it must hide internal task IDs, Search Console
+screenshots, raw Gemini payloads, prompt traces, token-level costs, DB URLs, and
+secrets.
 
 Operators can also run the internal Pivota PDP indexability audit endpoint:
 

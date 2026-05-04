@@ -1317,6 +1317,7 @@ export type GMVAssuranceSnapshot = Timestamped & {
   top_blockers: GMVAssuranceBlocker[];
   recommended_next_actions: string[];
   usage_summary: GMVAssuranceUsageSummary;
+  pivota_discovery_progress?: PivotaDiscoveryProgress;
 };
 
 export type RetestPreparation = Timestamped & {
@@ -1511,16 +1512,38 @@ export type PivotaIndexingTaskStatus =
   | "blocked"
   | "skipped";
 
+export type PivotaUrlInspectionStatus =
+  | "not_checked"
+  | "inspectable"
+  | "indexed"
+  | "not_indexed"
+  | "indexing_requested"
+  | "blocked"
+  | "unknown";
+
+export type PivotaIndexingEvidenceStatus =
+  | "not_started"
+  | "search_console_needed"
+  | "sitemap_submitted"
+  | "indexing_requested"
+  | "waiting_for_indexing"
+  | "rerun_due"
+  | "uplift_verified"
+  | "no_uplift_yet";
+
 export type PivotaIndexingTaskEvidence = {
   search_console_property_verified?: boolean;
   sitemap_submitted?: boolean;
   sitemap_url?: string;
-  url_inspection_status?: string;
+  url_inspection_status?: PivotaUrlInspectionStatus;
+  google_selected_canonical?: string;
+  user_declared_canonical?: string;
   indexing_requested?: boolean;
   indexing_requested_at?: string;
   operator?: string;
   evidence_note?: string;
   screenshot_or_reference_url?: string;
+  search_console_verified_at?: string;
   next_rerun_at?: string;
   rerun_window?: "T+24h" | "T+72h" | "T+7d" | string;
   delay_hours?: number;
@@ -1544,6 +1567,43 @@ export type PivotaIndexingTask = Timestamped & {
   evidence?: PivotaIndexingTaskEvidence;
   created_at: string;
   completed_at?: string;
+};
+
+export type PivotaDiscoveryProgressStepStatus =
+  | "completed"
+  | "in_progress"
+  | "not_started"
+  | "blocked"
+  | "not_applicable"
+  | "not_yet_verified";
+
+export type PivotaDiscoveryProgressStep = {
+  step_key:
+    | "pivota_pdp_published"
+    | "product_entity_binding_verified"
+    | "product_schema_added"
+    | "offer_schema_added"
+    | "merchant_source_reference_added"
+    | "sitemap_includes_canonical_pdp"
+    | "search_console_sitemap_submitted"
+    | "url_inspection_indexing_requested"
+    | "waiting_for_indexing_window"
+    | "search_grounded_gemini_returned_pivota_pdp"
+    | "uplift_verified";
+  label: string;
+  status: PivotaDiscoveryProgressStepStatus;
+  summary: string;
+};
+
+export type PivotaDiscoveryProgress = {
+  status: PivotaIndexingEvidenceStatus;
+  summary: string;
+  next_recommended_operator_action: string;
+  next_rerun_at?: string;
+  last_search_grounded_discovery_score: VisibilityScoreValue;
+  last_returned_urls: string[];
+  uplift_claim_allowed: boolean;
+  steps: PivotaDiscoveryProgressStep[];
 };
 
 export type ProductionValidationUrlPreflight = {
@@ -1969,6 +2029,7 @@ export type MerchantFacingValidationReport = Timestamped & {
     blockers_cleared: string[];
     blockers_remaining: string[];
   };
+  pivota_discovery_progress: PivotaDiscoveryProgress;
   tested_product: {
     merchant_name: string;
     store_url: string;

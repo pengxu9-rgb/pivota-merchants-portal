@@ -215,13 +215,18 @@ async function handleInternalPivotaIndexingTasksRequestInner(
     if (req.method === "GET" && !taskId) {
       const productEntityId =
         req.nextUrl.searchParams.get("product_entity_id") || undefined;
+      const summaries = service.summaries({
+        product_entity_id: productEntityId,
+      });
+      const summary = productEntityId ? summaries[0] || null : null;
       return json({
         pivota_indexing_tasks: service.list({
           product_entity_id: productEntityId,
         }),
-        product_entity_summaries: service.summaries({
-          product_entity_id: productEntityId,
-        }),
+        product_entity_summaries: summaries,
+        summary,
+        next_recommended_operator_action:
+          summary?.next_recommended_operator_action,
       });
     }
     if (req.method === "GET" && taskId) {

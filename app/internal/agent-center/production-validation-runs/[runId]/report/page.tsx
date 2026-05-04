@@ -502,6 +502,54 @@ function ReportPreview({
         </div>
       </SurfaceCard>
 
+      <SurfaceCard title="Pivota Discovery Progress">
+        <div className="border-b border-[color:var(--merchant-line)] px-5 py-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge tone={statusTone(report.pivota_discovery_progress.status)}>
+              {label(report.pivota_discovery_progress.status)}
+            </StatusBadge>
+            <span className="text-sm text-[color:var(--merchant-muted-strong)]">
+              {report.pivota_discovery_progress.summary}
+            </span>
+          </div>
+        </div>
+        <div className="grid gap-4 px-5 py-4 lg:grid-cols-4">
+          <MetricStatus
+            label="Last search-grounded score"
+            status={report.pivota_discovery_progress.last_search_grounded_discovery_score}
+          />
+          <MetricStatus
+            label="Next rerun"
+            status={report.pivota_discovery_progress.next_rerun_at || "Not scheduled"}
+          />
+          <MetricStatus
+            label="Uplift claim allowed"
+            status={report.pivota_discovery_progress.uplift_claim_allowed ? "Yes" : "No"}
+          />
+          <MetricStatus
+            label="Next operator action"
+            status={report.pivota_discovery_progress.next_recommended_operator_action}
+          />
+        </div>
+        <div className="grid gap-3 border-t border-[color:var(--merchant-line)] px-5 py-4 md:grid-cols-2 xl:grid-cols-3">
+          {report.pivota_discovery_progress.steps.map((step) => (
+            <div key={step.step_key} className="rounded-md border border-[color:var(--merchant-line)] p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-medium text-[color:var(--merchant-ink)]">
+                  {step.label}
+                </p>
+                <StatusBadge tone={statusTone(step.status)}>
+                  {label(step.status)}
+                </StatusBadge>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
+                {step.summary}
+              </p>
+            </div>
+          ))}
+        </div>
+      </SurfaceCard>
+
       <div className="grid gap-6 xl:grid-cols-2">
         <SurfaceCard title="Merchant-Owned Path">
           <dl>
