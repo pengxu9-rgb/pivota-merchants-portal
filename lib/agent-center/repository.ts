@@ -784,6 +784,36 @@ type PgPoolLike = {
   query: (sql: string, values?: unknown[]) => Promise<{ rows: RecordLike[] }>;
 };
 
+const DB_ROW_COLUMNS = [
+  "id",
+  "merchant_id",
+  "store_id",
+  "scan_target_id",
+  "issue_id",
+  "fixture_id",
+  "production_validation_run_id",
+  "product_entity_id",
+  "agent_type",
+  "provider",
+  "status",
+  "idempotency_key",
+  "workflow_type",
+  "event_type",
+  "billing_mode",
+  "billing_status",
+  "quantity",
+  "environment",
+  "preset",
+  "cleanup_status",
+  "readiness_level",
+  "payload",
+  "created_at",
+  "updated_at",
+  "deleted_at",
+  "completed_at",
+  "expires_at",
+] as const;
+
 let agentCenterDbPoolPromise: Promise<PgPoolLike> | null = null;
 
 function configuredDbSchema() {
@@ -923,6 +953,92 @@ function rowValuesForRecord(
   };
 }
 
+function sqlValuesForRow(row: ReturnType<typeof rowValuesForRecord>) {
+  return [
+    row.id,
+    row.merchant_id || null,
+    row.store_id || null,
+    row.scan_target_id || null,
+    row.issue_id || null,
+    row.fixture_id || null,
+    row.production_validation_run_id || null,
+    row.product_entity_id || null,
+    row.agent_type || null,
+    row.provider || null,
+    row.status || null,
+    row.idempotency_key || null,
+    row.workflow_type || null,
+    row.event_type || null,
+    row.billing_mode || null,
+    row.billing_status || null,
+    row.quantity || null,
+    row.environment || null,
+    row.preset || null,
+    row.cleanup_status || null,
+    row.readiness_level || null,
+    JSON.stringify(row.payload),
+    row.created_at,
+    row.updated_at,
+    row.deleted_at,
+    row.completed_at || null,
+    row.expires_at || null,
+  ];
+}
+
+async function upsertRows(
+  pool: PgPoolLike,
+  table: string,
+  rows: Array<ReturnType<typeof rowValuesForRecord>>
+) {
+  const chunkSize = 100;
+  for (let start = 0; start < rows.length; start += chunkSize) {
+    const chunk = rows.slice(start, start + chunkSize);
+    const values: unknown[] = [];
+    const rowSql = chunk.map((row, rowIndex) => {
+      const rowValues = sqlValuesForRow(row);
+      values.push(...rowValues);
+      return `(${rowValues
+        .map((_, columnIndex) => {
+          const paramIndex = rowIndex * DB_ROW_COLUMNS.length + columnIndex + 1;
+          return columnIndex === 21 ? `$${paramIndex}::jsonb` : `$${paramIndex}`;
+        })
+        .join(", ")})`;
+    });
+    await pool.query(
+      `INSERT INTO ${table} (
+          ${DB_ROW_COLUMNS.join(", ")}
+        ) VALUES ${rowSql.join(", ")}
+        ON CONFLICT (id) DO UPDATE SET
+          merchant_id = EXCLUDED.merchant_id,
+          store_id = EXCLUDED.store_id,
+          scan_target_id = EXCLUDED.scan_target_id,
+          issue_id = EXCLUDED.issue_id,
+          fixture_id = EXCLUDED.fixture_id,
+          production_validation_run_id = EXCLUDED.production_validation_run_id,
+          product_entity_id = EXCLUDED.product_entity_id,
+          agent_type = EXCLUDED.agent_type,
+          provider = EXCLUDED.provider,
+          status = EXCLUDED.status,
+          idempotency_key = EXCLUDED.idempotency_key,
+          workflow_type = EXCLUDED.workflow_type,
+          event_type = EXCLUDED.event_type,
+          billing_mode = EXCLUDED.billing_mode,
+          billing_status = EXCLUDED.billing_status,
+          quantity = EXCLUDED.quantity,
+          environment = EXCLUDED.environment,
+          preset = EXCLUDED.preset,
+          cleanup_status = EXCLUDED.cleanup_status,
+          readiness_level = EXCLUDED.readiness_level,
+          payload = EXCLUDED.payload,
+          updated_at = EXCLUDED.updated_at,
+          deleted_at = EXCLUDED.deleted_at,
+          completed_at = EXCLUDED.completed_at,
+          expires_at = EXCLUDED.expires_at`,
+      values
+    );
+  }
+}
+
 function collectionHydrateWhere(collection: PersistedCollectionKey) {
   if (collection === "productionValidationRuns") {
     return "WHERE id NOT LIKE 'pilot_product_entity_%' AND id NOT LIKE 'pivota_indexing_task_%' AND id NOT LIKE 'product_entity_index_%' AND id NOT LIKE 'product_entity_index_batch_%'";
@@ -1049,81 +1165,11 @@ export class DbAgentCenterRepository extends BaseAgentCenterRepository {
     for (const record of records) {
       activeIds.add(String((record as RecordLike).id));
     }
-    for (const record of recordsToPersist) {
-      const row = rowValuesForRecord(collection, record);
-      await pool.query(
-        `INSERT INTO ${table} (
-          id, merchant_id, store_id, scan_target_id, issue_id, fixture_id,
-          production_validation_run_id, product_entity_id, agent_type, provider,
-          status, idempotency_key, workflow_type, event_type, billing_mode,
-          billing_status, quantity, environment, preset, cleanup_status,
-          readiness_level, payload, created_at, updated_at, deleted_at,
-          completed_at, expires_at
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6,
-          $7, $8, $9, $10,
-          $11, $12, $13, $14, $15,
-          $16, $17, $18, $19, $20,
-          $21, $22::jsonb, $23, $24, $25,
-          $26, $27
-        )
-        ON CONFLICT (id) DO UPDATE SET
-          merchant_id = EXCLUDED.merchant_id,
-          store_id = EXCLUDED.store_id,
-          scan_target_id = EXCLUDED.scan_target_id,
-          issue_id = EXCLUDED.issue_id,
-          fixture_id = EXCLUDED.fixture_id,
-          production_validation_run_id = EXCLUDED.production_validation_run_id,
-          product_entity_id = EXCLUDED.product_entity_id,
-          agent_type = EXCLUDED.agent_type,
-          provider = EXCLUDED.provider,
-          status = EXCLUDED.status,
-          idempotency_key = EXCLUDED.idempotency_key,
-          workflow_type = EXCLUDED.workflow_type,
-          event_type = EXCLUDED.event_type,
-          billing_mode = EXCLUDED.billing_mode,
-          billing_status = EXCLUDED.billing_status,
-          quantity = EXCLUDED.quantity,
-          environment = EXCLUDED.environment,
-          preset = EXCLUDED.preset,
-          cleanup_status = EXCLUDED.cleanup_status,
-          readiness_level = EXCLUDED.readiness_level,
-          payload = EXCLUDED.payload,
-          updated_at = EXCLUDED.updated_at,
-          deleted_at = EXCLUDED.deleted_at,
-          completed_at = EXCLUDED.completed_at,
-          expires_at = EXCLUDED.expires_at`,
-        [
-          row.id,
-          row.merchant_id || null,
-          row.store_id || null,
-          row.scan_target_id || null,
-          row.issue_id || null,
-          row.fixture_id || null,
-          row.production_validation_run_id || null,
-          row.product_entity_id || null,
-          row.agent_type || null,
-          row.provider || null,
-          row.status || null,
-          row.idempotency_key || null,
-          row.workflow_type || null,
-          row.event_type || null,
-          row.billing_mode || null,
-          row.billing_status || null,
-          row.quantity || null,
-          row.environment || null,
-          row.preset || null,
-          row.cleanup_status || null,
-          row.readiness_level || null,
-          JSON.stringify(row.payload),
-          row.created_at,
-          row.updated_at,
-          row.deleted_at,
-          row.completed_at || null,
-          row.expires_at || null,
-        ]
-      );
-    }
+    await upsertRows(
+      pool,
+      table,
+      recordsToPersist.map((record) => rowValuesForRecord(collection, record))
+    );
 
     const baselineIds = this.baselineIds.get(collection) || new Set<string>();
     const removedIds = fullFlush
