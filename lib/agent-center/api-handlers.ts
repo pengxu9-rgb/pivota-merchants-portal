@@ -240,6 +240,42 @@ async function handleInternalProductEntityIndexRequestInner(
         201
       );
     }
+    if (req.method === "POST" && action === "priority-rerun-plan") {
+      return json(
+        {
+          product_entity_index_priority_rerun_plan:
+            service.prioritySearchGroundedPlan(await requestBody(req)),
+        },
+        201
+      );
+    }
+    if (req.method === "GET" && action === "priority-rerun-plan") {
+      return json({
+        product_entity_index_priority_rerun_plan:
+          service.prioritySearchGroundedPlan({
+            limit: Number(req.nextUrl.searchParams.get("limit") || 25),
+            include_not_found:
+              req.nextUrl.searchParams.get("include_not_found") === "true",
+          }),
+      });
+    }
+    if (req.method === "POST" && action === "duplicate-merge-audit") {
+      return json(
+        {
+          product_entity_duplicate_merge_audit:
+            service.duplicateMergeAudit(await requestBody(req)),
+        },
+        201
+      );
+    }
+    if (req.method === "GET" && action === "duplicate-merge-audit") {
+      return json({
+        product_entity_duplicate_merge_audit: service.duplicateMergeAudit({
+          limit: Number(req.nextUrl.searchParams.get("limit") || 25),
+          min_group_size: Number(req.nextUrl.searchParams.get("min_group_size") || 2),
+        }),
+      });
+    }
     if (req.method === "POST" && action === "run-batch") {
       return json(
         { product_entity_index_batch_run: await service.runBatch(await requestBody(req)) },

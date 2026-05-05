@@ -526,6 +526,66 @@ No background scheduler is required for V1. Use `wait_for_indexing_window` and
 The task tracker is internal-only. It records operational evidence, not measured
 Gemini discovery uplift.
 
+## Priority Gemini Rerun Queue
+
+After sitemap submission, do not run all ProductEntity PDPs through Gemini at
+once. Use the internal priority plan to select controlled batches from
+`sitemap_eligible=true` canonical `sig_*` records:
+
+```bash
+curl -X POST "$BASE_URL/api/internal/agent-center/product-entity-index/priority-rerun-plan" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET" \
+  -H "content-type: application/json" \
+  --data '{
+    "limit": 25,
+    "include_not_found": true
+  }'
+```
+
+The plan prioritizes:
+
+- records never tested in Gemini search-grounded mode
+- pilot and high-value brands
+- beauty categories with clear search intent
+- records already observed as indexed where available
+
+Run the dedicated scoped rerun only for the selected records:
+
+```bash
+curl -X POST "$BASE_URL/api/internal/agent-center/product-entity-index/gemini-rerun" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET" \
+  -H "content-type: application/json" \
+  --data '{
+    "strategy": "priority",
+    "limit": 25,
+    "include_not_found": true
+  }'
+```
+
+This route must only run `search_grounded_product_discovery_test`. It must not
+run organic discovery, contextual attribution, offer readiness, checkout
+readiness, or merchant write-back. The response may recommend exposure work,
+but `uplift_claim_allowed` remains false unless a measured rerun returns the
+canonical Pivota PDP URL or a verified alias that canonicalizes to the expected
+ProductEntity.
+
+## Duplicate And Offer Merge Audit
+
+Before broadening the sitemap beyond the current ready ProductEntities, run the
+duplicate audit to find probable variant families and duplicate source records:
+
+```bash
+curl "$BASE_URL/api/internal/agent-center/product-entity-index/duplicate-merge-audit?limit=50&min_group_size=2" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET"
+```
+
+The audit is read-only. It groups canonical ProductEntities by normalized brand
+and product family, then recommends either a ProductEntity family/SKU variant map
+or source-reference consolidation. It does not merge ProductEntities or offers.
+Offer merge policy remains strict: same ProductEntity, same merchant, and same
+SKU/variant can be deduped after review; variant offers need a SKU/variant map;
+different merchants remain separate `AggregateOffer` entries.
+
 ## Merchant-Safe Pivota Discovery Progress
 
 Merchant-facing reports may show a Pivota Discovery Progress module with safe

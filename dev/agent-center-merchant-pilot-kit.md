@@ -262,6 +262,32 @@ gateway cursor and advances through sync, content verification, production
 audit, and optional search-grounded measurement without treating no-content
 records as sitemap eligible.
 
+For daily Gemini measurement, request an internal priority rerun plan before
+calling the runner:
+
+```text
+POST /api/internal/agent-center/product-entity-index/priority-rerun-plan
+POST /api/internal/agent-center/product-entity-index/gemini-rerun
+```
+
+The priority plan is read-only and chooses from `sitemap_eligible=true`
+canonical `sig_*` records only. It prioritizes untested pilot/high-value brands
+and high-intent beauty categories. Reruns must stay scoped to
+`search_grounded_product_discovery_test`; contextual attribution, organic tests,
+offer readiness, and checkout readiness are separate workflows.
+
+Before consolidating duplicate PDPs or offers, use the read-only merge audit:
+
+```text
+GET  /api/internal/agent-center/product-entity-index/duplicate-merge-audit
+POST /api/internal/agent-center/product-entity-index/duplicate-merge-audit
+```
+
+The audit can flag probable duplicate ProductEntities or SKU/variant families,
+but V1 does not auto-merge entities or offers. Different merchants remain
+separate offers under the canonical ProductEntity; variant offers require a
+reviewed SKU/variant map.
+
 The default sync source is gateway `get_discovery_feed`, which is appropriate
 for smoke tests and curated browse coverage. Full backlog rollout should use
 `AGENT_CENTER_PRODUCT_ENTITY_INDEX_SYNC_SOURCE=gateway_product_entity_index_feed`

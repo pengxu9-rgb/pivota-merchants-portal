@@ -3004,6 +3004,302 @@ test("ProductEntity index public API returns only sitemap-eligible canonical rec
   assert.deepEqual(emptyResolverPayload.product_entity_resolver_records, []);
 });
 
+test("ProductEntity index priority rerun plan selects canonical eligible high-priority PDPs", async () => {
+  resetAgentCenterState();
+  const now = new Date().toISOString();
+  const records = [
+    {
+      id: "product_entity_index_sig_priority",
+      product_entity_id: "sig_priority",
+      canonical_url: "https://agent.pivota.cc/products/sig_priority",
+      external_seed_id: "ext_priority",
+      product_name: "The Ordinary Multi-Peptide Lash and Brow Serum",
+      brand: "The Ordinary",
+      category: "Serum",
+      pdp_content_status: "ready",
+      indexability_status: "ready",
+      sitemap_eligible: true,
+      google_index_status: "indexed",
+      gemini_search_grounded_status: "not_tested",
+      failure_reasons: [],
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: "product_entity_index_sig_lower",
+      product_entity_id: "sig_lower",
+      canonical_url: "https://agent.pivota.cc/products/sig_lower",
+      external_seed_id: "ext_lower",
+      product_name: "Everyday Body Lotion",
+      brand: "Other Brand",
+      category: "Body Care",
+      pdp_content_status: "ready",
+      indexability_status: "ready",
+      sitemap_eligible: true,
+      google_index_status: "unknown",
+      gemini_search_grounded_status: "not_tested",
+      failure_reasons: [],
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: "product_entity_index_sig_notfound",
+      product_entity_id: "sig_notfound",
+      canonical_url: "https://agent.pivota.cc/products/sig_notfound",
+      external_seed_id: "ext_notfound",
+      product_name: "COSRX Snail Mucin Essence",
+      brand: "COSRX",
+      category: "Essence",
+      pdp_content_status: "ready",
+      indexability_status: "ready",
+      sitemap_eligible: true,
+      google_index_status: "unknown",
+      gemini_search_grounded_status: "not_found",
+      last_search_grounded_score: 0,
+      failure_reasons: [],
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: "product_entity_index_sig_noneligible",
+      product_entity_id: "sig_noneligible",
+      canonical_url: "https://agent.pivota.cc/products/sig_noneligible",
+      external_seed_id: "ext_noneligible",
+      product_name: "SKIN1004 Centella Cleanser",
+      brand: "SKIN1004",
+      category: "Cleanser",
+      pdp_content_status: "weak_content",
+      indexability_status: "needs_work",
+      sitemap_eligible: false,
+      google_index_status: "unknown",
+      gemini_search_grounded_status: "not_tested",
+      failure_reasons: ["weak_content"],
+      created_at: now,
+      updated_at: now,
+    },
+  ];
+  for (const record of records) {
+    getAgentCenterRepository().upsert("productEntityIndexRecords", record);
+  }
+
+  const service = new ProductEntityIndexRegistryService();
+  const plan = service.prioritySearchGroundedPlan({ limit: 5 });
+
+  assert.equal(plan.strategy, "priority_search_grounded_product_discovery");
+  assert.equal(plan.total_sitemap_eligible, 3);
+  assert.deepEqual(
+    plan.records.map((record) => record.product_entity_id),
+    ["sig_priority", "sig_lower"]
+  );
+  assert.ok(plan.records[0].priority_reasons.includes("priority_brand"));
+  assert.equal(plan.records.some((record) => record.product_entity_id === "sig_noneligible"), false);
+  assert.equal(plan.records.some((record) => record.product_entity_id === "sig_notfound"), false);
+  assert.equal(plan.uplift_claim_allowed, false);
+
+  const includeNotFound = service.prioritySearchGroundedPlan({
+    limit: 5,
+    include_not_found: true,
+  });
+  assert.ok(
+    includeNotFound.records.some((record) => record.product_entity_id === "sig_notfound")
+  );
+});
+
+test("ProductEntity duplicate merge audit flags variant groups without mutating state", async () => {
+  resetAgentCenterState();
+  const now = new Date().toISOString();
+  for (const record of [
+    {
+      id: "product_entity_index_sig_dup_30ml",
+      product_entity_id: "sig_dup_30ml",
+      canonical_url: "https://agent.pivota.cc/products/sig_dup_30ml",
+      external_seed_id: "ext_dup_30ml",
+      product_name: "Glow Brand Centella Ampoule 30ml",
+      brand: "Glow Brand",
+      category: "Ampoule",
+      pdp_content_status: "ready",
+      indexability_status: "ready",
+      sitemap_eligible: true,
+      google_index_status: "unknown",
+      gemini_search_grounded_status: "not_tested",
+      failure_reasons: [],
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: "product_entity_index_sig_dup_50ml",
+      product_entity_id: "sig_dup_50ml",
+      canonical_url: "https://agent.pivota.cc/products/sig_dup_50ml",
+      external_seed_id: "ext_dup_50ml",
+      external_seed_ids: ["ext_dup_50ml", "ext_dup_alias"],
+      product_name: "Glow Brand Centella Ampoule 50ml",
+      brand: "Glow Brand",
+      category: "Ampoule",
+      pdp_content_status: "ready",
+      indexability_status: "ready",
+      sitemap_eligible: true,
+      google_index_status: "unknown",
+      gemini_search_grounded_status: "not_tested",
+      failure_reasons: [],
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: "product_entity_index_sig_unique",
+      product_entity_id: "sig_unique",
+      canonical_url: "https://agent.pivota.cc/products/sig_unique",
+      external_seed_id: "ext_unique",
+      product_name: "Unrelated Cleanser",
+      brand: "Other Brand",
+      category: "Cleanser",
+      pdp_content_status: "ready",
+      indexability_status: "ready",
+      sitemap_eligible: true,
+      google_index_status: "unknown",
+      gemini_search_grounded_status: "not_tested",
+      failure_reasons: [],
+      created_at: now,
+      updated_at: now,
+    },
+  ]) {
+    getAgentCenterRepository().upsert("productEntityIndexRecords", record);
+  }
+
+  const audit = new ProductEntityIndexRegistryService().duplicateMergeAudit({
+    limit: 10,
+    min_group_size: 2,
+  });
+
+  assert.equal(audit.audit_type, "product_entity_duplicate_offer_merge_audit");
+  assert.equal(audit.mutation_performed, false);
+  assert.equal(audit.duplicate_group_count, 1);
+  assert.equal(audit.groups[0].product_entity_count, 2);
+  assert.equal(audit.groups[0].variant_like, true);
+  assert.equal(
+    audit.groups[0].recommended_action,
+    "create_product_entity_family_with_sku_variant_map"
+  );
+  assert.equal(audit.groups[0].auto_apply_allowed, false);
+  assert.match(audit.groups[0].offer_merge_policy, /Do not merge offers blindly/);
+  assert.deepEqual(
+    getAgentCenterState().productEntityIndexRecords.map((record) => record.product_entity_id).sort(),
+    ["sig_dup_30ml", "sig_dup_50ml", "sig_unique"]
+  );
+});
+
+test("internal ProductEntity index route exposes priority plan and duplicate audit", async () => {
+  resetAgentCenterState();
+  const previousEnabled = process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION;
+  const previousSecret = process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET;
+  process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION = "true";
+  process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET = "index-secret";
+  const now = new Date().toISOString();
+  for (const record of [
+    {
+      id: "product_entity_index_sig_route_priority",
+      product_entity_id: "sig_route_priority",
+      canonical_url: "https://agent.pivota.cc/products/sig_route_priority",
+      external_seed_id: "ext_route_priority",
+      product_name: "Anua Heartleaf Toner",
+      brand: "Anua",
+      category: "Toner",
+      pdp_content_status: "ready",
+      indexability_status: "ready",
+      sitemap_eligible: true,
+      google_index_status: "unknown",
+      gemini_search_grounded_status: "not_tested",
+      failure_reasons: [],
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: "product_entity_index_sig_route_dup_a",
+      product_entity_id: "sig_route_dup_a",
+      canonical_url: "https://agent.pivota.cc/products/sig_route_dup_a",
+      external_seed_id: "ext_route_dup_a",
+      product_name: "Route Brand Hydrating Serum 30ml",
+      brand: "Route Brand",
+      category: "Serum",
+      pdp_content_status: "ready",
+      indexability_status: "ready",
+      sitemap_eligible: true,
+      google_index_status: "unknown",
+      gemini_search_grounded_status: "not_tested",
+      failure_reasons: [],
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: "product_entity_index_sig_route_dup_b",
+      product_entity_id: "sig_route_dup_b",
+      canonical_url: "https://agent.pivota.cc/products/sig_route_dup_b",
+      external_seed_id: "ext_route_dup_b",
+      product_name: "Route Brand Hydrating Serum 50ml",
+      brand: "Route Brand",
+      category: "Serum",
+      pdp_content_status: "ready",
+      indexability_status: "ready",
+      sitemap_eligible: true,
+      google_index_status: "unknown",
+      gemini_search_grounded_status: "not_tested",
+      failure_reasons: [],
+      created_at: now,
+      updated_at: now,
+    },
+  ]) {
+    getAgentCenterRepository().upsert("productEntityIndexRecords", record);
+  }
+
+  try {
+    const planResponse = await handleInternalProductEntityIndexRequest(
+      new NextRequest(
+        "https://example.test/api/internal/agent-center/product-entity-index/priority-rerun-plan",
+        {
+          method: "POST",
+          headers: {
+            authorization: "Bearer index-secret",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ limit: 2 }),
+        }
+      ),
+      { action: "priority-rerun-plan" }
+    );
+    const planPayload = await planResponse.json();
+    assert.equal(planResponse.status, 201);
+    assert.equal(
+      planPayload.product_entity_index_priority_rerun_plan.records[0].product_entity_id,
+      "sig_route_priority"
+    );
+
+    const auditResponse = await handleInternalProductEntityIndexRequest(
+      new NextRequest(
+        "https://example.test/api/internal/agent-center/product-entity-index/duplicate-merge-audit?min_group_size=2",
+        {
+          method: "GET",
+          headers: { authorization: "Bearer index-secret" },
+        }
+      ),
+      { action: "duplicate-merge-audit" }
+    );
+    const auditPayload = await auditResponse.json();
+    assert.equal(auditResponse.status, 200);
+    assert.equal(
+      auditPayload.product_entity_duplicate_merge_audit.groups[0].recommended_action,
+      "create_product_entity_family_with_sku_variant_map"
+    );
+    assert.equal(
+      auditPayload.product_entity_duplicate_merge_audit.mutation_performed,
+      false
+    );
+  } finally {
+    if (previousEnabled === undefined) delete process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION;
+    else process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION = previousEnabled;
+    if (previousSecret === undefined) delete process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET;
+    else process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET = previousSecret;
+  }
+});
+
 test("internal ProductEntity index route is gated and exposes sync action", async () => {
   resetAgentCenterState();
   const previousEnabled = process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION;

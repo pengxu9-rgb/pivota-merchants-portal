@@ -7351,6 +7351,54 @@ function productEntityRecordPublicSitemapPayload(record: ProductEntityIndexRecor
   };
 }
 
+const DEFAULT_PRODUCT_ENTITY_PRIORITY_BRANDS = [
+  "The Ordinary",
+  "SKIN1004",
+  "Beauty of Joseon",
+  "COSRX",
+  "Anua",
+  "Laneige",
+  "Isntree",
+  "Paula's Choice",
+  "Rare Beauty",
+  "Naturium",
+  "Round Lab",
+  "Fenty Beauty",
+];
+
+function normalizedProductEntityBrand(value?: string) {
+  return new ProductNameNormalizer().normalizeForCompare(value || "unknown");
+}
+
+function productEntityFamilyName(value?: string) {
+  const normalizer = new ProductNameNormalizer();
+  return compactWhitespace(
+    normalizer
+      .normalizedCoreName(value || "")
+      .replace(/\s+(shade\s*)?#?\d{1,4}[a-z]?$/i, " ")
+      .replace(/\s+\d{1,3}[a-z]$/i, " ")
+      .replace(/\s+(cashew|banana|hazelnut|coffee|lavender|nutmeg|seashell|butter|toffee|honey|pumpkin|peach|unlocked|unlawful|underdawg|unveil|uncensored|uncuffed)$/i, " ")
+  );
+}
+
+function productEntityPriorityScore(
+  record: ProductEntityIndexRecord,
+  priorityBrands: Set<string>
+) {
+  let score = 0;
+  const brand = normalizedProductEntityBrand(record.brand);
+  const family = productEntityFamilyName(record.product_name);
+  if (record.gemini_search_grounded_status === "not_tested") score += 100;
+  if (record.gemini_search_grounded_status === "not_found") score += 45;
+  if (priorityBrands.has(brand)) score += 80;
+  if (/\b(sunscreen|sun|cleanser|toner|serum|moisturizer|exfoliant|ampoule)\b/i.test(family)) {
+    score += 20;
+  }
+  if (record.google_index_status === "indexed") score += 15;
+  if (record.source_updated_at) score += 5;
+  return score;
+}
+
 async function mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
@@ -7421,6 +7469,164 @@ export class ProductEntityIndexRegistryService {
           : true
       )
       .map(productEntityRecordPublicPayload);
+  }
+
+  prioritySearchGroundedPlan(input: {
+    limit?: number;
+    priority_brands?: string[];
+    include_previously_tested?: boolean;
+    include_not_found?: boolean;
+  } = {}) {
+    const priorityBrands = new Set(
+      (arrayOfStringInput(input.priority_brands).length
+        ? arrayOfStringInput(input.priority_brands)
+        : DEFAULT_PRODUCT_ENTITY_PRIORITY_BRANDS
+      ).map(normalizedProductEntityBrand)
+    );
+    const limit = Math.max(1, Math.min(Number(input.limit || 25), 250));
+    const eligibleRecords = this.list({ sitemap_eligible: true });
+    const candidates = eligibleRecords
+      .filter((record) =>
+        input.include_previously_tested
+          ? true
+          : input.include_not_found
+            ? ["not_tested", "not_found"].includes(record.gemini_search_grounded_status)
+            : record.gemini_search_grounded_status === "not_tested"
+      )
+      .map((record) => ({
+        record,
+        priority_score: productEntityPriorityScore(record, priorityBrands),
+      }))
+      .sort((left, right) => {
+        if (right.priority_score !== left.priority_score) {
+          return right.priority_score - left.priority_score;
+        }
+        return String(left.record.last_search_grounded_at || "").localeCompare(
+          String(right.record.last_search_grounded_at || "")
+        );
+      })
+      .slice(0, limit);
+
+    const brandCoverage = new Map<string, number>();
+    for (const { record } of candidates) {
+      const brand = record.brand || "unknown";
+      brandCoverage.set(brand, (brandCoverage.get(brand) || 0) + 1);
+    }
+
+    return {
+      strategy: "priority_search_grounded_product_discovery",
+      recommended_batch_size: Math.min(limit, 25),
+      total_sitemap_eligible: eligibleRecords.length,
+      candidates_considered: candidates.length,
+      priority_brands: [...priorityBrands],
+      brand_coverage: [...brandCoverage.entries()].map(([brand, count]) => ({
+        brand,
+        count,
+      })),
+      records: candidates.map(({ record, priority_score }) => ({
+        product_entity_id: record.product_entity_id,
+        canonical_url: record.canonical_url,
+        product_name: record.product_name,
+        brand: record.brand,
+        category: record.category,
+        external_seed_id: record.external_seed_id,
+        gemini_search_grounded_status: record.gemini_search_grounded_status,
+        last_search_grounded_score: record.last_search_grounded_score,
+        last_search_grounded_at: record.last_search_grounded_at,
+        priority_score,
+        priority_reasons: [
+          record.gemini_search_grounded_status === "not_tested"
+            ? "not_tested"
+            : record.gemini_search_grounded_status,
+          priorityBrands.has(normalizedProductEntityBrand(record.brand))
+            ? "priority_brand"
+            : "",
+          /\b(sunscreen|sun|cleanser|toner|serum|moisturizer|exfoliant|ampoule)\b/i.test(
+            productEntityFamilyName(record.product_name)
+          )
+            ? "high_intent_beauty_category"
+            : "",
+        ].filter(Boolean),
+      })),
+      next_action:
+        "Run search_grounded_product_discovery_test for this priority batch only. Do not claim exposure unless canonical Pivota PDP URL or verified alias is returned.",
+      uplift_claim_allowed: false,
+    };
+  }
+
+  duplicateMergeAudit(input: {
+    limit?: number;
+    min_group_size?: number;
+    sitemap_eligible?: boolean;
+  } = {}) {
+    const limit = Math.max(1, Math.min(Number(input.limit || 25), 250));
+    const minGroupSize = Math.max(2, Math.min(Number(input.min_group_size || 2), 50));
+    const records = this.list({
+      sitemap_eligible: input.sitemap_eligible === false ? undefined : true,
+      limit: 5000,
+    });
+    const groups = new Map<string, ProductEntityIndexRecord[]>();
+    for (const record of records) {
+      const brand = normalizedProductEntityBrand(record.brand);
+      const family = productEntityFamilyName(record.product_name);
+      if (!brand || !family) continue;
+      const key = `${brand}|${family}`;
+      groups.set(key, [...(groups.get(key) || []), record]);
+    }
+    const duplicateGroups = [...groups.entries()]
+      .map(([key, group]) => {
+        const [brandKey, family] = key.split("|");
+        const exactNames = new Set(
+          group.map((record) =>
+            new ProductNameNormalizer().normalizeForCompare(record.product_name || "")
+          )
+        );
+        const variantLike =
+          exactNames.size > 1 ||
+          group.some((record) => /[#—–-]\s*[\w.]+$|\b(shade|refill|travel|mini)\b/i.test(record.product_name || ""));
+        return {
+          group_id: `product_entity_merge_${slugFrom(key)}`,
+          brand: group[0]?.brand || brandKey,
+          normalized_product_family: family,
+          product_entity_count: group.length,
+          external_seed_count: unique(
+            group.flatMap((record) => [
+              record.external_seed_id || "",
+              ...(record.external_seed_ids || []),
+            ])
+          ).filter(Boolean).length,
+          variant_like: variantLike,
+          confidence: group.length >= 5 ? "high" : exactNames.size === 1 ? "medium" : "medium",
+          recommended_action: variantLike
+            ? "create_product_entity_family_with_sku_variant_map"
+            : "merge_duplicate_source_references_under_canonical_product_entity",
+          offer_merge_policy:
+            "Do not merge offers blindly. Same ProductEntity + same merchant + same SKU/variant can be deduped; variant offers must attach through SKU/variant map; different merchants remain separate AggregateOffer entries.",
+          auto_apply_allowed: false,
+          product_entities: group.slice(0, 20).map((record) => ({
+            product_entity_id: record.product_entity_id,
+            canonical_url: record.canonical_url,
+            product_name: record.product_name,
+            brand: record.brand,
+            external_seed_id: record.external_seed_id,
+            sitemap_eligible: record.sitemap_eligible,
+            gemini_search_grounded_status: record.gemini_search_grounded_status,
+          })),
+        };
+      })
+      .filter((group) => group.product_entity_count >= minGroupSize)
+      .sort((left, right) => right.product_entity_count - left.product_entity_count)
+      .slice(0, limit);
+
+    return {
+      audit_type: "product_entity_duplicate_offer_merge_audit",
+      records_considered: records.length,
+      duplicate_group_count: duplicateGroups.length,
+      groups: duplicateGroups,
+      next_action:
+        "Review high-count variant-like groups first, then create ProductEntity family/SKU variant mappings before any offer merge.",
+      mutation_performed: false,
+    };
   }
 
   summary() {
@@ -8114,6 +8320,9 @@ export class ProductEntityIndexRegistryService {
     product_entity_ids?: string[];
     limit?: number;
     include_previously_tested?: boolean;
+    strategy?: "default" | "priority";
+    priority_brands?: string[];
+    include_not_found?: boolean;
   } = {}) {
     if (!geminiSearchGroundingConfigured()) {
       return {
@@ -8124,14 +8333,32 @@ export class ProductEntityIndexRegistryService {
     }
     const requestedIds = new Set(arrayOfStringInput(input.product_entity_ids));
     const limit = Math.max(1, Math.min(Number(input.limit || 25), 100));
+    const priorityIds =
+      !requestedIds.size && input.strategy === "priority"
+        ? this.prioritySearchGroundedPlan({
+            limit,
+            priority_brands: input.priority_brands,
+            include_previously_tested: input.include_previously_tested,
+            include_not_found: input.include_not_found,
+          }).records.map((record) => record.product_entity_id)
+        : [];
     const records = this.list({ sitemap_eligible: true })
       .filter((record) =>
         requestedIds.size ? requestedIds.has(record.product_entity_id) : true
       )
       .filter((record) =>
-        requestedIds.size || input.include_previously_tested
+        priorityIds.length ? priorityIds.includes(record.product_entity_id) : true
+      )
+      .filter((record) =>
+        requestedIds.size || input.include_previously_tested || priorityIds.length
           ? true
           : record.gemini_search_grounded_status === "not_tested"
+      )
+      .sort((left, right) =>
+        priorityIds.length
+          ? priorityIds.indexOf(left.product_entity_id) -
+            priorityIds.indexOf(right.product_entity_id)
+          : 0
       )
       .slice(0, limit);
     const adapter = new GeminiProviderAdapter();
