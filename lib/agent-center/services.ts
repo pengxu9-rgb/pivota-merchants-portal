@@ -81,6 +81,8 @@ import type {
   PivotaIndexingTaskStatus,
   PivotaIndexingTaskType,
   PilotProductEntityProvisioningRun,
+  ProductEntityIndexBatchRun,
+  ProductEntityIndexBatchStage,
   ProductEntityIndexRecord,
   ProductEntityIndexabilityStatus,
   ProductEntityPdpContentStatus,
@@ -7259,12 +7261,173 @@ export class ProductEntityIndexRegistryService {
     return {
       total_candidates: records.length,
       pdp_content_ready: records.filter((record) => record.pdp_content_status === "ready").length,
+      content_verification_pending: records.filter(
+        (record) =>
+          record.pdp_content_status !== "ready" &&
+          !record.last_content_verified_at
+      ).length,
       sitemap_eligible: records.filter((record) => record.sitemap_eligible).length,
       indexability_ready: records.filter((record) => record.indexability_status === "ready").length,
+      indexability_audit_pending: records.filter(
+        (record) =>
+          record.pdp_content_status === "ready" &&
+          !record.last_indexability_audit_at
+      ).length,
       google_indexed: records.filter((record) => record.google_index_status === "indexed").length,
       gemini_found: records.filter((record) => record.gemini_search_grounded_status === "found").length,
+      search_grounded_pending: records.filter(
+        (record) =>
+          record.sitemap_eligible &&
+          record.gemini_search_grounded_status === "not_tested"
+      ).length,
       failures_by_reason: Object.fromEntries(byReason),
     };
+  }
+
+  listBatchRuns(input: { limit?: number } = {}) {
+    const runs = [...getAgentCenterState().productEntityIndexBatchRuns].sort(
+      (left, right) =>
+        new Date(right.updated_at || right.created_at).getTime() -
+        new Date(left.updated_at || left.created_at).getTime()
+    );
+    return typeof input.limit === "number" ? runs.slice(0, input.limit) : runs;
+  }
+
+  getBatchRun(runId: string) {
+    const run = getAgentCenterState().productEntityIndexBatchRuns.find(
+      (item) => item.id === runId
+    );
+    if (!run) throw new Error(`ProductEntity index batch run not found: ${runId}`);
+    return run;
+  }
+
+  async runBatch(input: {
+    run_id?: string;
+    stage?: ProductEntityIndexBatchStage | "auto";
+    sync_limit?: number;
+    page_size?: number;
+    max_pages?: number;
+    verify_limit?: number;
+    audit_limit?: number;
+    gemini_limit?: number;
+    start_page?: number;
+    cursor?: string;
+    include_gemini?: boolean;
+  } = {}) {
+    const now = nowIso();
+    const existing = input.run_id ? this.getBatchRun(input.run_id) : undefined;
+    const run: ProductEntityIndexBatchRun = existing || {
+      id: nextId("product_entity_index_batch"),
+      status: "created",
+      stage: "sync",
+      stages_completed: [],
+      next_page: input.start_page || 1,
+      next_cursor: stringInput(input.cursor) || undefined,
+      has_more: true,
+      records_processed: 0,
+      limits: {},
+      created_at: now,
+      updated_at: now,
+    };
+    const limits = {
+      ...run.limits,
+      sync_limit: Number(input.sync_limit || run.limits.sync_limit || 50),
+      page_size: Number(input.page_size || run.limits.page_size || 50),
+      max_pages: Number(input.max_pages || run.limits.max_pages || 1),
+      verify_limit: Number(input.verify_limit || run.limits.verify_limit || 5),
+      audit_limit: Number(input.audit_limit || run.limits.audit_limit || 5),
+      gemini_limit: Number(input.gemini_limit || run.limits.gemini_limit || 5),
+    };
+    const stage =
+      input.stage && input.stage !== "auto"
+        ? input.stage
+        : this.nextBatchStage(run, Boolean(input.include_gemini));
+    run.status = "running";
+    run.stage = stage;
+    run.limits = limits;
+    run.error = undefined;
+    run.updated_at = nowIso();
+    getAgentCenterRepository().upsert("productEntityIndexBatchRuns", run);
+
+    try {
+      let result: Record<string, unknown>;
+      if (stage === "sync") {
+        const syncResult = await this.sync({
+          limit: limits.sync_limit,
+          page_size: limits.page_size,
+          max_pages: limits.max_pages,
+          start_page: run.next_page || input.start_page || 1,
+          cursor: run.next_cursor || stringInput(input.cursor) || undefined,
+          verify_content: false,
+        });
+        run.next_page = syncResult.next_page;
+        run.next_cursor = syncResult.next_cursor;
+        run.has_more = syncResult.has_more;
+        run.records_processed += syncResult.records_upserted;
+        result = syncResult as unknown as Record<string, unknown>;
+      } else if (stage === "verify_content") {
+        const verifyResult = await this.verifyContent({
+          limit: limits.verify_limit,
+        });
+        run.records_processed += verifyResult.records_verified;
+        result = verifyResult as unknown as Record<string, unknown>;
+      } else if (stage === "audit") {
+        const auditResult = await this.audit({
+          limit: limits.audit_limit,
+        });
+        run.records_processed += auditResult.records_audited;
+        result = auditResult as unknown as Record<string, unknown>;
+      } else {
+        const rerunResult = await this.runSearchGroundedBatch({
+          limit: limits.gemini_limit,
+        });
+        run.records_processed += Number(rerunResult.records_tested || 0);
+        result = rerunResult as unknown as Record<string, unknown>;
+      }
+      run.status = "completed";
+      run.completed_at = nowIso();
+      run.updated_at = run.completed_at;
+      run.stages_completed = unique([...run.stages_completed, stage]) as ProductEntityIndexBatchStage[];
+      run.last_result = this.compactBatchResult(result);
+      run.result_summary = {
+        ...this.summary(),
+        next_recommended_stage: this.nextBatchStage(run, Boolean(input.include_gemini)),
+      };
+      getAgentCenterRepository().upsert("productEntityIndexBatchRuns", run);
+      return run;
+    } catch (error) {
+      run.status = "failed";
+      run.error = error instanceof Error ? error.message : "ProductEntity index batch failed";
+      run.updated_at = nowIso();
+      getAgentCenterRepository().upsert("productEntityIndexBatchRuns", run);
+      return run;
+    }
+  }
+
+  private nextBatchStage(
+    run: Pick<ProductEntityIndexBatchRun, "has_more" | "stages_completed">,
+    includeGemini: boolean
+  ): ProductEntityIndexBatchStage {
+    const summary = this.summary();
+    if (
+      run.has_more !== false ||
+      !run.stages_completed.includes("sync")
+    ) {
+      return "sync";
+    }
+    if (summary.content_verification_pending > 0) return "verify_content";
+    if (summary.indexability_audit_pending > 0) return "audit";
+    if (includeGemini && summary.search_grounded_pending > 0) {
+      return "gemini_rerun";
+    }
+    return "audit";
+  }
+
+  private compactBatchResult(result: Record<string, unknown>) {
+    const output = { ...result };
+    delete output.records;
+    delete output.results;
+    return output;
   }
 
   async sync(input: {
@@ -7339,7 +7502,11 @@ export class ProductEntityIndexRegistryService {
     };
   }
 
-  async verifyContent(input: { product_entity_ids?: string[]; limit?: number } = {}) {
+  async verifyContent(input: {
+    product_entity_ids?: string[];
+    limit?: number;
+    include_previously_verified?: boolean;
+  } = {}) {
     const requestedIds = new Set(arrayOfStringInput(input.product_entity_ids));
     const limit = Math.max(1, Math.min(Number(input.limit || 10), 100));
     const records = this.list()
@@ -7347,7 +7514,15 @@ export class ProductEntityIndexRegistryService {
         requestedIds.size ? requestedIds.has(record.product_entity_id) : true
       )
       .filter((record) =>
-        requestedIds.size ? true : record.pdp_content_status !== "ready"
+        requestedIds.size
+          ? true
+          : record.pdp_content_status !== "ready" &&
+            (input.include_previously_verified || !record.last_content_verified_at)
+      )
+      .sort((left, right) =>
+        String(left.last_content_verified_at || "").localeCompare(
+          String(right.last_content_verified_at || "")
+        )
       )
       .slice(0, limit);
     const verified: ProductEntityIndexRecord[] = [];
@@ -7375,7 +7550,11 @@ export class ProductEntityIndexRegistryService {
     };
   }
 
-  async audit(input: { product_entity_ids?: string[]; limit?: number } = {}) {
+  async audit(input: {
+    product_entity_ids?: string[];
+    limit?: number;
+    include_previously_audited?: boolean;
+  } = {}) {
     const requestedIds = new Set(arrayOfStringInput(input.product_entity_ids));
     const limit = Math.max(1, Math.min(Number(input.limit || 50), 250));
     const records = this.list()
@@ -7383,7 +7562,15 @@ export class ProductEntityIndexRegistryService {
         requestedIds.size ? requestedIds.has(record.product_entity_id) : true
       )
       .filter((record) =>
-        requestedIds.size ? true : record.pdp_content_status === "ready"
+        requestedIds.size
+          ? true
+          : record.pdp_content_status === "ready" &&
+            (input.include_previously_audited || !record.last_indexability_audit_at)
+      )
+      .sort((left, right) =>
+        String(left.last_indexability_audit_at || "").localeCompare(
+          String(right.last_indexability_audit_at || "")
+        )
       )
       .slice(0, limit);
     const auditService = new PivotaPDPIndexabilityAuditService();
@@ -7419,6 +7606,7 @@ export class ProductEntityIndexRegistryService {
           ...findingTypes.map((finding) => `audit:${finding}`),
         ]),
         audit_evidence: audit.raw_safe_evidence,
+        last_indexability_audit_at: nowIso(),
         updated_at: nowIso(),
       };
       getAgentCenterRepository().upsert("productEntityIndexRecords", nextRecord);
@@ -7462,6 +7650,7 @@ export class ProductEntityIndexRegistryService {
   async runSearchGroundedBatch(input: {
     product_entity_ids?: string[];
     limit?: number;
+    include_previously_tested?: boolean;
   } = {}) {
     if (!geminiSearchGroundingConfigured()) {
       return {
@@ -7471,11 +7660,17 @@ export class ProductEntityIndexRegistryService {
       };
     }
     const requestedIds = new Set(arrayOfStringInput(input.product_entity_ids));
-    const records = this.list({ sitemap_eligible: true, limit: input.limit || 25 })
+    const limit = Math.max(1, Math.min(Number(input.limit || 25), 100));
+    const records = this.list({ sitemap_eligible: true })
       .filter((record) =>
         requestedIds.size ? requestedIds.has(record.product_entity_id) : true
       )
-      .slice(0, Math.max(1, Math.min(Number(input.limit || 25), 100)));
+      .filter((record) =>
+        requestedIds.size || input.include_previously_tested
+          ? true
+          : record.gemini_search_grounded_status === "not_tested"
+      )
+      .slice(0, limit);
     const adapter = new GeminiProviderAdapter();
     const results: Array<Record<string, unknown>> = [];
     for (const record of records) {
@@ -7648,6 +7843,7 @@ export class ProductEntityIndexRegistryService {
       last_search_grounded_score: existing?.last_search_grounded_score,
       last_search_grounded_at: existing?.last_search_grounded_at,
       last_returned_urls: existing?.last_returned_urls || [],
+      last_indexability_audit_at: existing?.last_indexability_audit_at,
       failure_reasons: failureReasons,
       audit_evidence: existing?.audit_evidence,
       created_at: existing?.created_at || now,

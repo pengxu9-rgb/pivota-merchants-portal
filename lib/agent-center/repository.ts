@@ -313,6 +313,7 @@ export function createInitialAgentCenterState(): AgentCenterState {
     productionValidationRuns: [],
     pilotProductEntityProvisioningRuns: [],
     productEntityIndexRecords: [],
+    productEntityIndexBatchRuns: [],
     pivotaIndexingTasks: [],
     usageEvents: [],
     usagePlan: {
@@ -380,6 +381,7 @@ const ARRAY_COLLECTION_KEYS: AgentCenterCollectionKey[] = [
   "productionValidationRuns",
   "pilotProductEntityProvisioningRuns",
   "productEntityIndexRecords",
+  "productEntityIndexBatchRuns",
   "pivotaIndexingTasks",
   "usageEvents",
 ];
@@ -749,6 +751,7 @@ type PersistedCollectionKey =
   | "productionValidationRuns"
   | "pilotProductEntityProvisioningRuns"
   | "productEntityIndexRecords"
+  | "productEntityIndexBatchRuns"
   | "pivotaIndexingTasks"
   | "demoFixtures";
 
@@ -768,6 +771,7 @@ const DB_COLLECTION_TABLES: Record<PersistedCollectionKey, string> = {
   pilotProductEntityProvisioningRuns:
     "agent_center_production_validation_runs",
   productEntityIndexRecords: "agent_center_production_validation_runs",
+  productEntityIndexBatchRuns: "agent_center_production_validation_runs",
   pivotaIndexingTasks: "agent_center_production_validation_runs",
   demoFixtures: "agent_center_demo_fixtures",
 };
@@ -921,13 +925,16 @@ function rowValuesForRecord(
 
 function collectionHydrateWhere(collection: PersistedCollectionKey) {
   if (collection === "productionValidationRuns") {
-    return "WHERE id NOT LIKE 'pilot_product_entity_%' AND id NOT LIKE 'pivota_indexing_task_%' AND id NOT LIKE 'product_entity_index_%'";
+    return "WHERE id NOT LIKE 'pilot_product_entity_%' AND id NOT LIKE 'pivota_indexing_task_%' AND id NOT LIKE 'product_entity_index_%' AND id NOT LIKE 'product_entity_index_batch_%'";
   }
   if (collection === "pilotProductEntityProvisioningRuns") {
     return "WHERE id LIKE 'pilot_product_entity_%'";
   }
   if (collection === "productEntityIndexRecords") {
-    return "WHERE id LIKE 'product_entity_index_%' AND deleted_at IS NULL";
+    return "WHERE id LIKE 'product_entity_index_%' AND id NOT LIKE 'product_entity_index_batch_%' AND deleted_at IS NULL";
+  }
+  if (collection === "productEntityIndexBatchRuns") {
+    return "WHERE id LIKE 'product_entity_index_batch_%' AND deleted_at IS NULL";
   }
   if (collection === "pivotaIndexingTasks") {
     return "WHERE id LIKE 'pivota_indexing_task_%' AND deleted_at IS NULL";

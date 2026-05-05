@@ -240,6 +240,19 @@ async function handleInternalProductEntityIndexRequestInner(
         201
       );
     }
+    if (req.method === "POST" && action === "run-batch") {
+      return json(
+        { product_entity_index_batch_run: await service.runBatch(await requestBody(req)) },
+        201
+      );
+    }
+    if (req.method === "GET" && action === "batch-runs") {
+      return json({
+        product_entity_index_batch_runs: service.listBatchRuns({
+          limit: Number(req.nextUrl.searchParams.get("limit") || 25),
+        }),
+      });
+    }
     if (req.method === "GET" && (!action || action === "summary")) {
       return json({
         product_entity_index_summary: service.summary(),

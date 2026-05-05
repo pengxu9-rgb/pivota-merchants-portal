@@ -93,18 +93,24 @@ Internal registry routes:
 
 ```text
 POST /api/internal/agent-center/product-entity-index/sync
+POST /api/internal/agent-center/product-entity-index/verify-content
 POST /api/internal/agent-center/product-entity-index/audit
 POST /api/internal/agent-center/product-entity-index/gemini-rerun
+POST /api/internal/agent-center/product-entity-index/run-batch
 GET  /api/internal/agent-center/product-entity-index/summary
+GET  /api/internal/agent-center/product-entity-index/batch-runs
 ```
 
 The shared Agent Center path is also supported:
 
 ```text
 POST /api/agent-center/internal-product-entity-index/sync
+POST /api/agent-center/internal-product-entity-index/verify-content
 POST /api/agent-center/internal-product-entity-index/audit
 POST /api/agent-center/internal-product-entity-index/gemini-rerun
+POST /api/agent-center/internal-product-entity-index/run-batch
 GET  /api/agent-center/internal-product-entity-index/summary
+GET  /api/agent-center/internal-product-entity-index/batch-runs
 ```
 
 All internal routes require `ENABLE_INTERNAL_PRODUCTION_VALIDATION=true` and the
@@ -132,6 +138,44 @@ curl -X POST "$BASE_URL/api/internal/agent-center/product-entity-index/sync" \
     "verify_content": true
   }'
 ```
+
+Recommended batch runner:
+
+```bash
+curl -X POST "$BASE_URL/api/internal/agent-center/product-entity-index/run-batch" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET" \
+  -H "content-type: application/json" \
+  --data '{
+    "stage": "auto",
+    "run_id": "optional_existing_run_id",
+    "sync_limit": 50,
+    "page_size": 50,
+    "max_pages": 1,
+    "verify_limit": 5,
+    "audit_limit": 5,
+    "gemini_limit": 5,
+    "include_gemini": false
+  }'
+```
+
+The batch runner persists `next_page`, `next_cursor`, `has_more`,
+`stages_completed`, and the last compact result. It intentionally advances in
+small batches:
+
+1. `sync`: page through `get_discovery_feed` and store canonical `sig_*`
+   candidates without verifying content.
+2. `verify_content`: call `get_pdp_v2` main/source-alias path only for records
+   that have not already been content-verified.
+3. `audit`: fetch the production PDP as Googlebot-facing public HTML and verify
+   title/H1, canonical, server-rendered identity, Product JSON-LD, source
+   signals, and sitemap inclusion.
+4. `gemini_rerun`: only when `include_gemini=true`, run
+   `search_grounded_product_discovery_test` against `sitemap_eligible=true`
+   records that have not yet been tested.
+
+This is the preferred operating mode for the ~4000 PDP backlog. Do not run the
+full production validation harness concurrently for bulk ProductEntity exposure
+measurement.
 
 Example production audit:
 

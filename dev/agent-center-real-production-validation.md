@@ -24,9 +24,12 @@ POST   /api/internal/agent-center/production-validation-runs/:id/run
 DELETE /api/internal/agent-center/production-validation-runs/:id
 GET    /api/internal/agent-center/runtime-config
 POST   /api/internal/agent-center/product-entity-index/sync
+POST   /api/internal/agent-center/product-entity-index/verify-content
 POST   /api/internal/agent-center/product-entity-index/audit
 POST   /api/internal/agent-center/product-entity-index/gemini-rerun
+POST   /api/internal/agent-center/product-entity-index/run-batch
 GET    /api/internal/agent-center/product-entity-index/summary
+GET    /api/internal/agent-center/product-entity-index/batch-runs
 ```
 
 These routes are not linked from merchant UI. They are rewritten to the shared Agent Center handler so create, run, fetch, and cleanup operate against the same server-side Agent Center state.

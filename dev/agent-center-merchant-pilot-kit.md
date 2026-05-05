@@ -241,8 +241,11 @@ For products not yet in the ProductEntity sitemap, use the registry pipeline:
 
 ```text
 POST /api/internal/agent-center/product-entity-index/sync
+POST /api/internal/agent-center/product-entity-index/verify-content
 POST /api/internal/agent-center/product-entity-index/audit
+POST /api/internal/agent-center/product-entity-index/run-batch
 GET  /api/internal/agent-center/product-entity-index/summary
+GET  /api/internal/agent-center/product-entity-index/batch-runs
 ```
 
 Only records with real main-path PDP content and passing production audit become
@@ -254,6 +257,10 @@ POST /api/internal/agent-center/product-entity-index/gemini-rerun
 
 Do not use the full production validation harness for bulk 4000-product Gemini
 measurement. Use the dedicated search-grounded runner in controlled batches.
+For backlog operations, prefer `run-batch` with small limits. It persists the
+gateway cursor and advances through sync, content verification, production
+audit, and optional search-grounded measurement without treating no-content
+records as sitemap eligible.
 
 Resolution actions in V1 are state transitions unless an action is explicitly wired to an approved write-back path. Do not write to merchant production systems from the pilot workflow.
 

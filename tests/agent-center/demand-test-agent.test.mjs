@@ -1044,6 +1044,16 @@ async function withMockPivotaIndexabilityFetch(config, callback) {
           `<?xml version="1.0"?><urlset><url><loc>${canonicalIndexablePivotaUrl}</loc></url></urlset>`,
       };
     }
+    if (url.endsWith("/sitemap-products.xml")) {
+      return {
+        status: config.productSitemapStatus ?? config.sitemapStatus ?? 200,
+        url,
+        text: async () =>
+          config.productSitemap ??
+          config.sitemap ??
+          `<?xml version="1.0"?><urlset><url><loc>${canonicalIndexablePivotaUrl}</loc></url></urlset>`,
+      };
+    }
     return {
       status: config.status ?? 200,
       url: config.finalUrl || url,
@@ -1231,6 +1241,8 @@ test("AgentCenterRepository CRUD and query helpers cover persisted core records"
     "issueResolutionPlans",
     "usageEvents",
     "productionValidationRuns",
+    "productEntityIndexRecords",
+    "productEntityIndexBatchRuns",
     "pivotaIndexingTasks",
     "demoFixtures",
   ];
@@ -2269,6 +2281,199 @@ test("ProductEntity index content verification runs separately from candidate sy
   }
 });
 
+test("ProductEntity index batch runner persists sync cursor and verifies content in small batches", async () => {
+  resetAgentCenterState();
+  const originalFetch = global.fetch;
+  const longDescription =
+    "A crawlable ProductEntity PDP description generated from the real gateway payload. ".repeat(
+      3
+    );
+  global.fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body || "{}"));
+    if (body.operation === "get_discovery_feed") {
+      const cursor = body.payload?.cursor || "";
+      return {
+        ok: true,
+        json: async () =>
+          cursor === "cursor_2"
+            ? {
+                products: [
+                  {
+                    product_id: "ext_batch_2",
+                    sellable_item_group_id: "sig_batch2",
+                    title: "Batch Product Two",
+                    brand: { name: "Batch Brand" },
+                  },
+                ],
+                has_more: false,
+              }
+            : {
+                products: [
+                  {
+                    product_id: "ext_batch_1",
+                    sellable_item_group_id: "sig_batch1",
+                    title: "Batch Product One",
+                    brand: { name: "Batch Brand" },
+                  },
+                ],
+                next_cursor: "cursor_2",
+                has_more: true,
+              },
+      };
+    }
+    if (body.operation === "get_pdp_v2") {
+      const productId = body.payload?.product_ref?.product_id;
+      return {
+        ok: true,
+        json: async () => ({
+          modules: [
+            {
+              type: "canonical",
+              data: {
+                pdp_payload: {
+                  product: {
+                    title:
+                      productId === "sig_batch2"
+                        ? "Batch Product Two"
+                        : "Batch Product One",
+                    brand: { name: "Batch Brand" },
+                    description: longDescription,
+                    category_path: ["Beauty", "Serum"],
+                  },
+                },
+              },
+            },
+          ],
+        }),
+      };
+    }
+    throw new Error(`Unexpected operation ${body.operation}`);
+  };
+
+  try {
+    const service = new ProductEntityIndexRegistryService();
+    const firstSync = await service.runBatch({
+      stage: "sync",
+      sync_limit: 1,
+      page_size: 1,
+      max_pages: 1,
+    });
+    const secondSync = await service.runBatch({
+      run_id: firstSync.id,
+      stage: "auto",
+      sync_limit: 1,
+      page_size: 1,
+      max_pages: 1,
+    });
+    const verify = await service.runBatch({
+      run_id: firstSync.id,
+      stage: "auto",
+      verify_limit: 1,
+    });
+
+    assert.equal(firstSync.next_cursor, "cursor_2");
+    assert.equal(secondSync.has_more, false);
+    assert.equal(verify.stage, "verify_content");
+    assert.ok(verify.stages_completed.includes("sync"));
+    assert.ok(verify.stages_completed.includes("verify_content"));
+    assert.equal(getAgentCenterState().productEntityIndexBatchRuns.length, 1);
+    assert.equal(getAgentCenterState().productEntityIndexRecords.length, 2);
+    assert.equal(
+      getAgentCenterState().productEntityIndexRecords.filter(
+        (record) => record.pdp_content_status === "ready"
+      ).length,
+      1
+    );
+    assert.equal(service.summary().content_verification_pending, 1);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("ProductEntity index batch audit only processes unaudited ready records", async () => {
+  resetAgentCenterState();
+  const service = new ProductEntityIndexRegistryService();
+  const createdAt = new Date().toISOString();
+  getAgentCenterRepository().upsert("productEntityIndexRecords", {
+    id: "product_entity_index_sig_batchaudit_ready",
+    product_entity_id: "sig_batchaudit_ready",
+    canonical_url: "https://agent.pivota.cc/products/sig_batchaudit_ready",
+    external_seed_id: verifiedExternalSeedId,
+    external_seed_ids: [verifiedExternalSeedId],
+    product_name: "Batch Audit Ready Product",
+    brand: "Batch Audit Brand",
+    pdp_content_status: "ready",
+    indexability_status: "not_audited",
+    sitemap_eligible: false,
+    google_index_status: "unknown",
+    gemini_search_grounded_status: "not_tested",
+    failure_reasons: [],
+    created_at: createdAt,
+    updated_at: createdAt,
+  });
+  getAgentCenterRepository().upsert("productEntityIndexRecords", {
+    id: "product_entity_index_sig_batchaudit_done",
+    product_entity_id: "sig_batchaudit_done",
+    canonical_url: "https://agent.pivota.cc/products/sig_batchaudit_done",
+    external_seed_id: "ext_batchaudit_done",
+    external_seed_ids: ["ext_batchaudit_done"],
+    product_name: "Batch Audit Done Product",
+    brand: "Batch Audit Brand",
+    pdp_content_status: "ready",
+    indexability_status: "ready",
+    sitemap_eligible: true,
+    google_index_status: "unknown",
+    gemini_search_grounded_status: "not_tested",
+    last_indexability_audit_at: createdAt,
+    failure_reasons: [],
+    created_at: createdAt,
+    updated_at: createdAt,
+  });
+
+  await withMockPivotaIndexabilityFetch(
+    {
+      sitemap:
+        "<?xml version=\"1.0\"?><sitemapindex><sitemap><loc>https://agent.pivota.cc/sitemap-products.xml</loc></sitemap></sitemapindex>",
+      productSitemap:
+        "<?xml version=\"1.0\"?><urlset><url><loc>https://agent.pivota.cc/products/sig_batchaudit_ready</loc></url></urlset>",
+      html: indexabilityHtml({
+        title: "Batch Audit Brand Batch Audit Ready Product",
+        h1: "Batch Audit Brand Batch Audit Ready Product",
+        canonical: "https://agent.pivota.cc/products/sig_batchaudit_ready",
+        productName: "Batch Audit Ready Product",
+        brand: "Batch Audit Brand",
+        productObjectId: "sig_batchaudit_ready",
+        productJsonLd: productJsonLd({
+          name: "Batch Audit Ready Product",
+          brand: { "@type": "Brand", name: "Batch Audit Brand" },
+          url: "https://agent.pivota.cc/products/sig_batchaudit_ready",
+        }),
+        offerJsonLd: offerJsonLd({
+          url: "https://agent.pivota.cc/products/sig_batchaudit_ready",
+        }),
+      }),
+    },
+    async () => {
+      const run = await service.runBatch({ stage: "audit", audit_limit: 10 });
+      const audited = service.get("sig_batchaudit_ready");
+      const alreadyAudited = service.get("sig_batchaudit_done");
+
+      assert.equal(run.stage, "audit");
+      assert.equal(run.last_result.records_audited, 1);
+      assert.equal(audited.indexability_status, "ready");
+      assert.equal(audited.sitemap_eligible, true);
+      assert.deepEqual(
+        audited.failure_reasons.filter(
+          (reason) => reason !== "audit:missing_sitemap_entry"
+        ),
+        []
+      );
+      assert.ok(audited.last_indexability_audit_at);
+      assert.equal(alreadyAudited.last_indexability_audit_at, createdAt);
+    }
+  );
+});
+
 test("ProductEntity index registry audit skips no-content records by default", async () => {
   resetAgentCenterState();
   const service = new ProductEntityIndexRegistryService();
@@ -2389,6 +2594,71 @@ test("internal ProductEntity index route is gated and exposes sync action", asyn
   } finally {
     if (previousEnabled === undefined) delete process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION;
     else process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION = previousEnabled;
+  }
+});
+
+test("internal ProductEntity index route creates persisted batch runs", async () => {
+  resetAgentCenterState();
+  const previousEnabled = process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION;
+  const previousSecret = process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET;
+  const originalFetch = global.fetch;
+  process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION = "true";
+  process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET = "index-secret";
+  global.fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body || "{}"));
+    assert.equal(body.operation, "get_discovery_feed");
+    return {
+      ok: true,
+      json: async () => ({
+        products: [
+          {
+            product_id: "ext_route_batch",
+            sellable_item_group_id: "sig_routebatch",
+            title: "Route Batch Product",
+            brand: { name: "Route Brand" },
+          },
+        ],
+        has_more: false,
+      }),
+    };
+  };
+
+  try {
+    const response = await handleInternalProductEntityIndexRequest(
+      new NextRequest(
+        "https://example.test/api/internal/agent-center/product-entity-index/run-batch",
+        {
+          method: "POST",
+          headers: {
+            authorization: "Bearer index-secret",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            stage: "sync",
+            sync_limit: 1,
+            page_size: 1,
+            max_pages: 1,
+          }),
+        }
+      ),
+      { action: "run-batch" }
+    );
+    const payload = await response.json();
+
+    assert.equal(response.status, 201);
+    assert.equal(payload.product_entity_index_batch_run.stage, "sync");
+    assert.equal(payload.product_entity_index_batch_run.status, "completed");
+    assert.equal(getAgentCenterState().productEntityIndexBatchRuns.length, 1);
+    assert.equal(
+      getAgentCenterState().productEntityIndexRecords[0].product_entity_id,
+      "sig_routebatch"
+    );
+  } finally {
+    global.fetch = originalFetch;
+    if (previousEnabled === undefined) delete process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION;
+    else process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION = previousEnabled;
+    if (previousSecret === undefined) delete process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET;
+    else process.env.PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET = previousSecret;
   }
 });
 

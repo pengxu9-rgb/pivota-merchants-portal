@@ -1541,8 +1541,44 @@ export type ProductEntityIndexRecord = Timestamped & {
   last_search_grounded_score?: VisibilityScoreValue;
   last_search_grounded_at?: string;
   last_returned_urls?: string[];
+  last_indexability_audit_at?: string;
   failure_reasons: string[];
   audit_evidence?: Record<string, unknown>;
+};
+
+export type ProductEntityIndexBatchStage =
+  | "sync"
+  | "verify_content"
+  | "audit"
+  | "gemini_rerun";
+
+export type ProductEntityIndexBatchRunStatus =
+  | "created"
+  | "running"
+  | "completed"
+  | "failed";
+
+export type ProductEntityIndexBatchRun = Timestamped & {
+  id: string;
+  status: ProductEntityIndexBatchRunStatus;
+  stage: ProductEntityIndexBatchStage;
+  stages_completed: ProductEntityIndexBatchStage[];
+  next_page?: number;
+  next_cursor?: string;
+  has_more?: boolean;
+  records_processed: number;
+  limits: {
+    sync_limit?: number;
+    page_size?: number;
+    max_pages?: number;
+    verify_limit?: number;
+    audit_limit?: number;
+    gemini_limit?: number;
+  };
+  last_result?: Record<string, unknown>;
+  result_summary?: Record<string, unknown>;
+  error?: string;
+  completed_at?: string;
 };
 
 export type PivotaIndexingTaskType =
@@ -2316,6 +2352,7 @@ export type AgentCenterState = {
   productionValidationRuns: ProductionValidationRun[];
   pilotProductEntityProvisioningRuns: PilotProductEntityProvisioningRun[];
   productEntityIndexRecords: ProductEntityIndexRecord[];
+  productEntityIndexBatchRuns: ProductEntityIndexBatchRun[];
   pivotaIndexingTasks: PivotaIndexingTask[];
   usageEvents: UsageEvent[];
   usagePlan: {
