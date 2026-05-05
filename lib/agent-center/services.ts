@@ -7437,6 +7437,154 @@ function productEntityVariantSignals(
   };
 }
 
+function variantReviewPlanVariants(plan: ProductEntityVariantReviewPlan) {
+  return Array.isArray(plan.sku_variant_map_review_plan?.variants)
+    ? (plan.sku_variant_map_review_plan.variants as Array<Record<string, unknown>>)
+    : [];
+}
+
+function normalizedVariantReviewLabel(value: unknown) {
+  return compactWhitespace(String(value || ""))
+    .replace(/^#\s*/, "")
+    .toUpperCase();
+}
+
+function variantReviewFamilyDisplayName(plan: ProductEntityVariantReviewPlan) {
+  const firstVariantName = stringInput(
+    variantReviewPlanVariants(plan)[0]?.product_name
+  );
+  const familyName = firstVariantName
+    ? compactWhitespace(firstVariantName.split(/[—–|:]/)[0] || firstVariantName)
+    : "";
+  return familyName || titleCase(plan.family_product_name);
+}
+
+function buildVariantReviewDecision(
+  plan: ProductEntityVariantReviewPlan,
+  input: { reviewer?: string; review_notes?: string } = {}
+) {
+  const variants = variantReviewPlanVariants(plan);
+  const labels = variants.map((variant) => String(variant.variant_label || ""));
+  const normalizedLabels = labels.map(normalizedVariantReviewLabel);
+  const duplicateLabels = unique(
+    labels.filter(
+      (_label, index) =>
+        normalizedLabels[index] &&
+        normalizedLabels.indexOf(normalizedLabels[index]) !== index
+    )
+  );
+  const missingLabels = variants.filter((variant) => !stringInput(variant.variant_label));
+  const invalidProductEntityIds = variants
+    .map((variant) => String(variant.product_entity_id || ""))
+    .filter((id) => !id.startsWith("sig_"));
+  const invalidExternalSeedIds = unique(
+    variants.flatMap((variant) =>
+      Array.isArray(variant.external_seed_ids)
+        ? variant.external_seed_ids.map(String).filter((id) => !id.startsWith("ext_"))
+        : []
+    )
+  );
+  const blockedReasons = [
+    variants.length === 0 ? "no_variants_to_map" : "",
+    missingLabels.length ? "missing_variant_label" : "",
+    duplicateLabels.length ? "duplicate_variant_label" : "",
+    invalidProductEntityIds.length ? "invalid_product_entity_id" : "",
+    invalidExternalSeedIds.length ? "invalid_external_seed_id" : "",
+  ].filter(Boolean);
+  const familyDisplayName = variantReviewFamilyDisplayName(plan);
+  const canonicalProductName = `${titleCase(plan.brand)} ${familyDisplayName}`;
+  const variantMappings = variants.map((variant, index) => {
+    const label = labels[index];
+    const normalizedLabel = normalizedVariantReviewLabel(label);
+    return {
+      source_product_entity_id: String(variant.product_entity_id || ""),
+      source_external_seed_ids: Array.isArray(variant.external_seed_ids)
+        ? variant.external_seed_ids.map(String).filter(Boolean)
+        : [],
+      display_variant_label: label,
+      normalized_variant_key: `shade_${slugFrom(normalizedLabel || label)}`,
+      variant_axis: "shade",
+      offer_attach_policy:
+        "Attach merchant/Pivota offers to this SKU variant only after merchant SKU, shade label, size, and source alias match this row.",
+    };
+  });
+
+  return {
+    decision_type: "canonical_family_with_sku_variant_map" as const,
+    decision_status: blockedReasons.length ? "blocked" as const : "approved_for_mapping" as const,
+    decided_by: stringInput(input.reviewer, plan.reviewer),
+    decided_at: nowIso(),
+    audit_summary: {
+      product_entity_count: plan.product_entity_count,
+      variant_count: variants.length,
+      external_seed_count: plan.external_seed_count,
+      duplicate_variant_labels: duplicateLabels,
+      missing_variant_label_count: missingLabels.length,
+      invalid_product_entity_ids: invalidProductEntityIds,
+      invalid_external_seed_ids: invalidExternalSeedIds,
+      strict_human_review_result: blockedReasons.length
+        ? "blocked_until_variant_map_is_corrected"
+        : "approved_for_canonical_family_sku_variant_mapping",
+    },
+    canonical_family: {
+      brand: titleCase(plan.brand),
+      family_product_name: familyDisplayName,
+      canonical_product_name: canonicalProductName,
+      canonical_family_slug: plan.canonical_family_slug,
+      product_entity_granularity: "family",
+      sku_variant_granularity: "shade_or_sku_variant",
+      canonical_product_entity_action:
+        "Create or promote a canonical family ProductEntity after SKU/variant map approval. Do not use any source shade sig_* as canonical without explicit promotion.",
+      public_pdp_strategy:
+        "One canonical ProductEntity PDP for the family; shade-specific sig_* records become SKU/variant mappings or source aliases, not standalone canonical PDPs.",
+    },
+    sku_variant_map_rules: {
+      variant_axis: "shade",
+      variant_key_format: "shade_{normalized_shade_code}",
+      normalize_hash_prefix: true,
+      preserve_display_label: true,
+      require_unique_variant_label_per_family: true,
+      require_source_sig_to_variant_mapping: true,
+      mappings: variantMappings,
+    },
+    merchant_offer_attachment_rules: {
+      attach_to: "canonical_product_entity_plus_exact_sku_variant",
+      required_match_fields: [
+        "merchant_id",
+        "source_product_id_or_external_seed_id",
+        "merchant_sku_id_if_available",
+        "shade_or_variant_label",
+        "size_or_pack_size_if_available",
+      ],
+      same_merchant_same_variant:
+        "May dedupe only when merchant SKU/source alias/shade/size are equivalent.",
+      same_family_different_variant:
+        "Do not merge. Attach as separate SKU/variant offers under the canonical family ProductEntity.",
+      different_merchants:
+        "Do not merge. Keep as separate AggregateOffer entries under the canonical ProductEntity family.",
+      unmapped_or_ambiguous_offer:
+        "Route to human_review; do not attach to family-level offer without an exact variant mapping.",
+    },
+    source_alias_rules: {
+      ext_alias_policy:
+        "Bind ext_* records as source references to the reviewed SKU variant; never use ext_* as canonical ProductEntity URL.",
+      source_sig_policy:
+        "Existing shade-level sig_* records are source variant records until a canonical family ProductEntity is created or promoted.",
+      retire_alias_policy:
+        "Only retire duplicate source aliases after confirming they point to the same merchant SKU and exact shade/variant.",
+    },
+    approval_conditions: [
+      "All variants have explicit labels.",
+      "Variant labels are unique inside the family.",
+      "Every source ProductEntity ID is a canonical sig_* candidate, not an ext_* alias.",
+      "Every external source alias remains a source reference only.",
+      "No merchant offer attaches without exact SKU/shade/variant mapping.",
+    ],
+    blocked_reasons: blockedReasons,
+    mutation_performed: false as const,
+  };
+}
+
 function productEntityPriorityScore(
   record: ProductEntityIndexRecord,
   priorityBrands: Set<string>
@@ -7848,6 +7996,65 @@ export class ProductEntityIndexRegistryService {
       mutation_performed: false,
       next_action:
         "Review SKU/variant labels and source aliases, then approve mapping before any ProductEntity or offer dedupe.",
+    };
+  }
+
+  decideVariantReviewPlan(input: {
+    plan_id?: string;
+    group_id?: string;
+    brand_filter?: string[];
+    normalized_product_family?: string;
+    reviewer?: string;
+    review_notes?: string;
+  } = {}) {
+    const targetPlanId = stringInput(input.plan_id);
+    const targetGroupId = stringInput(input.group_id);
+    const targetFamily = stringInput(input.normalized_product_family);
+    let plan = targetPlanId
+      ? getAgentCenterRepository().getById("productEntityVariantReviewPlans", targetPlanId)
+      : undefined;
+    if (!plan) {
+      plan = this.listVariantReviewPlans({
+        brand_filter: input.brand_filter,
+        limit: 250,
+      }).find((candidate) =>
+        targetGroupId
+          ? candidate.group_id === targetGroupId
+          : targetFamily
+            ? candidate.normalized_product_family === targetFamily
+            : true
+      );
+    }
+    if (!plan && (targetGroupId || targetFamily || input.brand_filter?.length)) {
+      plan = this.createVariantReviewPlan({
+        group_id: targetGroupId,
+        brand_filter: input.brand_filter,
+        normalized_product_family: targetFamily,
+        reviewer: input.reviewer,
+        review_notes: input.review_notes,
+      }).variant_review_plan;
+    }
+    if (!plan) {
+      throw new Error("ProductEntity variant review plan not found");
+    }
+
+    const decision = buildVariantReviewDecision(plan, input);
+    const updatedPlan: ProductEntityVariantReviewPlan = {
+      ...plan,
+      status: decision.decision_status,
+      reviewer: stringInput(input.reviewer, plan.reviewer),
+      review_notes: stringInput(input.review_notes, plan.review_notes),
+      review_decision: decision,
+      updated_at: nowIso(),
+    };
+    getAgentCenterRepository().upsert("productEntityVariantReviewPlans", updatedPlan);
+    return {
+      variant_review_plan: updatedPlan,
+      mutation_performed: false,
+      next_action:
+        decision.decision_status === "approved_for_mapping"
+          ? "Create canonical family ProductEntity and SKU/variant map, then attach offers only through exact variant mapping."
+          : "Fix blocked SKU/variant findings before ProductEntity family mapping or offer attachment.",
     };
   }
 

@@ -1619,6 +1619,20 @@ export type ProductEntityVariantReviewPlan = Timestamped & {
   mutation_performed: false;
   reviewer?: string;
   review_notes?: string;
+  review_decision?: {
+    decision_type: "canonical_family_with_sku_variant_map";
+    decision_status: "approved_for_mapping" | "blocked";
+    decided_by?: string;
+    decided_at: string;
+    audit_summary: Record<string, unknown>;
+    canonical_family: Record<string, unknown>;
+    sku_variant_map_rules: Record<string, unknown>;
+    merchant_offer_attachment_rules: Record<string, unknown>;
+    source_alias_rules: Record<string, unknown>;
+    approval_conditions: string[];
+    blocked_reasons: string[];
+    mutation_performed: false;
+  };
 };
 
 export type PivotaIndexingTaskType =

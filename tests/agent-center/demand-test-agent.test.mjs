@@ -3426,6 +3426,29 @@ test("ProductEntity variant review plan persists SKU variant map proposal withou
   const plans = service.listVariantReviewPlans({ brand_filter: ["Fenty Beauty"] });
   assert.equal(plans.length, 1);
   assert.equal(plans[0].reviewer, "pivota_ops");
+
+  const decisionResult = service.decideVariantReviewPlan({
+    plan_id: plan.id,
+    reviewer: "pivota_ops",
+    review_notes: "Strict human review approved unique shade map.",
+  });
+  const decidedPlan = decisionResult.variant_review_plan;
+  assert.equal(decidedPlan.status, "approved_for_mapping");
+  assert.equal(decidedPlan.review_decision.decision_status, "approved_for_mapping");
+  assert.equal(
+    decidedPlan.review_decision.canonical_family.product_entity_granularity,
+    "family"
+  );
+  assert.equal(
+    decidedPlan.review_decision.sku_variant_map_rules.variant_axis,
+    "shade"
+  );
+  assert.equal(
+    decidedPlan.review_decision.merchant_offer_attachment_rules.attach_to,
+    "canonical_product_entity_plus_exact_sku_variant"
+  );
+  assert.equal(decidedPlan.review_decision.mutation_performed, false);
+  assert.equal(getAgentCenterState().productEntityIndexRecords.length, 2);
 });
 
 test("internal ProductEntity index route exposes priority plan and duplicate audit", async () => {
@@ -3556,6 +3579,36 @@ test("internal ProductEntity index route exposes priority plan and duplicate aud
     );
     assert.equal(
       variantPlanPayload.product_entity_variant_review_plan.variant_review_plan.mutation_performed,
+      false
+    );
+
+    const decisionResponse = await handleInternalProductEntityIndexRequest(
+      new NextRequest(
+        "https://example.test/api/internal/agent-center/product-entity-index/variant-review-decision",
+        {
+          method: "POST",
+          headers: {
+            authorization: "Bearer index-secret",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            plan_id:
+              variantPlanPayload.product_entity_variant_review_plan.variant_review_plan.id,
+            reviewer: "pivota_ops",
+          }),
+        }
+      ),
+      { action: "variant-review-decision" }
+    );
+    const decisionPayload = await decisionResponse.json();
+    assert.equal(decisionResponse.status, 201);
+    assert.equal(
+      decisionPayload.product_entity_variant_review_decision.variant_review_plan.status,
+      "approved_for_mapping"
+    );
+    assert.equal(
+      decisionPayload.product_entity_variant_review_decision.variant_review_plan
+        .review_decision.mutation_performed,
       false
     );
 

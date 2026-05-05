@@ -626,9 +626,25 @@ curl "$BASE_URL/api/internal/agent-center/product-entity-index/variant-review-pl
   -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET"
 ```
 
+Record a strict human review decision after checking labels, source aliases, and
+family boundaries:
+
+```bash
+curl -X POST "$BASE_URL/api/internal/agent-center/product-entity-index/variant-review-decision" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET" \
+  -H "content-type: application/json" \
+  --data '{
+    "plan_id": "product_entity_variant_review_...",
+    "reviewer": "pivota_ops",
+    "review_notes": "Approved unique shade map; offers must attach only through exact SKU/shade mapping."
+  }'
+```
+
 Variant review plans are persistent operator work items. They remain state-only
 and do not merge ProductEntities, source aliases, merchant offers, or Pivota
-offers.
+offers. An `approved_for_mapping` decision means "create canonical family +
+SKU/variant map next"; it is not permission to merge offers or write to merchant
+systems.
 
 ## Merchant-Safe Pivota Discovery Progress
 

@@ -286,6 +286,15 @@ async function handleInternalProductEntityIndexRequestInner(
         201
       );
     }
+    if (req.method === "POST" && action === "variant-review-decision") {
+      return json(
+        {
+          product_entity_variant_review_decision:
+            service.decideVariantReviewPlan(await requestBody(req)),
+        },
+        201
+      );
+    }
     if (req.method === "GET" && action === "variant-review-plans") {
       return json({
         product_entity_variant_review_plans: service.listVariantReviewPlans({

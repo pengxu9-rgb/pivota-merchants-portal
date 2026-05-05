@@ -301,6 +301,11 @@ all `sig_*` records into one ProductEntity or merge offers across shades.
 Use `POST /api/internal/agent-center/product-entity-index/variant-review-plan`
 to persist the review plan for operator follow-up. This is state-only and does
 not write ProductEntity, source alias, or offer merges.
+After manual label/source review, use
+`POST /api/internal/agent-center/product-entity-index/variant-review-decision`
+to mark the plan `approved_for_mapping` or `blocked`. Approval means the next
+step is canonical family + SKU/variant mapping; merchant and Pivota offers still
+attach only through exact variant rows and are never merged across shades.
 
 The default sync source is gateway `get_discovery_feed`, which is appropriate
 for smoke tests and curated browse coverage. Full backlog rollout should use
