@@ -962,6 +962,8 @@ export class DbAgentCenterRepository extends BaseAgentCenterRepository {
   readonly kind = "db" as const;
 
   private dirty = false;
+  private dirtyIds = new Map<PersistedCollectionKey, Set<string>>();
+  private fullyDirtyCollections = new Set<PersistedCollectionKey>();
   private hydrated = false;
   private persistSuspended = false;
   private baselineIds = new Map<PersistedCollectionKey, Set<string>>();
@@ -975,12 +977,16 @@ export class DbAgentCenterRepository extends BaseAgentCenterRepository {
     this.persistSuspended = true;
     this.state = this.wrapState(mergeStateWithDefaults(state));
     this.persistSuspended = false;
+    this.markAllCollectionsDirty();
     this.persist();
     return this.state;
   }
 
   persist() {
-    if (!this.persistSuspended) this.dirty = true;
+    if (!this.persistSuspended) {
+      this.dirty = true;
+      this.markAllCollectionsDirty();
+    }
   }
 
   async hydrate() {
@@ -1006,6 +1012,8 @@ export class DbAgentCenterRepository extends BaseAgentCenterRepository {
     this.state = this.wrapState(hydratedState);
     this.persistSuspended = false;
     this.dirty = false;
+    this.dirtyIds = new Map();
+    this.fullyDirtyCollections = new Set();
     this.hydrated = true;
     return this.state;
   }
@@ -1017,6 +1025,8 @@ export class DbAgentCenterRepository extends BaseAgentCenterRepository {
       await this.flushCollection(pool, collection);
     }
     this.dirty = false;
+    this.dirtyIds = new Map();
+    this.fullyDirtyCollections = new Set();
   }
 
   private async flushCollection(
@@ -1027,10 +1037,20 @@ export class DbAgentCenterRepository extends BaseAgentCenterRepository {
     const records = this.state[collection] as Array<
       CollectionRecord<PersistedCollectionKey>
     >;
+    const fullFlush = this.fullyDirtyCollections.has(collection);
+    const dirtyIds = this.dirtyIds.get(collection);
+    const recordsToPersist =
+      fullFlush
+        ? records
+        : dirtyIds
+          ? records.filter((record) => dirtyIds.has(String((record as RecordLike).id)))
+          : [];
     const activeIds = new Set<string>();
     for (const record of records) {
+      activeIds.add(String((record as RecordLike).id));
+    }
+    for (const record of recordsToPersist) {
       const row = rowValuesForRecord(collection, record);
-      activeIds.add(row.id);
       await pool.query(
         `INSERT INTO ${table} (
           id, merchant_id, store_id, scan_target_id, issue_id, fixture_id,
@@ -1106,7 +1126,9 @@ export class DbAgentCenterRepository extends BaseAgentCenterRepository {
     }
 
     const baselineIds = this.baselineIds.get(collection) || new Set<string>();
-    const removedIds = [...baselineIds].filter((id) => !activeIds.has(id));
+    const removedIds = fullFlush
+      ? [...baselineIds].filter((id) => !activeIds.has(id))
+      : [];
     if (removedIds.length > 0) {
       await pool.query(
         `UPDATE ${table}
@@ -1115,13 +1137,60 @@ export class DbAgentCenterRepository extends BaseAgentCenterRepository {
         [removedIds]
       );
     }
+    if (fullFlush) {
+      this.baselineIds.set(collection, activeIds);
+    } else if (recordsToPersist.length > 0) {
+      const nextBaseline = new Set(this.baselineIds.get(collection) || []);
+      for (const record of recordsToPersist) {
+        nextBaseline.add(String((record as RecordLike).id));
+      }
+      this.baselineIds.set(collection, nextBaseline);
+    }
+  }
+
+  upsert<K extends AgentCenterCollectionKey>(
+    collection: K,
+    record: CollectionRecord<K>
+  ) {
+    const wasPersistSuspended = this.persistSuspended;
+    this.persistSuspended = true;
+    const upserted = super.upsert(collection, record);
+    this.persistSuspended = wasPersistSuspended;
+    if (DB_COLLECTION_KEYS.includes(collection as PersistedCollectionKey)) {
+      this.markRecordDirty(
+        collection as PersistedCollectionKey,
+        String((record as RecordLike).id)
+      );
+    }
+    return upserted;
+  }
+
+  private markRecordDirty(collection: PersistedCollectionKey, id: string) {
+    if (this.persistSuspended || !id) return;
+    const next = this.dirtyIds.get(collection) || new Set<string>();
+    next.add(id);
+    this.dirtyIds.set(collection, next);
+    this.dirty = true;
+  }
+
+  private markCollectionFullyDirty(collection: PersistedCollectionKey) {
+    if (this.persistSuspended) return;
+    this.fullyDirtyCollections.add(collection);
+    this.dirty = true;
+  }
+
+  private markAllCollectionsDirty() {
+    if (this.persistSuspended) return;
+    for (const collection of DB_COLLECTION_KEYS) {
+      this.fullyDirtyCollections.add(collection);
+    }
   }
 
   private persistAfterMutation() {
     if (!this.persistSuspended) this.dirty = true;
   }
 
-  private wrapArray<T>(records: T[]) {
+  private wrapArray<T>(collection: PersistedCollectionKey, records: T[]) {
     const repository = this;
     return new Proxy(records, {
       get(target, property, receiver) {
@@ -1136,7 +1205,7 @@ export class DbAgentCenterRepository extends BaseAgentCenterRepository {
               target,
               args
             );
-            repository.persistAfterMutation();
+            repository.markCollectionFullyDirty(collection);
             return result;
           };
         }
@@ -1144,12 +1213,12 @@ export class DbAgentCenterRepository extends BaseAgentCenterRepository {
       },
       set(target, property, value, receiver) {
         const result = Reflect.set(target, property, value, receiver);
-        repository.persistAfterMutation();
+        repository.markCollectionFullyDirty(collection);
         return result;
       },
       deleteProperty(target, property) {
         const result = Reflect.deleteProperty(target, property);
-        repository.persistAfterMutation();
+        repository.markCollectionFullyDirty(collection);
         return result;
       },
     });
@@ -1159,7 +1228,9 @@ export class DbAgentCenterRepository extends BaseAgentCenterRepository {
     const repository = this;
     for (const key of ARRAY_COLLECTION_KEYS) {
       (state as unknown as Record<AgentCenterCollectionKey, unknown[]>)[key] =
-        this.wrapArray(state[key] as unknown[]);
+        DB_COLLECTION_KEYS.includes(key as PersistedCollectionKey)
+          ? this.wrapArray(key as PersistedCollectionKey, state[key] as unknown[])
+          : state[key] as unknown[];
     }
 
     return new Proxy(state, {
@@ -1167,10 +1238,16 @@ export class DbAgentCenterRepository extends BaseAgentCenterRepository {
         const key = property as AgentCenterCollectionKey;
         const nextValue =
           ARRAY_COLLECTION_KEYS.includes(key) && Array.isArray(value)
-            ? repository.wrapArray(value)
+            ? DB_COLLECTION_KEYS.includes(key as PersistedCollectionKey)
+              ? repository.wrapArray(key as PersistedCollectionKey, value)
+              : value
             : value;
         const result = Reflect.set(target, property, nextValue, receiver);
-        repository.persistAfterMutation();
+        if (DB_COLLECTION_KEYS.includes(key as PersistedCollectionKey)) {
+          repository.markCollectionFullyDirty(key as PersistedCollectionKey);
+        } else {
+          repository.persistAfterMutation();
+        }
         return result;
       },
     });
