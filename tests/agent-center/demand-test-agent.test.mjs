@@ -1945,7 +1945,25 @@ test("internal Pivota indexing task API bulk creates tasks from sitemap-eligible
     );
     const dedupePayload = await dedupeResponse.json();
     assert.equal(dedupePayload.pivota_indexing_task_bulk.tasks_created, 0);
-    assert.equal(dedupePayload.pivota_indexing_task_bulk.tasks_existing, 2);
+    assert.equal(dedupePayload.pivota_indexing_task_bulk.records_seen, 0);
+
+    const existingResponse = await handleInternalPivotaIndexingTasksRequest(
+      internalProductionValidationRequest(
+        "https://example.test/api/internal/agent-center/pivota-indexing-tasks/bulk",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            limit: 10,
+            task_types: ["submit_sitemap", "request_indexing"],
+            include_fully_existing: true,
+          }),
+        }
+      ),
+      { taskId: "bulk" }
+    );
+    const existingPayload = await existingResponse.json();
+    assert.equal(existingPayload.pivota_indexing_task_bulk.records_seen, 1);
+    assert.equal(existingPayload.pivota_indexing_task_bulk.tasks_existing, 2);
   });
 });
 

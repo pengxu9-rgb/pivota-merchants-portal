@@ -467,8 +467,10 @@ curl -X POST "$BASE_URL/api/internal/agent-center/pivota-indexing-tasks/bulk" \
 
 The bulk route only reads `sitemap_eligible=true` ProductEntity index records,
 uses canonical `sig_*` URLs, deduplicates existing task types per ProductEntity,
-and keeps every task as operational evidence. It must not be interpreted as
-Google indexing or Gemini uplift.
+skips records that already have all requested task types by default, and keeps
+every task as operational evidence. It must not be interpreted as Google
+indexing or Gemini uplift. For controlled pagination, set `limit` to a small
+batch size and repeat until `records_remaining_after_batch=0`.
 
 List ProductEntity task status and rerun state:
 

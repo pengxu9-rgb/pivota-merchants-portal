@@ -8325,7 +8325,9 @@ export class PivotaIndexingTaskService {
     status?: PivotaIndexingTaskStatus;
     evidence?: PivotaIndexingTaskEvidence;
     limit?: number;
+    offset?: number;
     include_existing?: boolean;
+    include_fully_existing?: boolean;
   } = {}) {
     const requestedIds = new Set(arrayOfStringInput(input.product_entity_ids));
     const taskTypes = arrayOfStringInput(input.task_types).filter((taskType) =>
@@ -8340,12 +8342,24 @@ export class PivotaIndexingTaskService {
           "add_internal_link",
         ] as PivotaIndexingTaskType[]);
     const limit = Math.max(1, Math.min(Number(input.limit || 250), 5000));
-    const records = new ProductEntityIndexRegistryService()
+    const offset = Math.max(0, Number(input.offset || 0));
+    const recordsBeforeFullyExistingFilter = new ProductEntityIndexRegistryService()
       .list({ sitemap_eligible: true })
       .filter((record) =>
         requestedIds.size ? requestedIds.has(record.product_entity_id) : true
-      )
-      .slice(0, limit);
+      );
+    const recordsWithMissingTasks = recordsBeforeFullyExistingFilter.filter(
+      (record) => {
+        if (input.include_fully_existing === true) return true;
+        const existingTaskTypes = new Set(
+          this.list({ product_entity_id: record.product_entity_id }).map(
+            (task) => task.task_type
+          )
+        );
+        return selectedTaskTypes.some((taskType) => !existingTaskTypes.has(taskType));
+      }
+    );
+    const records = recordsWithMissingTasks.slice(offset, offset + limit);
     const created: PivotaIndexingTask[] = [];
     const existing: PivotaIndexingTask[] = [];
     const errors: Array<{ product_entity_id: string; task_type: string; error: string }> = [];
@@ -8393,6 +8407,12 @@ export class PivotaIndexingTaskService {
 
     return {
       records_seen: records.length,
+      records_skipped_fully_existing:
+        recordsBeforeFullyExistingFilter.length - recordsWithMissingTasks.length,
+      records_remaining_after_batch: Math.max(
+        0,
+        recordsWithMissingTasks.length - offset - records.length
+      ),
       task_types: selectedTaskTypes,
       tasks_created: created.length,
       tasks_existing: existing.length,

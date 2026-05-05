@@ -436,8 +436,9 @@ operator action, and `uplift_claim_allowed`.
 For a bulk ProductEntity rollout, use the bulk route against the DB-backed
 ProductEntity index registry. It creates operational tasks only for
 `sitemap_eligible=true` canonical ProductEntity PDPs, deduplicates existing task
-types, and never treats task creation, sitemap submission, or request-indexing
-evidence as Gemini exposure uplift.
+types, skips fully queued records by default so operators can run repeated
+batches, and never treats task creation, sitemap submission, or
+request-indexing evidence as Gemini exposure uplift.
 
 These tasks document operational work only; they do not prove search-grounded
 discovery uplift until a rerun returns the canonical Pivota PDP or a verified
