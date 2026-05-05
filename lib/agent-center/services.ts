@@ -12149,10 +12149,16 @@ export class PivotaPDPIndexabilityAuditService {
         title.toLowerCase().includes(brand.toLowerCase()) ||
         h1.toLowerCase().includes(brand.toLowerCase())
       : true;
-    const descriptionVisible = visibleText.length > 500;
+    const machineReadableDescriptionVisible =
+      fieldPresent(productJsonLd, "description") ||
+      (/data-pivota-product-seo-signals/i.test(html) &&
+        /"(overview|product_intelligence_summary|description)"\s*:\s*"[^"]{40,}"/i.test(html));
+    const descriptionVisible = visibleText.length > 500 || machineReadableDescriptionVisible;
     const sourceReferenceVisible =
       lowerVisible.includes("source") ||
       lowerVisible.includes("official merchant") ||
+      /data-pivota-product-seo-signals/i.test(html) ||
+      /official_merchant_pdp|source_references|source_url/i.test(html) ||
       htmlContainsUrl(html, input.merchant_pdp_url);
     const merchantUrlVisible = input.merchant_pdp_url
       ? htmlContainsUrl(html, input.merchant_pdp_url)

@@ -1968,6 +1968,34 @@ test("Pivota PDP indexability audit passes clean indexable PDP", async () => {
   assert.equal(JSON.stringify(audit).includes("<html"), false);
 });
 
+test("Pivota PDP indexability audit accepts machine-readable SEO signals without visible debug UI", async () => {
+  const audit = await runPivotaIndexabilityAudit({
+    html: indexabilityHtml({
+      description: false,
+      sourceReference: false,
+    }).replace(
+      "</body>",
+      `<script type="application/json" data-pivota-product-seo-signals>${JSON.stringify({
+        overview:
+          "Daily hydrating sunscreen with watery gel texture, hyaluronic acid, SPF50+ PA++++ protection, and source-backed product intelligence context.",
+        source_references: [
+          {
+            source_type: "official_merchant_pdp",
+            source_url: indexabilityMerchantUrl,
+          },
+        ],
+      })}</script></body>`
+    ),
+  });
+  const findingTypes = audit.findings.map((finding) => finding.finding_type);
+
+  assert.equal(audit.raw_safe_evidence.description_visible, true);
+  assert.equal(audit.raw_safe_evidence.merchant_source_reference_visible, true);
+  assert.equal(audit.raw_safe_evidence.source_merchant_pdp_url_visible, true);
+  assert.equal(findingTypes.includes("thin_content"), false);
+  assert.equal(findingTypes.includes("product_entity_missing_merchant_source"), false);
+});
+
 test("public ProductEntity indexability surfaces expose canonical URLs without ext aliases", async () => {
   resetAgentCenterState();
   const entries = publicProductEntityIndexEntries();
@@ -2838,7 +2866,10 @@ test("Pivota PDP indexability audit detects missing sitemap entry", async () => 
 
 test("Pivota PDP indexability audit detects thin server-rendered content", async () => {
   const audit = await runPivotaIndexabilityAudit({
-    html: indexabilityHtml({ description: false }),
+    html: indexabilityHtml({
+      description: false,
+      productJsonLd: productJsonLd({ description: "" }),
+    }),
   });
 
   assert.equal(audit.audit_status, "needs_work");
