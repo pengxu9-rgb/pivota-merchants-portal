@@ -95,7 +95,11 @@ Real production validation should not assume that a Pivota PDP is discoverable
 just because contextual attribution passed. Pivota PDP exposure depends on a
 separate ProductEntity indexing pipeline:
 
-1. Sync ProductEntity candidates from gateway `get_discovery_feed`.
+1. Sync ProductEntity candidates from the configured ProductEntity source.
+   Gateway `get_discovery_feed` is the default for smoke tests. Full backlog
+   runs should use `backend_external_seeds`, backed by a read-only backend
+   source DB, so Agent Center can enumerate approved external-seed to
+   ProductEntity mappings.
 2. Deduplicate by canonical `sellable_item_group_id` / `product_group_id`
    (`sig_*`).
 3. Verify real main-path PDP content through `get_pdp_v2` using ProductEntity ID

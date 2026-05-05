@@ -1571,6 +1571,9 @@ export type ProductEntityIndexBatchRun = Timestamped & {
     sync_limit?: number;
     page_size?: number;
     max_pages?: number;
+    sync_source?: string;
+    source_market?: string;
+    source_tool?: string;
     verify_limit?: number;
     audit_limit?: number;
     gemini_limit?: number;

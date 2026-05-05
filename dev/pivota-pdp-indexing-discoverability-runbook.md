@@ -162,8 +162,13 @@ The batch runner persists `next_page`, `next_cursor`, `has_more`,
 `stages_completed`, and the last compact result. It intentionally advances in
 small batches:
 
-1. `sync`: page through `get_discovery_feed` and store canonical `sig_*`
-   candidates without verifying content.
+1. `sync`: page through a ProductEntity source and store canonical `sig_*`
+   candidates without verifying content. The default source is gateway
+   `get_discovery_feed` with anonymous browse context. For the full
+   external-seed backlog, configure
+   `AGENT_CENTER_PRODUCT_ENTITY_INDEX_SYNC_SOURCE=backend_external_seeds` and
+   `AGENT_CENTER_PRODUCT_ENTITY_SOURCE_DATABASE_URL` so the registry can read
+   approved `pdp_identity_listing` mappings directly from the backend source DB.
 2. `verify_content`: call `get_pdp_v2` main/source-alias path only for records
    that have not already been content-verified.
 3. `audit`: fetch the production PDP as Googlebot-facing public HTML and verify
@@ -176,6 +181,11 @@ small batches:
 This is the preferred operating mode for the ~4000 PDP backlog. Do not run the
 full production validation harness concurrently for bulk ProductEntity exposure
 measurement.
+
+Gateway browse sync is useful for smoke tests, but it is not the complete
+external-seed corpus. The 4000-product rollout should use
+`backend_external_seeds`; records still fail closed unless `get_pdp_v2` returns
+real main-path content and the production Googlebot audit passes.
 
 Example production audit:
 

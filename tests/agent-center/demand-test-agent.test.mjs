@@ -2158,6 +2158,10 @@ test("ProductEntity index registry sync paginates, dedupes, and excludes no-cont
       ),
       true
     );
+    const discoveryCall = gatewayCalls.find((call) => call.operation === "get_discovery_feed");
+    assert.equal(discoveryCall?.payload?.context?.auth_state, "anonymous");
+    assert.deepEqual(discoveryCall?.payload?.context?.recent_views, []);
+    assert.deepEqual(discoveryCall?.payload?.context?.recent_queries, []);
   } finally {
     global.fetch = originalFetch;
   }
@@ -2316,8 +2320,11 @@ test("ProductEntity index batch runner persists sync cursor and verifies content
                     brand: { name: "Batch Brand" },
                   },
                 ],
-                next_cursor: "cursor_2",
-                has_more: true,
+                cursor_info: {
+                  next_cursor: "cursor_2",
+                  has_next_page: true,
+                  serving_mode: "curated_head",
+                },
               },
       };
     }

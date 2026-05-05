@@ -6814,6 +6814,8 @@ type ProductEntityIndexCandidate = {
   source_updated_at?: string;
 };
 
+type ProductEntityIndexSyncSource = "gateway_discovery_feed" | "backend_external_seeds";
+
 function productEntityIndexRecordId(productEntityId: string) {
   return `product_entity_index_${productEntityId}`;
 }
@@ -7004,8 +7006,105 @@ function candidateHasMore(json: Record<string, unknown>, productCount: number, p
   if (typeof data.has_more === "boolean") return data.has_more;
   if (typeof pagination.has_more === "boolean") return pagination.has_more;
   if (typeof pagination.hasMore === "boolean") return pagination.hasMore;
+  if (typeof pagination.has_next_page === "boolean") return pagination.has_next_page;
+  if (typeof pagination.hasNextPage === "boolean") return pagination.hasNextPage;
   if (stringInput(pagination.next_cursor, pagination.nextCursor)) return true;
   return productCount >= pageSize;
+}
+
+let productEntitySourceDbPoolPromise:
+  | Promise<{ query: (sql: string, values?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> }>
+  | null = null;
+
+function configuredProductEntitySourceDatabaseUrl() {
+  return (
+    process.env.AGENT_CENTER_PRODUCT_ENTITY_SOURCE_DATABASE_URL ||
+    process.env.AGENT_CENTER_EXTERNAL_SEED_DATABASE_URL ||
+    process.env.PIVOTA_EXTERNAL_SEED_DATABASE_URL ||
+    process.env.PIVOTA_BACKEND_DATABASE_URL ||
+    ""
+  ).trim();
+}
+
+async function getProductEntitySourceDbPool() {
+  if (!productEntitySourceDbPoolPromise) {
+    productEntitySourceDbPoolPromise = (async () => {
+      const connectionString = configuredProductEntitySourceDatabaseUrl();
+      if (!connectionString) {
+        throw new Error(
+          "backend_external_seeds sync requires AGENT_CENTER_PRODUCT_ENTITY_SOURCE_DATABASE_URL"
+        );
+      }
+      const { Pool } = await import("pg");
+      const sslEnabled =
+        process.env.AGENT_CENTER_PRODUCT_ENTITY_SOURCE_DB_SSL === "true" ||
+        (process.env.AGENT_CENTER_PRODUCT_ENTITY_SOURCE_DB_SSL !== "false" &&
+          /sslmode=require/i.test(connectionString));
+      return new Pool({
+        connectionString,
+        ssl: sslEnabled ? { rejectUnauthorized: false } : undefined,
+        max: Number(process.env.AGENT_CENTER_PRODUCT_ENTITY_SOURCE_DB_POOL_MAX || 2),
+      });
+    })();
+  }
+  return productEntitySourceDbPoolPromise;
+}
+
+function productEntitySyncSource(input?: unknown): ProductEntityIndexSyncSource {
+  const configured = stringInput(
+    input,
+    process.env.AGENT_CENTER_PRODUCT_ENTITY_INDEX_SYNC_SOURCE
+  ).toLowerCase();
+  if (configured === "backend_external_seeds" || configured === "external_seeds") {
+    return "backend_external_seeds";
+  }
+  return "gateway_discovery_feed";
+}
+
+function productEntityCandidateFromSourceDbRow(
+  row: Record<string, unknown>
+): ProductEntityIndexCandidate | null {
+  const productEntityId = stringInput(
+    row.product_entity_id,
+    row.sellable_item_group_id,
+    row.product_group_id
+  );
+  if (!isCanonicalProductEntityId(productEntityId)) return null;
+  const seedData = readNestedRecord(row.seed_data);
+  const snapshot = readNestedRecord(seedData.snapshot);
+  const sourceProductId = stringInput(
+    row.external_product_id,
+    seedData.external_product_id,
+    seedData.product_id,
+    snapshot.product_id,
+    row.external_seed_id
+  );
+  const externalSeedId = /^ext_[a-z0-9_]+$/i.test(sourceProductId)
+    ? sourceProductId
+    : stringInput(row.external_seed_id);
+  return {
+    product_entity_id: productEntityId,
+    external_seed_id: externalSeedId || undefined,
+    source_product_id: sourceProductId || externalSeedId || undefined,
+    product_name: stringInput(row.product_name, row.title, seedData.title, snapshot.title),
+    brand: stringInput(
+      row.brand,
+      seedData.brand,
+      seedData.brand_name,
+      seedData.vendor,
+      snapshot.brand,
+      snapshot.brand_name,
+      snapshot.vendor
+    ),
+    category: stringInput(
+      row.category,
+      seedData.category,
+      seedData.product_type,
+      snapshot.category,
+      snapshot.product_type
+    ),
+    source_updated_at: stringInput(row.source_updated_at, row.updated_at),
+  };
 }
 
 function gatewayModules(raw: unknown) {
@@ -7304,6 +7403,9 @@ export class ProductEntityIndexRegistryService {
   async runBatch(input: {
     run_id?: string;
     stage?: ProductEntityIndexBatchStage | "auto";
+    sync_source?: string;
+    source_market?: string;
+    source_tool?: string;
     sync_limit?: number;
     page_size?: number;
     max_pages?: number;
@@ -7334,6 +7436,9 @@ export class ProductEntityIndexRegistryService {
       sync_limit: Number(input.sync_limit || run.limits.sync_limit || 50),
       page_size: Number(input.page_size || run.limits.page_size || 50),
       max_pages: Number(input.max_pages || run.limits.max_pages || 1),
+      sync_source: stringInput(input.sync_source, run.limits.sync_source),
+      source_market: stringInput(input.source_market, run.limits.source_market),
+      source_tool: stringInput(input.source_tool, run.limits.source_tool),
       verify_limit: Number(input.verify_limit || run.limits.verify_limit || 5),
       audit_limit: Number(input.audit_limit || run.limits.audit_limit || 5),
       gemini_limit: Number(input.gemini_limit || run.limits.gemini_limit || 5),
@@ -7358,6 +7463,9 @@ export class ProductEntityIndexRegistryService {
           max_pages: limits.max_pages,
           start_page: run.next_page || input.start_page || 1,
           cursor: run.next_cursor || stringInput(input.cursor) || undefined,
+          source: limits.sync_source,
+          market: limits.source_market,
+          tool: limits.source_tool,
           verify_content: false,
         });
         run.next_page = syncResult.next_page;
@@ -7436,8 +7544,15 @@ export class ProductEntityIndexRegistryService {
     max_pages?: number;
     start_page?: number;
     cursor?: string;
+    source?: string;
+    market?: string;
+    tool?: string;
     verify_content?: boolean;
   } = {}) {
+    const source = productEntitySyncSource(input.source);
+    if (source === "backend_external_seeds") {
+      return this.syncFromBackendExternalSeeds(input);
+    }
     const limit = Math.max(1, Math.min(Number(input.limit || 250), 5000));
     const pageSize = Math.max(1, Math.min(Number(input.page_size || 100), 250));
     const maxPages = Math.max(1, Math.min(Number(input.max_pages || 50), 200));
@@ -7455,6 +7570,12 @@ export class ProductEntityIndexRegistryService {
           surface: "browse_products",
           page,
           limit: pageSize,
+          context: {
+            auth_state: "anonymous",
+            locale: "en-US",
+            recent_views: [],
+            recent_queries: [],
+          },
           ...(cursor ? { cursor } : {}),
         })) as Record<string, unknown>;
         const products = extractGatewayDiscoveryProducts(json);
@@ -7489,12 +7610,165 @@ export class ProductEntityIndexRegistryService {
     }
 
     return {
+      source,
       pages_fetched: pagesFetched,
       candidates_seen: candidates.size,
       records_upserted: upserted.length,
       sitemap_eligible: upserted.filter((record) => record.sitemap_eligible).length,
       next_page: page,
       next_cursor: cursor || undefined,
+      has_more: hasMore,
+      sync_errors: syncErrors,
+      records: upserted,
+      summary: this.summary(),
+    };
+  }
+
+  private async syncFromBackendExternalSeeds(input: {
+    limit?: number;
+    page_size?: number;
+    max_pages?: number;
+    start_page?: number;
+    market?: string;
+    tool?: string;
+    verify_content?: boolean;
+  } = {}) {
+    const limit = Math.max(1, Math.min(Number(input.limit || 250), 5000));
+    const pageSize = Math.max(1, Math.min(Number(input.page_size || 100), 500));
+    const maxPages = Math.max(1, Math.min(Number(input.max_pages || 50), 200));
+    const verifyContent = input.verify_content !== false;
+    const market = stringInput(
+      input.market,
+      process.env.AGENT_CENTER_PRODUCT_ENTITY_SOURCE_MARKET,
+      "US"
+    );
+    const tool = stringInput(
+      input.tool,
+      process.env.AGENT_CENTER_PRODUCT_ENTITY_SOURCE_TOOL,
+      "creator_agents"
+    );
+    const pool = await getProductEntitySourceDbPool();
+    const candidates = new Map<string, ProductEntityIndexCandidate>();
+    let page = Math.max(1, Number(input.start_page || 1));
+    let pagesFetched = 0;
+    let hasMore = false;
+    const syncErrors: string[] = [];
+
+    while (candidates.size < limit && pagesFetched < maxPages) {
+      const offset = Math.max(0, (page - 1) * pageSize);
+      try {
+        const result = await pool.query(
+          `
+            WITH source_rows AS (
+              SELECT
+                eps.id::text AS external_seed_row_id,
+                eps.external_product_id,
+                eps.destination_url,
+                eps.canonical_url,
+                eps.domain,
+                eps.title,
+                eps.seed_data,
+                eps.updated_at,
+                coalesce(
+                  nullif(eps.external_product_id, ''),
+                  nullif(eps.seed_data->>'external_product_id', ''),
+                  nullif(eps.seed_data->>'product_id', ''),
+                  nullif(eps.seed_data->'snapshot'->>'product_id', ''),
+                  nullif(eps.canonical_url, ''),
+                  nullif(eps.destination_url, ''),
+                  concat('row:', eps.id::text)
+                ) AS source_product_id
+              FROM external_product_seeds eps
+              WHERE eps.status = 'active'
+                AND eps.market = $1
+                AND ($2 = '*' OR eps.tool = $2 OR eps.tool = '*' OR eps.tool IS NULL OR eps.tool = '')
+                AND coalesce(lower(eps.seed_data#>>'{suppression_flags,exclude_from_recall}'), 'false') <> 'true'
+                AND coalesce(lower(eps.seed_data#>>'{derived,recall,suppression_flags,exclude_from_recall}'), 'false') <> 'true'
+            ),
+            mapped AS (
+              SELECT DISTINCT ON (pil.sellable_item_group_id, source_rows.source_product_id)
+                pil.sellable_item_group_id AS product_entity_id,
+                source_rows.source_product_id,
+                source_rows.external_seed_row_id,
+                source_rows.external_product_id,
+                source_rows.title AS product_name,
+                coalesce(
+                  source_rows.seed_data->>'brand',
+                  source_rows.seed_data->'snapshot'->>'brand',
+                  source_rows.seed_data->>'vendor',
+                  source_rows.seed_data->'snapshot'->>'vendor',
+                  ''
+                ) AS brand,
+                coalesce(
+                  source_rows.seed_data->>'category',
+                  source_rows.seed_data->'snapshot'->>'category',
+                  source_rows.seed_data->>'product_type',
+                  source_rows.seed_data->'snapshot'->>'product_type',
+                  ''
+                ) AS category,
+                source_rows.seed_data,
+                source_rows.updated_at AS source_updated_at,
+                pil.updated_at AS identity_updated_at
+              FROM source_rows
+              JOIN pdp_identity_listing pil
+                ON pil.source_listing_ref = 'external_seed:' || source_rows.source_product_id
+               AND pil.identity_status = 'approved'
+               AND pil.live_read_enabled = true
+              WHERE pil.sellable_item_group_id LIKE 'sig\\_%' ESCAPE '\\'
+              ORDER BY
+                pil.sellable_item_group_id,
+                source_rows.source_product_id,
+                pil.identity_confidence DESC NULLS LAST,
+                pil.updated_at DESC NULLS LAST,
+                source_rows.updated_at DESC NULLS LAST
+            )
+            SELECT *
+            FROM mapped
+            ORDER BY
+              coalesce(identity_updated_at, source_updated_at) DESC NULLS LAST,
+              product_entity_id ASC
+            LIMIT $3
+            OFFSET $4
+          `,
+          [market, tool, pageSize, offset]
+        );
+        const rows = Array.isArray(result.rows) ? result.rows : [];
+        for (const row of rows) {
+          const candidate = productEntityCandidateFromSourceDbRow(row);
+          if (!candidate) continue;
+          const existing = candidates.get(candidate.product_entity_id);
+          candidates.set(candidate.product_entity_id, {
+            ...existing,
+            ...candidate,
+            external_seed_id: existing?.external_seed_id || candidate.external_seed_id,
+            source_product_id: existing?.source_product_id || candidate.source_product_id,
+          });
+          if (candidates.size >= limit) break;
+        }
+        pagesFetched += 1;
+        hasMore = rows.length >= pageSize;
+        page += 1;
+        if (!hasMore) break;
+      } catch (error) {
+        syncErrors.push(
+          error instanceof Error ? error.message : "backend external seed sync failed"
+        );
+        break;
+      }
+    }
+
+    const upserted: ProductEntityIndexRecord[] = [];
+    for (const candidate of candidates.values()) {
+      upserted.push(await this.upsertCandidate(candidate, verifyContent));
+    }
+
+    return {
+      source: "backend_external_seeds",
+      pages_fetched: pagesFetched,
+      candidates_seen: candidates.size,
+      records_upserted: upserted.length,
+      sitemap_eligible: upserted.filter((record) => record.sitemap_eligible).length,
+      next_page: page,
       has_more: hasMore,
       sync_errors: syncErrors,
       records: upserted,

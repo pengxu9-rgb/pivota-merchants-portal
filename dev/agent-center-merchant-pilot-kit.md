@@ -262,6 +262,14 @@ gateway cursor and advances through sync, content verification, production
 audit, and optional search-grounded measurement without treating no-content
 records as sitemap eligible.
 
+The default sync source is gateway `get_discovery_feed`, which is appropriate
+for smoke tests and curated browse coverage. Full backlog rollout should use
+`AGENT_CENTER_PRODUCT_ENTITY_INDEX_SYNC_SOURCE=backend_external_seeds` with a
+read-only backend source DB URL so Agent Center can enumerate approved
+ProductEntity mappings from `external_product_seeds` and `pdp_identity_listing`.
+Even in that mode, a record enters sitemap only after `get_pdp_v2` main-path
+content and production Googlebot audit pass.
+
 Resolution actions in V1 are state transitions unless an action is explicitly wired to an approved write-back path. Do not write to merchant production systems from the pilot workflow.
 
 ## Success Criteria
