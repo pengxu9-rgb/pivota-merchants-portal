@@ -163,7 +163,7 @@ curl -X POST "$BASE_URL/api/internal/agent-center/product-entity-index/run-batch
     "max_pages": 1,
     "verify_limit": 5,
     "audit_limit": 5,
-    "gemini_limit": 5,
+    "gemini_limit": 1,
     "include_gemini": false
   }'
 ```
@@ -190,6 +190,12 @@ small batches:
 4. `gemini_rerun`: only when `include_gemini=true`, run
    `search_grounded_product_discovery_test` against `sitemap_eligible=true`
    records that have not yet been tested.
+
+Production Gemini Search grounding can be slow. The batch runner defaults
+Gemini reruns to priority micro-batches and caps `gemini_limit` at `3` per
+invocation. For current operations, use `gemini_limit=1` and repeat, or move to
+a durable queue before expanding. The direct `gemini-rerun` route is useful for
+single-record smoke tests; do not use it for large synchronous batches.
 
 This is the preferred operating mode for the ~4000 PDP backlog. Do not run the
 full production validation harness concurrently for bulk ProductEntity exposure

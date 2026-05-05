@@ -7695,6 +7695,8 @@ export class ProductEntityIndexRegistryService {
     audit_limit?: number;
     audit_concurrency?: number;
     gemini_limit?: number;
+    gemini_strategy?: "default" | "priority";
+    include_not_found?: boolean;
     start_page?: number;
     cursor?: string;
     include_gemini?: boolean;
@@ -7730,7 +7732,16 @@ export class ProductEntityIndexRegistryService {
       audit_concurrency: Number(
         input.audit_concurrency || run.limits.audit_concurrency || 5
       ),
-      gemini_limit: Number(input.gemini_limit || run.limits.gemini_limit || 5),
+      gemini_limit: Math.max(
+        1,
+        Math.min(Number(input.gemini_limit || run.limits.gemini_limit || 1), 3)
+      ),
+      gemini_strategy:
+        input.gemini_strategy || run.limits.gemini_strategy || "priority",
+      include_not_found:
+        typeof input.include_not_found === "boolean"
+          ? input.include_not_found
+          : Boolean(run.limits.include_not_found),
     };
     const stage =
       input.stage && input.stage !== "auto"
@@ -7779,6 +7790,8 @@ export class ProductEntityIndexRegistryService {
       } else {
         const rerunResult = await this.runSearchGroundedBatch({
           limit: limits.gemini_limit,
+          strategy: limits.gemini_strategy,
+          include_not_found: limits.include_not_found,
         });
         run.records_processed += Number(rerunResult.records_tested || 0);
         result = rerunResult as unknown as Record<string, unknown>;

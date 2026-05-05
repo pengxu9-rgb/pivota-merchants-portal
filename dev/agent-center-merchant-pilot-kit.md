@@ -276,6 +276,12 @@ and high-intent beauty categories. Reruns must stay scoped to
 `search_grounded_product_discovery_test`; contextual attribution, organic tests,
 offer readiness, and checkout readiness are separate workflows.
 
+Production Gemini Search grounding should run as micro-batches. The persisted
+batch runner defaults Gemini reruns to one priority record and caps a single
+invocation at three records. For pilot operations, prefer repeated
+`gemini_limit=1` runs until a durable queue exists; do not run 25+ grounded
+requests in one synchronous function invocation.
+
 Before consolidating duplicate PDPs or offers, use the read-only merge audit:
 
 ```text

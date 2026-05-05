@@ -2752,6 +2752,87 @@ test("ProductEntity index batch runner persists sync cursor and verifies content
   }
 });
 
+test("ProductEntity index batch runner uses safe priority Gemini micro-batches", async () => {
+  resetAgentCenterState();
+  const previousGrounding = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+  process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true";
+  const createdAt = new Date().toISOString();
+  for (const record of [
+    {
+      id: "product_entity_index_sig_gemini_batch_priority",
+      product_entity_id: "sig_gemini_batch_priority",
+      canonical_url: "https://agent.pivota.cc/products/sig_gemini_batch_priority",
+      external_seed_id: "ext_gemini_batch_priority",
+      product_name: "The Ordinary Multi-Peptide Lash and Brow Serum",
+      brand: "The Ordinary",
+      category: "Serum",
+    },
+    {
+      id: "product_entity_index_sig_gemini_batch_skin1004",
+      product_entity_id: "sig_gemini_batch_skin1004",
+      canonical_url: "https://agent.pivota.cc/products/sig_gemini_batch_skin1004",
+      external_seed_id: "ext_gemini_batch_skin1004",
+      product_name: "Centella Ampoule",
+      brand: "SKIN1004",
+      category: "Ampoule",
+    },
+    {
+      id: "product_entity_index_sig_gemini_batch_cosrx",
+      product_entity_id: "sig_gemini_batch_cosrx",
+      canonical_url: "https://agent.pivota.cc/products/sig_gemini_batch_cosrx",
+      external_seed_id: "ext_gemini_batch_cosrx",
+      product_name: "Aloe Soothing Sun Cream SPF50+ PA+++",
+      brand: "COSRX",
+      category: "Sunscreen",
+    },
+    {
+      id: "product_entity_index_sig_gemini_batch_other",
+      product_entity_id: "sig_gemini_batch_other",
+      canonical_url: "https://agent.pivota.cc/products/sig_gemini_batch_other",
+      external_seed_id: "ext_gemini_batch_other",
+      product_name: "Everyday Body Lotion",
+      brand: "Other Brand",
+      category: "Body Care",
+    },
+  ]) {
+    getAgentCenterRepository().upsert("productEntityIndexRecords", {
+      ...record,
+      pdp_content_status: "ready",
+      indexability_status: "ready",
+      sitemap_eligible: true,
+      google_index_status: "unknown",
+      gemini_search_grounded_status: "not_tested",
+      failure_reasons: [],
+      created_at: createdAt,
+      updated_at: createdAt,
+    });
+  }
+
+  try {
+    const run = await new ProductEntityIndexRegistryService().runBatch({
+      stage: "gemini_rerun",
+      gemini_limit: 5,
+    });
+
+    assert.equal(run.status, "completed");
+    assert.equal(run.stage, "gemini_rerun");
+    assert.equal(run.limits.gemini_limit, 3);
+    assert.equal(run.limits.gemini_strategy, "priority");
+    assert.equal(run.records_processed, 3);
+    assert.equal(run.last_result?.records_tested, 3);
+    assert.equal(run.result_summary?.search_grounded_pending, 1);
+    assert.equal(
+      getAgentCenterState().productEntityIndexRecords.filter(
+        (record) => record.gemini_search_grounded_status !== "not_tested"
+      ).length,
+      3
+    );
+  } finally {
+    if (previousGrounding === undefined) delete process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
+    else process.env.GEMINI_SEARCH_GROUNDING_ENABLED = previousGrounding;
+  }
+});
+
 test("ProductEntity index batch audit only processes unaudited ready records", async () => {
   resetAgentCenterState();
   const service = new ProductEntityIndexRegistryService();
