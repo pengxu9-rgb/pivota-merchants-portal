@@ -273,6 +273,7 @@ async function handleInternalProductEntityIndexRequestInner(
         product_entity_duplicate_merge_audit: service.duplicateMergeAudit({
           limit: Number(req.nextUrl.searchParams.get("limit") || 25),
           min_group_size: Number(req.nextUrl.searchParams.get("min_group_size") || 2),
+          brand_filter: req.nextUrl.searchParams.getAll("brand_filter"),
         }),
       });
     }

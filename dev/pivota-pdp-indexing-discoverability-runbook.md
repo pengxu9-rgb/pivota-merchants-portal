@@ -585,12 +585,25 @@ curl "$BASE_URL/api/internal/agent-center/product-entity-index/duplicate-merge-a
   -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET"
 ```
 
+For a focused Fenty review:
+
+```bash
+curl "$BASE_URL/api/internal/agent-center/product-entity-index/duplicate-merge-audit?limit=25&min_group_size=2&brand_filter=Fenty%20Beauty" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET"
+```
+
 The audit is read-only. It groups canonical ProductEntities by normalized brand
 and product family, then recommends either a ProductEntity family/SKU variant map
 or source-reference consolidation. It does not merge ProductEntities or offers.
 Offer merge policy remains strict: same ProductEntity, same merchant, and same
 SKU/variant can be deduped after review; variant offers need a SKU/variant map;
 different merchants remain separate `AggregateOffer` entries.
+
+For shade-heavy lines such as Fenty foundation, the expected output is
+`duplicate_kind=variant_family`, not an automatic ProductEntity merge. Operators
+should create or review the family-level ProductEntity, map each `sig_*` to an
+exact shade/SKU variant, and attach offers to the reviewed variant. Only exact
+duplicate source aliases for the same variant are eligible for later dedupe.
 
 ## Merchant-Safe Pivota Discovery Progress
 

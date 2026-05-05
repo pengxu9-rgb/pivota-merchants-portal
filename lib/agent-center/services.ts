@@ -7381,6 +7381,61 @@ function productEntityFamilyName(value?: string) {
   );
 }
 
+function productEntityVariantSignals(
+  record: ProductEntityIndexRecord,
+  family: string
+) {
+  const normalizer = new ProductNameNormalizer();
+  const rawName = record.product_name || record.product_entity_id;
+  const normalizedName = normalizer.normalizeForCompare(rawName);
+  const normalizedFamily = compactWhitespace(family);
+  const optionalSuffixTerms = normalizer.extractOptionalSuffixTerms(rawName);
+  const shadeTerms = unique(
+    [
+      ...Array.from(
+        rawName.matchAll(/(?:^|\s)((?:shade\s*)?#?\d{1,4}[a-z]?)(?=\b|\s|$)/gi)
+      ).map(
+        (match) => compactWhitespace(match[1])
+      ),
+      ...Array.from(rawName.matchAll(/\b(?:fair|light|medium|tan|deep|rich)\s+(?:neutral|warm|cool|olive)\b/gi)).map(
+        (match) => compactWhitespace(match[0])
+      ),
+    ].filter(Boolean)
+  );
+  const delimiterVariant = compactWhitespace(
+    rawName.split(/[—–|:]/).slice(1).join(" ")
+  );
+  const familyRemainder = normalizedName.startsWith(normalizedFamily)
+    ? compactWhitespace(normalizedName.slice(normalizedFamily.length))
+    : "";
+  const variantTerms = unique(
+    [
+      ...optionalSuffixTerms,
+      ...shadeTerms,
+      delimiterVariant,
+      familyRemainder && familyRemainder.length <= 80 ? familyRemainder : "",
+    ]
+      .map((item) => compactWhitespace(item))
+      .filter(Boolean)
+  );
+  const variantLabel = variantTerms[0] || "unspecified variant";
+  return {
+    variant_key: slugFrom(`${record.product_entity_id}-${variantLabel}`),
+    variant_label: variantLabel,
+    variant_terms: variantTerms.slice(0, 8),
+    product_entity_id: record.product_entity_id,
+    canonical_url: record.canonical_url,
+    product_name: record.product_name,
+    external_seed_id: record.external_seed_id,
+    external_seed_ids: unique([
+      record.external_seed_id || "",
+      ...(record.external_seed_ids || []),
+    ]).filter(Boolean),
+    offer_attach_policy:
+      "Attach offers to this exact variant only after merchant, SKU, shade, size, or source alias mapping is reviewed.",
+  };
+}
+
 function productEntityPriorityScore(
   record: ProductEntityIndexRecord,
   priorityBrands: Set<string>
@@ -7558,13 +7613,17 @@ export class ProductEntityIndexRegistryService {
     limit?: number;
     min_group_size?: number;
     sitemap_eligible?: boolean;
+    brand_filter?: string[];
   } = {}) {
     const limit = Math.max(1, Math.min(Number(input.limit || 25), 250));
     const minGroupSize = Math.max(2, Math.min(Number(input.min_group_size || 2), 50));
+    const brandFilter = new Set(arrayOfStringInput(input.brand_filter).map(normalizedProductEntityBrand));
     const records = this.list({
       sitemap_eligible: input.sitemap_eligible === false ? undefined : true,
       limit: 5000,
-    });
+    }).filter((record) =>
+      brandFilter.size ? brandFilter.has(normalizedProductEntityBrand(record.brand)) : true
+    );
     const groups = new Map<string, ProductEntityIndexRecord[]>();
     for (const record of records) {
       const brand = normalizedProductEntityBrand(record.brand);
@@ -7583,11 +7642,37 @@ export class ProductEntityIndexRegistryService {
         );
         const variantLike =
           exactNames.size > 1 ||
-          group.some((record) => /[#—–-]\s*[\w.]+$|\b(shade|refill|travel|mini)\b/i.test(record.product_name || ""));
+          group.some((record) =>
+            /[#—–-]\s*[\w.]+$|\b(shade|refill|travel|mini)\b/i.test(
+              record.product_name || ""
+            )
+          );
+        const duplicateKind = variantLike
+          ? "variant_family"
+          : exactNames.size === 1
+            ? "probable_duplicate_source_aliases"
+            : "product_family_review_required";
+        const variants = group
+          .slice()
+          .sort((left, right) =>
+            String(left.product_name || left.product_entity_id).localeCompare(
+              String(right.product_name || right.product_entity_id)
+            )
+          )
+          .map((record) => productEntityVariantSignals(record, family));
+        const riskFlags = unique([
+          group.length >= 25 ? "high_variant_count" : "",
+          variantLike ? "offer_merge_requires_sku_variant_map" : "",
+          exactNames.size === 1 ? "probable_duplicate_source_aliases" : "",
+          variants.some((variant) => variant.variant_label === "unspecified variant")
+            ? "missing_explicit_variant_label"
+            : "",
+        ].filter(Boolean));
         return {
           group_id: `product_entity_merge_${slugFrom(key)}`,
           brand: group[0]?.brand || brandKey,
           normalized_product_family: family,
+          duplicate_kind: duplicateKind,
           product_entity_count: group.length,
           external_seed_count: unique(
             group.flatMap((record) => [
@@ -7600,9 +7685,34 @@ export class ProductEntityIndexRegistryService {
           recommended_action: variantLike
             ? "create_product_entity_family_with_sku_variant_map"
             : "merge_duplicate_source_references_under_canonical_product_entity",
-          offer_merge_policy:
-            "Do not merge offers blindly. Same ProductEntity + same merchant + same SKU/variant can be deduped; variant offers must attach through SKU/variant map; different merchants remain separate AggregateOffer entries.",
+          merge_allowed_without_review: false,
+          offer_merge_policy: {
+            summary:
+              "Do not merge offers blindly. Same ProductEntity + same merchant + same SKU/variant can be deduped after review; variant offers must attach through SKU/variant map; different merchants remain separate AggregateOffer entries.",
+            same_merchant_same_variant:
+              "May dedupe only after merchant SKU, shade, size, and source alias are confirmed equivalent.",
+            same_family_different_variant:
+              "Do not merge. Attach as separate SKU/variant offers under a reviewed ProductEntity family.",
+            different_merchants:
+              "Do not merge merchant offers. Keep separate AggregateOffer entries under the canonical ProductEntity family.",
+          },
           auto_apply_allowed: false,
+          risk_flags: riskFlags,
+          review_checklist: [
+            "Choose or create the canonical ProductEntity family identity.",
+            "Map each sig_* record to an exact SKU, shade, size, refill, mini, or other variant.",
+            "Bind every external seed alias as a source reference, not as canonical PDP identity.",
+            "Attach merchant and Pivota offers only after SKU/variant mapping is reviewed.",
+            "Only retire duplicate source aliases after confirming they point to the same exact variant.",
+          ],
+          sku_variant_map_review_plan: {
+            family_key: key,
+            canonical_family_slug: slugFrom(`${group[0]?.brand || brandKey} ${family}`),
+            family_product_name: family,
+            variant_count: variants.length,
+            variants: variants.slice(0, 50),
+            mutation_performed: false,
+          },
           product_entities: group.slice(0, 20).map((record) => ({
             product_entity_id: record.product_entity_id,
             canonical_url: record.canonical_url,
@@ -7621,10 +7731,11 @@ export class ProductEntityIndexRegistryService {
     return {
       audit_type: "product_entity_duplicate_offer_merge_audit",
       records_considered: records.length,
+      brand_filter: [...brandFilter],
       duplicate_group_count: duplicateGroups.length,
       groups: duplicateGroups,
       next_action:
-        "Review high-count variant-like groups first, then create ProductEntity family/SKU variant mappings before any offer merge.",
+        "Review high-count variant families first, create ProductEntity family/SKU variant mappings, and only then review exact source-alias or offer dedupe.",
       mutation_performed: false,
     };
   }

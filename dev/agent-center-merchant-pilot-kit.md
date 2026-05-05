@@ -294,6 +294,11 @@ but V1 does not auto-merge entities or offers. Different merchants remain
 separate offers under the canonical ProductEntity; variant offers require a
 reviewed SKU/variant map.
 
+For high-repeat shade families such as Fenty foundations, filter the audit by
+brand and treat the group as a variant-family review. The correct first action is
+to create or verify the ProductEntity family and SKU/variant map, not to collapse
+all `sig_*` records into one ProductEntity or merge offers across shades.
+
 The default sync source is gateway `get_discovery_feed`, which is appropriate
 for smoke tests and curated browse coverage. Full backlog rollout should use
 `AGENT_CENTER_PRODUCT_ENTITY_INDEX_SYNC_SOURCE=gateway_product_entity_index_feed`

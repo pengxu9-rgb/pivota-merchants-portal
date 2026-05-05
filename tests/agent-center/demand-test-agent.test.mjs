@@ -3256,16 +3256,107 @@ test("ProductEntity duplicate merge audit flags variant groups without mutating 
   assert.equal(audit.duplicate_group_count, 1);
   assert.equal(audit.groups[0].product_entity_count, 2);
   assert.equal(audit.groups[0].variant_like, true);
+  assert.equal(audit.groups[0].duplicate_kind, "variant_family");
   assert.equal(
     audit.groups[0].recommended_action,
     "create_product_entity_family_with_sku_variant_map"
   );
+  assert.equal(audit.groups[0].merge_allowed_without_review, false);
   assert.equal(audit.groups[0].auto_apply_allowed, false);
-  assert.match(audit.groups[0].offer_merge_policy, /Do not merge offers blindly/);
+  assert.match(audit.groups[0].offer_merge_policy.summary, /Do not merge offers blindly/);
+  assert.ok(
+    audit.groups[0].risk_flags.includes("offer_merge_requires_sku_variant_map")
+  );
+  assert.equal(
+    audit.groups[0].sku_variant_map_review_plan.family_product_name,
+    "glow brand centella ampoule"
+  );
+  assert.deepEqual(
+    audit.groups[0].sku_variant_map_review_plan.variants.map(
+      (variant) => variant.variant_label
+    ),
+    ["30ml", "50ml"]
+  );
   assert.deepEqual(
     getAgentCenterState().productEntityIndexRecords.map((record) => record.product_entity_id).sort(),
     ["sig_dup_30ml", "sig_dup_50ml", "sig_unique"]
   );
+});
+
+test("ProductEntity duplicate merge audit supports brand-filtered Fenty variant review", async () => {
+  resetAgentCenterState();
+  const now = new Date().toISOString();
+  for (const record of [
+    {
+      id: "product_entity_index_sig_fenty_120",
+      product_entity_id: "sig_fenty_120",
+      canonical_url: "https://agent.pivota.cc/products/sig_fenty_120",
+      external_seed_id: "ext_fenty_120",
+      product_name: "Fenty Beauty Pro Filt'r Soft Matte Longwear Foundation #120",
+      brand: "Fenty Beauty",
+      category: "Foundation",
+    },
+    {
+      id: "product_entity_index_sig_fenty_130",
+      product_entity_id: "sig_fenty_130",
+      canonical_url: "https://agent.pivota.cc/products/sig_fenty_130",
+      external_seed_id: "ext_fenty_130",
+      product_name: "Fenty Beauty Pro Filt'r Soft Matte Longwear Foundation #130",
+      brand: "Fenty Beauty",
+      category: "Foundation",
+    },
+    {
+      id: "product_entity_index_sig_fenty_140",
+      product_entity_id: "sig_fenty_140",
+      canonical_url: "https://agent.pivota.cc/products/sig_fenty_140",
+      external_seed_id: "ext_fenty_140",
+      product_name: "Fenty Beauty Pro Filt'r Soft Matte Longwear Foundation #140",
+      brand: "Fenty Beauty",
+      category: "Foundation",
+    },
+    {
+      id: "product_entity_index_sig_other_120",
+      product_entity_id: "sig_other_120",
+      canonical_url: "https://agent.pivota.cc/products/sig_other_120",
+      external_seed_id: "ext_other_120",
+      product_name: "Other Brand Pro Filt'r Soft Matte Longwear Foundation #120",
+      brand: "Other Brand",
+      category: "Foundation",
+    },
+  ]) {
+    getAgentCenterRepository().upsert("productEntityIndexRecords", {
+      ...record,
+      pdp_content_status: "ready",
+      indexability_status: "ready",
+      sitemap_eligible: true,
+      google_index_status: "unknown",
+      gemini_search_grounded_status: "not_tested",
+      failure_reasons: [],
+      created_at: now,
+      updated_at: now,
+    });
+  }
+
+  const audit = new ProductEntityIndexRegistryService().duplicateMergeAudit({
+    limit: 10,
+    min_group_size: 2,
+    brand_filter: ["Fenty Beauty"],
+  });
+
+  assert.deepEqual(audit.brand_filter, ["fenty beauty"]);
+  assert.equal(audit.records_considered, 3);
+  assert.equal(audit.duplicate_group_count, 1);
+  const group = audit.groups[0];
+  assert.equal(group.duplicate_kind, "variant_family");
+  assert.equal(group.product_entity_count, 3);
+  assert.equal(group.sku_variant_map_review_plan.variant_count, 3);
+  assert.deepEqual(
+    group.sku_variant_map_review_plan.variants.map((variant) => variant.variant_label),
+    ["#120", "#130", "#140"]
+  );
+  assert.equal(group.merge_allowed_without_review, false);
+  assert.equal(group.auto_apply_allowed, false);
+  assert.equal(audit.mutation_performed, false);
 });
 
 test("internal ProductEntity index route exposes priority plan and duplicate audit", async () => {
