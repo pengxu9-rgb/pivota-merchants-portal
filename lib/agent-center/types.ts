@@ -1896,6 +1896,7 @@ export type PivotaPDPIndexabilityAudit = {
     product_object_id_visible: boolean;
     sitemap_url?: string;
     sitemap_status?: number | null;
+    product_sitemap_status?: number | null;
     sitemap_includes_pdp_url: boolean;
     internal_product_links_count: number;
     auth_gate_detected: boolean;

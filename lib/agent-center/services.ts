@@ -12092,6 +12092,7 @@ export class PivotaPDPIndexabilityAuditService {
     }
 
     let sitemapStatus: number | null = null;
+    let productSitemapStatus: number | null = null;
     let sitemapText = "";
     try {
       const sitemapResponse = await fetch(sitemapUrl, {
@@ -12100,6 +12101,15 @@ export class PivotaPDPIndexabilityAuditService {
       });
       sitemapStatus = sitemapResponse.status;
       sitemapText = await sitemapResponse.text();
+      const productSitemapUrl = `${origin}/sitemap-products.xml`;
+      const productSitemapResponse = await fetch(productSitemapUrl, {
+        method: "GET",
+        redirect: "follow",
+      });
+      productSitemapStatus = productSitemapResponse.status;
+      if (productSitemapResponse.ok) {
+        sitemapText = `${sitemapText}\n${await productSitemapResponse.text()}`;
+      }
     } catch {
       sitemapStatus = null;
     }
@@ -12480,6 +12490,7 @@ export class PivotaPDPIndexabilityAuditService {
       product_object_id_visible: objectIdVisible,
       sitemap_url: sitemapUrl,
       sitemap_status: sitemapStatus,
+      product_sitemap_status: productSitemapStatus,
       sitemap_includes_pdp_url: sitemapIncludes,
       internal_product_links_count: unique(internalProductLinks).length,
       auth_gate_detected: authGateDetected,
