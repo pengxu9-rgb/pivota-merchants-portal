@@ -84,6 +84,7 @@ import type {
   ProductEntityIndexBatchRun,
   ProductEntityIndexBatchStage,
   ProductEntityIndexRecord,
+  ProductEntityVariantReviewPlan,
   ProductEntityIndexabilityStatus,
   ProductEntityPdpContentStatus,
   ProductLayerComparison,
@@ -7737,6 +7738,116 @@ export class ProductEntityIndexRegistryService {
       next_action:
         "Review high-count variant families first, create ProductEntity family/SKU variant mappings, and only then review exact source-alias or offer dedupe.",
       mutation_performed: false,
+    };
+  }
+
+  listVariantReviewPlans(input: {
+    brand_filter?: string[];
+    status?: string;
+    limit?: number;
+  } = {}) {
+    const brandFilter = new Set(
+      arrayOfStringInput(input.brand_filter).map(normalizedProductEntityBrand)
+    );
+    const status = stringInput(input.status);
+    const limit = Math.max(1, Math.min(Number(input.limit || 50), 250));
+    return [...getAgentCenterState().productEntityVariantReviewPlans]
+      .filter((plan) =>
+        brandFilter.size ? brandFilter.has(normalizedProductEntityBrand(plan.brand)) : true
+      )
+      .filter((plan) => (status ? plan.status === status : true))
+      .sort(
+        (left, right) =>
+          new Date(right.updated_at || right.created_at).getTime() -
+          new Date(left.updated_at || left.created_at).getTime()
+      )
+      .slice(0, limit);
+  }
+
+  createVariantReviewPlan(input: {
+    group_id?: string;
+    brand_filter?: string[];
+    normalized_product_family?: string;
+    reviewer?: string;
+    review_notes?: string;
+  } = {}) {
+    const audit = this.duplicateMergeAudit({
+      limit: 250,
+      min_group_size: 2,
+      brand_filter: input.brand_filter,
+    });
+    const targetFamily = stringInput(input.normalized_product_family);
+    const targetGroupId = stringInput(input.group_id);
+    const group = audit.groups.find((candidate) =>
+      targetGroupId
+        ? candidate.group_id === targetGroupId
+        : targetFamily
+          ? candidate.normalized_product_family === targetFamily
+          : true
+    );
+    if (!group) {
+      throw new Error("ProductEntity variant review group not found");
+    }
+    if (group.duplicate_kind !== "variant_family") {
+      throw new Error("Only variant_family groups can create a SKU/variant review plan");
+    }
+
+    const now = nowIso();
+    const id = `product_entity_variant_review_${slugFrom(group.group_id)}`;
+    const existing = getAgentCenterRepository().getById(
+      "productEntityVariantReviewPlans",
+      id
+    );
+    const variants = Array.isArray(group.sku_variant_map_review_plan?.variants)
+      ? (group.sku_variant_map_review_plan.variants as Array<Record<string, unknown>>)
+      : [];
+    const sourceExternalSeedIds = unique(
+      variants.flatMap((variant) =>
+        Array.isArray(variant.external_seed_ids)
+          ? variant.external_seed_ids.map(String)
+          : []
+      )
+    ).filter(Boolean);
+    const plan: ProductEntityVariantReviewPlan = {
+      id,
+      plan_type: "product_entity_variant_family_review",
+      status: existing?.status || "proposed",
+      group_id: group.group_id,
+      brand: group.brand,
+      normalized_product_family: group.normalized_product_family,
+      canonical_family_slug: String(
+        group.sku_variant_map_review_plan?.canonical_family_slug ||
+          slugFrom(`${group.brand} ${group.normalized_product_family}`)
+      ),
+      family_product_name: String(
+        group.sku_variant_map_review_plan?.family_product_name ||
+          group.normalized_product_family
+      ),
+      product_entity_count: group.product_entity_count,
+      external_seed_count: group.external_seed_count,
+      source_product_entity_ids: variants
+        .map((variant) => String(variant.product_entity_id || ""))
+        .filter(Boolean),
+      source_external_seed_ids: sourceExternalSeedIds,
+      risk_flags: group.risk_flags || [],
+      review_checklist: group.review_checklist || [],
+      sku_variant_map_review_plan: group.sku_variant_map_review_plan,
+      offer_merge_policy: group.offer_merge_policy,
+      recommended_action: group.recommended_action,
+      merge_allowed_without_review: false,
+      auto_apply_allowed: false,
+      mutation_performed: false,
+      reviewer: stringInput(input.reviewer, existing?.reviewer),
+      review_notes: stringInput(input.review_notes, existing?.review_notes),
+      created_at: existing?.created_at || now,
+      updated_at: now,
+    };
+    getAgentCenterRepository().upsert("productEntityVariantReviewPlans", plan);
+    return {
+      variant_review_plan: plan,
+      mutation_performed: false,
+      next_action:
+        "Review SKU/variant labels and source aliases, then approve mapping before any ProductEntity or offer dedupe.",
     };
   }
 

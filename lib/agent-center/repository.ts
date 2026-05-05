@@ -314,6 +314,7 @@ export function createInitialAgentCenterState(): AgentCenterState {
     pilotProductEntityProvisioningRuns: [],
     productEntityIndexRecords: [],
     productEntityIndexBatchRuns: [],
+    productEntityVariantReviewPlans: [],
     pivotaIndexingTasks: [],
     usageEvents: [],
     usagePlan: {
@@ -382,6 +383,7 @@ const ARRAY_COLLECTION_KEYS: AgentCenterCollectionKey[] = [
   "pilotProductEntityProvisioningRuns",
   "productEntityIndexRecords",
   "productEntityIndexBatchRuns",
+  "productEntityVariantReviewPlans",
   "pivotaIndexingTasks",
   "usageEvents",
 ];
@@ -752,6 +754,7 @@ type PersistedCollectionKey =
   | "pilotProductEntityProvisioningRuns"
   | "productEntityIndexRecords"
   | "productEntityIndexBatchRuns"
+  | "productEntityVariantReviewPlans"
   | "pivotaIndexingTasks"
   | "demoFixtures";
 
@@ -772,6 +775,7 @@ const DB_COLLECTION_TABLES: Record<PersistedCollectionKey, string> = {
     "agent_center_production_validation_runs",
   productEntityIndexRecords: "agent_center_production_validation_runs",
   productEntityIndexBatchRuns: "agent_center_production_validation_runs",
+  productEntityVariantReviewPlans: "agent_center_production_validation_runs",
   pivotaIndexingTasks: "agent_center_production_validation_runs",
   demoFixtures: "agent_center_demo_fixtures",
 };
@@ -1041,7 +1045,7 @@ async function upsertRows(
 
 function collectionHydrateWhere(collection: PersistedCollectionKey) {
   if (collection === "productionValidationRuns") {
-    return "WHERE id NOT LIKE 'pilot_product_entity_%' AND id NOT LIKE 'pivota_indexing_task_%' AND id NOT LIKE 'product_entity_index_%' AND id NOT LIKE 'product_entity_index_batch_%'";
+    return "WHERE id NOT LIKE 'pilot_product_entity_%' AND id NOT LIKE 'pivota_indexing_task_%' AND id NOT LIKE 'product_entity_index_%' AND id NOT LIKE 'product_entity_index_batch_%' AND id NOT LIKE 'product_entity_variant_review_%'";
   }
   if (collection === "pilotProductEntityProvisioningRuns") {
     return "WHERE id LIKE 'pilot_product_entity_%'";
@@ -1051,6 +1055,9 @@ function collectionHydrateWhere(collection: PersistedCollectionKey) {
   }
   if (collection === "productEntityIndexBatchRuns") {
     return "WHERE id LIKE 'product_entity_index_batch_%' AND deleted_at IS NULL";
+  }
+  if (collection === "productEntityVariantReviewPlans") {
+    return "WHERE id LIKE 'product_entity_variant_review_%' AND deleted_at IS NULL";
   }
   if (collection === "pivotaIndexingTasks") {
     return "WHERE id LIKE 'pivota_indexing_task_%' AND deleted_at IS NULL";

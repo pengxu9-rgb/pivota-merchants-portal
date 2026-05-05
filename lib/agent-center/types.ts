@@ -1588,6 +1588,39 @@ export type ProductEntityIndexBatchRun = Timestamped & {
   completed_at?: string;
 };
 
+export type ProductEntityVariantReviewPlanStatus =
+  | "proposed"
+  | "in_review"
+  | "approved_for_mapping"
+  | "blocked"
+  | "completed"
+  | "skipped";
+
+export type ProductEntityVariantReviewPlan = Timestamped & {
+  id: string;
+  plan_type: "product_entity_variant_family_review";
+  status: ProductEntityVariantReviewPlanStatus;
+  group_id: string;
+  brand: string;
+  normalized_product_family: string;
+  canonical_family_slug: string;
+  family_product_name: string;
+  product_entity_count: number;
+  external_seed_count: number;
+  source_product_entity_ids: string[];
+  source_external_seed_ids: string[];
+  risk_flags: string[];
+  review_checklist: string[];
+  sku_variant_map_review_plan: Record<string, unknown>;
+  offer_merge_policy: Record<string, unknown>;
+  recommended_action: string;
+  merge_allowed_without_review: false;
+  auto_apply_allowed: false;
+  mutation_performed: false;
+  reviewer?: string;
+  review_notes?: string;
+};
+
 export type PivotaIndexingTaskType =
   | "submit_sitemap"
   | "request_indexing"
@@ -2360,6 +2393,7 @@ export type AgentCenterState = {
   pilotProductEntityProvisioningRuns: PilotProductEntityProvisioningRun[];
   productEntityIndexRecords: ProductEntityIndexRecord[];
   productEntityIndexBatchRuns: ProductEntityIndexBatchRun[];
+  productEntityVariantReviewPlans: ProductEntityVariantReviewPlan[];
   pivotaIndexingTasks: PivotaIndexingTask[];
   usageEvents: UsageEvent[];
   usagePlan: {

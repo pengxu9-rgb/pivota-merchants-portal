@@ -277,6 +277,24 @@ async function handleInternalProductEntityIndexRequestInner(
         }),
       });
     }
+    if (req.method === "POST" && action === "variant-review-plan") {
+      return json(
+        {
+          product_entity_variant_review_plan:
+            service.createVariantReviewPlan(await requestBody(req)),
+        },
+        201
+      );
+    }
+    if (req.method === "GET" && action === "variant-review-plans") {
+      return json({
+        product_entity_variant_review_plans: service.listVariantReviewPlans({
+          limit: Number(req.nextUrl.searchParams.get("limit") || 50),
+          status: req.nextUrl.searchParams.get("status") || undefined,
+          brand_filter: req.nextUrl.searchParams.getAll("brand_filter"),
+        }),
+      });
+    }
     if (req.method === "POST" && action === "run-batch") {
       return json(
         { product_entity_index_batch_run: await service.runBatch(await requestBody(req)) },

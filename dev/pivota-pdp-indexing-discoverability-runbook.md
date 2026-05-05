@@ -605,6 +605,31 @@ should create or review the family-level ProductEntity, map each `sig_*` to an
 exact shade/SKU variant, and attach offers to the reviewed variant. Only exact
 duplicate source aliases for the same variant are eligible for later dedupe.
 
+Create a persistent review plan from an audited family:
+
+```bash
+curl -X POST "$BASE_URL/api/internal/agent-center/product-entity-index/variant-review-plan" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET" \
+  -H "content-type: application/json" \
+  --data '{
+    "brand_filter": ["Fenty Beauty"],
+    "group_id": "product_entity_merge_fenty_beauty_pro_filt_r_soft_matte_longwear_foundation",
+    "reviewer": "pivota_ops",
+    "review_notes": "Create SKU/variant map before offer attachment."
+  }'
+```
+
+List existing review plans:
+
+```bash
+curl "$BASE_URL/api/internal/agent-center/product-entity-index/variant-review-plans?brand_filter=Fenty%20Beauty" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET"
+```
+
+Variant review plans are persistent operator work items. They remain state-only
+and do not merge ProductEntities, source aliases, merchant offers, or Pivota
+offers.
+
 ## Merchant-Safe Pivota Discovery Progress
 
 Merchant-facing reports may show a Pivota Discovery Progress module with safe

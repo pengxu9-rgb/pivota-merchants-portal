@@ -3359,6 +3359,75 @@ test("ProductEntity duplicate merge audit supports brand-filtered Fenty variant 
   assert.equal(audit.mutation_performed, false);
 });
 
+test("ProductEntity variant review plan persists SKU variant map proposal without merging", async () => {
+  resetAgentCenterState();
+  const now = new Date().toISOString();
+  for (const record of [
+    {
+      id: "product_entity_index_sig_fenty_plan_100",
+      product_entity_id: "sig_fenty_plan_100",
+      canonical_url: "https://agent.pivota.cc/products/sig_fenty_plan_100",
+      external_seed_id: "ext_fenty_plan_100",
+      product_name: "Fenty Beauty Pro Filt'r Instant Retouch Concealer #100",
+      brand: "Fenty Beauty",
+      category: "Concealer",
+    },
+    {
+      id: "product_entity_index_sig_fenty_plan_110",
+      product_entity_id: "sig_fenty_plan_110",
+      canonical_url: "https://agent.pivota.cc/products/sig_fenty_plan_110",
+      external_seed_id: "ext_fenty_plan_110",
+      product_name: "Fenty Beauty Pro Filt'r Instant Retouch Concealer #110",
+      brand: "Fenty Beauty",
+      category: "Concealer",
+    },
+  ]) {
+    getAgentCenterRepository().upsert("productEntityIndexRecords", {
+      ...record,
+      pdp_content_status: "ready",
+      indexability_status: "ready",
+      sitemap_eligible: true,
+      google_index_status: "unknown",
+      gemini_search_grounded_status: "not_tested",
+      failure_reasons: [],
+      created_at: now,
+      updated_at: now,
+    });
+  }
+
+  const service = new ProductEntityIndexRegistryService();
+  const result = service.createVariantReviewPlan({
+    brand_filter: ["Fenty Beauty"],
+    reviewer: "pivota_ops",
+    review_notes: "Review Fenty concealer shade family before offer attachment.",
+  });
+  const plan = result.variant_review_plan;
+
+  assert.equal(plan.plan_type, "product_entity_variant_family_review");
+  assert.equal(plan.status, "proposed");
+  assert.equal(plan.brand, "Fenty Beauty");
+  assert.equal(plan.product_entity_count, 2);
+  assert.deepEqual(plan.source_product_entity_ids.sort(), [
+    "sig_fenty_plan_100",
+    "sig_fenty_plan_110",
+  ]);
+  assert.deepEqual(
+    (plan.sku_variant_map_review_plan.variants || []).map(
+      (variant) => variant.variant_label
+    ),
+    ["#100", "#110"]
+  );
+  assert.equal(plan.merge_allowed_without_review, false);
+  assert.equal(plan.auto_apply_allowed, false);
+  assert.equal(plan.mutation_performed, false);
+  assert.equal(getAgentCenterState().productEntityVariantReviewPlans.length, 1);
+  assert.equal(getAgentCenterState().productEntityIndexRecords.length, 2);
+
+  const plans = service.listVariantReviewPlans({ brand_filter: ["Fenty Beauty"] });
+  assert.equal(plans.length, 1);
+  assert.equal(plans[0].reviewer, "pivota_ops");
+});
+
 test("internal ProductEntity index route exposes priority plan and duplicate audit", async () => {
   resetAgentCenterState();
   const previousEnabled = process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION;
@@ -3464,6 +3533,45 @@ test("internal ProductEntity index route exposes priority plan and duplicate aud
       auditPayload.product_entity_duplicate_merge_audit.mutation_performed,
       false
     );
+
+    const variantPlanResponse = await handleInternalProductEntityIndexRequest(
+      new NextRequest(
+        "https://example.test/api/internal/agent-center/product-entity-index/variant-review-plan",
+        {
+          method: "POST",
+          headers: {
+            authorization: "Bearer index-secret",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ brand_filter: ["Route Brand"] }),
+        }
+      ),
+      { action: "variant-review-plan" }
+    );
+    const variantPlanPayload = await variantPlanResponse.json();
+    assert.equal(variantPlanResponse.status, 201);
+    assert.equal(
+      variantPlanPayload.product_entity_variant_review_plan.variant_review_plan.plan_type,
+      "product_entity_variant_family_review"
+    );
+    assert.equal(
+      variantPlanPayload.product_entity_variant_review_plan.variant_review_plan.mutation_performed,
+      false
+    );
+
+    const listResponse = await handleInternalProductEntityIndexRequest(
+      new NextRequest(
+        "https://example.test/api/internal/agent-center/product-entity-index/variant-review-plans?brand_filter=Route%20Brand",
+        {
+          method: "GET",
+          headers: { authorization: "Bearer index-secret" },
+        }
+      ),
+      { action: "variant-review-plans" }
+    );
+    const listPayload = await listResponse.json();
+    assert.equal(listResponse.status, 200);
+    assert.equal(listPayload.product_entity_variant_review_plans.length, 1);
   } finally {
     if (previousEnabled === undefined) delete process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION;
     else process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION = previousEnabled;
