@@ -7336,6 +7336,26 @@ function productEntityRecordPublicPayload(record: ProductEntityIndexRecord) {
   };
 }
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.max(1, Math.min(concurrency, items.length));
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await worker(items[currentIndex], currentIndex);
+      }
+    })
+  );
+  return results;
+}
+
 export class ProductEntityIndexRegistryService {
   list(input: { sitemap_eligible?: boolean; limit?: number } = {}) {
     const records = [...getAgentCenterState().productEntityIndexRecords]
@@ -7882,10 +7902,22 @@ export class ProductEntityIndexRegistryService {
   async verifyContent(input: {
     product_entity_ids?: string[];
     limit?: number;
+    concurrency?: number;
     include_previously_verified?: boolean;
   } = {}) {
     const requestedIds = new Set(arrayOfStringInput(input.product_entity_ids));
     const limit = Math.max(1, Math.min(Number(input.limit || 10), 100));
+    const concurrency = Math.max(
+      1,
+      Math.min(
+        Number(
+          input.concurrency ||
+            process.env.AGENT_CENTER_PRODUCT_ENTITY_VERIFY_CONCURRENCY ||
+            5
+        ),
+        10
+      )
+    );
     const records = this.list()
       .filter((record) =>
         requestedIds.size ? requestedIds.has(record.product_entity_id) : true
@@ -7902,23 +7934,20 @@ export class ProductEntityIndexRegistryService {
         )
       )
       .slice(0, limit);
-    const verified: ProductEntityIndexRecord[] = [];
-    for (const record of records) {
-      verified.push(
-        await this.upsertCandidate(
-          {
-            product_entity_id: record.product_entity_id,
-            external_seed_id: record.external_seed_id,
-            source_product_id: record.source_product_id || record.external_seed_id,
-            product_name: record.product_name,
-            brand: record.brand,
-            category: record.category,
-            source_updated_at: record.source_updated_at,
-          },
-          true
-        )
-      );
-    }
+    const verified = await mapWithConcurrency(records, concurrency, (record) =>
+      this.upsertCandidate(
+        {
+          product_entity_id: record.product_entity_id,
+          external_seed_id: record.external_seed_id,
+          source_product_id: record.source_product_id || record.external_seed_id,
+          product_name: record.product_name,
+          brand: record.brand,
+          category: record.category,
+          source_updated_at: record.source_updated_at,
+        },
+        true
+      )
+    );
     return {
       records_verified: verified.length,
       pdp_content_ready: verified.filter((record) => record.pdp_content_status === "ready").length,
