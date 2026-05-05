@@ -546,9 +546,15 @@ async function handleAgentCenterRequestInner(
         return json({ error: "Unsupported ProductEntity index public route" }, 404);
       }
       const service = new ProductEntityIndexRegistryService();
+      const limit = Number(req.nextUrl.searchParams.get("limit") || 5000);
+      if (req.nextUrl.searchParams.get("shape") === "sitemap") {
+        return json({
+          product_entity_sitemap_entries: service.publicSitemapCompactEntries({ limit }),
+        });
+      }
       return json({
         product_entity_index_records: service.publicSitemapEntries({
-          limit: Number(req.nextUrl.searchParams.get("limit") || 5000),
+          limit,
         }),
       });
     }

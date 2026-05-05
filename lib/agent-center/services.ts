@@ -7341,6 +7341,16 @@ function productEntityRecordPublicPayload(record: ProductEntityIndexRecord) {
   };
 }
 
+function productEntityRecordPublicSitemapPayload(record: ProductEntityIndexRecord) {
+  return {
+    id: record.product_entity_id,
+    canonicalUrl: record.canonical_url,
+    productName: record.product_name,
+    updatedAt: record.updated_at || record.created_at,
+    externalSeedId: record.external_seed_id,
+  };
+}
+
 async function mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
@@ -7380,6 +7390,12 @@ export class ProductEntityIndexRegistryService {
   publicSitemapEntries(input: { limit?: number } = {}) {
     return this.list({ sitemap_eligible: true, limit: input.limit }).map(
       productEntityRecordPublicPayload
+    );
+  }
+
+  publicSitemapCompactEntries(input: { limit?: number } = {}) {
+    return this.list({ sitemap_eligible: true, limit: input.limit }).map(
+      productEntityRecordPublicSitemapPayload
     );
   }
 

@@ -2839,6 +2839,28 @@ test("ProductEntity index public API returns only sitemap-eligible canonical rec
 
   assert.deepEqual(urls, ["https://agent.pivota.cc/products/sig_publicready"]);
   assert.equal(urls.some((url) => url.includes("/products/ext_")), false);
+
+  const sitemapResponse = await handleAgentCenterRequest(
+    new NextRequest("https://example.test/api/agent-center/product-entity-index/public?shape=sitemap"),
+    { path: ["product-entity-index", "public"] }
+  );
+  const sitemapPayload = await sitemapResponse.json();
+
+  assert.deepEqual(sitemapPayload.product_entity_sitemap_entries, [
+    {
+      id: "sig_publicready",
+      canonicalUrl: "https://agent.pivota.cc/products/sig_publicready",
+      productName: "Public Ready Product",
+      updatedAt: sitemapPayload.product_entity_sitemap_entries[0].updatedAt,
+      externalSeedId: "ext_public_ready",
+    },
+  ]);
+  assert.equal(
+    sitemapPayload.product_entity_sitemap_entries.some((record) =>
+      record.canonicalUrl.includes("/products/ext_")
+    ),
+    false
+  );
 });
 
 test("internal ProductEntity index route is gated and exposes sync action", async () => {

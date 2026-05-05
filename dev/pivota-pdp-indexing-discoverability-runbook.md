@@ -120,10 +120,15 @@ Public safe registry endpoint for `agent.pivota.cc` sitemap generation:
 
 ```text
 GET /api/agent-center/product-entity-index/public
+GET /api/agent-center/product-entity-index/public?shape=sitemap
 ```
 
 It returns only `sitemap_eligible=true` canonical records and must not expose DB
 URLs, secrets, raw provider payloads, prompt traces, or token-level costs.
+The `shape=sitemap` form is the compact feed used by `agent.pivota.cc` for
+`sitemap-products.xml`. Production sitemap generation must fail closed if this
+registry feed is unavailable; static `ext_*` aliases or unverified fallback URLs
+must not be emitted as sitemap success.
 
 Example sync:
 
@@ -239,6 +244,8 @@ checkout diagnosis.
 - `sitemap.xml` points to `sitemap-products.xml`.
 - `sitemap-products.xml` includes the canonical ProductEntity PDP URL.
 - Product sitemap excludes `ext_*` alias URLs and query-param URLs.
+- Product sitemap is sourced from `sitemap_eligible=true` registry records, not
+  from static fallback aliases.
 - Sitemap is submitted to Google Search Console.
 - Key Pivota PDP URLs are requested for indexing.
 - Page passes Rich Results or schema validation where applicable.
