@@ -109,11 +109,60 @@ function stringValue(value: unknown) {
 }
 
 function arrayOfStrings(value: unknown) {
-  return Array.isArray(value) ? value.map(String).map((item) => item.trim()).filter(Boolean) : [];
+  if (!Array.isArray(value)) return [];
+  return value
+    .flatMap((item) => {
+      if (typeof item === "string" || typeof item === "number") {
+        return [String(item).trim()];
+      }
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        const record = item as Record<string, unknown>;
+        return [
+          stringValue(record.name),
+          stringValue(record.product_name),
+          stringValue(record.title),
+          stringValue(record.brand),
+        ].filter(Boolean);
+      }
+      return [];
+    })
+    .filter(Boolean);
 }
 
 function uniqueStrings(values: string[]) {
   return [...new Set(values.filter(Boolean))];
+}
+
+function urlStringsFromUnknown(value: unknown): string[] {
+  const out: string[] = [];
+  const visit = (item: unknown) => {
+    if (item == null) return;
+    if (typeof item === "string" || typeof item === "number") {
+      out.push(...urlsFromText(String(item)));
+      return;
+    }
+    if (Array.isArray(item)) {
+      item.forEach(visit);
+      return;
+    }
+    if (typeof item === "object") {
+      const record = item as Record<string, unknown>;
+      [
+        record.uri,
+        record.url,
+        record.href,
+        record.link,
+        record.source_url,
+        record.product_url,
+        record.canonical_url,
+        record.pdp_url,
+        record.merchant_pdp_url,
+        record.pivota_pdp_url,
+      ].forEach(visit);
+    }
+  };
+  visit(value);
+  return uniqueStrings(out);
 }
 
 function normalizeUrlKey(url?: string | null) {
@@ -799,7 +848,7 @@ export class GeminiProviderAdapter {
         const normalizedWithGrounding = {
           ...(normalized || {}),
           grounding_sources: uniqueStrings(
-            arrayOfStrings(normalized?.grounding_sources).concat(
+            urlStringsFromUnknown(normalized?.grounding_sources).concat(
               grounding.grounding_sources
             )
           ),
@@ -910,7 +959,7 @@ export function parseProviderOutput(
     .map((product) => product.product_url || "")
     .filter(Boolean)
     .join(" | ");
-  const groundingSources = arrayOfStrings(output.grounding_sources);
+  const groundingSources = urlStringsFromUnknown(output.grounding_sources);
   const groundingSourceTitles = arrayOfStrings(output.grounding_source_titles);
   const groundingSearchQueries = arrayOfStrings(output.grounding_search_queries);
   const groundingSupports = Array.isArray(output.grounding_supports)
@@ -920,11 +969,11 @@ export function parseProviderOutput(
       )
     : [];
   const returnedUrls = uniqueStrings(
-    arrayOfStrings(output.returned_urls)
+    urlStringsFromUnknown(output.returned_urls)
       .concat(groundingSources)
-      .concat(mentionedProducts.map((product) => product.product_url || ""))
-      .concat(stringValue(output.merchant_pdp_url))
-      .concat(stringValue(output.pivota_pdp_url))
+      .concat(urlStringsFromUnknown(mentionedProducts.map((product) => product.product_url || "")))
+      .concat(urlStringsFromUnknown(output.merchant_pdp_url))
+      .concat(urlStringsFromUnknown(output.pivota_pdp_url))
       .concat(urlsFromText(String(output.reasoning_summary || "")))
   );
   const returnedDomains = uniqueStrings(

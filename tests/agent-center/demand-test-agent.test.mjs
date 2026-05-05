@@ -1662,6 +1662,50 @@ test("Gemini grounding metadata populates discovery sources and returned URLs", 
   assert.equal(result.parsed.discovery_type, "search_grounded");
 });
 
+test("Gemini parser normalizes structured grounded URL objects without object strings", () => {
+  const { store, target } = createConnectedTarget();
+  const cluster = new QueryClusterService().generateForScanTarget(target.id)[0];
+  const product = store.products[0];
+  const input = {
+    ...demandInput(store, target, cluster, product),
+    scanMode: "search_grounded_product_discovery_test",
+  };
+  const expectedUrl = product.pdp_url;
+  const parsed = parseProviderOutput(
+    {
+      provider: "gemini",
+      model: DEFAULT_GEMINI_MODEL,
+      raw_output: "{}",
+      normalized_output: {
+        returned_urls: [
+          { url: expectedUrl, title: "Official PDP" },
+          { uri: "https://retailer.example/demo-product", title: "Retailer PDP" },
+          { title: "Title-only source should not become a returned URL" },
+        ],
+        grounding_sources: [
+          { web: { uri: "https://ignored.example/nested-web-shape" } },
+          { uri: expectedUrl, title: "Grounding source" },
+          { title: "Another title-only source" },
+        ],
+      },
+      input_tokens: 1,
+      output_tokens: 1,
+      tool_calls: 1,
+      provider_request_id: "structured_grounding",
+    },
+    input
+  );
+
+  assert.ok(parsed.returned_urls.includes(expectedUrl));
+  assert.ok(parsed.returned_urls.includes("https://retailer.example/demo-product"));
+  assert.equal(parsed.returned_urls.some((url) => url.includes("[object Object]")), false);
+  assert.equal(
+    parsed.returned_urls.some((url) => url.includes("Title-only source")),
+    false
+  );
+  assert.deepEqual(parsed.grounding_sources, [expectedUrl]);
+});
+
 test("runtime config normalizes Gemini search grounding flag without exposing secrets", () => {
   const previous = process.env.GEMINI_SEARCH_GROUNDING_ENABLED;
   process.env.GEMINI_SEARCH_GROUNDING_ENABLED = "true\\n";
