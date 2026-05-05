@@ -7399,6 +7399,30 @@ export class ProductEntityIndexRegistryService {
     );
   }
 
+  publicResolverEntries(input: {
+    product_entity_id?: string;
+    external_seed_id?: string;
+    limit?: number;
+  } = {}) {
+    const productEntityId = stringInput(input.product_entity_id).toLowerCase();
+    const externalSeedId = stringInput(input.external_seed_id).toLowerCase();
+    return this.list({ limit: input.limit })
+      .filter((record) => record.pdp_content_status === "ready")
+      .filter((record) =>
+        productEntityId
+          ? record.product_entity_id.toLowerCase() === productEntityId
+          : true
+      )
+      .filter((record) =>
+        externalSeedId
+          ? [record.external_seed_id, ...(record.external_seed_ids || [])]
+              .filter(Boolean)
+              .some((seedId) => seedId.toLowerCase() === externalSeedId)
+          : true
+      )
+      .map(productEntityRecordPublicPayload);
+  }
+
   summary() {
     const records = getAgentCenterState().productEntityIndexRecords;
     const byReason = new Map<string, number>();

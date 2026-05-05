@@ -547,6 +547,17 @@ async function handleAgentCenterRequestInner(
       }
       const service = new ProductEntityIndexRegistryService();
       const limit = Number(req.nextUrl.searchParams.get("limit") || 5000);
+      if (req.nextUrl.searchParams.get("shape") === "resolver") {
+        return json({
+          product_entity_resolver_records: service.publicResolverEntries({
+            limit,
+            product_entity_id:
+              req.nextUrl.searchParams.get("product_entity_id") || undefined,
+            external_seed_id:
+              req.nextUrl.searchParams.get("external_seed_id") || undefined,
+          }),
+        });
+      }
       if (req.nextUrl.searchParams.get("shape") === "sitemap") {
         return json({
           product_entity_sitemap_entries: service.publicSitemapCompactEntries({ limit }),

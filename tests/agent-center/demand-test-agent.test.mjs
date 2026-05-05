@@ -2920,6 +2920,7 @@ test("ProductEntity index public API returns only sitemap-eligible canonical rec
   getAgentCenterRepository().upsert("productEntityIndexRecords", {
     id: "product_entity_index_sig_publicempty",
     product_entity_id: "sig_publicempty",
+    external_seed_id: "ext_public_empty",
     canonical_url: "https://agent.pivota.cc/products/sig_publicempty",
     product_name: "Public Empty Product",
     pdp_content_status: "no_content",
@@ -2928,6 +2929,23 @@ test("ProductEntity index public API returns only sitemap-eligible canonical rec
     google_index_status: "unknown",
     gemini_search_grounded_status: "not_tested",
     failure_reasons: ["no_content"],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  getAgentCenterRepository().upsert("productEntityIndexRecords", {
+    id: "product_entity_index_sig_publicresolver",
+    product_entity_id: "sig_publicresolver",
+    external_seed_id: "ext_public_resolver",
+    external_seed_ids: ["ext_public_resolver"],
+    canonical_url: "https://agent.pivota.cc/products/sig_publicresolver",
+    product_name: "Public Resolver Product",
+    brand: "Resolver Brand",
+    pdp_content_status: "ready",
+    indexability_status: "needs_work",
+    sitemap_eligible: false,
+    google_index_status: "unknown",
+    gemini_search_grounded_status: "not_tested",
+    failure_reasons: ["audit:rendered_identity_mismatch"],
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
@@ -2963,6 +2981,27 @@ test("ProductEntity index public API returns only sitemap-eligible canonical rec
     ),
     false
   );
+
+  const resolverResponse = await handleAgentCenterRequest(
+    new NextRequest(
+      "https://example.test/api/agent-center/product-entity-index/public?shape=resolver&product_entity_id=sig_publicresolver"
+    ),
+    { path: ["product-entity-index", "public"] }
+  );
+  const resolverPayload = await resolverResponse.json();
+  assert.deepEqual(
+    resolverPayload.product_entity_resolver_records.map((record) => record.external_seed_id),
+    ["ext_public_resolver"]
+  );
+
+  const emptyResolverResponse = await handleAgentCenterRequest(
+    new NextRequest(
+      "https://example.test/api/agent-center/product-entity-index/public?shape=resolver&external_seed_id=ext_public_empty"
+    ),
+    { path: ["product-entity-index", "public"] }
+  );
+  const emptyResolverPayload = await emptyResolverResponse.json();
+  assert.deepEqual(emptyResolverPayload.product_entity_resolver_records, []);
 });
 
 test("internal ProductEntity index route is gated and exposes sync action", async () => {
