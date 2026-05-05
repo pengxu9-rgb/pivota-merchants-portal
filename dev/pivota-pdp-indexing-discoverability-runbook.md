@@ -165,10 +165,13 @@ small batches:
 1. `sync`: page through a ProductEntity source and store canonical `sig_*`
    candidates without verifying content. The default source is gateway
    `get_discovery_feed` with anonymous browse context. For the full
-   external-seed backlog, configure
-   `AGENT_CENTER_PRODUCT_ENTITY_INDEX_SYNC_SOURCE=backend_external_seeds` and
-   `AGENT_CENTER_PRODUCT_ENTITY_SOURCE_DATABASE_URL` so the registry can read
-   approved `pdp_identity_listing` mappings directly from the backend source DB.
+   external-seed backlog, prefer
+   `AGENT_CENTER_PRODUCT_ENTITY_INDEX_SYNC_SOURCE=gateway_product_entity_index_feed`
+   once the agent gateway exposes `get_product_entity_index_feed`; this keeps
+   backend DB credentials out of the portal. If an internal read-only source DB
+   is explicitly approved, `backend_external_seeds` plus
+   `AGENT_CENTER_PRODUCT_ENTITY_SOURCE_DATABASE_URL` can read approved
+   `pdp_identity_listing` mappings directly.
 2. `verify_content`: call `get_pdp_v2` main/source-alias path only for records
    that have not already been content-verified.
 3. `audit`: fetch the production PDP as Googlebot-facing public HTML and verify
@@ -184,8 +187,9 @@ measurement.
 
 Gateway browse sync is useful for smoke tests, but it is not the complete
 external-seed corpus. The 4000-product rollout should use
-`backend_external_seeds`; records still fail closed unless `get_pdp_v2` returns
-real main-path content and the production Googlebot audit passes.
+`gateway_product_entity_index_feed` or an approved `backend_external_seeds`
+source; records still fail closed unless `get_pdp_v2` returns real main-path
+content and the production Googlebot audit passes.
 
 Example production audit:
 

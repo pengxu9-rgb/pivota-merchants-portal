@@ -6814,7 +6814,10 @@ type ProductEntityIndexCandidate = {
   source_updated_at?: string;
 };
 
-type ProductEntityIndexSyncSource = "gateway_discovery_feed" | "backend_external_seeds";
+type ProductEntityIndexSyncSource =
+  | "gateway_discovery_feed"
+  | "gateway_product_entity_index_feed"
+  | "backend_external_seeds";
 
 function productEntityIndexRecordId(productEntityId: string) {
   return `product_entity_index_${productEntityId}`;
@@ -7057,6 +7060,13 @@ function productEntitySyncSource(input?: unknown): ProductEntityIndexSyncSource 
   ).toLowerCase();
   if (configured === "backend_external_seeds" || configured === "external_seeds") {
     return "backend_external_seeds";
+  }
+  if (
+    configured === "gateway_product_entity_index_feed" ||
+    configured === "product_entity_index_feed" ||
+    configured === "gateway_index_feed"
+  ) {
+    return "gateway_product_entity_index_feed";
   }
   return "gateway_discovery_feed";
 }
@@ -7553,6 +7563,9 @@ export class ProductEntityIndexRegistryService {
     if (source === "backend_external_seeds") {
       return this.syncFromBackendExternalSeeds(input);
     }
+    if (source === "gateway_product_entity_index_feed") {
+      return this.syncFromGatewayProductEntityIndexFeed(input);
+    }
     const limit = Math.max(1, Math.min(Number(input.limit || 250), 5000));
     const pageSize = Math.max(1, Math.min(Number(input.page_size || 100), 250));
     const maxPages = Math.max(1, Math.min(Number(input.max_pages || 50), 200));
@@ -7611,6 +7624,96 @@ export class ProductEntityIndexRegistryService {
 
     return {
       source,
+      pages_fetched: pagesFetched,
+      candidates_seen: candidates.size,
+      records_upserted: upserted.length,
+      sitemap_eligible: upserted.filter((record) => record.sitemap_eligible).length,
+      next_page: page,
+      next_cursor: cursor || undefined,
+      has_more: hasMore,
+      sync_errors: syncErrors,
+      records: upserted,
+      summary: this.summary(),
+    };
+  }
+
+  private async syncFromGatewayProductEntityIndexFeed(input: {
+    limit?: number;
+    page_size?: number;
+    max_pages?: number;
+    start_page?: number;
+    cursor?: string;
+    market?: string;
+    tool?: string;
+    verify_content?: boolean;
+  } = {}) {
+    const limit = Math.max(1, Math.min(Number(input.limit || 250), 5000));
+    const pageSize = Math.max(1, Math.min(Number(input.page_size || 100), 500));
+    const maxPages = Math.max(1, Math.min(Number(input.max_pages || 50), 200));
+    const verifyContent = input.verify_content !== false;
+    const market = stringInput(
+      input.market,
+      process.env.AGENT_CENTER_PRODUCT_ENTITY_SOURCE_MARKET,
+      "US"
+    );
+    const tool = stringInput(
+      input.tool,
+      process.env.AGENT_CENTER_PRODUCT_ENTITY_SOURCE_TOOL,
+      "creator_agents"
+    );
+    const candidates = new Map<string, ProductEntityIndexCandidate>();
+    let cursor = stringInput(input.cursor);
+    let page = Math.max(1, Number(input.start_page || 1));
+    let pagesFetched = 0;
+    const syncErrors: string[] = [];
+    let hasMore = false;
+
+    while (candidates.size < limit && pagesFetched < maxPages) {
+      try {
+        const json = (await productEntityGatewayRequest("get_product_entity_index_feed", {
+          page,
+          limit: pageSize,
+          market,
+          tool,
+          ...(cursor ? { cursor } : {}),
+        })) as Record<string, unknown>;
+        const products = extractGatewayDiscoveryProducts(json);
+        for (const item of products) {
+          const candidate = productEntityCandidateFromGatewayItem(item);
+          if (!candidate) continue;
+          const existing = candidates.get(candidate.product_entity_id);
+          candidates.set(candidate.product_entity_id, {
+            ...existing,
+            ...candidate,
+            external_seed_id: existing?.external_seed_id || candidate.external_seed_id,
+            source_product_id: existing?.source_product_id || candidate.source_product_id,
+          });
+          if (candidates.size >= limit) break;
+        }
+        pagesFetched += 1;
+        const nextCursor = extractGatewayDiscoveryCursor(json);
+        hasMore = candidateHasMore(json, products.length, pageSize);
+        if (!hasMore) break;
+        cursor = nextCursor;
+        page += 1;
+        if (!cursor && products.length < pageSize) break;
+      } catch (error) {
+        syncErrors.push(
+          error instanceof Error
+            ? error.message
+            : "get_product_entity_index_feed failed"
+        );
+        break;
+      }
+    }
+
+    const upserted: ProductEntityIndexRecord[] = [];
+    for (const candidate of candidates.values()) {
+      upserted.push(await this.upsertCandidate(candidate, verifyContent));
+    }
+
+    return {
+      source: "gateway_product_entity_index_feed",
       pages_fetched: pagesFetched,
       candidates_seen: candidates.size,
       records_upserted: upserted.length,

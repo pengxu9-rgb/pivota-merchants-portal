@@ -97,9 +97,11 @@ separate ProductEntity indexing pipeline:
 
 1. Sync ProductEntity candidates from the configured ProductEntity source.
    Gateway `get_discovery_feed` is the default for smoke tests. Full backlog
-   runs should use `backend_external_seeds`, backed by a read-only backend
-   source DB, so Agent Center can enumerate approved external-seed to
-   ProductEntity mappings.
+   runs should use `gateway_product_entity_index_feed`, backed by the agent
+   gateway `get_product_entity_index_feed` operation, so Agent Center can
+   enumerate approved external-seed to ProductEntity mappings without direct
+   backend DB credentials. Direct `backend_external_seeds` is an internal
+   read-only fallback when explicitly approved.
 2. Deduplicate by canonical `sellable_item_group_id` / `product_group_id`
    (`sig_*`).
 3. Verify real main-path PDP content through `get_pdp_v2` using ProductEntity ID

@@ -2285,6 +2285,59 @@ test("ProductEntity index content verification runs separately from candidate sy
   }
 });
 
+test("ProductEntity index registry can sync from gateway ProductEntity index feed", async () => {
+  resetAgentCenterState();
+  const originalFetch = global.fetch;
+  const gatewayCalls = [];
+  global.fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body || "{}"));
+    gatewayCalls.push(body);
+    if (body.operation === "get_product_entity_index_feed") {
+      return {
+        ok: true,
+        json: async () => ({
+          products: [
+            {
+              product_id: "ext_indexfeed_1",
+              source_product_id: "ext_indexfeed_1",
+              external_seed_id: "ext_indexfeed_1",
+              product_entity_id: "sig_indexfeed1",
+              sellable_item_group_id: "sig_indexfeed1",
+              title: "Index Feed Serum",
+              brand: "Index Feed Brand",
+            },
+          ],
+          cursor_info: {
+            next_cursor: null,
+            has_next_page: false,
+          },
+        }),
+      };
+    }
+    throw new Error(`Unexpected operation ${body.operation}`);
+  };
+
+  try {
+    const result = await new ProductEntityIndexRegistryService().sync({
+      source: "gateway_product_entity_index_feed",
+      limit: 10,
+      page_size: 10,
+      verify_content: false,
+    });
+    const records = getAgentCenterState().productEntityIndexRecords;
+    assert.equal(result.source, "gateway_product_entity_index_feed");
+    assert.equal(result.records_upserted, 1);
+    assert.equal(records[0].product_entity_id, "sig_indexfeed1");
+    assert.equal(records[0].external_seed_id, "ext_indexfeed_1");
+    assert.equal(
+      gatewayCalls.some((call) => call.operation === "get_discovery_feed"),
+      false
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test("ProductEntity index batch runner persists sync cursor and verifies content in small batches", async () => {
   resetAgentCenterState();
   const originalFetch = global.fetch;

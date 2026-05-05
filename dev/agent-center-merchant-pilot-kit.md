@@ -264,11 +264,13 @@ records as sitemap eligible.
 
 The default sync source is gateway `get_discovery_feed`, which is appropriate
 for smoke tests and curated browse coverage. Full backlog rollout should use
-`AGENT_CENTER_PRODUCT_ENTITY_INDEX_SYNC_SOURCE=backend_external_seeds` with a
-read-only backend source DB URL so Agent Center can enumerate approved
-ProductEntity mappings from `external_product_seeds` and `pdp_identity_listing`.
-Even in that mode, a record enters sitemap only after `get_pdp_v2` main-path
-content and production Googlebot audit pass.
+`AGENT_CENTER_PRODUCT_ENTITY_INDEX_SYNC_SOURCE=gateway_product_entity_index_feed`
+after the agent gateway exposes `get_product_entity_index_feed`. That source
+enumerates approved ProductEntity mappings from backend
+`external_product_seeds` and `pdp_identity_listing` without giving the portal a
+backend DB credential. A direct `backend_external_seeds` source exists only for
+approved internal read-only DB access. In all modes, a record enters sitemap
+only after `get_pdp_v2` main-path content and production Googlebot audit pass.
 
 Resolution actions in V1 are state transitions unless an action is explicitly wired to an approved write-back path. Do not write to merchant production systems from the pilot workflow.
 
