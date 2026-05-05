@@ -41,6 +41,7 @@ const syncSource = argValue("sync-source", process.env.AGENT_CENTER_PRODUCT_ENTI
 const sourceMarket = argValue("source-market", process.env.AGENT_CENTER_PRODUCT_ENTITY_SOURCE_MARKET || "");
 const sourceTool = argValue("source-tool", process.env.AGENT_CENTER_PRODUCT_ENTITY_SOURCE_TOOL || "");
 const verifyLimit = numberArg("verify-limit", 5);
+const verifyConcurrency = numberArg("verify-concurrency", 5);
 const auditLimit = numberArg("audit-limit", 5);
 const geminiLimit = numberArg("gemini-limit", 2);
 const delayMs = numberArg("delay-ms", 1000);
@@ -118,6 +119,7 @@ for (let index = 0; index < maxRuns; index += 1) {
     source_market: sourceMarket,
     source_tool: sourceTool,
     verify_limit: verifyLimit,
+    verify_concurrency: verifyConcurrency,
     audit_limit: auditLimit,
     gemini_limit: geminiLimit,
     include_gemini: includeGemini,

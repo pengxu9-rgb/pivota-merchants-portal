@@ -7440,6 +7440,7 @@ export class ProductEntityIndexRegistryService {
     page_size?: number;
     max_pages?: number;
     verify_limit?: number;
+    verify_concurrency?: number;
     audit_limit?: number;
     gemini_limit?: number;
     start_page?: number;
@@ -7470,6 +7471,9 @@ export class ProductEntityIndexRegistryService {
       source_market: stringInput(input.source_market, run.limits.source_market),
       source_tool: stringInput(input.source_tool, run.limits.source_tool),
       verify_limit: Number(input.verify_limit || run.limits.verify_limit || 5),
+      verify_concurrency: Number(
+        input.verify_concurrency || run.limits.verify_concurrency || 5
+      ),
       audit_limit: Number(input.audit_limit || run.limits.audit_limit || 5),
       gemini_limit: Number(input.gemini_limit || run.limits.gemini_limit || 5),
     };
@@ -7506,6 +7510,7 @@ export class ProductEntityIndexRegistryService {
       } else if (stage === "verify_content") {
         const verifyResult = await this.verifyContent({
           limit: limits.verify_limit,
+          concurrency: limits.verify_concurrency,
         });
         run.records_processed += verifyResult.records_verified;
         result = verifyResult as unknown as Record<string, unknown>;
