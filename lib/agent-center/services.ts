@@ -7442,6 +7442,7 @@ export class ProductEntityIndexRegistryService {
     verify_limit?: number;
     verify_concurrency?: number;
     audit_limit?: number;
+    audit_concurrency?: number;
     gemini_limit?: number;
     start_page?: number;
     cursor?: string;
@@ -7475,6 +7476,9 @@ export class ProductEntityIndexRegistryService {
         input.verify_concurrency || run.limits.verify_concurrency || 5
       ),
       audit_limit: Number(input.audit_limit || run.limits.audit_limit || 5),
+      audit_concurrency: Number(
+        input.audit_concurrency || run.limits.audit_concurrency || 5
+      ),
       gemini_limit: Number(input.gemini_limit || run.limits.gemini_limit || 5),
     };
     const stage =
@@ -7517,6 +7521,7 @@ export class ProductEntityIndexRegistryService {
       } else if (stage === "audit") {
         const auditResult = await this.audit({
           limit: limits.audit_limit,
+          concurrency: limits.audit_concurrency,
         });
         run.records_processed += auditResult.records_audited;
         result = auditResult as unknown as Record<string, unknown>;
@@ -7964,6 +7969,7 @@ export class ProductEntityIndexRegistryService {
   async audit(input: {
     product_entity_ids?: string[];
     limit?: number;
+    concurrency?: number;
     include_previously_audited?: boolean;
   } = {}) {
     const requestedIds = new Set(arrayOfStringInput(input.product_entity_ids));
@@ -7985,8 +7991,8 @@ export class ProductEntityIndexRegistryService {
       )
       .slice(0, limit);
     const auditService = new PivotaPDPIndexabilityAuditService();
-    const audited: ProductEntityIndexRecord[] = [];
-    for (const record of records) {
+    const concurrency = Math.max(1, Math.min(Number(input.concurrency || 5), 10));
+    const audited = await mapWithConcurrency(records, concurrency, async (record) => {
       const audit = await auditService.audit({
         url: record.canonical_url,
         product_name: record.product_name || "",
@@ -8021,8 +8027,8 @@ export class ProductEntityIndexRegistryService {
         updated_at: nowIso(),
       };
       getAgentCenterRepository().upsert("productEntityIndexRecords", nextRecord);
-      audited.push(nextRecord);
-    }
+      return nextRecord;
+    });
     return {
       records_audited: audited.length,
       sitemap_eligible: audited.filter((record) => record.sitemap_eligible).length,

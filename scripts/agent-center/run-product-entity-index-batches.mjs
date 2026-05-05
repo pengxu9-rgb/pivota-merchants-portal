@@ -43,6 +43,7 @@ const sourceTool = argValue("source-tool", process.env.AGENT_CENTER_PRODUCT_ENTI
 const verifyLimit = numberArg("verify-limit", 5);
 const verifyConcurrency = numberArg("verify-concurrency", 5);
 const auditLimit = numberArg("audit-limit", 5);
+const auditConcurrency = numberArg("audit-concurrency", 5);
 const geminiLimit = numberArg("gemini-limit", 2);
 const delayMs = numberArg("delay-ms", 1000);
 const includeGemini = boolArg("include-gemini", false);
@@ -121,6 +122,7 @@ for (let index = 0; index < maxRuns; index += 1) {
     verify_limit: verifyLimit,
     verify_concurrency: verifyConcurrency,
     audit_limit: auditLimit,
+    audit_concurrency: auditConcurrency,
     gemini_limit: geminiLimit,
     include_gemini: includeGemini,
   };

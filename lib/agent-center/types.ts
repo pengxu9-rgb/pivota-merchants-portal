@@ -1577,6 +1577,7 @@ export type ProductEntityIndexBatchRun = Timestamped & {
     verify_limit?: number;
     verify_concurrency?: number;
     audit_limit?: number;
+    audit_concurrency?: number;
     gemini_limit?: number;
   };
   last_result?: Record<string, unknown>;
