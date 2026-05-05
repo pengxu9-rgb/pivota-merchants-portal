@@ -229,6 +229,10 @@ checkout diagnosis.
 - Overview or product description is visible in server-rendered HTML.
 - `Product` JSON-LD is present.
 - `Offer` or `AggregateOffer` JSON-LD is present when offers exist.
+- Offer JSON-LD should include verified price/currency when available, but
+  Pivota must not fabricate missing price. Missing optional price fields remain
+  an audit finding, not a sitemap blocker, when the ProductEntity PDP is
+  otherwise crawlable and source-backed.
 - Verified merchant source reference is visible.
 - Source merchant PDP URL is visible or machine-readable.
 - Product object ID is visible or machine-readable.

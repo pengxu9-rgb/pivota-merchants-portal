@@ -2367,6 +2367,55 @@ test("ProductEntity index registry audit promotes only production-ready canonica
   assert.equal(record.canonical_url.includes("/products/ext_"), false);
 });
 
+test("ProductEntity index registry audit does not block sitemap eligibility on missing optional offer price fields", async () => {
+  resetAgentCenterState();
+  const service = new ProductEntityIndexRegistryService();
+  getAgentCenterRepository().upsert("productEntityIndexRecords", {
+    id: "product_entity_index_sig_offerpartial",
+    product_entity_id: "sig_offerpartial",
+    canonical_url: "https://agent.pivota.cc/products/sig_offerpartial",
+    product_name: indexabilityProductName,
+    brand: "Isntree",
+    category: "Sunscreen",
+    pdp_content_status: "ready",
+    indexability_status: "not_audited",
+    sitemap_eligible: false,
+    google_index_status: "unknown",
+    gemini_search_grounded_status: "not_tested",
+    failure_reasons: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+
+  await withMockPivotaIndexabilityFetch(
+    {
+      sitemap: "<?xml version=\"1.0\"?><urlset></urlset>",
+      html: indexabilityHtml({
+        canonical: "https://agent.pivota.cc/products/sig_offerpartial",
+        productObjectId: "sig_offerpartial",
+        productJsonLd: productJsonLd({
+          url: "https://agent.pivota.cc/products/sig_offerpartial",
+        }),
+        offerJsonLd: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Offer",
+          url: "https://agent.pivota.cc/products/sig_offerpartial",
+          seller: { "@type": "Organization", name: "Isntree" },
+        }),
+      }),
+    },
+    () =>
+      service.audit({
+        product_entity_ids: ["sig_offerpartial"],
+      })
+  );
+
+  const record = service.get("sig_offerpartial");
+  assert.equal(record.failure_reasons.includes("audit:incomplete_offer_jsonld"), true);
+  assert.equal(record.indexability_status, "ready");
+  assert.equal(record.sitemap_eligible, true);
+});
+
 test("ProductEntity index content verification runs separately from candidate sync", async () => {
   resetAgentCenterState();
   const originalFetch = global.fetch;

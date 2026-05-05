@@ -8010,7 +8010,8 @@ export class ProductEntityIndexRegistryService {
       });
       const findingTypes = audit.findings.map((finding) => finding.finding_type);
       const blockingFindings = findingTypes.filter(
-        (finding) => finding !== "missing_sitemap_entry"
+        (finding) =>
+          !["missing_sitemap_entry", "incomplete_offer_jsonld"].includes(finding)
       );
       const indexabilityStatus: ProductEntityIndexabilityStatus =
         audit.audit_status === "passed" || blockingFindings.length === 0
