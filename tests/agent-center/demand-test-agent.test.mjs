@@ -2416,6 +2416,108 @@ test("ProductEntity index registry audit does not block sitemap eligibility on m
   assert.equal(record.sitemap_eligible, true);
 });
 
+test("ProductEntity index registry audit treats Product JSON-LD SKU as optional", async () => {
+  resetAgentCenterState();
+  const service = new ProductEntityIndexRegistryService();
+  getAgentCenterRepository().upsert("productEntityIndexRecords", {
+    id: "product_entity_index_sig_skuoptional",
+    product_entity_id: "sig_skuoptional",
+    canonical_url: "https://agent.pivota.cc/products/sig_skuoptional",
+    product_name: indexabilityProductName,
+    brand: "Isntree",
+    category: "Sunscreen",
+    pdp_content_status: "ready",
+    indexability_status: "not_audited",
+    sitemap_eligible: false,
+    google_index_status: "unknown",
+    gemini_search_grounded_status: "not_tested",
+    failure_reasons: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+
+  await withMockPivotaIndexabilityFetch(
+    {
+      sitemap: "<?xml version=\"1.0\"?><urlset></urlset>",
+      html: indexabilityHtml({
+        canonical: "https://agent.pivota.cc/products/sig_skuoptional",
+        productObjectId: "sig_skuoptional",
+        productJsonLd: productJsonLd({
+          sku: undefined,
+          url: "https://agent.pivota.cc/products/sig_skuoptional",
+        }),
+        offerJsonLd: offerJsonLd({
+          url: "https://agent.pivota.cc/products/sig_skuoptional",
+        }),
+      }),
+    },
+    () =>
+      service.audit({
+        product_entity_ids: ["sig_skuoptional"],
+      })
+  );
+
+  const record = service.get("sig_skuoptional");
+  assert.equal(record.failure_reasons.includes("audit:incomplete_product_jsonld"), false);
+  assert.equal(record.indexability_status, "ready");
+  assert.equal(record.sitemap_eligible, true);
+});
+
+test("ProductEntity index registry audit decodes HTML entity product identity", async () => {
+  resetAgentCenterState();
+  const service = new ProductEntityIndexRegistryService();
+  const productName = "Soft'lit Naturally Luminous Longwear Foundation — 230";
+  getAgentCenterRepository().upsert("productEntityIndexRecords", {
+    id: "product_entity_index_sig_htmlentity",
+    product_entity_id: "sig_htmlentity",
+    canonical_url: "https://agent.pivota.cc/products/sig_htmlentity",
+    product_name: productName,
+    brand: "Fenty Beauty",
+    category: "Foundation",
+    pdp_content_status: "ready",
+    indexability_status: "not_audited",
+    sitemap_eligible: false,
+    google_index_status: "unknown",
+    gemini_search_grounded_status: "not_tested",
+    failure_reasons: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+
+  await withMockPivotaIndexabilityFetch(
+    {
+      sitemap: "<?xml version=\"1.0\"?><urlset></urlset>",
+      html: indexabilityHtml({
+        title: "Fenty Beauty Soft&#x27;lit Naturally Luminous Longwear Foundation — 230 | Pivota",
+        h1: "Fenty Beauty Soft&#x27;lit Naturally Luminous Longwear Foundation — 230",
+        canonical: "https://agent.pivota.cc/products/sig_htmlentity",
+        productObjectId: "sig_htmlentity",
+        productJsonLd: productJsonLd({
+          name: productName,
+          brand: { "@type": "Brand", name: "Fenty Beauty" },
+          sku: "fenty-softlit-230",
+          url: "https://agent.pivota.cc/products/sig_htmlentity",
+          description:
+            "A luminous longwear foundation shade page with verified merchant source references and ProductEntity identity.",
+        }),
+        offerJsonLd: offerJsonLd({
+          url: "https://agent.pivota.cc/products/sig_htmlentity",
+          seller: { "@type": "Organization", name: "Fenty Beauty" },
+        }),
+      }),
+    },
+    () =>
+      service.audit({
+        product_entity_ids: ["sig_htmlentity"],
+      })
+  );
+
+  const record = service.get("sig_htmlentity");
+  assert.equal(record.failure_reasons.includes("audit:rendered_identity_mismatch"), false);
+  assert.equal(record.indexability_status, "ready");
+  assert.equal(record.sitemap_eligible, true);
+});
+
 test("ProductEntity index content verification runs separately from candidate sync", async () => {
   resetAgentCenterState();
   const originalFetch = global.fetch;

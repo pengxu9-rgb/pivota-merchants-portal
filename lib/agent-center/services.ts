@@ -12462,12 +12462,24 @@ async function preflightPublicUrl(
 
 function htmlDecode(value: string) {
   return value
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, " ")
-    .replace(/&nbsp;/g, " ");
+    .replace(/&#x([0-9a-f]+);?/gi, (_match, hex) => {
+      const codePoint = Number.parseInt(hex, 16);
+      return Number.isFinite(codePoint) && codePoint >= 0 && codePoint <= 0x10ffff
+        ? String.fromCodePoint(codePoint)
+        : "";
+    })
+    .replace(/&#(\d+);?/g, (_match, decimal) => {
+      const codePoint = Number.parseInt(decimal, 10);
+      return Number.isFinite(codePoint) && codePoint >= 0 && codePoint <= 0x10ffff
+        ? String.fromCodePoint(codePoint)
+        : "";
+    })
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, " ")
+    .replace(/&nbsp;/gi, " ");
 }
 
 function stripHtml(value: string) {
@@ -12885,6 +12897,11 @@ export class PivotaPDPIndexabilityAuditService {
       url: fieldPresent(productJsonLd, "url"),
       description: fieldPresent(productJsonLd, "description"),
     };
+    const requiredProductJsonLdFieldsPresent =
+      productFields.name &&
+      productFields.brand &&
+      productFields.url &&
+      productFields.description;
     const offerFields = {
       price: fieldPresent(offerJsonLd, "price") || fieldPresent(offerJsonLd, "lowPrice"),
       currency:
@@ -12894,13 +12911,19 @@ export class PivotaPDPIndexabilityAuditService {
       seller: fieldPresent(offerJsonLd, "seller"),
       url: fieldPresent(offerJsonLd, "url"),
     };
+    const identityText = [
+      title,
+      h1,
+      visibleText,
+      htmlDecode(productJsonLdName),
+      htmlDecode(productJsonLdBrand),
+    ].join(" ");
+    const lowerIdentityText = identityText.toLowerCase();
     const productNameVisible = productName
-      ? textContainsCoreProduct([title, h1, visibleText].join(" "), productName)
-      : Boolean(title || h1);
+      ? textContainsCoreProduct(identityText, productName)
+      : Boolean(title || h1 || productJsonLdName);
     const brandVisible = brand
-      ? lowerVisible.includes(brand.toLowerCase()) ||
-        title.toLowerCase().includes(brand.toLowerCase()) ||
-        h1.toLowerCase().includes(brand.toLowerCase())
+      ? lowerIdentityText.includes(brand.toLowerCase())
       : true;
     const machineReadableDescriptionVisible =
       fieldPresent(productJsonLd, "description") ||
@@ -13090,12 +13113,12 @@ export class PivotaPDPIndexabilityAuditService {
           "high"
         )
       );
-    } else if (!Object.values(productFields).every(Boolean)) {
+    } else if (!requiredProductJsonLdFieldsPresent) {
       addIndexabilityFinding(
         findings,
         indexabilityFinding(
           "incomplete_product_jsonld",
-          "Product JSON-LD is present but is missing name, brand, SKU, URL, or description.",
+          "Product JSON-LD is present but is missing name, brand, URL, or description.",
           "pivota_product_schema_patch",
           "medium"
         )
