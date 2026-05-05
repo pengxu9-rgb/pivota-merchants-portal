@@ -2172,6 +2172,138 @@ test("ProductEntity index registry audit promotes only production-ready canonica
   assert.equal(record.canonical_url.includes("/products/ext_"), false);
 });
 
+test("ProductEntity index content verification runs separately from candidate sync", async () => {
+  resetAgentCenterState();
+  const originalFetch = global.fetch;
+  const longDescription =
+    "A real server-side PDP description with enough product detail for crawlable ProductEntity content. ".repeat(
+      3
+    );
+  getAgentCenterRepository().upsert("productEntityIndexRecords", {
+    id: "product_entity_index_sig_verifycontent",
+    product_entity_id: "sig_verifycontent",
+    canonical_url: "https://agent.pivota.cc/products/sig_verifycontent",
+    external_seed_id: "ext_verifycontent",
+    external_seed_ids: ["ext_verifycontent"],
+    source_product_id: "ext_verifycontent",
+    product_name: "Verify Content Product",
+    brand: "Verify Brand",
+    category: "Serum",
+    pdp_content_status: "no_content",
+    indexability_status: "not_audited",
+    sitemap_eligible: false,
+    google_index_status: "unknown",
+    gemini_search_grounded_status: "not_tested",
+    failure_reasons: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  global.fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body || "{}"));
+    assert.equal(body.operation, "get_pdp_v2");
+    return {
+      ok: true,
+      json: async () => ({
+        modules: [
+          {
+            type: "canonical",
+            data: {
+              pdp_payload: {
+                product: {
+                  title: "Verify Content Product",
+                  brand: { name: "Verify Brand" },
+                  description: longDescription,
+                  category_path: ["Beauty", "Serum"],
+                },
+              },
+            },
+          },
+        ],
+      }),
+    };
+  };
+
+  try {
+    const result = await new ProductEntityIndexRegistryService().verifyContent({
+      limit: 1,
+    });
+    const record = getAgentCenterState().productEntityIndexRecords.find(
+      (item) => item.product_entity_id === "sig_verifycontent"
+    );
+
+    assert.equal(result.records_verified, 1);
+    assert.equal(result.pdp_content_ready, 1);
+    assert.equal(record?.pdp_content_status, "ready");
+    assert.equal(record?.indexability_status, "not_audited");
+    assert.equal(record?.sitemap_eligible, false);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("ProductEntity index registry audit skips no-content records by default", async () => {
+  resetAgentCenterState();
+  const service = new ProductEntityIndexRegistryService();
+  getAgentCenterRepository().upsert("productEntityIndexRecords", {
+    id: "product_entity_index_sig_auditready",
+    product_entity_id: "sig_auditready",
+    canonical_url: "https://agent.pivota.cc/products/sig_auditready",
+    external_seed_id: "ext_auditready",
+    external_seed_ids: ["ext_auditready"],
+    product_name: "Audit Ready Product",
+    brand: "Audit Brand",
+    pdp_content_status: "ready",
+    indexability_status: "not_audited",
+    sitemap_eligible: false,
+    google_index_status: "unknown",
+    gemini_search_grounded_status: "not_tested",
+    failure_reasons: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  getAgentCenterRepository().upsert("productEntityIndexRecords", {
+    id: "product_entity_index_sig_auditempty",
+    product_entity_id: "sig_auditempty",
+    canonical_url: "https://agent.pivota.cc/products/sig_auditempty",
+    external_seed_id: "ext_auditempty",
+    external_seed_ids: ["ext_auditempty"],
+    product_name: "Audit Empty Product",
+    brand: "Audit Brand",
+    pdp_content_status: "no_content",
+    indexability_status: "not_audited",
+    sitemap_eligible: false,
+    google_index_status: "unknown",
+    gemini_search_grounded_status: "not_tested",
+    failure_reasons: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+
+  await withMockPivotaIndexabilityFetch(
+    {
+      html: indexabilityHtml({
+        url: "https://agent.pivota.cc/products/sig_auditready",
+        productName: "Audit Ready Product",
+        brand: "Audit Brand",
+      }),
+      sitemap:
+        "<?xml version=\"1.0\"?><urlset><url><loc>https://agent.pivota.cc/products/sig_auditready</loc></url></urlset>",
+    },
+    async () => {
+      const result = await service.audit({ limit: 10 });
+
+      assert.equal(result.records_audited, 1);
+      assert.equal(result.records[0].product_entity_id, "sig_auditready");
+      assert.equal(
+        getAgentCenterState().productEntityIndexRecords.find(
+          (record) => record.product_entity_id === "sig_auditempty"
+        )?.indexability_status,
+        "not_audited"
+      );
+    }
+  );
+});
+
 test("ProductEntity index public API returns only sitemap-eligible canonical records", async () => {
   resetAgentCenterState();
   getAgentCenterRepository().upsert("productEntityIndexRecords", {

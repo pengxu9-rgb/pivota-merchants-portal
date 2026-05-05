@@ -6969,7 +6969,14 @@ function extractGatewayDiscoveryProducts(json: Record<string, unknown>) {
 
 function extractGatewayDiscoveryCursor(json: Record<string, unknown>) {
   const data = readNestedRecord(json.data, json.payload);
-  const pagination = readNestedRecord(json.pagination, data.pagination, json.page_info, data.page_info);
+  const pagination = readNestedRecord(
+    json.pagination,
+    data.pagination,
+    json.page_info,
+    data.page_info,
+    json.cursor_info,
+    data.cursor_info
+  );
   return stringInput(
     json.next_cursor,
     json.nextCursor,
@@ -6983,10 +6990,19 @@ function extractGatewayDiscoveryCursor(json: Record<string, unknown>) {
 
 function candidateHasMore(json: Record<string, unknown>, productCount: number, pageSize: number) {
   const data = readNestedRecord(json.data, json.payload);
-  const pagination = readNestedRecord(json.pagination, data.pagination, json.page_info, data.page_info);
+  const pagination = readNestedRecord(
+    json.pagination,
+    data.pagination,
+    json.page_info,
+    data.page_info,
+    json.cursor_info,
+    data.cursor_info
+  );
   if (typeof json.has_more === "boolean") return json.has_more;
   if (typeof data.has_more === "boolean") return data.has_more;
   if (typeof pagination.has_more === "boolean") return pagination.has_more;
+  if (typeof pagination.hasMore === "boolean") return pagination.hasMore;
+  if (stringInput(pagination.next_cursor, pagination.nextCursor)) return true;
   return productCount >= pageSize;
 }
 
@@ -7255,6 +7271,8 @@ export class ProductEntityIndexRegistryService {
     limit?: number;
     page_size?: number;
     max_pages?: number;
+    start_page?: number;
+    cursor?: string;
     verify_content?: boolean;
   } = {}) {
     const limit = Math.max(1, Math.min(Number(input.limit || 250), 5000));
@@ -7262,10 +7280,11 @@ export class ProductEntityIndexRegistryService {
     const maxPages = Math.max(1, Math.min(Number(input.max_pages || 50), 200));
     const verifyContent = input.verify_content !== false;
     const candidates = new Map<string, ProductEntityIndexCandidate>();
-    let cursor = "";
-    let page = 1;
+    let cursor = stringInput(input.cursor);
+    let page = Math.max(1, Number(input.start_page || 1));
     let pagesFetched = 0;
     const syncErrors: string[] = [];
+    let hasMore = false;
 
     while (candidates.size < limit && pagesFetched < maxPages) {
       try {
@@ -7290,7 +7309,8 @@ export class ProductEntityIndexRegistryService {
         }
         pagesFetched += 1;
         const nextCursor = extractGatewayDiscoveryCursor(json);
-        if (!candidateHasMore(json, products.length, pageSize)) break;
+        hasMore = candidateHasMore(json, products.length, pageSize);
+        if (!hasMore) break;
         cursor = nextCursor;
         page += 1;
         if (!cursor && products.length < pageSize) break;
@@ -7310,8 +7330,47 @@ export class ProductEntityIndexRegistryService {
       candidates_seen: candidates.size,
       records_upserted: upserted.length,
       sitemap_eligible: upserted.filter((record) => record.sitemap_eligible).length,
+      next_page: page,
+      next_cursor: cursor || undefined,
+      has_more: hasMore,
       sync_errors: syncErrors,
       records: upserted,
+      summary: this.summary(),
+    };
+  }
+
+  async verifyContent(input: { product_entity_ids?: string[]; limit?: number } = {}) {
+    const requestedIds = new Set(arrayOfStringInput(input.product_entity_ids));
+    const limit = Math.max(1, Math.min(Number(input.limit || 10), 100));
+    const records = this.list()
+      .filter((record) =>
+        requestedIds.size ? requestedIds.has(record.product_entity_id) : true
+      )
+      .filter((record) =>
+        requestedIds.size ? true : record.pdp_content_status !== "ready"
+      )
+      .slice(0, limit);
+    const verified: ProductEntityIndexRecord[] = [];
+    for (const record of records) {
+      verified.push(
+        await this.upsertCandidate(
+          {
+            product_entity_id: record.product_entity_id,
+            external_seed_id: record.external_seed_id,
+            source_product_id: record.source_product_id || record.external_seed_id,
+            product_name: record.product_name,
+            brand: record.brand,
+            category: record.category,
+            source_updated_at: record.source_updated_at,
+          },
+          true
+        )
+      );
+    }
+    return {
+      records_verified: verified.length,
+      pdp_content_ready: verified.filter((record) => record.pdp_content_status === "ready").length,
+      records: verified,
       summary: this.summary(),
     };
   }
@@ -7322,6 +7381,9 @@ export class ProductEntityIndexRegistryService {
     const records = this.list()
       .filter((record) =>
         requestedIds.size ? requestedIds.has(record.product_entity_id) : true
+      )
+      .filter((record) =>
+        requestedIds.size ? true : record.pdp_content_status === "ready"
       )
       .slice(0, limit);
     const auditService = new PivotaPDPIndexabilityAuditService();

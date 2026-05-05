@@ -222,6 +222,12 @@ async function handleInternalProductEntityIndexRequestInner(
     if (req.method === "POST" && action === "sync") {
       return json({ product_entity_index_sync: await service.sync(await requestBody(req)) }, 201);
     }
+    if (req.method === "POST" && action === "verify-content") {
+      return json(
+        { product_entity_index_content_verification: await service.verifyContent(await requestBody(req)) },
+        201
+      );
+    }
     if (req.method === "POST" && action === "audit") {
       return json({ product_entity_index_audit: await service.audit(await requestBody(req)) }, 201);
     }
