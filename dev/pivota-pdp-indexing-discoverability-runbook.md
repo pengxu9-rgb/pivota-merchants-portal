@@ -130,6 +130,11 @@ The `shape=sitemap` form is the compact feed used by `agent.pivota.cc` for
 registry feed is unavailable; static `ext_*` aliases or unverified fallback URLs
 must not be emitted as sitemap success.
 
+Do not rely on `https://www.google.com/ping?sitemap=...`; Google has deprecated
+the sitemap ping endpoint. Treat Search Console sitemap submission, URL
+Inspection, request-indexing evidence, and timed search-grounded reruns as the
+operational source of truth.
+
 Example sync:
 
 ```bash
@@ -380,6 +385,7 @@ Manual checks:
 - Run the PDP through Google Rich Results Test or schema validation tooling.
 - Confirm Google Search Console has the sitemap submitted for `agent.pivota.cc`.
 - Request indexing for the specific Pivota PDP URL when appropriate.
+- Do not record deprecated sitemap ping responses as indexing evidence.
 
 ## Internal Indexing Task Tracker
 
