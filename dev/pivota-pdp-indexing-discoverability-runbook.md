@@ -444,6 +444,32 @@ curl -X PATCH "$BASE_URL/api/internal/agent-center/pivota-indexing-tasks/$TASK_I
   }'
 ```
 
+Bulk-create indexing tasks for all sitemap-eligible ProductEntity PDPs:
+
+```bash
+curl -X POST "$BASE_URL/api/internal/agent-center/pivota-indexing-tasks/bulk" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET" \
+  -H "content-type: application/json" \
+  --data '{
+    "limit": 5000,
+    "task_types": [
+      "validate_search_console",
+      "submit_sitemap",
+      "request_indexing",
+      "add_internal_link"
+    ],
+    "evidence": {
+      "operator": "pivota_ops",
+      "evidence_note": "Bulk queue created for sitemap-eligible canonical ProductEntity PDPs."
+    }
+  }'
+```
+
+The bulk route only reads `sitemap_eligible=true` ProductEntity index records,
+uses canonical `sig_*` URLs, deduplicates existing task types per ProductEntity,
+and keeps every task as operational evidence. It must not be interpreted as
+Google indexing or Gemini uplift.
+
 List ProductEntity task status and rerun state:
 
 ```bash

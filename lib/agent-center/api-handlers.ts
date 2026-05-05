@@ -284,6 +284,15 @@ async function handleInternalPivotaIndexingTasksRequestInner(
   const taskId = params?.taskId;
 
   try {
+    if (req.method === "POST" && taskId === "bulk") {
+      return json(
+        {
+          pivota_indexing_task_bulk:
+            service.createBulkFromProductEntityIndex(await requestBody(req)),
+        },
+        201
+      );
+    }
     if (req.method === "POST" && !taskId) {
       return json({ pivota_indexing_task: service.create(await requestBody(req)) }, 201);
     }

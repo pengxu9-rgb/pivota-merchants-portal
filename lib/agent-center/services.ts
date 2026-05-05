@@ -6788,6 +6788,11 @@ const PIVOTA_DISCOVERY_INDEXING_TASKS: PivotaIndexingTaskType[] = [
   "scheduled_search_grounded_rerun",
 ];
 
+const PIVOTA_INDEXING_TASK_TYPES = new Set<PivotaIndexingTaskType>([
+  ...PIVOTA_DISCOVERY_INDEXING_TASKS,
+  "rerun_search_grounded_discovery",
+]);
+
 const PIVOTA_DISCOVERY_RERUN_WINDOWS = [
   { label: "T+24h", hours: 24 },
   { label: "T+72h", hours: 72 },
@@ -8314,6 +8319,94 @@ function addHoursIso(baseIso: string, hours: number) {
 }
 
 export class PivotaIndexingTaskService {
+  createBulkFromProductEntityIndex(input: {
+    product_entity_ids?: string[];
+    task_types?: PivotaIndexingTaskType[];
+    status?: PivotaIndexingTaskStatus;
+    evidence?: PivotaIndexingTaskEvidence;
+    limit?: number;
+    include_existing?: boolean;
+  } = {}) {
+    const requestedIds = new Set(arrayOfStringInput(input.product_entity_ids));
+    const taskTypes = arrayOfStringInput(input.task_types).filter((taskType) =>
+      PIVOTA_INDEXING_TASK_TYPES.has(taskType as PivotaIndexingTaskType)
+    ) as PivotaIndexingTaskType[];
+    const selectedTaskTypes = taskTypes.length
+      ? taskTypes
+      : ([
+          "validate_search_console",
+          "submit_sitemap",
+          "request_indexing",
+          "add_internal_link",
+        ] as PivotaIndexingTaskType[]);
+    const limit = Math.max(1, Math.min(Number(input.limit || 250), 5000));
+    const records = new ProductEntityIndexRegistryService()
+      .list({ sitemap_eligible: true })
+      .filter((record) =>
+        requestedIds.size ? requestedIds.has(record.product_entity_id) : true
+      )
+      .slice(0, limit);
+    const created: PivotaIndexingTask[] = [];
+    const existing: PivotaIndexingTask[] = [];
+    const errors: Array<{ product_entity_id: string; task_type: string; error: string }> = [];
+
+    for (const record of records) {
+      for (const taskType of selectedTaskTypes) {
+        const found = this.list({ product_entity_id: record.product_entity_id }).find(
+          (task) => task.task_type === taskType
+        );
+        if (found && !input.include_existing) {
+          existing.push(found);
+          continue;
+        }
+        try {
+          created.push(
+            this.create({
+              product_entity_id: record.product_entity_id,
+              canonical_pivota_pdp_url: record.canonical_url,
+              task_type: taskType,
+              status: input.status || "proposed",
+              evidence: {
+                source: "product_entity_index_bulk",
+                sitemap_url: "https://agent.pivota.cc/sitemap.xml",
+                no_uplift_claim_allowed: true,
+                uplift_claim_allowed: false,
+                last_search_grounded_discovery_score:
+                  record.last_search_grounded_score,
+                last_returned_urls: record.last_returned_urls || [],
+                ...input.evidence,
+              },
+            })
+          );
+        } catch (error) {
+          errors.push({
+            product_entity_id: record.product_entity_id,
+            task_type: taskType,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Failed to create Pivota indexing task",
+          });
+        }
+      }
+    }
+
+    return {
+      records_seen: records.length,
+      task_types: selectedTaskTypes,
+      tasks_created: created.length,
+      tasks_existing: existing.length,
+      errors,
+      created_task_sample: created.slice(0, 25),
+      existing_task_sample: existing.slice(0, 25),
+      product_entity_summaries: unique(
+        [...created, ...existing].map((task) => task.product_entity_id)
+      )
+        .slice(0, 100)
+        .map((productEntityId) => this.summary(productEntityId)),
+    };
+  }
+
   create(input: {
     product_entity_id?: string;
     canonical_pivota_pdp_url?: string;

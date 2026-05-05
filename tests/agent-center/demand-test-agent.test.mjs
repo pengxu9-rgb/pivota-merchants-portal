@@ -1860,6 +1860,95 @@ test("internal Pivota indexing task API creates fetches and updates gated tasks"
   });
 });
 
+test("internal Pivota indexing task API bulk creates tasks from sitemap-eligible ProductEntity records", async () => {
+  resetAgentCenterState();
+  const now = new Date().toISOString();
+  getAgentCenterRepository().upsert("productEntityIndexRecords", {
+    id: "product_entity_index_sig_bulkready",
+    product_entity_id: "sig_bulkready",
+    canonical_url: "https://agent.pivota.cc/products/sig_bulkready",
+    external_seed_id: "ext_bulk_alias",
+    product_name: "Bulk Ready Product",
+    brand: "Bulk Brand",
+    category: "Serum",
+    pdp_content_status: "ready",
+    indexability_status: "ready",
+    sitemap_eligible: true,
+    google_index_status: "unknown",
+    gemini_search_grounded_status: "not_tested",
+    failure_reasons: [],
+    created_at: now,
+    updated_at: now,
+  });
+  getAgentCenterRepository().upsert("productEntityIndexRecords", {
+    id: "product_entity_index_sig_bulkblocked",
+    product_entity_id: "sig_bulkblocked",
+    canonical_url: "https://agent.pivota.cc/products/sig_bulkblocked",
+    product_name: "Bulk Blocked Product",
+    pdp_content_status: "weak_content",
+    indexability_status: "needs_work",
+    sitemap_eligible: false,
+    google_index_status: "unknown",
+    gemini_search_grounded_status: "not_tested",
+    failure_reasons: ["weak_content"],
+    created_at: now,
+    updated_at: now,
+  });
+
+  await withInternalProductionValidationEnv(async () => {
+    const response = await handleInternalPivotaIndexingTasksRequest(
+      internalProductionValidationRequest(
+        "https://example.test/api/internal/agent-center/pivota-indexing-tasks/bulk",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            limit: 10,
+            task_types: ["submit_sitemap", "request_indexing"],
+            evidence: {
+              operator: "pivota_ops",
+              evidence_note: "Bulk queue creation for sitemap-eligible PDPs.",
+            },
+          }),
+        }
+      ),
+      { taskId: "bulk" }
+    );
+    const payload = await response.json();
+
+    assert.equal(response.status, 201);
+    assert.equal(payload.pivota_indexing_task_bulk.records_seen, 1);
+    assert.equal(payload.pivota_indexing_task_bulk.tasks_created, 2);
+    assert.equal(payload.pivota_indexing_task_bulk.errors.length, 0);
+    assert.deepEqual(
+      getAgentCenterState().pivotaIndexingTasks.map((task) => task.task_type).sort(),
+      ["request_indexing", "submit_sitemap"]
+    );
+    assert.equal(
+      getAgentCenterState().pivotaIndexingTasks.every(
+        (task) => task.product_entity_id === "sig_bulkready"
+      ),
+      true
+    );
+
+    const dedupeResponse = await handleInternalPivotaIndexingTasksRequest(
+      internalProductionValidationRequest(
+        "https://example.test/api/internal/agent-center/pivota-indexing-tasks/bulk",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            limit: 10,
+            task_types: ["submit_sitemap", "request_indexing"],
+          }),
+        }
+      ),
+      { taskId: "bulk" }
+    );
+    const dedupePayload = await dedupeResponse.json();
+    assert.equal(dedupePayload.pivota_indexing_task_bulk.tasks_created, 0);
+    assert.equal(dedupePayload.pivota_indexing_task_bulk.tasks_existing, 2);
+  });
+});
+
 test("Pivota indexing task completion enforces Search Console evidence rules", () => {
   resetAgentCenterState();
   const service = new PivotaIndexingTaskService();

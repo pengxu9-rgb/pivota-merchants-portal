@@ -421,6 +421,7 @@ Operators can record that work through the internal Pivota indexing task tracker
 
 ```text
 POST /api/internal/agent-center/pivota-indexing-tasks
+POST /api/internal/agent-center/pivota-indexing-tasks/bulk
 GET /api/internal/agent-center/pivota-indexing-tasks/:taskId
 PATCH /api/internal/agent-center/pivota-indexing-tasks/:taskId
 ```
@@ -431,6 +432,12 @@ Supported task types are `submit_sitemap`, `request_indexing`,
 task summary exposes current status, next rerun time, last search-grounded
 discovery score, last returned URLs, indexing evidence status, next recommended
 operator action, and `uplift_claim_allowed`.
+
+For a bulk ProductEntity rollout, use the bulk route against the DB-backed
+ProductEntity index registry. It creates operational tasks only for
+`sitemap_eligible=true` canonical ProductEntity PDPs, deduplicates existing task
+types, and never treats task creation, sitemap submission, or request-indexing
+evidence as Gemini exposure uplift.
 
 These tasks document operational work only; they do not prove search-grounded
 discovery uplift until a rerun returns the canonical Pivota PDP or a verified
