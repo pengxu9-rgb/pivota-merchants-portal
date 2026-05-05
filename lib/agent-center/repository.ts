@@ -312,6 +312,7 @@ export function createInitialAgentCenterState(): AgentCenterState {
     demoFixtures: [],
     productionValidationRuns: [],
     pilotProductEntityProvisioningRuns: [],
+    productEntityIndexRecords: [],
     pivotaIndexingTasks: [],
     usageEvents: [],
     usagePlan: {
@@ -378,6 +379,7 @@ const ARRAY_COLLECTION_KEYS: AgentCenterCollectionKey[] = [
   "demoFixtures",
   "productionValidationRuns",
   "pilotProductEntityProvisioningRuns",
+  "productEntityIndexRecords",
   "pivotaIndexingTasks",
   "usageEvents",
 ];
@@ -746,6 +748,7 @@ type PersistedCollectionKey =
   | "usageEvents"
   | "productionValidationRuns"
   | "pilotProductEntityProvisioningRuns"
+  | "productEntityIndexRecords"
   | "pivotaIndexingTasks"
   | "demoFixtures";
 
@@ -764,6 +767,7 @@ const DB_COLLECTION_TABLES: Record<PersistedCollectionKey, string> = {
   productionValidationRuns: "agent_center_production_validation_runs",
   pilotProductEntityProvisioningRuns:
     "agent_center_production_validation_runs",
+  productEntityIndexRecords: "agent_center_production_validation_runs",
   pivotaIndexingTasks: "agent_center_production_validation_runs",
   demoFixtures: "agent_center_demo_fixtures",
 };
@@ -839,14 +843,16 @@ function statusForRecord(collection: PersistedCollectionKey, record: RecordLike)
 }
 
 function productEntityForRecord(collection: PersistedCollectionKey, record: RecordLike) {
+  if (collection === "productionValidationRuns") {
+    return (
+      (record.product_entity_id as string | undefined) ||
+      (record.pivota_product_entity_id as string | undefined) ||
+      firstString(record.affected_product_entities)
+    );
+  }
   return (
     (record.product_entity_id as string | undefined) ||
-    firstString(record.affected_product_entities) ||
-    (collection === "productionValidationRuns"
-      ? (record.pivota_product_entity_id as string | undefined)
-      : collection === "pilotProductEntityProvisioningRuns"
-        ? (record.product_entity_id as string | undefined)
-      : undefined)
+    firstString(record.affected_product_entities)
   );
 }
 
@@ -915,10 +921,13 @@ function rowValuesForRecord(
 
 function collectionHydrateWhere(collection: PersistedCollectionKey) {
   if (collection === "productionValidationRuns") {
-    return "WHERE id NOT LIKE 'pilot_product_entity_%' AND id NOT LIKE 'pivota_indexing_task_%'";
+    return "WHERE id NOT LIKE 'pilot_product_entity_%' AND id NOT LIKE 'pivota_indexing_task_%' AND id NOT LIKE 'product_entity_index_%'";
   }
   if (collection === "pilotProductEntityProvisioningRuns") {
     return "WHERE id LIKE 'pilot_product_entity_%'";
+  }
+  if (collection === "productEntityIndexRecords") {
+    return "WHERE id LIKE 'product_entity_index_%' AND deleted_at IS NULL";
   }
   if (collection === "pivotaIndexingTasks") {
     return "WHERE id LIKE 'pivota_indexing_task_%' AND deleted_at IS NULL";

@@ -31,6 +31,21 @@ When enabled, Gemini Google Search grounding is used only for
 discovery, contextual attribution, Product Understanding, Offer Execution,
 Checkout Verification, and retest workflows remain ungrounded.
 
+Pivota PDP public exposure now has an indexing pipeline:
+
+- ProductEntity index registry in Agent Center
+- gateway `get_discovery_feed` sync
+- main-path `get_pdp_v2` content verification
+- production Googlebot-style PDP audit
+- dynamic `agent.pivota.cc/sitemap-products.xml`
+- paginated public internal-link surface at `/products/indexability`
+- Search Console evidence and timed rerun tasks
+- scoped Gemini search-grounded measurement
+
+Only `sitemap_eligible=true` canonical `sig_*` records enter the product
+sitemap. `ext_*` URLs remain aliases and are excluded from canonical sitemap
+output.
+
 ## Demo Story
 
 Start with the problem merchants understand: AI agents can recommend products, but a recommendation is not GMV until the product can be attributed to the right buying path and the pre-payment chain is ready.
@@ -90,6 +105,15 @@ Do not say contextual attribution equals discovery. Do not claim consumer Gemini
 UI or AI Mode ranking.
 
 For Pivota PDP URLs, avoid describing `/products/ext_*` as canonical product identity. Treat `ext_*` as an external seed/source alias unless it has been explicitly promoted to a ProductEntity ID. Search-grounded Pivota discovery counts a returned alias only when it canonicalizes or maps to the expected ProductEntity; unrelated `ext_*` URLs do not count.
+
+For public exposure, separate these states:
+
+- `ready for Google`: canonical PDP renders real server HTML, JSON-LD, source
+  references, sitemap eligibility, and internal links.
+- `submitted/requested`: Search Console sitemap or URL Inspection evidence has
+  been recorded.
+- `shown in Gemini search-grounded`: Gemini returned the canonical `sig_*` URL
+  or a verified alias. Only this state allows a measured exposure/uplift claim.
 
 ## Demo Flow
 

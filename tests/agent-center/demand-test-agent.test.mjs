@@ -50,6 +50,7 @@ const {
   PivotaPDPIndexabilityAuditService,
   PivotaOptimizationService,
   PilotProductEntityProvisioningService,
+  ProductEntityIndexRegistryService,
   ProductionValidationRunService,
   ProductNameNormalizer,
   ProductMatchService,
@@ -70,6 +71,7 @@ const {
 const {
   handleAgentCenterRequest,
   handleInternalDemoFixturesRequest,
+  handleInternalProductEntityIndexRequest,
   handleInternalPivotaIndexingTasksRequest,
   handleInternalProductionValidationRunsRequest,
 } = apiHandlers;
@@ -1993,6 +1995,222 @@ test("public ProductEntity indexability surfaces expose canonical URLs without e
   assert.match(pageSource, /publicProductEntityIndexEntries/);
   assert.match(pageSource, /Open canonical PDP/);
   assert.equal(/raw|debug|token/i.test(pageSource), false);
+});
+
+test("ProductEntity index registry sync paginates, dedupes, and excludes no-content PDPs from sitemap eligibility", async () => {
+  resetAgentCenterState();
+  const originalFetch = global.fetch;
+  const gatewayCalls = [];
+  const longDescription =
+    "A real server-side PDP description with enough product detail for crawlable ProductEntity content. ".repeat(
+      3
+    );
+  global.fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body || "{}"));
+    gatewayCalls.push(body);
+    if (body.operation === "get_discovery_feed") {
+      const page = body.payload?.page || 1;
+      return {
+        ok: true,
+        json: async () =>
+          page === 1
+            ? {
+                products: [
+                  {
+                    product_id: "ext_ready_1",
+                    sellable_item_group_id: "sig_ready1",
+                    title: "Ready Product One",
+                    brand: { name: "Ready Brand" },
+                  },
+                ],
+                has_more: true,
+              }
+            : {
+                products: [
+                  {
+                    product_id: "ext_ready_1",
+                    sellable_item_group_id: "sig_ready1",
+                    title: "Ready Product One Duplicate",
+                  },
+                  {
+                    product_id: "ext_empty_1",
+                    sellable_item_group_id: "sig_empty1",
+                    title: "Empty Product One",
+                  },
+                ],
+                has_more: false,
+              },
+      };
+    }
+    if (body.operation === "get_pdp_v2") {
+      const productId = body.payload?.product_ref?.product_id;
+      if (productId === "sig_ready1") {
+        return {
+          ok: true,
+          json: async () => ({
+            product: {
+              product_id: "ext_ready_1",
+              sellable_item_group_id: "sig_ready1",
+              title: "Ready Product One",
+              brand: { name: "Ready Brand" },
+              description: longDescription,
+              category_path: ["Beauty", "Serum"],
+            },
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ product: { title: "" } }),
+      };
+    }
+    throw new Error(`Unexpected operation ${body.operation}`);
+  };
+
+  try {
+    const result = await new ProductEntityIndexRegistryService().sync({
+      limit: 5,
+      page_size: 1,
+      max_pages: 3,
+    });
+    const records = getAgentCenterState().productEntityIndexRecords;
+
+    assert.equal(result.pages_fetched, 2);
+    assert.equal(records.length, 2);
+    assert.equal(
+      records.filter((record) => record.product_entity_id === "sig_ready1").length,
+      1
+    );
+    assert.equal(
+      records.find((record) => record.product_entity_id === "sig_ready1")
+        ?.pdp_content_status,
+      "ready"
+    );
+    assert.equal(
+      records.find((record) => record.product_entity_id === "sig_empty1")
+        ?.sitemap_eligible,
+      false
+    );
+    assert.equal(
+      gatewayCalls.some(
+        (call) =>
+          call.operation === "get_pdp_v2" &&
+          call.payload?.product_ref?.product_id === "sig_ready1"
+      ),
+      true
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("ProductEntity index registry audit promotes only production-ready canonical PDPs", async () => {
+  resetAgentCenterState();
+  const service = new ProductEntityIndexRegistryService();
+  getAgentCenterRepository().upsert("productEntityIndexRecords", {
+    id: "product_entity_index_sig_readyaudit",
+    product_entity_id: "sig_readyaudit",
+    canonical_url: "https://agent.pivota.cc/products/sig_readyaudit",
+    external_seed_id: "ext_d7c74bcb380cbc2bdd5d5d90",
+    external_seed_ids: ["ext_d7c74bcb380cbc2bdd5d5d90"],
+    product_name: indexabilityProductName,
+    brand: "Isntree",
+    category: "Sunscreen",
+    pdp_content_status: "ready",
+    indexability_status: "not_audited",
+    sitemap_eligible: false,
+    google_index_status: "unknown",
+    gemini_search_grounded_status: "not_tested",
+    failure_reasons: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+
+  await withMockPivotaIndexabilityFetch(
+    {
+      sitemap: "<?xml version=\"1.0\"?><urlset></urlset>",
+      html: indexabilityHtml({
+        canonical: "https://agent.pivota.cc/products/sig_readyaudit",
+        productObjectId: "sig_readyaudit",
+        productJsonLd: productJsonLd({
+          url: "https://agent.pivota.cc/products/sig_readyaudit",
+        }),
+        offerJsonLd: offerJsonLd({
+          url: "https://agent.pivota.cc/products/sig_readyaudit",
+        }),
+      }),
+    },
+    () =>
+      service.audit({
+        product_entity_ids: ["sig_readyaudit"],
+      })
+  );
+
+  const record = service.get("sig_readyaudit");
+  assert.equal(record.indexability_status, "ready");
+  assert.equal(record.sitemap_eligible, true);
+  assert.ok(record.failure_reasons.includes("audit:missing_sitemap_entry"));
+  assert.equal(record.canonical_url.includes("/products/ext_"), false);
+});
+
+test("ProductEntity index public API returns only sitemap-eligible canonical records", async () => {
+  resetAgentCenterState();
+  getAgentCenterRepository().upsert("productEntityIndexRecords", {
+    id: "product_entity_index_sig_publicready",
+    product_entity_id: "sig_publicready",
+    canonical_url: "https://agent.pivota.cc/products/sig_publicready",
+    external_seed_id: "ext_public_ready",
+    product_name: "Public Ready Product",
+    brand: "Ready Brand",
+    pdp_content_status: "ready",
+    indexability_status: "ready",
+    sitemap_eligible: true,
+    google_index_status: "unknown",
+    gemini_search_grounded_status: "not_tested",
+    failure_reasons: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  getAgentCenterRepository().upsert("productEntityIndexRecords", {
+    id: "product_entity_index_sig_publicempty",
+    product_entity_id: "sig_publicempty",
+    canonical_url: "https://agent.pivota.cc/products/sig_publicempty",
+    product_name: "Public Empty Product",
+    pdp_content_status: "no_content",
+    indexability_status: "not_audited",
+    sitemap_eligible: false,
+    google_index_status: "unknown",
+    gemini_search_grounded_status: "not_tested",
+    failure_reasons: ["no_content"],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+
+  const response = await handleAgentCenterRequest(
+    new NextRequest("https://example.test/api/agent-center/product-entity-index/public"),
+    { path: ["product-entity-index", "public"] }
+  );
+  const payload = await response.json();
+  const urls = payload.product_entity_index_records.map((record) => record.canonical_url);
+
+  assert.deepEqual(urls, ["https://agent.pivota.cc/products/sig_publicready"]);
+  assert.equal(urls.some((url) => url.includes("/products/ext_")), false);
+});
+
+test("internal ProductEntity index route is gated and exposes sync action", async () => {
+  resetAgentCenterState();
+  const previousEnabled = process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION;
+  process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION = "false";
+  try {
+    const disabled = await handleInternalProductEntityIndexRequest(
+      new NextRequest("https://example.test/api/internal/agent-center/product-entity-index/summary"),
+      { action: "summary" }
+    );
+    assert.equal(disabled.status, 403);
+  } finally {
+    if (previousEnabled === undefined) delete process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION;
+    else process.env.ENABLE_INTERNAL_PRODUCTION_VALIDATION = previousEnabled;
+  }
 });
 
 test("canonical ProductEntity PDP passes binding audit with source seed and merchant offer", async () => {

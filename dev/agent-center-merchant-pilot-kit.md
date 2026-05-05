@@ -57,6 +57,10 @@ Before running a merchant pilot:
 - The merchant has approved the test scope.
 - Test products, PDP URLs, offer metadata, and checkout metadata are approved for validation.
 - Usage remains `preview_only` / `not_invoiced`.
+- ProductEntity PDP indexability pipeline is enabled for the tested Pivota PDP:
+  ProductEntity registry record exists, main-path `get_pdp_v2` content is
+  verified, production PDP audit passes, sitemap eligibility is true, and
+  Search Console evidence is recorded when available.
 
 Do not use broad backend DB credentials for merchant pilots.
 
@@ -91,6 +95,9 @@ Recommended inputs:
 - merchant offer metadata
 - Pivota offer metadata
 - checkout path metadata if available
+- ProductEntity index registry status when the Pivota PDP is in scope:
+  `pdp_content_status`, `indexability_status`, `sitemap_eligible`,
+  Google/Search Console evidence, and latest Gemini search-grounded result.
 
 Useful product attributes for beauty and skincare pilots:
 
@@ -212,19 +219,41 @@ Remove optional blocks when the merchant has not approved or provided that data.
 7. Validate merchant store attribution.
 8. Validate Pivota PDP preflight when a Pivota PDP URL is provided.
 9. Validate Pivota PDP attribution when a Pivota PDP URL is provided.
-10. Compare the merchant-owned path against the Pivota agent-facing path.
-11. Run checkout URL preflight where checkout metadata is available.
-12. Create a production validation run through the internal route.
-13. Run production validation.
-14. Review the generated `GMVAssuranceSnapshot`.
-15. Review generated issues and top blockers.
-16. Review Product Understanding, Offer Execution, and Checkout Verification diagnoses when available.
-17. Create resolution plans for pilot blockers.
-18. Review owner, approval requirement, patch preview, and retest plan.
-19. Share a curated merchant-facing report.
-20. Apply state-only patches or approved patches where applicable.
-21. Retest using the relevant agent or scan mode.
-22. Record before/after result and pilot learning.
+10. If Pivota PDP discovery is in scope, verify the ProductEntity index
+    registry record and production indexability audit.
+11. Confirm `sitemap-products.xml` contains the canonical `sig_*` URL and no
+    `ext_*` alias URL.
+12. Compare the merchant-owned path against the Pivota agent-facing path.
+13. Run checkout URL preflight where checkout metadata is available.
+14. Create a production validation run through the internal route.
+15. Run production validation.
+16. Review the generated `GMVAssuranceSnapshot`.
+17. Review generated issues and top blockers.
+18. Review Product Understanding, Offer Execution, and Checkout Verification diagnoses when available.
+19. Create resolution plans for pilot blockers.
+20. Review owner, approval requirement, patch preview, and retest plan.
+21. Share a curated merchant-facing report.
+22. Apply state-only patches or approved patches where applicable.
+23. Retest using the relevant agent or scan mode.
+24. Record before/after result and pilot learning.
+
+For products not yet in the ProductEntity sitemap, use the registry pipeline:
+
+```text
+POST /api/internal/agent-center/product-entity-index/sync
+POST /api/internal/agent-center/product-entity-index/audit
+GET  /api/internal/agent-center/product-entity-index/summary
+```
+
+Only records with real main-path PDP content and passing production audit become
+`sitemap_eligible=true`. Search-grounded exposure is measured separately with:
+
+```text
+POST /api/internal/agent-center/product-entity-index/gemini-rerun
+```
+
+Do not use the full production validation harness for bulk 4000-product Gemini
+measurement. Use the dedicated search-grounded runner in controlled batches.
 
 Resolution actions in V1 are state transitions unless an action is explicitly wired to an approved write-back path. Do not write to merchant production systems from the pilot workflow.
 
@@ -246,6 +275,9 @@ Success examples:
 - checkout path readiness passes
 - no high-severity blockers remain
 - usage remains `preview_only` / `not_invoiced`
+- Pivota PDP search-grounded exposure is claimed only when the exact canonical
+  ProductEntity URL or a verified alias canonicalizing to it appears in Gemini
+  returned URLs or grounding metadata.
 
 ## Failure / Blocker Examples
 

@@ -1496,6 +1496,55 @@ export type PilotProductEntityProvisioningRun = Timestamped & {
   failure_reason?: string;
 };
 
+export type ProductEntityPdpContentStatus =
+  | "ready"
+  | "no_content"
+  | "weak_content"
+  | "failed";
+
+export type ProductEntityIndexabilityStatus =
+  | "ready"
+  | "needs_work"
+  | "failed"
+  | "not_audited";
+
+export type ProductEntityGoogleIndexStatus =
+  | "unknown"
+  | "not_on_google"
+  | "indexed"
+  | "excluded"
+  | "inspection_error";
+
+export type ProductEntityGeminiSearchGroundedStatus =
+  | "not_tested"
+  | "not_found"
+  | "found"
+  | "error";
+
+export type ProductEntityIndexRecord = Timestamped & {
+  id: string;
+  product_entity_id: string;
+  canonical_url: string;
+  external_seed_id?: string;
+  external_seed_ids?: string[];
+  source_product_id?: string;
+  product_name?: string;
+  brand?: string;
+  category?: string;
+  source_updated_at?: string;
+  last_content_verified_at?: string;
+  pdp_content_status: ProductEntityPdpContentStatus;
+  indexability_status: ProductEntityIndexabilityStatus;
+  sitemap_eligible: boolean;
+  google_index_status: ProductEntityGoogleIndexStatus;
+  gemini_search_grounded_status: ProductEntityGeminiSearchGroundedStatus;
+  last_search_grounded_score?: VisibilityScoreValue;
+  last_search_grounded_at?: string;
+  last_returned_urls?: string[];
+  failure_reasons: string[];
+  audit_evidence?: Record<string, unknown>;
+};
+
 export type PivotaIndexingTaskType =
   | "submit_sitemap"
   | "request_indexing"
@@ -2265,6 +2314,7 @@ export type AgentCenterState = {
   demoFixtures: DemoFixture[];
   productionValidationRuns: ProductionValidationRun[];
   pilotProductEntityProvisioningRuns: PilotProductEntityProvisioningRun[];
+  productEntityIndexRecords: ProductEntityIndexRecord[];
   pivotaIndexingTasks: PivotaIndexingTask[];
   usageEvents: UsageEvent[];
   usagePlan: {

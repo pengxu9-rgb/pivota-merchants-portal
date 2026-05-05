@@ -57,6 +57,109 @@ Completion rules are intentionally strict:
   `uplift_claim_allowed=true`. Only a measured search-grounded rerun where the
   canonical Pivota PDP or verified alias is returned can do that.
 
+## ProductEntity Index Registry
+
+Agent Center now keeps a DB-backed `ProductEntityIndexRecord` registry for
+public PDP indexing eligibility. This registry is the safe source for
+`agent.pivota.cc` product sitemap and internal-link surfaces.
+
+The registry stores, per canonical ProductEntity:
+
+- `product_entity_id`, which must be a canonical `sig_*` ID
+- `canonical_url`, always `https://agent.pivota.cc/products/{sig_*}`
+- external seed/source aliases, kept as source references only
+- product name, brand, category, and source update timestamp
+- `pdp_content_status`
+- `indexability_status`
+- `sitemap_eligible`
+- Google/Search Console evidence status
+- Gemini search-grounded measurement status
+- failure reasons
+
+Eligibility is fail-closed:
+
+- `ext_*` URLs are never canonical sitemap URLs.
+- records with no real `get_pdp_v2` content stay out of sitemap.
+- generic app-shell PDPs stay out of sitemap.
+- fabricated fallback content is not allowed.
+- Search Console submission or indexing request does not prove uplift.
+
+Bootstrap note: a ProductEntity can become sitemap eligible after main-path PDP
+content and production HTML/JSON-LD checks pass. The first audit may still record
+`missing_sitemap_entry`; after the record enters sitemap, a follow-up audit
+should clear that finding.
+
+Internal registry routes:
+
+```text
+POST /api/internal/agent-center/product-entity-index/sync
+POST /api/internal/agent-center/product-entity-index/audit
+POST /api/internal/agent-center/product-entity-index/gemini-rerun
+GET  /api/internal/agent-center/product-entity-index/summary
+```
+
+The shared Agent Center path is also supported:
+
+```text
+POST /api/agent-center/internal-product-entity-index/sync
+POST /api/agent-center/internal-product-entity-index/audit
+POST /api/agent-center/internal-product-entity-index/gemini-rerun
+GET  /api/agent-center/internal-product-entity-index/summary
+```
+
+All internal routes require `ENABLE_INTERNAL_PRODUCTION_VALIDATION=true` and the
+internal production validation secret.
+
+Public safe registry endpoint for `agent.pivota.cc` sitemap generation:
+
+```text
+GET /api/agent-center/product-entity-index/public
+```
+
+It returns only `sitemap_eligible=true` canonical records and must not expose DB
+URLs, secrets, raw provider payloads, prompt traces, or token-level costs.
+
+Example sync:
+
+```bash
+curl -X POST "$BASE_URL/api/internal/agent-center/product-entity-index/sync" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET" \
+  -H "content-type: application/json" \
+  --data '{
+    "limit": 250,
+    "page_size": 100,
+    "max_pages": 10,
+    "verify_content": true
+  }'
+```
+
+Example production audit:
+
+```bash
+curl -X POST "$BASE_URL/api/internal/agent-center/product-entity-index/audit" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET" \
+  -H "content-type: application/json" \
+  --data '{
+    "limit": 50
+  }'
+```
+
+Example scoped Gemini rerun:
+
+```bash
+curl -X POST "$BASE_URL/api/internal/agent-center/product-entity-index/gemini-rerun" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET" \
+  -H "content-type: application/json" \
+  --data '{
+    "product_entity_ids": ["sig_7ad40676c42fb9c96e2a8136"],
+    "limit": 1
+  }'
+```
+
+The Gemini rerun is scoped only to `search_grounded_product_discovery_test`.
+It does not run organic discovery, contextual attribution, offer diagnosis, or
+checkout diagnosis.
+
 ## Checklist
 
 - `robots.txt` allows crawling `agent.pivota.cc/products/*`.
@@ -71,7 +174,9 @@ Completion rules are intentionally strict:
 - Verified merchant source reference is visible.
 - Source merchant PDP URL is visible or machine-readable.
 - Product object ID is visible or machine-readable.
-- `sitemap.xml` includes the Pivota PDP URL.
+- `sitemap.xml` points to `sitemap-products.xml`.
+- `sitemap-products.xml` includes the canonical ProductEntity PDP URL.
+- Product sitemap excludes `ext_*` alias URLs and query-param URLs.
 - Sitemap is submitted to Google Search Console.
 - Key Pivota PDP URLs are requested for indexing.
 - Page passes Rich Results or schema validation where applicable.
@@ -157,6 +262,15 @@ Inspect sitemap:
 
 ```bash
 curl -L "$PIVOTA_HOST/sitemap.xml" | grep -F "$PIVOTA_PDP_URL"
+curl -L "$PIVOTA_HOST/sitemap-products.xml" | grep -F "$PIVOTA_PDP_URL"
+curl -L "$PIVOTA_HOST/sitemap-products.xml" | grep -F "/products/ext_" && echo "FAIL: ext alias in product sitemap"
+```
+
+Inspect the public internal-link surface:
+
+```bash
+curl -L "$PIVOTA_HOST/products/indexability" | grep -F "$PIVOTA_PDP_URL"
+curl -L "$PIVOTA_HOST/products/indexability/page/2" | grep -F "https://agent.pivota.cc/products/sig_"
 ```
 
 Verify product name appears in HTML:

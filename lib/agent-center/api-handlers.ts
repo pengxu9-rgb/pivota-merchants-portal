@@ -24,6 +24,7 @@ import {
   PivotaPDPIndexabilityAuditService,
   PivotaOptimizationService,
   PilotProductEntityProvisioningService,
+  ProductEntityIndexRegistryService,
   ProductionValidationRunService,
   ProductUnderstandingService,
   ScanTargetService,
@@ -196,6 +197,61 @@ export async function handleInternalPivotaIndexingTasksRequest(
   return withAgentCenterRepositorySession(() =>
     handleInternalPivotaIndexingTasksRequestInner(req, params)
   );
+}
+
+export async function handleInternalProductEntityIndexRequest(
+  req: NextRequest,
+  params?: { action?: string }
+) {
+  return withAgentCenterRepositorySession(() =>
+    handleInternalProductEntityIndexRequestInner(req, params)
+  );
+}
+
+async function handleInternalProductEntityIndexRequestInner(
+  req: NextRequest,
+  params?: { action?: string }
+) {
+  const gate = internalProductionValidationGate(req);
+  if (!gate.allowed) return json({ error: gate.error }, 403);
+
+  const service = new ProductEntityIndexRegistryService();
+  const action = params?.action;
+
+  try {
+    if (req.method === "POST" && action === "sync") {
+      return json({ product_entity_index_sync: await service.sync(await requestBody(req)) }, 201);
+    }
+    if (req.method === "POST" && action === "audit") {
+      return json({ product_entity_index_audit: await service.audit(await requestBody(req)) }, 201);
+    }
+    if (req.method === "POST" && action === "gemini-rerun") {
+      return json(
+        {
+          product_entity_index_search_grounded_rerun:
+            await service.runSearchGroundedBatch(await requestBody(req)),
+        },
+        201
+      );
+    }
+    if (req.method === "GET" && (!action || action === "summary")) {
+      return json({
+        product_entity_index_summary: service.summary(),
+        product_entity_index_records: service.list({
+          limit: Number(req.nextUrl.searchParams.get("limit") || 100),
+          sitemap_eligible:
+            req.nextUrl.searchParams.get("sitemap_eligible") === "true"
+              ? true
+              : req.nextUrl.searchParams.get("sitemap_eligible") === "false"
+                ? false
+                : undefined,
+        }),
+      });
+    }
+    return json({ error: "Unsupported internal ProductEntity index route" }, 404);
+  } catch (error) {
+    return routeError(error);
+  }
 }
 
 async function handleInternalPivotaIndexingTasksRequestInner(
@@ -451,6 +507,22 @@ async function handleAgentCenterRequestInner(
         req,
         id ? { taskId: id } : undefined
       );
+    }
+
+    if (resource === "internal-product-entity-index") {
+      return handleInternalProductEntityIndexRequest(req, id ? { action: id } : undefined);
+    }
+
+    if (resource === "product-entity-index" && id === "public") {
+      if (req.method !== "GET") {
+        return json({ error: "Unsupported ProductEntity index public route" }, 404);
+      }
+      const service = new ProductEntityIndexRegistryService();
+      return json({
+        product_entity_index_records: service.publicSitemapEntries({
+          limit: Number(req.nextUrl.searchParams.get("limit") || 5000),
+        }),
+      });
     }
 
     if (

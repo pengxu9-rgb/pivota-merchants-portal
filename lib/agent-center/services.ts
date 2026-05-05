@@ -81,6 +81,9 @@ import type {
   PivotaIndexingTaskStatus,
   PivotaIndexingTaskType,
   PilotProductEntityProvisioningRun,
+  ProductEntityIndexRecord,
+  ProductEntityIndexabilityStatus,
+  ProductEntityPdpContentStatus,
   ProductLayerComparison,
   ProductMatchLevel,
   ProductMatchResult,
@@ -6795,6 +6798,772 @@ const INDEXING_REQUEST_ALLOWED_INSPECTION_STATUSES = new Set([
   "indexing_requested",
 ]);
 
+const PRODUCT_ENTITY_INDEX_PUBLIC_BASE_URL = "https://agent.pivota.cc";
+const PRODUCT_ENTITY_INDEX_GATEWAY_DEFAULT_URL =
+  "https://pivota-agent-production.up.railway.app/agent/shop/v1/invoke";
+
+type ProductEntityIndexCandidate = {
+  product_entity_id: string;
+  external_seed_id?: string;
+  source_product_id?: string;
+  product_name?: string;
+  brand?: string;
+  category?: string;
+  source_updated_at?: string;
+};
+
+function productEntityIndexRecordId(productEntityId: string) {
+  return `product_entity_index_${productEntityId}`;
+}
+
+function isCanonicalProductEntityId(value: unknown) {
+  return /^sig_[a-z0-9]+$/i.test(stringInput(value));
+}
+
+function canonicalAgentProductEntityUrl(productEntityId: string) {
+  return `${PRODUCT_ENTITY_INDEX_PUBLIC_BASE_URL}/products/${productEntityId}`;
+}
+
+function normalizeProductEntityIndexCanonicalUrl(value: unknown, productEntityId: string) {
+  const candidate = stringInput(value);
+  const expected = canonicalAgentProductEntityUrl(productEntityId);
+  if (!candidate) return expected;
+  try {
+    const url = new URL(candidate);
+    if (
+      url.protocol === "https:" &&
+      url.hostname === "agent.pivota.cc" &&
+      url.pathname === `/products/${productEntityId}` &&
+      !url.search
+    ) {
+      return url.toString().replace(/\/$/, "");
+    }
+  } catch {
+    // Invalid canonical candidates are ignored and rebuilt from ProductEntity ID.
+  }
+  return expected;
+}
+
+function productEntityGatewayInvokeUrl() {
+  const configured =
+    process.env.AGENT_CENTER_PRODUCT_ENTITY_GATEWAY_URL ||
+    process.env.PIVOTA_AGENT_SEO_GATEWAY_URL ||
+    process.env.SHOP_UPSTREAM_API_URL ||
+    process.env.SHOP_GATEWAY_UPSTREAM_BASE_URL ||
+    process.env.SHOP_GATEWAY_AGENT_BASE_URL ||
+    process.env.NEXT_PUBLIC_AGENT_DIRECT_API_URL ||
+    process.env.NEXT_PUBLIC_AGENT_API_URL ||
+    PRODUCT_ENTITY_INDEX_GATEWAY_DEFAULT_URL;
+  const base = String(configured || PRODUCT_ENTITY_INDEX_GATEWAY_DEFAULT_URL).replace(/\/+$/, "");
+  if (/\/agent\/shop\/v1\/invoke$/i.test(base) || /\/api\/gateway$/i.test(base)) {
+    return base;
+  }
+  return `${base}/agent/shop/v1/invoke`;
+}
+
+function productEntityGatewayApiKey() {
+  return (
+    process.env.AGENT_API_KEY ||
+    process.env.SHOP_GATEWAY_AGENT_API_KEY ||
+    process.env.PIVOTA_API_KEY ||
+    process.env.NEXT_PUBLIC_AGENT_API_KEY ||
+    ""
+  ).trim();
+}
+
+async function productEntityGatewayRequest(operation: string, payload: Record<string, unknown>) {
+  const apiKey = productEntityGatewayApiKey();
+  const response = await fetch(productEntityGatewayInvokeUrl(), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(apiKey
+        ? {
+            "X-API-Key": apiKey,
+            Authorization: `Bearer ${apiKey}`,
+          }
+        : {}),
+    },
+    body: JSON.stringify({
+      operation,
+      payload,
+      metadata: {
+        entry: "agent_center_product_entity_index",
+        source: "agent_center_product_entity_index",
+        scope: { catalog: "global" },
+      },
+    }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`${operation} failed with HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+function readNestedRecord(...values: unknown[]) {
+  for (const value of values) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+  }
+  return {};
+}
+
+function readNestedArray(...values: unknown[]) {
+  for (const value of values) {
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+}
+
+function productEntityCandidateFromGatewayItem(item: unknown): ProductEntityIndexCandidate | null {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+  const record = item as Record<string, unknown>;
+  const productEntityId = stringInput(
+    record.product_entity_id,
+    record.productEntityId,
+    record.product_group_id,
+    record.productGroupId,
+    record.sellable_item_group_id,
+    record.sellableItemGroupId
+  );
+  if (!isCanonicalProductEntityId(productEntityId)) return null;
+  const sourceProductId = stringInput(record.product_id, record.productId, record.id);
+  const externalSeedId = /^ext_[a-z0-9_]+$/i.test(sourceProductId)
+    ? sourceProductId
+    : stringInput(record.external_seed_id, record.externalSeedId);
+  const brandRecord = readNestedRecord(record.brand);
+  return {
+    product_entity_id: productEntityId,
+    external_seed_id: externalSeedId || undefined,
+    source_product_id: sourceProductId || externalSeedId || undefined,
+    product_name: stringInput(record.title, record.name, record.product_name),
+    brand: stringInput(brandRecord.name, record.brand_name, record.brand),
+    category: stringInput(record.category, record.department, record.category_path),
+    source_updated_at: stringInput(
+      record.updated_at,
+      record.updatedAt,
+      record.last_modified,
+      record.lastModified
+    ),
+  };
+}
+
+function extractGatewayDiscoveryProducts(json: Record<string, unknown>) {
+  const data = readNestedRecord(json.data, json.payload);
+  return readNestedArray(
+    json.products,
+    json.items,
+    json.results,
+    data.products,
+    data.items,
+    data.results
+  );
+}
+
+function extractGatewayDiscoveryCursor(json: Record<string, unknown>) {
+  const data = readNestedRecord(json.data, json.payload);
+  const pagination = readNestedRecord(json.pagination, data.pagination, json.page_info, data.page_info);
+  return stringInput(
+    json.next_cursor,
+    json.nextCursor,
+    data.next_cursor,
+    data.nextCursor,
+    pagination.next_cursor,
+    pagination.nextCursor,
+    pagination.cursor
+  );
+}
+
+function candidateHasMore(json: Record<string, unknown>, productCount: number, pageSize: number) {
+  const data = readNestedRecord(json.data, json.payload);
+  const pagination = readNestedRecord(json.pagination, data.pagination, json.page_info, data.page_info);
+  if (typeof json.has_more === "boolean") return json.has_more;
+  if (typeof data.has_more === "boolean") return data.has_more;
+  if (typeof pagination.has_more === "boolean") return pagination.has_more;
+  return productCount >= pageSize;
+}
+
+function extractPdpProductRecord(raw: unknown): Record<string, unknown> {
+  const root = readNestedRecord(raw);
+  const data = readNestedRecord(root.data, root.payload);
+  const rootPdp = readNestedRecord(root.pdp);
+  const dataPdp = readNestedRecord(data.pdp);
+  return readNestedRecord(root.product, data.product, rootPdp.product, dataPdp.product);
+}
+
+function collectPlainTextFromUnknown(value: unknown, maxParts = 24) {
+  const parts: string[] = [];
+  const visit = (item: unknown) => {
+    if (parts.length >= maxParts || item == null) return;
+    if (typeof item === "string" || typeof item === "number") {
+      const text = stripHtmlText(String(item));
+      if (text && text.length > 2) parts.push(text);
+      return;
+    }
+    if (Array.isArray(item)) {
+      item.slice(0, 20).forEach(visit);
+      return;
+    }
+    if (typeof item === "object") {
+      const record = item as Record<string, unknown>;
+      for (const key of [
+        "title",
+        "name",
+        "headline",
+        "description",
+        "summary",
+        "overview",
+        "body",
+        "text",
+        "label",
+        "value",
+      ]) {
+        visit(record[key]);
+      }
+    }
+  };
+  visit(value);
+  return unique(parts).join(" ");
+}
+
+function extractPdpContentSignals(raw: unknown, candidate: ProductEntityIndexCandidate) {
+  const root = readNestedRecord(raw);
+  const data = readNestedRecord(root.data, root.payload);
+  const product = extractPdpProductRecord(raw);
+  const brandRecord = readNestedRecord(product.brand);
+  const productName = stringInput(
+    product.title,
+    product.name,
+    data.title,
+    data.name,
+    candidate.product_name
+  );
+  const brand = stringInput(brandRecord.name, product.brand_name, product.brand, candidate.brand);
+  const description = collectPlainTextFromUnknown([
+    product.description,
+    data.description,
+    root.modules,
+    data.modules,
+  ]);
+  const categoryPath = Array.isArray(product.category_path)
+    ? product.category_path.join(" > ")
+    : "";
+  const category = stringInput(
+    categoryPath,
+    product.category,
+    product.department,
+    candidate.category
+  );
+  const sourceUpdatedAt = stringInput(
+    product.updated_at,
+    product.updatedAt,
+    data.updated_at,
+    data.updatedAt,
+    candidate.source_updated_at
+  );
+  const contentReady = Boolean(productName && brand && description.length >= 80);
+  const weakContent = Boolean(productName && (brand || description));
+  return {
+    product_name: productName,
+    brand,
+    category,
+    source_updated_at: sourceUpdatedAt,
+    description_length: description.length,
+    contentReady,
+    weakContent,
+  };
+}
+
+async function fetchMainPathPdpForIndex(candidate: ProductEntityIndexCandidate) {
+  const lookupIds = unique([
+    candidate.product_entity_id,
+    candidate.external_seed_id || "",
+    candidate.source_product_id || "",
+  ].filter(Boolean));
+  const failures: string[] = [];
+  for (const productId of lookupIds) {
+    try {
+      const raw = await productEntityGatewayRequest("get_pdp_v2", {
+        product_ref: { product_id: productId },
+        include: [
+          "offers",
+          "variant_selector",
+          "product_intel",
+          "active_ingredients",
+          "ingredients_inci",
+          "product_overview",
+          "supplemental_details",
+          "similar",
+        ],
+        capabilities: {
+          client: "agent_center_product_entity_index",
+        },
+      });
+      const signals = extractPdpContentSignals(raw, candidate);
+      if (signals.contentReady) {
+        return {
+          lookup_product_id: productId,
+          status: "ready" as ProductEntityPdpContentStatus,
+          signals,
+          failure_reasons: failures,
+        };
+      }
+      if (signals.weakContent) {
+        failures.push(`${productId}: weak_content`);
+      } else {
+        failures.push(`${productId}: no_content`);
+      }
+    } catch (error) {
+      failures.push(
+        `${productId}: ${error instanceof Error ? error.message : "get_pdp_v2 failed"}`
+      );
+    }
+  }
+  const weak = failures.some((reason) => reason.includes("weak_content"));
+  return {
+    lookup_product_id: lookupIds[0],
+    status: weak ? "weak_content" as const : "no_content" as const,
+    signals: undefined,
+    failure_reasons: failures.length ? failures : ["get_pdp_v2 returned no real PDP content"],
+  };
+}
+
+function stripHtmlText(value: string) {
+  return value
+    .replace(/<\s*br\s*\/?>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function productEntityRecordPublicPayload(record: ProductEntityIndexRecord) {
+  return {
+    product_entity_id: record.product_entity_id,
+    canonical_url: record.canonical_url,
+    product_name: record.product_name,
+    brand: record.brand,
+    category: record.category,
+    source_updated_at: record.source_updated_at,
+    updated_at: record.updated_at || record.created_at,
+    external_seed_id: record.external_seed_id,
+  };
+}
+
+export class ProductEntityIndexRegistryService {
+  list(input: { sitemap_eligible?: boolean; limit?: number } = {}) {
+    const records = [...getAgentCenterState().productEntityIndexRecords]
+      .sort((left, right) => {
+        const leftTime = new Date(left.updated_at || left.created_at).getTime();
+        const rightTime = new Date(right.updated_at || right.created_at).getTime();
+        return rightTime - leftTime;
+      })
+      .filter((record) =>
+        typeof input.sitemap_eligible === "boolean"
+          ? record.sitemap_eligible === input.sitemap_eligible
+          : true
+      );
+    return typeof input.limit === "number" ? records.slice(0, input.limit) : records;
+  }
+
+  publicSitemapEntries(input: { limit?: number } = {}) {
+    return this.list({ sitemap_eligible: true, limit: input.limit }).map(
+      productEntityRecordPublicPayload
+    );
+  }
+
+  summary() {
+    const records = getAgentCenterState().productEntityIndexRecords;
+    const byReason = new Map<string, number>();
+    for (const record of records) {
+      for (const reason of record.failure_reasons || []) {
+        const key = String(reason).split(":")[0] || "unknown";
+        byReason.set(key, (byReason.get(key) || 0) + 1);
+      }
+    }
+    return {
+      total_candidates: records.length,
+      pdp_content_ready: records.filter((record) => record.pdp_content_status === "ready").length,
+      sitemap_eligible: records.filter((record) => record.sitemap_eligible).length,
+      indexability_ready: records.filter((record) => record.indexability_status === "ready").length,
+      google_indexed: records.filter((record) => record.google_index_status === "indexed").length,
+      gemini_found: records.filter((record) => record.gemini_search_grounded_status === "found").length,
+      failures_by_reason: Object.fromEntries(byReason),
+    };
+  }
+
+  async sync(input: {
+    limit?: number;
+    page_size?: number;
+    max_pages?: number;
+    verify_content?: boolean;
+  } = {}) {
+    const limit = Math.max(1, Math.min(Number(input.limit || 250), 5000));
+    const pageSize = Math.max(1, Math.min(Number(input.page_size || 100), 250));
+    const maxPages = Math.max(1, Math.min(Number(input.max_pages || 50), 200));
+    const verifyContent = input.verify_content !== false;
+    const candidates = new Map<string, ProductEntityIndexCandidate>();
+    let cursor = "";
+    let page = 1;
+    let pagesFetched = 0;
+    const syncErrors: string[] = [];
+
+    while (candidates.size < limit && pagesFetched < maxPages) {
+      try {
+        const json = (await productEntityGatewayRequest("get_discovery_feed", {
+          surface: "browse_products",
+          page,
+          limit: pageSize,
+          ...(cursor ? { cursor } : {}),
+        })) as Record<string, unknown>;
+        const products = extractGatewayDiscoveryProducts(json);
+        for (const item of products) {
+          const candidate = productEntityCandidateFromGatewayItem(item);
+          if (!candidate) continue;
+          const existing = candidates.get(candidate.product_entity_id);
+          candidates.set(candidate.product_entity_id, {
+            ...existing,
+            ...candidate,
+            external_seed_id: existing?.external_seed_id || candidate.external_seed_id,
+            source_product_id: existing?.source_product_id || candidate.source_product_id,
+          });
+          if (candidates.size >= limit) break;
+        }
+        pagesFetched += 1;
+        const nextCursor = extractGatewayDiscoveryCursor(json);
+        if (!candidateHasMore(json, products.length, pageSize)) break;
+        cursor = nextCursor;
+        page += 1;
+        if (!cursor && products.length < pageSize) break;
+      } catch (error) {
+        syncErrors.push(error instanceof Error ? error.message : "get_discovery_feed failed");
+        break;
+      }
+    }
+
+    const upserted: ProductEntityIndexRecord[] = [];
+    for (const candidate of candidates.values()) {
+      upserted.push(await this.upsertCandidate(candidate, verifyContent));
+    }
+
+    return {
+      pages_fetched: pagesFetched,
+      candidates_seen: candidates.size,
+      records_upserted: upserted.length,
+      sitemap_eligible: upserted.filter((record) => record.sitemap_eligible).length,
+      sync_errors: syncErrors,
+      records: upserted,
+      summary: this.summary(),
+    };
+  }
+
+  async audit(input: { product_entity_ids?: string[]; limit?: number } = {}) {
+    const requestedIds = new Set(arrayOfStringInput(input.product_entity_ids));
+    const limit = Math.max(1, Math.min(Number(input.limit || 50), 250));
+    const records = this.list()
+      .filter((record) =>
+        requestedIds.size ? requestedIds.has(record.product_entity_id) : true
+      )
+      .slice(0, limit);
+    const auditService = new PivotaPDPIndexabilityAuditService();
+    const audited: ProductEntityIndexRecord[] = [];
+    for (const record of records) {
+      const audit = await auditService.audit({
+        url: record.canonical_url,
+        product_name: record.product_name || "",
+        brand: record.brand || "",
+        product_entity_id: record.product_entity_id,
+        canonical_pivota_pdp_url: record.canonical_url,
+        external_seed_id: record.external_seed_id,
+        merchant_pdp_url: "",
+        offers_exist: true,
+      });
+      const findingTypes = audit.findings.map((finding) => finding.finding_type);
+      const blockingFindings = findingTypes.filter(
+        (finding) => finding !== "missing_sitemap_entry"
+      );
+      const indexabilityStatus: ProductEntityIndexabilityStatus =
+        audit.audit_status === "passed" || blockingFindings.length === 0
+          ? "ready"
+          : audit.audit_status === "failed"
+            ? "failed"
+            : "needs_work";
+      const nextRecord: ProductEntityIndexRecord = {
+        ...record,
+        indexability_status: indexabilityStatus,
+        sitemap_eligible:
+          record.pdp_content_status === "ready" && indexabilityStatus === "ready",
+        failure_reasons: unique([
+          ...record.failure_reasons.filter((reason) => !reason.startsWith("audit:")),
+          ...findingTypes.map((finding) => `audit:${finding}`),
+        ]),
+        audit_evidence: audit.raw_safe_evidence,
+        updated_at: nowIso(),
+      };
+      getAgentCenterRepository().upsert("productEntityIndexRecords", nextRecord);
+      audited.push(nextRecord);
+    }
+    return {
+      records_audited: audited.length,
+      sitemap_eligible: audited.filter((record) => record.sitemap_eligible).length,
+      records: audited,
+      summary: this.summary(),
+    };
+  }
+
+  updateGeminiMeasurement(input: {
+    product_entity_id: string;
+    score: VisibilityScoreValue;
+    returned_urls?: string[];
+    error?: string;
+  }) {
+    const record = this.get(input.product_entity_id);
+    const nextRecord: ProductEntityIndexRecord = {
+      ...record,
+      gemini_search_grounded_status:
+        typeof input.score === "number" && input.score > 0
+          ? "found"
+          : input.error
+            ? "error"
+            : "not_found",
+      last_search_grounded_score: input.score,
+      last_search_grounded_at: nowIso(),
+      last_returned_urls: input.returned_urls || [],
+      failure_reasons: input.error
+        ? unique([...(record.failure_reasons || []), `gemini:${input.error}`])
+        : record.failure_reasons,
+      updated_at: nowIso(),
+    };
+    getAgentCenterRepository().upsert("productEntityIndexRecords", nextRecord);
+    return nextRecord;
+  }
+
+  async runSearchGroundedBatch(input: {
+    product_entity_ids?: string[];
+    limit?: number;
+  } = {}) {
+    if (!geminiSearchGroundingConfigured()) {
+      return {
+        status: "not_configured",
+        records_tested: 0,
+        results: [],
+      };
+    }
+    const requestedIds = new Set(arrayOfStringInput(input.product_entity_ids));
+    const records = this.list({ sitemap_eligible: true, limit: input.limit || 25 })
+      .filter((record) =>
+        requestedIds.size ? requestedIds.has(record.product_entity_id) : true
+      )
+      .slice(0, Math.max(1, Math.min(Number(input.limit || 25), 100)));
+    const adapter = new GeminiProviderAdapter();
+    const results: Array<Record<string, unknown>> = [];
+    for (const record of records) {
+      const product: ProductRecord = {
+        id: record.product_entity_id,
+        product_entity_id: record.product_entity_id,
+        external_seed_id: record.external_seed_id,
+        external_seed_ids: record.external_seed_ids,
+        canonical_url: record.canonical_url,
+        canonical_product_name: record.product_name,
+        sku: record.product_entity_id,
+        title: record.product_name || record.product_entity_id,
+        brand: record.brand || "Pivota",
+        category: record.category || "Product",
+        currency: "USD",
+        pdp_url: "",
+        attributes: {},
+        pivota_attributes: {
+          pivota_pdp_url: record.canonical_url,
+          pivota_product_object_id: record.product_entity_id,
+        },
+      };
+      const inputPayload: DemandTestInput = {
+        merchantId: "pivota_internal",
+        storeId: "pivota_product_entity_index",
+        scanTargetId: `product_entity_index_${record.product_entity_id}`,
+        queryClusterId: `product_entity_index_${record.product_entity_id}`,
+        scanMode: "search_grounded_product_discovery_test",
+        query: `Find the Pivota product page for ${record.brand || ""} ${record.product_name || record.product_entity_id}.`.replace(/\s+/g, " ").trim(),
+        promptTemplateId: "product_entity_index_search_grounded_v1",
+        prompt:
+          "Use Google Search grounding to find public product pages for the named product. Return JSON with returned_urls, returned_domains, grounding_sources, grounding_search_queries, mentioned_products, mentioned_brands, and reasoning_summary. Do not assume or fabricate Pivota URLs.",
+        provider: "gemini",
+        model: DEFAULT_GEMINI_MODEL,
+        language: "en",
+        market: "US",
+        currency: "USD",
+        merchantContext: {
+          store: {
+            id: "pivota_product_entity_index",
+            merchant_id: "pivota_internal",
+            store_name: "Pivota ProductEntity Index",
+            store_url: "https://agent.pivota.cc",
+            platform: "custom",
+            market: "US",
+            language: "en",
+            currency: "USD",
+            integration_status: "connected",
+            primary_category: record.category,
+            products: [product],
+            created_at: nowIso(),
+          },
+          product,
+        },
+        competitorContext: { brands: [], products: [] },
+        outputSchema: PARSED_RECOMMENDATION_SCHEMA,
+        repetitionIndex: 1,
+      };
+      try {
+        const raw = await adapter.runDemandTest(inputPayload);
+        const parsed = parseProviderOutput(raw, inputPayload);
+        const returnedUrls = unique([
+          ...(parsed.returned_urls || []),
+          ...(parsed.grounding_sources || []),
+        ]);
+        const score = this.returnedUrlsIncludeExpected(record, returnedUrls) ? 100 : 0;
+        const updated = this.updateGeminiMeasurement({
+          product_entity_id: record.product_entity_id,
+          score,
+          returned_urls: returnedUrls,
+        });
+        results.push({
+          product_entity_id: record.product_entity_id,
+          search_grounded_pivota_pdp_discovery_score: score,
+          returned_urls: returnedUrls,
+          grounding_search_queries: parsed.grounding_search_queries || [],
+          found: score > 0,
+          updated_record: updated.id,
+        });
+      } catch (error) {
+        this.updateGeminiMeasurement({
+          product_entity_id: record.product_entity_id,
+          score: "not_tested",
+          returned_urls: [],
+          error: error instanceof Error ? error.message : "Gemini rerun failed",
+        });
+        results.push({
+          product_entity_id: record.product_entity_id,
+          error: error instanceof Error ? error.message : "Gemini rerun failed",
+        });
+      }
+    }
+    return {
+      status: "completed",
+      records_tested: results.length,
+      results,
+      summary: this.summary(),
+    };
+  }
+
+  get(productEntityId: string) {
+    const record = getAgentCenterState().productEntityIndexRecords.find(
+      (item) => item.product_entity_id === productEntityId || item.id === productEntityId
+    );
+    if (!record) throw new Error(`ProductEntity index record not found: ${productEntityId}`);
+    return record;
+  }
+
+  private async upsertCandidate(
+    candidate: ProductEntityIndexCandidate,
+    verifyContent: boolean
+  ) {
+    const now = nowIso();
+    const existing = getAgentCenterState().productEntityIndexRecords.find(
+      (record) => record.product_entity_id === candidate.product_entity_id
+    );
+    let contentStatus: ProductEntityPdpContentStatus =
+      existing?.pdp_content_status || "no_content";
+    let failureReasons = existing?.failure_reasons || [];
+    let productName = candidate.product_name || existing?.product_name;
+    let brand = candidate.brand || existing?.brand;
+    let category = candidate.category || existing?.category;
+    let sourceUpdatedAt = candidate.source_updated_at || existing?.source_updated_at;
+    let lastContentVerifiedAt = existing?.last_content_verified_at;
+
+    if (verifyContent) {
+      const content = await fetchMainPathPdpForIndex(candidate);
+      contentStatus = content.status;
+      failureReasons = content.failure_reasons;
+      if (content.signals) {
+        productName = content.signals.product_name || productName;
+        brand = content.signals.brand || brand;
+        category = content.signals.category || category;
+        sourceUpdatedAt = content.signals.source_updated_at || sourceUpdatedAt;
+      }
+      lastContentVerifiedAt = now;
+    }
+
+    const canonicalUrl = normalizeProductEntityIndexCanonicalUrl(
+      existing?.canonical_url,
+      candidate.product_entity_id
+    );
+    const indexabilityStatus =
+      contentStatus === "ready"
+        ? existing?.indexability_status || "not_audited"
+        : "not_audited";
+    const sitemapEligible =
+      contentStatus === "ready" && existing?.indexability_status === "ready";
+    const record: ProductEntityIndexRecord = {
+      id: productEntityIndexRecordId(candidate.product_entity_id),
+      product_entity_id: candidate.product_entity_id,
+      canonical_url: canonicalUrl,
+      external_seed_id: candidate.external_seed_id || existing?.external_seed_id,
+      external_seed_ids: unique([
+        ...(existing?.external_seed_ids || []),
+        candidate.external_seed_id || "",
+      ].filter(Boolean)),
+      source_product_id: candidate.source_product_id || existing?.source_product_id,
+      product_name: productName,
+      brand,
+      category,
+      source_updated_at: sourceUpdatedAt,
+      last_content_verified_at: lastContentVerifiedAt,
+      pdp_content_status: contentStatus,
+      indexability_status: indexabilityStatus,
+      sitemap_eligible: sitemapEligible,
+      google_index_status: existing?.google_index_status || "unknown",
+      gemini_search_grounded_status:
+        existing?.gemini_search_grounded_status || "not_tested",
+      last_search_grounded_score: existing?.last_search_grounded_score,
+      last_search_grounded_at: existing?.last_search_grounded_at,
+      last_returned_urls: existing?.last_returned_urls || [],
+      failure_reasons: failureReasons,
+      audit_evidence: existing?.audit_evidence,
+      created_at: existing?.created_at || now,
+      updated_at: now,
+    };
+    getAgentCenterRepository().upsert("productEntityIndexRecords", record);
+    return record;
+  }
+
+  private returnedUrlsIncludeExpected(
+    record: ProductEntityIndexRecord,
+    returnedUrls: string[]
+  ) {
+    const canonical = normalizeUrlForCompare(record.canonical_url);
+    const aliasIds = new Set([
+      record.external_seed_id,
+      ...(record.external_seed_ids || []),
+    ].filter(Boolean).map((item) => String(item).toLowerCase()));
+    return returnedUrls.some((url) => {
+      if (normalizeUrlForCompare(url) === canonical) return true;
+      const returnedId = extractPivotaProductObjectId(url);
+      return Boolean(
+        returnedId &&
+          /^ext_/i.test(returnedId) &&
+          aliasIds.has(returnedId.toLowerCase())
+      );
+    });
+  }
+}
+
 function canonicalPivotaPdpUrlForIssue(issue: AgenticGMVIssue) {
   const evidence = issue.evidence || {};
   const candidates = [
@@ -6957,21 +7726,27 @@ export class PivotaIndexingTaskService {
 
     const state = getAgentCenterState();
     const createdAt = nowIso();
-    const taskSpecs = PIVOTA_DISCOVERY_INDEXING_TASKS.flatMap((taskType) => {
+    const taskSpecs: Array<{
+      taskType: PivotaIndexingTaskType;
+      rerunWindow?: (typeof PIVOTA_DISCOVERY_RERUN_WINDOWS)[number];
+    }> = [];
+    for (const taskType of PIVOTA_DISCOVERY_INDEXING_TASKS) {
       if (taskType === "wait_for_indexing_window") {
-        return PIVOTA_DISCOVERY_RERUN_WINDOWS.map((window) => ({
+        taskSpecs.push(...PIVOTA_DISCOVERY_RERUN_WINDOWS.map((window) => ({
           taskType,
           rerunWindow: window,
-        }));
+        })));
+        continue;
       }
       if (taskType === "scheduled_search_grounded_rerun") {
-        return PIVOTA_DISCOVERY_RERUN_WINDOWS.map((window) => ({
+        taskSpecs.push(...PIVOTA_DISCOVERY_RERUN_WINDOWS.map((window) => ({
           taskType,
           rerunWindow: window,
-        }));
+        })));
+        continue;
       }
-      return [{ taskType, rerunWindow: undefined }];
-    });
+      taskSpecs.push({ taskType });
+    }
 
     return taskSpecs.map(({ taskType, rerunWindow }) => {
       const existing = state.pivotaIndexingTasks.find(
@@ -10714,8 +11489,12 @@ type CreateProductionValidationRunInput = Partial<
   repetitions?: number;
 };
 
-function stringInput(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
+function stringInput(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return "";
 }
 
 function numberInput(value: unknown, fallback = 0) {
@@ -11261,7 +12040,9 @@ export class PivotaPDPIndexabilityAuditService {
       lowerVisible.includes("source") ||
       lowerVisible.includes("official merchant") ||
       htmlContainsUrl(html, input.merchant_pdp_url);
-    const merchantUrlVisible = htmlContainsUrl(html, input.merchant_pdp_url);
+    const merchantUrlVisible = input.merchant_pdp_url
+      ? htmlContainsUrl(html, input.merchant_pdp_url)
+      : sourceReferenceVisible;
     const externalSeedSourcePresent = Boolean(
       expectedExternalSeedId &&
         (html.includes(expectedExternalSeedId) ||

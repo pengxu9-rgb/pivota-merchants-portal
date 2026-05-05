@@ -23,6 +23,10 @@ GET    /api/internal/agent-center/production-validation-runs/:id
 POST   /api/internal/agent-center/production-validation-runs/:id/run
 DELETE /api/internal/agent-center/production-validation-runs/:id
 GET    /api/internal/agent-center/runtime-config
+POST   /api/internal/agent-center/product-entity-index/sync
+POST   /api/internal/agent-center/product-entity-index/audit
+POST   /api/internal/agent-center/product-entity-index/gemini-rerun
+GET    /api/internal/agent-center/product-entity-index/summary
 ```
 
 These routes are not linked from merchant UI. They are rewritten to the shared Agent Center handler so create, run, fetch, and cleanup operate against the same server-side Agent Center state.
@@ -81,6 +85,62 @@ The response returns safe status only, such as state backend,
 `gemini_search_grounding_enabled`, provider configured, production validation
 enabled, and demo fixtures enabled. It must not return API keys, DB URLs,
 internal secrets, provider credentials, or token-level costs.
+
+## ProductEntity Index Registry
+
+Real production validation should not assume that a Pivota PDP is discoverable
+just because contextual attribution passed. Pivota PDP exposure depends on a
+separate ProductEntity indexing pipeline:
+
+1. Sync ProductEntity candidates from gateway `get_discovery_feed`.
+2. Deduplicate by canonical `sellable_item_group_id` / `product_group_id`
+   (`sig_*`).
+3. Verify real main-path PDP content through `get_pdp_v2` using ProductEntity ID
+   first and source alias second.
+4. Audit the production public PDP with Googlebot-style checks.
+5. Mark only passing records `sitemap_eligible=true`.
+6. Publish canonical `sig_*` URLs through `sitemap-products.xml` and
+   `/products/indexability`.
+7. Record Search Console evidence and timed reruns.
+8. Measure Gemini exposure with a scoped
+   `search_grounded_product_discovery_test` runner.
+
+`ext_*` IDs remain source aliases. They must not become canonical sitemap URLs
+unless explicitly promoted to ProductEntity IDs.
+
+Registry summary:
+
+```bash
+curl "$BASE_URL/api/internal/agent-center/product-entity-index/summary" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET"
+```
+
+Sync and audit:
+
+```bash
+curl -X POST "$BASE_URL/api/internal/agent-center/product-entity-index/sync" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET" \
+  -H "content-type: application/json" \
+  --data '{"limit":250,"page_size":100,"max_pages":10,"verify_content":true}'
+
+curl -X POST "$BASE_URL/api/internal/agent-center/product-entity-index/audit" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET" \
+  -H "content-type: application/json" \
+  --data '{"limit":50}'
+```
+
+Scoped Gemini measurement:
+
+```bash
+curl -X POST "$BASE_URL/api/internal/agent-center/product-entity-index/gemini-rerun" \
+  -H "Authorization: Bearer $PIVOTA_INTERNAL_PRODUCTION_VALIDATION_SECRET" \
+  -H "content-type: application/json" \
+  --data '{"product_entity_ids":["sig_7ad40676c42fb9c96e2a8136"],"limit":1}'
+```
+
+This runner is intentionally scoped to `search_grounded_product_discovery_test`.
+It must not run organic discovery, contextual attribution, Product
+Understanding, Offer Execution, or Checkout Verification.
 
 ## Input Schema
 
