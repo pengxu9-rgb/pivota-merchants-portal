@@ -6934,13 +6934,18 @@ function productEntityCandidateFromGatewayItem(item: unknown): ProductEntityInde
     ? sourceProductId
     : stringInput(record.external_seed_id, record.externalSeedId);
   const brandRecord = readNestedRecord(record.brand);
+  const categoryPath = Array.isArray(record.category_path)
+    ? record.category_path.join(" > ")
+    : Array.isArray(record.categoryPath)
+      ? record.categoryPath.join(" > ")
+      : "";
   return {
     product_entity_id: productEntityId,
     external_seed_id: externalSeedId || undefined,
     source_product_id: sourceProductId || externalSeedId || undefined,
     product_name: stringInput(record.title, record.name, record.product_name),
     brand: stringInput(brandRecord.name, record.brand_name, record.brand),
-    category: stringInput(record.category, record.department, record.category_path),
+    category: stringInput(categoryPath, record.category, record.department),
     source_updated_at: stringInput(
       record.updated_at,
       record.updatedAt,
@@ -6985,12 +6990,52 @@ function candidateHasMore(json: Record<string, unknown>, productCount: number, p
   return productCount >= pageSize;
 }
 
+function gatewayModules(raw: unknown) {
+  const root = readNestedRecord(raw);
+  const data = readNestedRecord(root.data, root.payload);
+  return readNestedArray(root.modules, data.modules);
+}
+
+function gatewayModuleData(raw: unknown, moduleType: string) {
+  const module = gatewayModules(raw).find((item) => {
+    const record = readNestedRecord(item);
+    return stringInput(record.type) === moduleType;
+  });
+  const record = readNestedRecord(module);
+  return readNestedRecord(record.data);
+}
+
+function gatewayPdpPayload(raw: unknown) {
+  const root = readNestedRecord(raw);
+  const data = readNestedRecord(root.data, root.payload);
+  const rootPdp = readNestedRecord(root.pdp);
+  const dataPdp = readNestedRecord(data.pdp);
+  const canonicalData = gatewayModuleData(raw, "canonical");
+  return readNestedRecord(
+    canonicalData.pdp_payload,
+    canonicalData.pdpPayload,
+    root.pdp_payload,
+    root.pdpPayload,
+    data.pdp_payload,
+    data.pdpPayload,
+    rootPdp.payload,
+    dataPdp.payload
+  );
+}
+
 function extractPdpProductRecord(raw: unknown): Record<string, unknown> {
   const root = readNestedRecord(raw);
   const data = readNestedRecord(root.data, root.payload);
   const rootPdp = readNestedRecord(root.pdp);
   const dataPdp = readNestedRecord(data.pdp);
-  return readNestedRecord(root.product, data.product, rootPdp.product, dataPdp.product);
+  const pdpPayload = gatewayPdpPayload(raw);
+  return readNestedRecord(
+    root.product,
+    data.product,
+    rootPdp.product,
+    dataPdp.product,
+    pdpPayload.product
+  );
 }
 
 function collectPlainTextFromUnknown(value: unknown, maxParts = 24) {
@@ -7031,6 +7076,7 @@ function collectPlainTextFromUnknown(value: unknown, maxParts = 24) {
 function extractPdpContentSignals(raw: unknown, candidate: ProductEntityIndexCandidate) {
   const root = readNestedRecord(raw);
   const data = readNestedRecord(root.data, root.payload);
+  const pdpPayload = gatewayPdpPayload(raw);
   const product = extractPdpProductRecord(raw);
   const brandRecord = readNestedRecord(product.brand);
   const productName = stringInput(
@@ -7043,6 +7089,10 @@ function extractPdpContentSignals(raw: unknown, candidate: ProductEntityIndexCan
   const brand = stringInput(brandRecord.name, product.brand_name, product.brand, candidate.brand);
   const description = collectPlainTextFromUnknown([
     product.description,
+    product.long_description,
+    product.longDescription,
+    product.overview,
+    pdpPayload.modules,
     data.description,
     root.modules,
     data.modules,
@@ -7059,6 +7109,8 @@ function extractPdpContentSignals(raw: unknown, candidate: ProductEntityIndexCan
   const sourceUpdatedAt = stringInput(
     product.updated_at,
     product.updatedAt,
+    root.generated_at,
+    root.generatedAt,
     data.updated_at,
     data.updatedAt,
     candidate.source_updated_at

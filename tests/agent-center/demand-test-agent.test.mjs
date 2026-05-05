@@ -2048,14 +2048,33 @@ test("ProductEntity index registry sync paginates, dedupes, and excludes no-cont
         return {
           ok: true,
           json: async () => ({
-            product: {
-              product_id: "ext_ready_1",
-              sellable_item_group_id: "sig_ready1",
-              title: "Ready Product One",
-              brand: { name: "Ready Brand" },
-              description: longDescription,
-              category_path: ["Beauty", "Serum"],
-            },
+            status: "success",
+            generated_at: "2026-05-05T00:00:00.000Z",
+            modules: [
+              {
+                type: "canonical",
+                data: {
+                  product_group_id: "sig_ready1",
+                  sellable_item_group_id: "sig_ready1",
+                  pdp_payload: {
+                    product: {
+                      product_id: "ext_ready_1",
+                      title: "Ready Product One",
+                      brand: { name: "Ready Brand" },
+                      description: longDescription,
+                      category_path: ["Beauty", "Serum"],
+                    },
+                    modules: [
+                      {
+                        type: "product_overview",
+                        title: "Overview",
+                        description: longDescription,
+                      },
+                    ],
+                  },
+                },
+              },
+            ],
           }),
         };
       }
