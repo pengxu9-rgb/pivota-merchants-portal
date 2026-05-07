@@ -219,20 +219,12 @@ export default function AiReadinessAuditPage() {
           `You've used today's audit budget (${d?.limit || 2}/24h). Resets in ~${hrs}h.`,
         );
       } else if (status === 422 && typeof detail === 'object' && detail) {
-        const d = detail as {
-          message?: string;
-          skipped_products?: { title: string }[];
-          products_missing_url?: { title: string }[];
-        };
-        const skipped = d.skipped_products || d.products_missing_url || [];
-        const titles = skipped
-          .slice(0, 5)
-          .map((s) => s.title)
-          .join('; ');
-        setAuditError(
-          (d.message || 'Validation error.') +
-            (titles ? ` Affected: ${titles}.` : ''),
-        );
+        // Generic 422 — backend returned a validation error (e.g.
+        // empty product list, > 5 products). The Pivota canonical
+        // fallback means individual URL-less products no longer
+        // 422; we shouldn't see this in practice for typical input.
+        const d = detail as { message?: string };
+        setAuditError(d.message || 'Validation error.');
       } else if (status === 404 && typeof detail === 'object' && detail) {
         const d = detail as { message?: string };
         setAuditError(d.message || 'Some products not found in your catalog.');
@@ -386,7 +378,7 @@ export default function AiReadinessAuditPage() {
         <AuditReportRenderer
           report={auditResult.brand_report}
           remaining={auditResult.rate_limit_remaining}
-          skipped={auditResult.skipped_products}
+          pivotaCanonicalKeys={auditResult.audited_via_pivota_canonical}
         />
       ) : null}
     </div>
@@ -403,11 +395,11 @@ export default function AiReadinessAuditPage() {
 function AuditReportRenderer({
   report,
   remaining,
-  skipped,
+  pivotaCanonicalKeys,
 }: {
   report: AgentCenterBdBrandReport;
   remaining: number;
-  skipped?: { platform: string; source_product_id: string; title: string; reason: string }[];
+  pivotaCanonicalKeys?: string[];
 }) {
   return (
     <div className="space-y-4">
@@ -416,35 +408,33 @@ function AuditReportRenderer({
         today's budget · run {new Date(report.timestamp).toLocaleString()}
       </div>
 
-      {skipped && skipped.length > 0 ? (
-        <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-4">
+      {pivotaCanonicalKeys && pivotaCanonicalKeys.length > 0 ? (
+        <div className="rounded-lg border-2 border-indigo-200 bg-indigo-50/40 p-4">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-amber-700" />
+            <AlertTriangle className="h-5 w-5 text-indigo-700" />
             <div className="flex-1">
-              <div className="text-sm font-semibold text-amber-900">
-                {skipped.length} product
-                {skipped.length === 1 ? ' was' : 's were'} skipped — no
-                buyer-facing URL in catalog
+              <div className="text-sm font-semibold text-indigo-900">
+                {pivotaCanonicalKeys.length} product
+                {pivotaCanonicalKeys.length === 1 ? ' was' : 's were'} audited
+                against the Pivota canonical PDP
               </div>
-              <p className="mt-1 text-xs text-amber-900/80">
-                These rows have no canonical_url and no derivable
-                /products/&#123;handle&#125; — typically products imported outside
-                the Shopify OAuth sync (manual upload or seed data).
-                The audit ran on the rest.
+              <p className="mt-1 text-xs text-indigo-900/80">
+                These catalog rows had no merchant URL (no canonical_url
+                + no Shopify handle), so the audit probed{' '}
+                <code>agent.pivota.cc/products/sig_*</code> — Pivota's
+                hosted AI-channel surface for these SKUs. Pivota canonical
+                PDPs are in the 30-90 day Google indexing arc
+                post-creation; expect 0/0 scores until indexing matures.
+                The score is the canonical surface's score, NOT your
+                storefront's.
               </p>
-              <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-amber-900">
-                {skipped.slice(0, 10).map((s, i) => (
-                  <li key={i}>
-                    {s.title}{' '}
-                    <span className="font-mono text-[10px] text-amber-700/70">
-                      ({s.platform}:{s.source_product_id})
-                    </span>
-                  </li>
-                ))}
-                {skipped.length > 10 ? (
-                  <li>… and {skipped.length - 10} more</li>
-                ) : null}
-              </ul>
+              <p className="mt-2 text-[11px] font-mono text-indigo-700/70">
+                Affected product_keys:{' '}
+                {pivotaCanonicalKeys.slice(0, 5).join(', ')}
+                {pivotaCanonicalKeys.length > 5
+                  ? ` … +${pivotaCanonicalKeys.length - 5} more`
+                  : ''}
+              </p>
             </div>
           </div>
         </div>
