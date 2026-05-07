@@ -243,8 +243,19 @@ export interface AgentCenterBdBrandReport {
   failed: { pdp_url: string; title: string; error: string }[];
 }
 
+export interface AiReadinessSkippedProduct {
+  platform: string;
+  source_product_id: string;
+  title: string;
+  reason: string;
+}
+
 /** Wrapper returned by the merchant audit endpoint. */
 export interface AiReadinessAuditResponse {
   brand_report: AgentCenterBdBrandReport;
   rate_limit_remaining: number;
+  /** Pre-flight skipped products (URL-less catalog rows). The audit
+   * ran on the remainder. May be undefined / empty when all selected
+   * products were auditable. */
+  skipped_products?: AiReadinessSkippedProduct[];
 }
