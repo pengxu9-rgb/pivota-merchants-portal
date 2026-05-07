@@ -35,6 +35,118 @@ export interface AgentCenterBdActionItem {
   title: string;
   body: string;
   evidence?: Record<string, unknown>;
+  // Phase C-4 PR-G + #346 — present on per-host playbook actions:
+  playbook_step_id?: string;
+  target_host?: string;
+  lever?: string;
+  expected_timeline_weeks?: [number, number];
+  concrete_next_step?: string | null;
+  // Stamped on every action (strategic + playbook) so frontend
+  // renders "Step 1, Step 2..." without re-deriving the order.
+  priority_order?: number;
+}
+
+export interface AgentCenterBdHostClassification {
+  type: 'editorial' | 'retailer' | 'marketplace' | 'video' | 'brand' | 'unclassified';
+  subtype: string | null;
+  categories: string[];
+  coverage_note: string | null;
+  outreach_hint: string | null;
+  applies_to_merchant_category: boolean | null;
+}
+
+export interface AgentCenterBdCitedHostDetailed extends AgentCenterBdHostClassification {
+  host: string;
+  times_cited: number;
+}
+
+export interface AgentCenterBdFailedQueryDetailed {
+  query: string;
+  top_cited_url: string | null;
+  top_cited_host: string | null;
+  host_classification: Omit<AgentCenterBdHostClassification, 'host'>;
+  competitors_named: string[];
+}
+
+export interface AgentCenterBdCompetitiveTableRow {
+  brand: string;
+  times_mentioned: number;
+  first_party_visible: boolean;
+  first_party_host: string | null;
+  host_citations: number;
+}
+
+export interface AgentCenterBdIndexingArcState {
+  phase: 'fresh' | 'indexing' | 'expected_steady' | 'unknown' | 'indexing-up';
+  days_since_mint: number | null;
+  minted_at: string | null;
+  expected_first_citation_at: string | null;
+  caveat: string;
+}
+
+export interface AgentCenterBdMerchantView {
+  headline: {
+    verdict_label: AgentCenterBdVerdictLabel;
+    one_liner: string | null;
+    /** Merchant-language answer to "am I visible?" — yes/no/partly/mixed. */
+    plain_summary: string | null;
+    scores: {
+      visibility: number;
+      attribution: number;
+      category_visibility: number | null;
+    };
+    what_is_at_stake: string | null;
+    audited_via_pivota_canonical: boolean;
+    url_source: string | null;
+  };
+  receipts: {
+    queries_tested: number;
+    merchant_cited_in: number;
+    top_cited_urls: string[];
+    /** PR-F: per-failed-query winner + classification + competitors named. */
+    failed_queries_detailed: AgentCenterBdFailedQueryDetailed[];
+    top_cited_hosts: string[];
+    /** PR-E: each cited host with type / coverage_note / outreach_hint. */
+    cited_hosts_detailed: AgentCenterBdCitedHostDetailed[];
+    top_competitor_brands: string[];
+    /** #344: flat per-brand rows joining peers_named with first-party-visibility. */
+    competitive_table: AgentCenterBdCompetitiveTableRow[];
+  };
+  diagnosis: {
+    primary: string | null;
+    /** PR-D: real arc phase computed from pivota_signature_minted_at. */
+    indexing_arc_state: AgentCenterBdIndexingArcState | null;
+  };
+  actions: AgentCenterBdActionItem[];
+  tracking: {
+    next_audit_eligible_at: string | null;
+    history_link: string | null;
+    history?: {
+      audits_in_history: number;
+      most_recent_audit?: {
+        run_id?: string | null;
+        requested_at?: string | null;
+        visibility?: number | null;
+        attribution?: number | null;
+        category_visibility?: number | null;
+        verdict_labels?: string[];
+      } | null;
+      series?: {
+        requested_at?: string | null;
+        visibility?: number | null;
+        attribution?: number | null;
+        category_visibility?: number | null;
+      }[];
+    } | null;
+    pivota_baseline_reference: {
+      visibility: number | null;
+      attribution: number | null;
+      as_of: string | null;
+      indexing_phase: string | null;
+    };
+    your_gap_to_baseline: { visibility: number; attribution: number };
+  };
+  pivota_value_prop: AgentCenterBdReport['what_pivota_changes'];
 }
 
 export interface AgentCenterBdIndustryContext {
@@ -214,6 +326,10 @@ export interface AgentCenterBdReport {
     onboarding_sequence: AgentCenterBdOnboardingSequence;
     visibility_booster: AgentCenterBdVisibilityBooster;
   };
+  /** Phase C-4 PR-B onwards — additive 6-layer block the merchant
+   * portal renders directly. Optional because legacy reports (or
+   * mocks) may not include it. */
+  merchant_view?: AgentCenterBdMerchantView;
   raw?: {
     visibility?: Record<string, unknown>;
     attribution?: Record<string, unknown>;

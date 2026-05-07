@@ -569,6 +569,7 @@ function PerProductSummaries({ report }: { report: AgentCenterBdBrandReport }) {
 function PerProductCard({ report }: { report: AgentCenterBdReport }) {
   const [open, setOpen] = useState(false);
   const v = report.verdict;
+  const mv = report.merchant_view;
   return (
     <div className="px-4 py-3">
       <button
@@ -590,19 +591,42 @@ function PerProductCard({ report }: { report: AgentCenterBdReport }) {
       </button>
       {open ? (
         <div className="mt-3 space-y-3 rounded border border-slate-200 bg-slate-50/50 p-3">
+          {/* PR-A follow-up + #344: plain-language "am I visible?" answer.
+              Surface FIRST so merchants don't have to interpret math. */}
+          {mv?.headline?.plain_summary ? (
+            <div className="rounded border-2 border-indigo-300 bg-indigo-50 p-3">
+              <div className="text-xs font-semibold uppercase text-indigo-700">
+                Are you visible to AI shoppers?
+              </div>
+              <p className="mt-1 text-sm text-indigo-900">
+                {mv.headline.plain_summary}
+              </p>
+            </div>
+          ) : null}
+          {/* PR-D: real indexing-arc state when audited via Pivota canonical. */}
+          {mv?.diagnosis?.indexing_arc_state ? (
+            <IndexingArcChip state={mv.diagnosis.indexing_arc_state} />
+          ) : null}
           <div>
             <div className="text-xs font-semibold uppercase text-slate-500">
               Verdict explanation
             </div>
             <p className="mt-1 text-sm text-slate-700">{v.explanation}</p>
           </div>
-          {report.competitive_pressure?.framing ? (
+          {/* #344: competitive_table is now an actual TABLE, not a paragraph. */}
+          {mv?.receipts?.competitive_table?.length ? (
+            <CompetitiveTable rows={mv.receipts.competitive_table} />
+          ) : report.competitive_pressure?.framing ? (
             <div className="rounded bg-amber-50 p-3 text-xs text-amber-900">
               <div className="font-semibold uppercase">Competitive pressure</div>
               <p className="mt-1">{report.competitive_pressure.framing}</p>
             </div>
           ) : null}
-          {report.action_items?.length ? (
+          {/* PR-G + #346: actions ordered by priority_order with
+              concrete_next_step as the executable "this week" task. */}
+          {mv?.actions?.length ? (
+            <PrioritizedActions actions={mv.actions} />
+          ) : report.action_items?.length ? (
             <div>
               <div className="text-xs font-semibold uppercase text-slate-500">
                 Recommended actions
@@ -610,11 +634,16 @@ function PerProductCard({ report }: { report: AgentCenterBdReport }) {
               <ul className="mt-1 space-y-1 text-xs text-slate-700">
                 {report.action_items.map((a, i) => (
                   <li key={i}>
-                    <span className="font-semibold">[{a.severity}]</span> {a.title}
+                    <span className="font-semibold">[{a.severity}]</span>{' '}
+                    {a.title}
                   </li>
                 ))}
               </ul>
             </div>
+          ) : null}
+          {/* PR-F: which queries you lost + who won + what competitors were named. */}
+          {mv?.receipts?.failed_queries_detailed?.length ? (
+            <FailedQueriesTable rows={mv.receipts.failed_queries_detailed} />
           ) : null}
           {report.what_pivota_changes?.discovery_lift?.layers?.length ? (
             <div>
@@ -647,6 +676,246 @@ function PerProductCard({ report }: { report: AgentCenterBdReport }) {
           ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Sub-components for the new merchant_view fields (#344 / PR-G / PR-D / PR-F).
+// ---------------------------------------------------------------------
+
+function CompetitiveTable({
+  rows,
+}: {
+  rows: NonNullable<AgentCenterBdReport['merchant_view']>['receipts']['competitive_table'];
+}) {
+  return (
+    <div className="rounded border border-amber-200 bg-amber-50/50">
+      <div className="border-b border-amber-200 px-3 py-2">
+        <div className="text-xs font-semibold uppercase text-amber-900">
+          Competitive landscape
+        </div>
+        <div className="text-[11px] text-amber-900/70">
+          Brands AI agents named in your category, ranked by frequency. ✓
+          means they have their own .com cited in grounding (= they're
+          winning first-party AI traffic).
+        </div>
+      </div>
+      <table className="w-full text-xs">
+        <thead className="bg-amber-50/80 text-left text-[11px] uppercase text-amber-900/80">
+          <tr>
+            <th className="px-3 py-2">Brand</th>
+            <th className="px-3 py-2 text-right">Mentions</th>
+            <th className="px-3 py-2 text-center">First-party visible?</th>
+            <th className="px-3 py-2">Their .com (cited count)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.slice(0, 15).map((r, i) => (
+            <tr key={i} className="border-t border-amber-200">
+              <td className="px-3 py-2 font-medium text-amber-900">
+                {r.brand}
+              </td>
+              <td className="px-3 py-2 text-right text-amber-900">
+                {r.times_mentioned}
+              </td>
+              <td className="px-3 py-2 text-center">
+                {r.first_party_visible ? (
+                  <span className="text-green-700" title="First-party host cited">
+                    ✓
+                  </span>
+                ) : (
+                  <span className="text-slate-400">—</span>
+                )}
+              </td>
+              <td className="px-3 py-2 font-mono text-[11px] text-amber-900/80">
+                {r.first_party_host
+                  ? `${r.first_party_host} (${r.host_citations})`
+                  : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PrioritizedActions({
+  actions,
+}: {
+  actions: NonNullable<AgentCenterBdReport['merchant_view']>['actions'];
+}) {
+  const sorted = [...actions].sort(
+    (a, b) => (a.priority_order ?? 999) - (b.priority_order ?? 999),
+  );
+  return (
+    <div>
+      <div className="text-xs font-semibold uppercase text-slate-500">
+        Recommended actions (in priority order)
+      </div>
+      <ol className="mt-2 space-y-3">
+        {sorted.map((a, i) => {
+          const sevBg =
+            a.severity === 'critical'
+              ? 'border-red-300 bg-red-50'
+              : a.severity === 'high'
+                ? 'border-orange-300 bg-orange-50'
+                : a.severity === 'medium'
+                  ? 'border-amber-200 bg-amber-50'
+                  : 'border-slate-200 bg-white';
+          return (
+            <li
+              key={i}
+              className={`rounded border-2 p-3 ${sevBg}`}
+            >
+              <div className="flex items-start gap-2">
+                <span className="text-xs font-bold text-slate-500">
+                  Step {a.priority_order ?? i + 1}
+                </span>
+                <span
+                  className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                    a.severity === 'critical'
+                      ? 'bg-red-200 text-red-900'
+                      : a.severity === 'high'
+                        ? 'bg-orange-200 text-orange-900'
+                        : a.severity === 'medium'
+                          ? 'bg-amber-200 text-amber-900'
+                          : 'bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {a.severity}
+                </span>
+                {a.lever ? (
+                  <span className="ml-auto text-[10px] uppercase text-slate-500">
+                    {a.lever.replace(/_/g, ' ')}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-2 text-sm font-semibold text-slate-900">
+                {a.title}
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-slate-700">
+                {a.body}
+              </p>
+              {/* #346: BD-curated "this week" task with specifics. */}
+              {a.concrete_next_step ? (
+                <div className="mt-2 rounded border border-indigo-200 bg-indigo-50/60 p-2 text-xs text-indigo-900">
+                  <span className="font-semibold uppercase">
+                    Next step:
+                  </span>{' '}
+                  {a.concrete_next_step}
+                </div>
+              ) : null}
+              {a.expected_timeline_weeks?.length === 2 ? (
+                <div className="mt-1 text-[11px] text-slate-500">
+                  Expected timeline:{' '}
+                  {a.expected_timeline_weeks[0]}–
+                  {a.expected_timeline_weeks[1]} weeks
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+function IndexingArcChip({
+  state,
+}: {
+  state: NonNullable<
+    NonNullable<AgentCenterBdReport['merchant_view']>['diagnosis']['indexing_arc_state']
+  >;
+}) {
+  const phaseColor =
+    state.phase === 'fresh'
+      ? 'border-blue-300 bg-blue-50 text-blue-900'
+      : state.phase === 'indexing'
+        ? 'border-amber-300 bg-amber-50 text-amber-900'
+        : state.phase === 'expected_steady'
+          ? 'border-orange-300 bg-orange-50 text-orange-900'
+          : 'border-slate-300 bg-slate-50 text-slate-700';
+  return (
+    <div className={`rounded border-2 p-3 ${phaseColor}`}>
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-semibold uppercase">
+          Indexing arc · {state.phase.replace(/_/g, ' ')}
+        </div>
+        {state.days_since_mint !== null ? (
+          <div className="text-[11px]">
+            day {state.days_since_mint}
+          </div>
+        ) : null}
+      </div>
+      <p className="mt-1 text-xs">{state.caveat}</p>
+      {state.expected_first_citation_at ? (
+        <p className="mt-1 text-[11px] opacity-80">
+          Expected first-citation date:{' '}
+          {new Date(state.expected_first_citation_at).toLocaleDateString()}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function FailedQueriesTable({
+  rows,
+}: {
+  rows: NonNullable<AgentCenterBdReport['merchant_view']>['receipts']['failed_queries_detailed'];
+}) {
+  if (!rows.length) return null;
+  return (
+    <div className="rounded border border-slate-200 bg-white">
+      <div className="border-b border-slate-200 px-3 py-2">
+        <div className="text-xs font-semibold uppercase text-slate-500">
+          Queries you lost — who won
+        </div>
+        <div className="text-[11px] text-slate-500">
+          Per buyer-intent query: which URL Gemini cited, and what
+          competitor brands it named alongside.
+        </div>
+      </div>
+      <table className="w-full text-xs">
+        <thead className="bg-slate-50 text-left text-[11px] uppercase text-slate-500">
+          <tr>
+            <th className="px-3 py-2">Query</th>
+            <th className="px-3 py-2">Winner</th>
+            <th className="px-3 py-2">Competitors named</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.slice(0, 8).map((r, i) => (
+            <tr key={i} className="border-t border-slate-200">
+              <td className="px-3 py-2 text-slate-800">
+                <span className="font-mono text-[11px]">{r.query}</span>
+              </td>
+              <td className="px-3 py-2">
+                {r.top_cited_host ? (
+                  <span>
+                    <span className="font-mono text-[11px]">
+                      {r.top_cited_host}
+                    </span>{' '}
+                    {r.host_classification?.type ? (
+                      <span className="text-[10px] text-slate-500">
+                        ({r.host_classification.type})
+                      </span>
+                    ) : null}
+                  </span>
+                ) : (
+                  <span className="text-slate-400">no grounding</span>
+                )}
+              </td>
+              <td className="px-3 py-2 text-slate-700">
+                {r.competitors_named?.length
+                  ? r.competitors_named.slice(0, 3).join(', ')
+                  : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
