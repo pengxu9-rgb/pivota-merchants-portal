@@ -1014,8 +1014,8 @@ function AllQueriesTable({
         <thead className="bg-slate-50 text-left text-[11px] uppercase text-slate-500">
           <tr>
             <th className="px-3 py-2">Status</th>
-            <th className="px-3 py-2">Query</th>
-            <th className="px-3 py-2">Cited instead</th>
+            <th className="px-3 py-2">Query Gemini was asked</th>
+            <th className="px-3 py-2">URL Gemini cited as the answer</th>
           </tr>
         </thead>
         <tbody>
@@ -1042,7 +1042,13 @@ function AllQueriesTable({
                 </td>
                 <td className="px-3 py-2">
                   {won ? (
-                    <span className="text-slate-400">—</span>
+                    // For won queries, the merchant's URL was cited
+                    // — surface that explicitly so the merchant can
+                    // see "yes, MY URL was the cited answer here"
+                    // instead of an uninformative "—".
+                    <span className="text-green-800">
+                      ✓ your URL was cited
+                    </span>
                   ) : detail?.top_cited_host ? (
                     <span>
                       <span className="font-mono text-[11px]">
@@ -1065,7 +1071,9 @@ function AllQueriesTable({
                       })()}
                     </span>
                   ) : (
-                    <span className="text-slate-400">no grounding</span>
+                    <span className="text-slate-400">
+                      no URL cited (Gemini gave an ungrounded answer)
+                    </span>
                   )}
                 </td>
               </tr>
