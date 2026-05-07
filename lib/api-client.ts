@@ -1194,6 +1194,34 @@ class ApiClient {
     const response = await this.client.delete(url);
     return response;
   }
+
+  // -------------------------------------------------------------------
+  // AI Commerce Readiness audit (merchant self-service, multi-SKU).
+  //
+  // Calls POST /api/merchant-center/audit/ai-commerce-readiness with
+  // 1–5 of the merchant's own product_keys. The backend looks them up
+  // in catalog_products WHERE merchant_id=current (cross-tenant guard
+  // implicit) and runs run_brand_report — same engine as the employee
+  // BD brand-level audit.
+  //
+  // Cost guard: 2 audits / 24h per merchant. 429 surfaces with a
+  // detail object {limit, window_seconds, next_reset_in_seconds}.
+  // Audit run takes ~60–90 sec; client timeout is 3 min.
+  // -------------------------------------------------------------------
+  async runAiReadinessAudit(
+    products: { platform: string; source_product_id: string }[],
+    maxRuns: number = 3,
+  ): Promise<import('./types/ai-readiness').AiReadinessAuditResponse> {
+    if (products.length < 1 || products.length > 5) {
+      throw new Error('Pick 1–5 SKUs to audit per run.');
+    }
+    const response = await this.client.post(
+      '/api/merchant-center/audit/ai-commerce-readiness',
+      { products, max_runs: maxRuns },
+      { timeout: 180_000 },
+    );
+    return response.data?.data || response.data;
+  }
 }
 
 // Export singleton instance

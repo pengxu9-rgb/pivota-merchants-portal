@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
+  Brain,
   ClipboardCheck,
   CreditCard,
   LayoutDashboard,
@@ -110,6 +111,13 @@ export const workflowNavigation: MerchantNavigationItem[] = [
     matchPrefixes: ["/dashboard/product-optimization"],
     description: "Readiness actions",
     descriptionKey: "shell.nav.catalogHealthDesc",
+  },
+  {
+    label: "AI Readiness Audit",
+    href: "/dashboard/agent-center/ai-readiness",
+    icon: Brain,
+    matchPrefixes: ["/dashboard/agent-center/ai-readiness"],
+    description: "Audit up to 5 SKUs against AI shopping agents",
   },
   {
     label: "PDP status",
