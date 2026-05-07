@@ -95,6 +95,12 @@ export interface AgentCenterBdIndexingArcState {
   caveat: string;
 }
 
+export interface AgentCenterBdBrandDisambiguation {
+  brand_audited_against: string | null;
+  storefront_name: string | null;
+  note: string;
+}
+
 export interface AgentCenterBdMerchantView {
   headline: {
     verdict_label: AgentCenterBdVerdictLabel;
@@ -109,6 +115,13 @@ export interface AgentCenterBdMerchantView {
     what_is_at_stake: string | null;
     audited_via_pivota_canonical: boolean;
     url_source: string | null;
+    /**
+     * Surfaced when the product's `vendor` field differs from the
+     * storefront name (1688 / wholesale drop-shippers). Tells the
+     * merchant "we audited 'guiruo', not 'YourStoreName'" so they
+     * read prose about "your brand" with the right entity in mind.
+     */
+    brand_disambiguation: AgentCenterBdBrandDisambiguation | null;
   };
   receipts: {
     queries_tested: number;

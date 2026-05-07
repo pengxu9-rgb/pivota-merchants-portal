@@ -622,6 +622,28 @@ function PerProductCard({
       </button>
       {open ? (
         <div className="mt-3 space-y-3 rounded border border-slate-200 bg-slate-50/50 p-3">
+          {/* Honesty sweep #356: when the product's vendor field differs
+              from the storefront name (1688 / wholesale drop-shippers),
+              prose about "your brand" actually refers to the vendor.
+              Surface BEFORE the plain_summary so the reader frames every
+              claim correctly. */}
+          {mv?.headline?.brand_disambiguation ? (
+            <div className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+              <div className="font-semibold uppercase">
+                Brand audited against:{' '}
+                <span className="font-bold">
+                  {mv.headline.brand_disambiguation.brand_audited_against}
+                </span>
+              </div>
+              <div className="mt-0.5">
+                Your storefront name is{' '}
+                <span className="font-semibold">
+                  {mv.headline.brand_disambiguation.storefront_name}
+                </span>
+                . {mv.headline.brand_disambiguation.note}
+              </div>
+            </div>
+          ) : null}
           {/* PR-A follow-up + #344: plain-language "am I visible?" answer.
               Surface FIRST so merchants don't have to interpret math. */}
           {mv?.headline?.plain_summary ? (
