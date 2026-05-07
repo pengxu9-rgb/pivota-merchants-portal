@@ -14,9 +14,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Brain,
-  CheckCircle2,
   Loader2,
-  TrendingUp,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import {
@@ -26,6 +24,7 @@ import {
 } from '@/components/ui/merchant-primitives';
 import type {
   AgentCenterBdBrandReport,
+  AgentCenterBdQueryRow,
   AgentCenterBdReport,
   AgentCenterBdVerdictLabel,
   AiReadinessAuditResponse,
@@ -651,6 +650,18 @@ function PerProductCard({
               <p className="mt-1">{report.competitive_pressure.framing}</p>
             </div>
           ) : null}
+          {/* Adjacent to the competitive landscape: retailers + media
+              hosts AI cited in this product's category. Honest framing
+              note: this is NOT per-brand "where is Lunya sold" data —
+              that would need a per-competitor probe we don't run. It IS
+              the category-level signal of "where's the AI-channel funnel
+              flowing in your category", which is the question merchants
+              actually want to ask. */}
+          {mv?.receipts?.cited_hosts_detailed?.length ? (
+            <CategoryRetailersPanel
+              hosts={mv.receipts.cited_hosts_detailed}
+            />
+          ) : null}
           {/* PR-G + #346: actions ordered by priority_order with
               concrete_next_step as the executable "this week" task. */}
           {mv?.actions?.length ? (
@@ -670,39 +681,28 @@ function PerProductCard({
               </ul>
             </div>
           ) : null}
-          {/* PR-F: which queries you lost + who won + what competitors were named. */}
-          {mv?.receipts?.failed_queries_detailed?.length ? (
-            <FailedQueriesTable rows={mv.receipts.failed_queries_detailed} />
-          ) : null}
-          {report.what_pivota_changes?.discovery_lift?.layers?.length ? (
-            <div>
-              <div className="text-xs font-semibold uppercase text-slate-500">
-                What lifts your visibility (multi-layer)
-              </div>
-              <ul className="mt-1 space-y-2 text-xs text-slate-700">
-                {report.what_pivota_changes.discovery_lift.layers.map((l, i) => (
-                  <li key={i}>
-                    <div className="flex items-center gap-2">
-                      <TrendingUp className="h-3 w-3 text-indigo-600" />
-                      <span className="font-semibold">{l.name}</span>
-                    </div>
-                    <p className="ml-5 text-slate-600">{l.pivota_status}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {report.what_pivota_changes?.checkout_loop?.outcome ? (
-            <div className="rounded bg-green-50 p-3 text-xs text-green-900">
-              <div className="flex items-center gap-2 font-semibold uppercase">
-                <CheckCircle2 className="h-3 w-3" />
-                Checkout loop
-              </div>
-              <p className="mt-1">
-                {report.what_pivota_changes.checkout_loop.outcome}
-              </p>
-            </div>
-          ) : null}
+          {/* All buyer-intent queries — successes AND failures, with
+              status column. Renders from attribution.queries[] (which
+              has every query) and joins per-query rich detail from
+              failed_queries_detailed[] when present. The previous
+              version rendered only failed-with-grounding queries,
+              which left the table mostly empty when most queries had
+              no grounding chunks. */}
+          <AllQueriesTable
+            attributionQueries={report.attribution?.queries || []}
+            failedDetails={mv?.receipts?.failed_queries_detailed || []}
+          />
+          {/* Hidden: `what_pivota_changes.discovery_lift.layers` and
+              `checkout_loop.outcome` — these were BD-architecture
+              jargon ("Layer 1 / 2 / 3 mechanics") that read as Pivota
+              internals, not merchant value. Merchants couldn't act
+              on them and they discouraged onboarding. The merchant-
+              facing value prop should live in `merchant_view.
+              pivota_value_prop` (re-projection of the same data,
+              clearly labeled as Pivota's offer) — but we don't
+              auto-render it on the audit page either; the audit
+              should answer "where do you stand" + "what should you
+              do", not pitch Pivota. */}
         </div>
       ) : null}
     </div>
@@ -900,60 +900,165 @@ function IndexingArcChip({
   );
 }
 
-function FailedQueriesTable({
-  rows,
+function CategoryRetailersPanel({
+  hosts,
 }: {
-  rows: NonNullable<AgentCenterBdReport['merchant_view']>['receipts']['failed_queries_detailed'];
+  hosts: NonNullable<
+    AgentCenterBdReport['merchant_view']
+  >['receipts']['cited_hosts_detailed'];
 }) {
-  if (!rows.length) return null;
+  // Filter to retailers + marketplaces (the hosts a merchant might
+  // actually want to be sold on). Editorial / video / unclassified
+  // are surfaced elsewhere or in playbook actions.
+  const channels = hosts.filter(
+    (h) => h.type === 'retailer' || h.type === 'marketplace',
+  );
+  if (channels.length === 0) return null;
+  return (
+    <div className="rounded border border-blue-200 bg-blue-50/50">
+      <div className="border-b border-blue-200 px-3 py-2">
+        <div className="text-xs font-semibold uppercase text-blue-900">
+          Retailers / marketplaces active in your category
+        </div>
+        <div className="text-[11px] text-blue-900/70">
+          Where AI shoppers&apos; queries land in your category. Not a
+          per-brand &quot;sold here&quot; map — these are channel-level
+          hosts cited in the same audit. Use them as wholesale /
+          marketplace-listing leads.
+        </div>
+      </div>
+      <table className="w-full text-xs">
+        <thead className="bg-blue-50/80 text-left text-[11px] uppercase text-blue-900/80">
+          <tr>
+            <th className="px-3 py-2">Channel</th>
+            <th className="px-3 py-2">Type</th>
+            <th className="px-3 py-2 text-right">Cited</th>
+            <th className="px-3 py-2">How to engage</th>
+          </tr>
+        </thead>
+        <tbody>
+          {channels.slice(0, 10).map((h, i) => (
+            <tr key={i} className="border-t border-blue-200">
+              <td className="px-3 py-2 font-mono text-[11px] text-blue-900">
+                {h.host}
+              </td>
+              <td className="px-3 py-2 text-[11px] text-blue-900/80">
+                {h.type}
+                {h.subtype ? (
+                  <span className="ml-1 text-blue-900/60">
+                    / {h.subtype.replace(/_/g, ' ')}
+                  </span>
+                ) : null}
+              </td>
+              <td className="px-3 py-2 text-right text-blue-900">
+                {h.times_cited}
+              </td>
+              <td className="px-3 py-2 text-blue-900/80">
+                {h.outreach_hint || '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AllQueriesTable({
+  attributionQueries,
+  failedDetails,
+}: {
+  attributionQueries: AgentCenterBdQueryRow[];
+  failedDetails: NonNullable<
+    AgentCenterBdReport['merchant_view']
+  >['receipts']['failed_queries_detailed'];
+}) {
+  if (!attributionQueries.length) return null;
+  // Index failed details by query text for quick join.
+  const failedByQuery = new Map(
+    failedDetails.map((f) => [f.query.toLowerCase().trim(), f]),
+  );
   return (
     <div className="rounded border border-slate-200 bg-white">
       <div className="border-b border-slate-200 px-3 py-2">
         <div className="text-xs font-semibold uppercase text-slate-500">
-          Queries you lost — who won
+          Buyer-intent queries we tested
         </div>
         <div className="text-[11px] text-slate-500">
-          Per buyer-intent query: which URL Gemini cited, and what
-          competitor brands it named alongside.
+          Each query Gemini was asked. Status shows whether your URL
+          was cited; for failures we surface the URL Gemini cited
+          instead and the competitor brands it named.
         </div>
       </div>
       <table className="w-full text-xs">
         <thead className="bg-slate-50 text-left text-[11px] uppercase text-slate-500">
           <tr>
+            <th className="px-3 py-2">Status</th>
             <th className="px-3 py-2">Query</th>
-            <th className="px-3 py-2">Winner</th>
+            <th className="px-3 py-2">Cited instead</th>
             <th className="px-3 py-2">Competitors named</th>
           </tr>
         </thead>
         <tbody>
-          {rows.slice(0, 8).map((r, i) => (
-            <tr key={i} className="border-t border-slate-200">
-              <td className="px-3 py-2 text-slate-800">
-                <span className="font-mono text-[11px]">{r.query}</span>
-              </td>
-              <td className="px-3 py-2">
-                {r.top_cited_host ? (
-                  <span>
-                    <span className="font-mono text-[11px]">
-                      {r.top_cited_host}
-                    </span>{' '}
-                    {r.host_classification?.type ? (
-                      <span className="text-[10px] text-slate-500">
-                        ({r.host_classification.type})
-                      </span>
-                    ) : null}
-                  </span>
-                ) : (
-                  <span className="text-slate-400">no grounding</span>
-                )}
-              </td>
-              <td className="px-3 py-2 text-slate-700">
-                {r.competitors_named?.length
-                  ? r.competitors_named.slice(0, 3).join(', ')
-                  : '—'}
-              </td>
-            </tr>
-          ))}
+          {attributionQueries.map((q, i) => {
+            const won = q.self_report_yes;
+            const detail = failedByQuery.get(
+              (q.query || '').toLowerCase().trim(),
+            );
+            return (
+              <tr key={i} className="border-t border-slate-200">
+                <td className="px-3 py-2">
+                  {won ? (
+                    <span className="rounded bg-green-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-green-900">
+                      ✓ won
+                    </span>
+                  ) : (
+                    <span className="rounded bg-red-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-red-900">
+                      lost
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-slate-800">
+                  <span className="font-mono text-[11px]">{q.query}</span>
+                </td>
+                <td className="px-3 py-2">
+                  {won ? (
+                    <span className="text-slate-400">—</span>
+                  ) : detail?.top_cited_host ? (
+                    <span>
+                      <span className="font-mono text-[11px]">
+                        {detail.top_cited_host}
+                      </span>{' '}
+                      {detail.host_classification?.type ? (
+                        <span className="text-[10px] text-slate-500">
+                          ({detail.host_classification.type})
+                        </span>
+                      ) : null}
+                    </span>
+                  ) : q.top_cited_url ? (
+                    <span className="font-mono text-[11px] text-slate-600">
+                      {(() => {
+                        try {
+                          return new URL(q.top_cited_url).host;
+                        } catch {
+                          return q.top_cited_url;
+                        }
+                      })()}
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">no grounding</span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-slate-700">
+                  {won
+                    ? '—'
+                    : detail?.competitors_named?.length
+                      ? detail.competitors_named.slice(0, 3).join(', ')
+                      : '—'}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
