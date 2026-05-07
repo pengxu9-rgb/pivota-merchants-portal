@@ -31,16 +31,78 @@ import type {
   AiReadinessAuditResponse,
 } from '@/lib/types/ai-readiness';
 
+/**
+ * Catalog row shape returned by apiClient.getProducts(). The response
+ * is heterogeneous — some products carry their fields under a `standard`
+ * sub-object, others have them at the top level. The normalization
+ * helpers below mirror what the existing /dashboard/products page does
+ * (see app/dashboard/products/page.tsx:105–141 for the canonical
+ * fallback chain).
+ */
 interface CatalogProductRow {
-  platform_product_id: string;
-  platform: string;
+  platform_product_id?: string;
+  platform?: string;
+  product_id?: string;
+  id?: string;
   sku?: string;
+  title?: string;
+  name?: string;
+  price?: number | { value?: number; currency?: string };
+  currency?: string;
   standard?: {
     title?: string;
     main_image_url?: string;
+    sku?: string;
     price?: number | { value?: number; currency?: string };
     currency?: string;
+    product_id?: string;
+    id?: string;
+    platform?: string;
   };
+}
+
+function pickTitle(p: CatalogProductRow): string {
+  const standard = p.standard ?? {};
+  return standard.title || p.title || p.name || '';
+}
+
+function pickSku(p: CatalogProductRow): string {
+  const standard = p.standard ?? {};
+  return standard.sku || p.sku || '';
+}
+
+function pickPlatform(p: CatalogProductRow): string {
+  const standard = p.standard ?? {};
+  return p.platform || standard.platform || '';
+}
+
+function pickPlatformProductId(p: CatalogProductRow): string {
+  const standard = p.standard ?? {};
+  return (
+    p.platform_product_id ||
+    standard.product_id ||
+    standard.id ||
+    p.product_id ||
+    p.id ||
+    ''
+  );
+}
+
+function pickPriceNumber(p: CatalogProductRow): number {
+  const standard = p.standard ?? {};
+  const raw = standard.price ?? p.price;
+  if (typeof raw === 'number') return raw;
+  if (raw && typeof raw === 'object' && typeof raw.value === 'number')
+    return raw.value;
+  return 0;
+}
+
+function pickCurrency(p: CatalogProductRow): string {
+  const standard = p.standard ?? {};
+  const raw = standard.price ?? p.price;
+  if (raw && typeof raw === 'object' && typeof raw.currency === 'string')
+    return raw.currency;
+  return standard.currency || p.currency || 'USD';
 }
 
 const MAX_SELECTED = 5;
@@ -76,20 +138,28 @@ export default function AiReadinessAuditPage() {
     };
   }, []);
 
+  // Build a stable composite key for selection state. Some rows arrive
+  // without platform_product_id under `standard.product_id` instead;
+  // pickPlatformProductId handles the fallback chain.
   const productKey = (p: CatalogProductRow) =>
-    `${p.platform}:${p.platform_product_id}`;
+    `${pickPlatform(p)}:${pickPlatformProductId(p)}`;
 
-  const priceNumber = (p: CatalogProductRow): number => {
-    const raw = p.standard?.price;
-    if (typeof raw === 'number') return raw;
-    if (raw && typeof raw === 'object' && typeof raw.value === 'number')
-      return raw.value;
-    return 0;
-  };
+  // Drop any product that lacks both platform AND a resolvable id —
+  // we can't audit it (the backend needs platform + source_product_id).
+  const usableProducts = useMemo(
+    () =>
+      products.filter(
+        (p) => pickPlatform(p) && pickPlatformProductId(p),
+      ),
+    [products],
+  );
 
   const sortedByPrice = useMemo(
-    () => [...products].sort((a, b) => priceNumber(b) - priceNumber(a)),
-    [products],
+    () =>
+      [...usableProducts].sort(
+        (a, b) => pickPriceNumber(b) - pickPriceNumber(a),
+      ),
+    [usableProducts],
   );
 
   const toggle = (p: CatalogProductRow) => {
@@ -110,7 +180,7 @@ export default function AiReadinessAuditPage() {
     setSelected(new Set(top));
   };
   const fillFirstFive = () => {
-    const top = products.slice(0, MAX_SELECTED).map(productKey);
+    const top = usableProducts.slice(0, MAX_SELECTED).map(productKey);
     setSelected(new Set(top));
   };
   const clear = () => setSelected(new Set());
@@ -205,10 +275,11 @@ export default function AiReadinessAuditPage() {
             </p>
           ) : productsError ? (
             <p className="text-sm text-red-700">{productsError}</p>
-          ) : products.length === 0 ? (
+          ) : usableProducts.length === 0 ? (
             <p className="text-sm text-slate-500">
-              No products in your catalog yet. Connect Shopify on the
-              integrations page first.
+              {products.length === 0
+                ? 'No products in your catalog yet. Connect Shopify on the integrations page first.'
+                : `${products.length} product(s) loaded but none have a usable platform + product ID — likely a catalog sync issue.`}
             </p>
           ) : (
             <div className="max-h-96 overflow-y-auto rounded border border-slate-200">
@@ -223,11 +294,16 @@ export default function AiReadinessAuditPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {products.slice(0, 200).map((p) => {
+                  {usableProducts.slice(0, 200).map((p) => {
                     const k = productKey(p);
                     const checked = selected.has(k);
                     const disabled =
                       !checked && selected.size >= MAX_SELECTED;
+                    const title = pickTitle(p) || '(untitled)';
+                    const sku = pickSku(p) || '—';
+                    const platform = pickPlatform(p) || '—';
+                    const price = pickPriceNumber(p);
+                    const currency = pickCurrency(p);
                     return (
                       <tr
                         key={k}
@@ -243,18 +319,18 @@ export default function AiReadinessAuditPage() {
                             onChange={() => toggle(p)}
                           />
                         </td>
-                        <td className="py-2">
-                          {p.standard?.title || '(untitled)'}
-                        </td>
+                        <td className="py-2">{title}</td>
                         <td className="py-2 font-mono text-xs text-slate-600">
-                          {p.sku || '—'}
+                          {sku}
                         </td>
                         <td className="py-2 text-xs text-slate-600">
-                          {p.platform}
+                          {platform}
                         </td>
                         <td className="py-2 pr-3 text-right">
-                          {priceNumber(p) > 0
-                            ? `$${priceNumber(p).toFixed(2)}`
+                          {price > 0
+                            ? `${
+                                currency === 'USD' ? '$' : `${currency} `
+                              }${price.toFixed(2)}`
                             : '—'}
                         </td>
                       </tr>
