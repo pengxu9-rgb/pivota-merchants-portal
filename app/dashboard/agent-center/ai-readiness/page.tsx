@@ -868,17 +868,9 @@ function DraftPitchButton({ draft }: { draft: AgentCenterBdPitchDraft }) {
   const [showPreview, setShowPreview] = useState(false);
 
   const send = () => {
-    if (draft.recipient_email) {
-      const url = `mailto:${encodeURIComponent(draft.recipient_email)}?subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`;
-      window.location.href = url;
-    } else if (draft.recipient_url) {
-      window.open(draft.recipient_url, '_blank', 'noopener,noreferrer');
-    }
+    const url = `mailto:${encodeURIComponent(draft.recipient_email)}?subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`;
+    window.location.href = url;
   };
-
-  const buttonLabel = draft.recipient_email
-    ? 'Draft pitch email'
-    : 'Open submission form';
 
   return (
     <div className="mt-2 rounded border border-emerald-300 bg-emerald-50/60 p-2 text-xs text-emerald-900">
@@ -897,7 +889,7 @@ function DraftPitchButton({ draft }: { draft: AgentCenterBdPitchDraft }) {
             onClick={send}
             className="rounded bg-emerald-700 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-emerald-800"
           >
-            {buttonLabel}
+            Draft pitch email
           </button>
         </div>
       </div>
@@ -906,7 +898,7 @@ function DraftPitchButton({ draft }: { draft: AgentCenterBdPitchDraft }) {
         <div className="mt-2 space-y-2 rounded border border-emerald-200 bg-white p-2 text-[11px] text-slate-800">
           <div>
             <span className="font-semibold uppercase text-slate-500">To: </span>
-            {draft.recipient_email ?? draft.recipient_url ?? '—'}
+            {draft.recipient_email}
           </div>
           <div>
             <span className="font-semibold uppercase text-slate-500">Subject: </span>

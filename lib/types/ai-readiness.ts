@@ -33,8 +33,7 @@ export type AgentCenterBdActionSeverity = 'critical' | 'high' | 'medium' | 'low'
 export interface AgentCenterBdPitchDraft {
   subject: string;
   body: string;
-  recipient_email: string | null;
-  recipient_url: string | null;
+  recipient_email: string;
   recipient_note: string;
 }
 
