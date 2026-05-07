@@ -441,7 +441,14 @@ function AuditReportRenderer({
 
       <BrandVerdictBanner report={report} />
       <BrandScoreGrid report={report} />
-      <CrossProductCompetitors report={report} />
+      {/* CrossProductCompetitors hidden for single-SKU audits — for
+          one product, "times cited = 1" everywhere is uninformative
+          and the per-SKU competitive_table already covers the same
+          ground in a clearer table. Keep it for multi-SKU audits
+          where the cross-product aggregation has signal. */}
+      {(report.per_product?.length ?? 0) > 1 ? (
+        <CrossProductCompetitors report={report} />
+      ) : null}
       <FailedProducts report={report} />
       <PerProductSummaries report={report} />
     </div>
@@ -745,7 +752,6 @@ function CompetitiveTable({
             <tr>
               <th className="px-3 py-2">Brand</th>
               <th className="px-3 py-2 text-right">Mentions</th>
-              <th className="px-3 py-2 text-center">First-party visible?</th>
               <th className="px-3 py-2">Their .com (cited count)</th>
             </tr>
           </thead>
@@ -757,15 +763,6 @@ function CompetitiveTable({
                 </td>
                 <td className="px-3 py-2 text-right text-amber-900">
                   {r.times_mentioned}
-                </td>
-                <td className="px-3 py-2 text-center">
-                  {r.first_party_visible ? (
-                    <span className="text-green-700" title="First-party host cited">
-                      ✓
-                    </span>
-                  ) : (
-                    <span className="text-slate-400">—</span>
-                  )}
                 </td>
                 <td className="px-3 py-2 font-mono text-[11px] text-amber-900/80">
                   {r.first_party_host
@@ -914,6 +911,21 @@ function CategoryRetailersPanel({
     (h) => h.type === 'retailer' || h.type === 'marketplace',
   );
   if (channels.length === 0) return null;
+  // Heuristic: hosts with country-code TLDs (.ae, .uk, .au, .jp,
+  // .nz, .ca, .de, .fr, .it, etc., excluding .co/.com/.net/.org/.io)
+  // are likely market-specific. Surface a note so a US merchant
+  // doesn't get confused by .ae results when they don't ship to UAE.
+  // This is a band-aid until backend constrains probes by merchant
+  // market — see backend follow-up.
+  const intlChannels = channels.filter((h) => {
+    const tld = (h.host || '').split('.').pop()?.toLowerCase() || '';
+    if (!tld) return false;
+    if (
+      ['com', 'net', 'org', 'io', 'co', 'shop', 'store', 'app'].includes(tld)
+    )
+      return false;
+    return tld.length <= 3;
+  });
   return (
     <div className="rounded border border-blue-200 bg-blue-50/50">
       <div className="border-b border-blue-200 px-3 py-2">
@@ -926,6 +938,14 @@ function CategoryRetailersPanel({
           hosts cited in the same audit. Use them as wholesale /
           marketplace-listing leads.
         </div>
+        {intlChannels.length > 0 ? (
+          <div className="mt-1 text-[11px] text-amber-800">
+            ⚠ Note: {intlChannels.length} of these{' '}
+            {intlChannels.length === 1 ? 'is' : 'are'} non-US (
+            {intlChannels.map((h) => h.host).join(', ')}). If you
+            don&apos;t ship to those markets, deprioritize them.
+          </div>
+        ) : null}
       </div>
       <table className="w-full text-xs">
         <thead className="bg-blue-50/80 text-left text-[11px] uppercase text-blue-900/80">
@@ -996,7 +1016,6 @@ function AllQueriesTable({
             <th className="px-3 py-2">Status</th>
             <th className="px-3 py-2">Query</th>
             <th className="px-3 py-2">Cited instead</th>
-            <th className="px-3 py-2">Competitors named</th>
           </tr>
         </thead>
         <tbody>
@@ -1048,13 +1067,6 @@ function AllQueriesTable({
                   ) : (
                     <span className="text-slate-400">no grounding</span>
                   )}
-                </td>
-                <td className="px-3 py-2 text-slate-700">
-                  {won
-                    ? '—'
-                    : detail?.competitors_named?.length
-                      ? detail.competitors_named.slice(0, 3).join(', ')
-                      : '—'}
                 </td>
               </tr>
             );
