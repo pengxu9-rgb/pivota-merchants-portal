@@ -858,8 +858,15 @@ function PrioritizedActions({
               <p className="mt-1 text-xs leading-relaxed text-slate-700">
                 {a.body}
               </p>
-              {/* #346: BD-curated "this week" task with specifics. */}
-              {a.concrete_next_step ? (
+              {/* Phase 0: Pivota integration CTA. When the action's
+                  lever is "pivota_integration" (un-integrated merchant),
+                  the green CTA panel REPLACES the generic
+                  "Next step" block — the cta_label IS the concrete
+                  next step, and the button is the one-click execution. */}
+              {a.lever === 'pivota_integration' && a.cta_url ? (
+                <PivotaIntegrationCta cta_url={a.cta_url} cta_label={a.cta_label ?? 'Start Pivota onboarding'} />
+              ) : a.concrete_next_step ? (
+                /* #346: BD-curated "this week" task with specifics. */
                 <div className="mt-2 rounded border border-indigo-200 bg-indigo-50/60 p-2 text-xs text-indigo-900">
                   <span className="font-semibold uppercase">
                     Next step:
@@ -868,9 +875,11 @@ function PrioritizedActions({
                 </div>
               ) : null}
               {/* Phase A: pre-filled email draft (mailto:) for editorial
-                  pitch actions. Falls back to submission URL when host
-                  has no published email contact. */}
-              {a.pitch_draft ? <DraftPitchButton draft={a.pitch_draft} /> : null}
+                  pitch actions. Skip on integration action — the CTA above
+                  is the one-click execution path for that lever. */}
+              {a.pitch_draft && a.lever !== 'pivota_integration' ? (
+                <DraftPitchButton draft={a.pitch_draft} />
+              ) : null}
               {a.expected_timeline_weeks?.length === 2 ? (
                 <div className="mt-1 text-[11px] text-slate-500">
                   Expected timeline:{' '}
@@ -882,6 +891,40 @@ function PrioritizedActions({
           );
         })}
       </ol>
+    </div>
+  );
+}
+
+function PivotaIntegrationCta({
+  cta_url,
+  cta_label,
+}: {
+  cta_url: string;
+  cta_label: string;
+}) {
+  const open = () => {
+    // External-tab open keeps the audit context behind so the merchant
+    // can come back after onboarding. Onboarding wizard owns its own
+    // session.
+    window.open(cta_url, '_blank', 'noopener,noreferrer');
+  };
+  return (
+    <div className="mt-2 rounded border border-emerald-300 bg-emerald-50/60 p-2 text-xs text-emerald-900">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold uppercase">
+          Pivota integration unlocks this
+        </span>
+        <button
+          type="button"
+          onClick={open}
+          className="rounded bg-emerald-700 px-3 py-1 text-[11px] font-semibold text-white hover:bg-emerald-800"
+        >
+          {cta_label}
+        </button>
+      </div>
+      <div className="mt-1 text-[11px] opacity-80">
+        Opens the onboarding wizard in a new tab.
+      </div>
     </div>
   );
 }
