@@ -552,22 +552,46 @@ function FailedProducts({ report }: { report: AgentCenterBdBrandReport }) {
 function PerProductSummaries({ report }: { report: AgentCenterBdBrandReport }) {
   const list = report.per_product || [];
   if (list.length === 0) return null;
+  // Hotfix: when 1-2 SKUs audited, the per-product detail IS the
+  // primary view — auto-expand instead of forcing a click. Merchants
+  // were missing the per-SKU analysis because cards were collapsed
+  // by default. With 3+ SKUs the list is long and click-to-expand
+  // makes sense.
+  const autoExpandAll = list.length <= 2;
   return (
     <SurfaceCard
-      title="Per-product summary"
-      description="Drill-down for each audited SKU. Click to expand."
+      title={
+        list.length === 1
+          ? 'Your SKU analysis'
+          : 'Per-SKU analysis'
+      }
+      description={
+        list.length === 1
+          ? 'Detailed audit results for the SKU you selected.'
+          : 'Detailed audit results per SKU you selected.'
+      }
     >
       <div className="divide-y">
         {list.map((p, i) => (
-          <PerProductCard key={i} report={p} />
+          <PerProductCard
+            key={i}
+            report={p}
+            initialOpen={autoExpandAll}
+          />
         ))}
       </div>
     </SurfaceCard>
   );
 }
 
-function PerProductCard({ report }: { report: AgentCenterBdReport }) {
-  const [open, setOpen] = useState(false);
+function PerProductCard({
+  report,
+  initialOpen = false,
+}: {
+  report: AgentCenterBdReport;
+  initialOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(initialOpen);
   const v = report.verdict;
   const mv = report.merchant_view;
   return (
@@ -613,9 +637,14 @@ function PerProductCard({ report }: { report: AgentCenterBdReport }) {
             </div>
             <p className="mt-1 text-sm text-slate-700">{v.explanation}</p>
           </div>
-          {/* #344: competitive_table is now an actual TABLE, not a paragraph. */}
-          {mv?.receipts?.competitive_table?.length ? (
-            <CompetitiveTable rows={mv.receipts.competitive_table} />
+          {/* #344: competitive_table is now an actual TABLE, not a paragraph.
+              When merchant_view is present, the table is the source of
+              truth — even when empty (no peers named) we render an empty
+              state instead of falling back to the legacy prose framing.
+              The framing was the thing the merchant explicitly didn't
+              want; falling back defeats the change. */}
+          {mv?.receipts ? (
+            <CompetitiveTable rows={mv.receipts.competitive_table || []} />
           ) : report.competitive_pressure?.framing ? (
             <div className="rounded bg-amber-50 p-3 text-xs text-amber-900">
               <div className="font-semibold uppercase">Competitive pressure</div>
@@ -701,42 +730,53 @@ function CompetitiveTable({
           winning first-party AI traffic).
         </div>
       </div>
-      <table className="w-full text-xs">
-        <thead className="bg-amber-50/80 text-left text-[11px] uppercase text-amber-900/80">
-          <tr>
-            <th className="px-3 py-2">Brand</th>
-            <th className="px-3 py-2 text-right">Mentions</th>
-            <th className="px-3 py-2 text-center">First-party visible?</th>
-            <th className="px-3 py-2">Their .com (cited count)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.slice(0, 15).map((r, i) => (
-            <tr key={i} className="border-t border-amber-200">
-              <td className="px-3 py-2 font-medium text-amber-900">
-                {r.brand}
-              </td>
-              <td className="px-3 py-2 text-right text-amber-900">
-                {r.times_mentioned}
-              </td>
-              <td className="px-3 py-2 text-center">
-                {r.first_party_visible ? (
-                  <span className="text-green-700" title="First-party host cited">
-                    ✓
-                  </span>
-                ) : (
-                  <span className="text-slate-400">—</span>
-                )}
-              </td>
-              <td className="px-3 py-2 font-mono text-[11px] text-amber-900/80">
-                {r.first_party_host
-                  ? `${r.first_party_host} (${r.host_citations})`
-                  : '—'}
-              </td>
+      {rows.length === 0 ? (
+        <div className="px-3 py-4 text-xs text-amber-900/70">
+          AI agents didn&apos;t name any specific competitor brands in
+          this category for your audit. This can mean either: (1) the
+          category isn&apos;t mature enough on AI shopping for grounded
+          retrieval to surface named brands, OR (2) the brand discriminator
+          missed them — see the &quot;cited hosts&quot; section for the raw
+          list of non-merchant URLs that were grounded.
+        </div>
+      ) : (
+        <table className="w-full text-xs">
+          <thead className="bg-amber-50/80 text-left text-[11px] uppercase text-amber-900/80">
+            <tr>
+              <th className="px-3 py-2">Brand</th>
+              <th className="px-3 py-2 text-right">Mentions</th>
+              <th className="px-3 py-2 text-center">First-party visible?</th>
+              <th className="px-3 py-2">Their .com (cited count)</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.slice(0, 15).map((r, i) => (
+              <tr key={i} className="border-t border-amber-200">
+                <td className="px-3 py-2 font-medium text-amber-900">
+                  {r.brand}
+                </td>
+                <td className="px-3 py-2 text-right text-amber-900">
+                  {r.times_mentioned}
+                </td>
+                <td className="px-3 py-2 text-center">
+                  {r.first_party_visible ? (
+                    <span className="text-green-700" title="First-party host cited">
+                      ✓
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">—</span>
+                  )}
+                </td>
+                <td className="px-3 py-2 font-mono text-[11px] text-amber-900/80">
+                  {r.first_party_host
+                    ? `${r.first_party_host} (${r.host_citations})`
+                    : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
