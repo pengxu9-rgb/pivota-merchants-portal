@@ -243,19 +243,16 @@ export interface AgentCenterBdBrandReport {
   failed: { pdp_url: string; title: string; error: string }[];
 }
 
-export interface AiReadinessSkippedProduct {
-  platform: string;
-  source_product_id: string;
-  title: string;
-  reason: string;
-}
-
 /** Wrapper returned by the merchant audit endpoint. */
 export interface AiReadinessAuditResponse {
   brand_report: AgentCenterBdBrandReport;
   rate_limit_remaining: number;
-  /** Pre-flight skipped products (URL-less catalog rows). The audit
-   * ran on the remainder. May be undefined / empty when all selected
-   * products were auditable. */
-  skipped_products?: AiReadinessSkippedProduct[];
+  /** product_keys whose audit URL was the Pivota canonical PDP
+   * (agent.pivota.cc/products/sig_*) rather than the merchant's
+   * own URL — typically because the catalog row had no merchant
+   * canonical_url and no Shopify handle. The score reflects
+   * Pivota's hosted surface (which is in the 30-90 day Google
+   * indexing arc post-creation). Empty when the merchant's own
+   * URLs covered every selected SKU. */
+  audited_via_pivota_canonical?: string[];
 }
