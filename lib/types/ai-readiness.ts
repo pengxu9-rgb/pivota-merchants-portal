@@ -30,6 +30,14 @@ export interface AgentCenterBdQueryRow {
 
 export type AgentCenterBdActionSeverity = 'critical' | 'high' | 'medium' | 'low';
 
+export interface AgentCenterBdPitchDraft {
+  subject: string;
+  body: string;
+  recipient_email: string | null;
+  recipient_url: string | null;
+  recipient_note: string;
+}
+
 export interface AgentCenterBdActionItem {
   severity: AgentCenterBdActionSeverity;
   title: string;
@@ -44,6 +52,10 @@ export interface AgentCenterBdActionItem {
   // Stamped on every action (strategic + playbook) so frontend
   // renders "Step 1, Step 2..." without re-deriving the order.
   priority_order?: number;
+  // Execution-layer Phase A: pre-filled email draft for editorial
+  // pitch actions. Null on actions whose playbook has no pitch_template
+  // (wholesale, GSC, etc.) or whose target host has no pitch_recipient.
+  pitch_draft?: AgentCenterBdPitchDraft | null;
 }
 
 export interface AgentCenterBdHostClassification {

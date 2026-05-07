@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/merchant-primitives';
 import type {
   AgentCenterBdBrandReport,
+  AgentCenterBdPitchDraft,
   AgentCenterBdQueryRow,
   AgentCenterBdReport,
   AgentCenterBdVerdictLabel,
@@ -844,6 +845,10 @@ function PrioritizedActions({
                   {a.concrete_next_step}
                 </div>
               ) : null}
+              {/* Phase A: pre-filled email draft (mailto:) for editorial
+                  pitch actions. Falls back to submission URL when host
+                  has no published email contact. */}
+              {a.pitch_draft ? <DraftPitchButton draft={a.pitch_draft} /> : null}
               {a.expected_timeline_weeks?.length === 2 ? (
                 <div className="mt-1 text-[11px] text-slate-500">
                   Expected timeline:{' '}
@@ -855,6 +860,63 @@ function PrioritizedActions({
           );
         })}
       </ol>
+    </div>
+  );
+}
+
+function DraftPitchButton({ draft }: { draft: AgentCenterBdPitchDraft }) {
+  const [showPreview, setShowPreview] = useState(false);
+
+  const send = () => {
+    if (draft.recipient_email) {
+      const url = `mailto:${encodeURIComponent(draft.recipient_email)}?subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`;
+      window.location.href = url;
+    } else if (draft.recipient_url) {
+      window.open(draft.recipient_url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  const buttonLabel = draft.recipient_email
+    ? 'Draft pitch email'
+    : 'Open submission form';
+
+  return (
+    <div className="mt-2 rounded border border-emerald-300 bg-emerald-50/60 p-2 text-xs text-emerald-900">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold uppercase">Pitch draft ready</span>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setShowPreview((s) => !s)}
+            className="rounded border border-emerald-400 bg-white px-2 py-0.5 text-[11px] font-medium text-emerald-800 hover:bg-emerald-100"
+          >
+            {showPreview ? 'Hide' : 'Preview'}
+          </button>
+          <button
+            type="button"
+            onClick={send}
+            className="rounded bg-emerald-700 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-emerald-800"
+          >
+            {buttonLabel}
+          </button>
+        </div>
+      </div>
+      <div className="mt-1 text-[11px] opacity-80">{draft.recipient_note}</div>
+      {showPreview ? (
+        <div className="mt-2 space-y-2 rounded border border-emerald-200 bg-white p-2 text-[11px] text-slate-800">
+          <div>
+            <span className="font-semibold uppercase text-slate-500">To: </span>
+            {draft.recipient_email ?? draft.recipient_url ?? '—'}
+          </div>
+          <div>
+            <span className="font-semibold uppercase text-slate-500">Subject: </span>
+            {draft.subject}
+          </div>
+          <pre className="whitespace-pre-wrap font-sans text-[11px] leading-relaxed text-slate-700">
+            {draft.body}
+          </pre>
+        </div>
+      ) : null}
     </div>
   );
 }
