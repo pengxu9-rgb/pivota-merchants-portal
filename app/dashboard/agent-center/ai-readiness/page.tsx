@@ -859,13 +859,27 @@ function PrioritizedActions({
               <p className="mt-1 text-xs leading-relaxed text-slate-700">
                 {a.body}
               </p>
-              {/* Phase 0: Pivota integration CTA. When the action's
-                  lever is "pivota_integration" (un-integrated merchant),
-                  the green CTA panel REPLACES the generic
-                  "Next step" block — the cta_label IS the concrete
-                  next step, and the button is the one-click execution. */}
-              {a.lever === 'pivota_integration' && a.cta_url ? (
-                <PivotaIntegrationCta cta_url={a.cta_url} cta_label={a.cta_label ?? 'Start Pivota onboarding'} />
+              {/* Phase 0 + Phase D: integration CTA. When the action's
+                  lever is "pivota_integration" (un-integrated merchant)
+                  or "gsc_integration" (Phase 0 done but GSC missing),
+                  the green CTA panel REPLACES the generic "Next step"
+                  block — the cta_label IS the concrete next step, and
+                  the button is the one-click execution. */}
+              {(a.lever === 'pivota_integration' || a.lever === 'gsc_integration') && a.cta_url ? (
+                <PivotaIntegrationCta
+                  cta_url={a.cta_url}
+                  cta_label={
+                    a.cta_label ??
+                    (a.lever === 'gsc_integration'
+                      ? 'Grant GSC access'
+                      : 'Start Pivota onboarding')
+                  }
+                  panel_label={
+                    a.lever === 'gsc_integration'
+                      ? 'Search Console integration unlocks this'
+                      : 'Pivota integration unlocks this'
+                  }
+                />
               ) : a.concrete_next_step ? (
                 /* #346: BD-curated "this week" task with specifics. */
                 <div className="mt-2 rounded border border-indigo-200 bg-indigo-50/60 p-2 text-xs text-indigo-900">
@@ -876,9 +890,11 @@ function PrioritizedActions({
                 </div>
               ) : null}
               {/* Phase A: pre-filled email draft (mailto:) for editorial
-                  pitch actions. Skip on integration action — the CTA above
-                  is the one-click execution path for that lever. */}
-              {a.pitch_draft && a.lever !== 'pivota_integration' ? (
+                  pitch actions. Skip on integration actions — the CTA
+                  above is the one-click execution path for those levers. */}
+              {a.pitch_draft &&
+              a.lever !== 'pivota_integration' &&
+              a.lever !== 'gsc_integration' ? (
                 <DraftPitchButton draft={a.pitch_draft} />
               ) : null}
               {/* Phase B: co-occurrence verification badge. When the
@@ -971,9 +987,11 @@ function CoOccurrenceBadge({
 function PivotaIntegrationCta({
   cta_url,
   cta_label,
+  panel_label = 'Pivota integration unlocks this',
 }: {
   cta_url: string;
   cta_label: string;
+  panel_label?: string;
 }) {
   const open = () => {
     // External-tab open keeps the audit context behind so the merchant
@@ -984,9 +1002,7 @@ function PivotaIntegrationCta({
   return (
     <div className="mt-2 rounded border border-emerald-300 bg-emerald-50/60 p-2 text-xs text-emerald-900">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-semibold uppercase">
-          Pivota integration unlocks this
-        </span>
+        <span className="font-semibold uppercase">{panel_label}</span>
         <button
           type="button"
           onClick={open}
