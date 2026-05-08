@@ -206,6 +206,20 @@ export interface AgentCenterBdMerchantView {
       indexing_phase: string | null;
     };
     your_gap_to_baseline: { visibility: number; attribution: number };
+    /**
+     * Phase D: Pivota canonical PDP submission state to Google
+     * Search Console (via Indexing API). Populated only when the
+     * merchant has granted Pivota GSC access AND has products
+     * audited via Pivota canonical PDPs.
+     */
+    gsc_submission_status?: {
+      submitted: number;
+      indexed: number;
+      pending: number;
+      errors: number;
+      last_submission_at: string | null;
+      last_indexed_at: string | null;
+    } | null;
   };
   pivota_value_prop: AgentCenterBdReport['what_pivota_changes'];
 }
