@@ -662,6 +662,15 @@ function PerProductCard({
           {mv?.diagnosis?.indexing_arc_state ? (
             <IndexingArcChip state={mv.diagnosis.indexing_arc_state} />
           ) : null}
+          {/* Phase D wire-up: Pivota canonical PDPs auto-submitted to
+              Google's Indexing API. Surfaces the running tally so the
+              merchant can see the indexing arc move from "submitted"
+              to "indexed" over time without manually checking GSC. */}
+          {mv?.tracking?.gsc_submission_status ? (
+            <GscSubmissionStatusBadge
+              status={mv.tracking.gsc_submission_status}
+            />
+          ) : null}
           <div>
             <div className="text-xs font-semibold uppercase text-slate-500">
               Verdict explanation
@@ -1181,6 +1190,64 @@ function DraftPitchButton({ draft }: { draft: AgentCenterBdPitchDraft }) {
             {draft.body}
           </pre>
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+function GscSubmissionStatusBadge({
+  status,
+}: {
+  status: NonNullable<
+    NonNullable<AgentCenterBdReport['merchant_view']>['tracking']['gsc_submission_status']
+  >;
+}) {
+  const total = status.submitted + status.indexed + status.pending + status.errors;
+  if (total === 0) {
+    // No submissions ever attempted — usually means the merchant
+    // hasn't connected GSC yet. The "Grant GSC access" action card
+    // (lever=gsc_integration) handles the call-to-action; the
+    // tracking section just stays quiet so we don't clutter the
+    // diagnosis area with a "0 of 0" badge.
+    return null;
+  }
+  const indexedPct = total > 0 ? Math.round((status.indexed / total) * 100) : 0;
+  const lastSubmitted = status.last_submission_at
+    ? new Date(status.last_submission_at).toLocaleDateString()
+    : null;
+  return (
+    <div className="rounded border-2 border-emerald-300 bg-emerald-50 p-3 text-emerald-900">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-semibold uppercase">
+          Search Console submissions
+        </div>
+        <div className="text-[11px]">
+          {status.indexed} of {total} indexed ({indexedPct}%)
+        </div>
+      </div>
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px]">
+        <span>
+          <span className="font-semibold">{status.submitted}</span> submitted
+        </span>
+        <span>
+          <span className="font-semibold">{status.indexed}</span> indexed
+        </span>
+        {status.pending > 0 ? (
+          <span>
+            <span className="font-semibold">{status.pending}</span> pending
+          </span>
+        ) : null}
+        {status.errors > 0 ? (
+          <span className="text-red-700">
+            <span className="font-semibold">{status.errors}</span> errors
+          </span>
+        ) : null}
+      </div>
+      {lastSubmitted ? (
+        <p className="mt-1 text-[11px] opacity-80">
+          Last submission: {lastSubmitted}. Google typically indexes within
+          24-72h; re-audit after that to see updated counts.
+        </p>
       ) : null}
     </div>
   );
