@@ -25,6 +25,7 @@ import {
 import type {
   AgentCenterBdBrandReport,
   AgentCenterBdCoOccurrenceVerification,
+  AgentCenterBdMatchedCreator,
   AgentCenterBdPitchDraft,
   AgentCenterBdQueryRow,
   AgentCenterBdReport,
@@ -912,6 +913,22 @@ function PrioritizedActions({
                 if (!v) return null;
                 return <CoOccurrenceBadge verification={v} />;
               })()}
+              {/* Phase E: matched creator cards. When the audit emits
+                  lever="creator_partnership", evidence.matched_creators
+                  carries 1-5 candidates. Render each as a card with
+                  audience size, recent coverage, and a "Copy outreach
+                  brief" button. */}
+              {a.lever === 'creator_partnership'
+                ? (() => {
+                    const matches = (
+                      a.evidence as Record<string, unknown> | undefined
+                    )?.matched_creators as
+                      | AgentCenterBdMatchedCreator[]
+                      | undefined;
+                    if (!matches?.length) return null;
+                    return <MatchedCreatorList matches={matches} />;
+                  })()
+                : null}
               {a.expected_timeline_weeks?.length === 2 ? (
                 <div className="mt-1 text-[11px] text-slate-500">
                   Expected timeline:{' '}
@@ -982,6 +999,108 @@ function CoOccurrenceBadge({
   }
 
   return null;
+}
+
+function MatchedCreatorList({
+  matches,
+}: {
+  matches: AgentCenterBdMatchedCreator[];
+}) {
+  return (
+    <div className="mt-2 space-y-2">
+      {matches.map((m, i) => (
+        <MatchedCreatorCard key={m.creator_id || i} creator={m} />
+      ))}
+    </div>
+  );
+}
+
+function MatchedCreatorCard({
+  creator,
+}: {
+  creator: AgentCenterBdMatchedCreator;
+}) {
+  const [copied, setCopied] = useState(false);
+  const audienceLabel = creator.audience_size_band
+    ? creator.audience_size_band.charAt(0).toUpperCase() +
+      creator.audience_size_band.slice(1)
+    : 'Unknown';
+  const platformLabel = creator.platform
+    ? creator.platform.charAt(0).toUpperCase() + creator.platform.slice(1)
+    : 'Unknown';
+
+  const copyBrief = async () => {
+    if (!creator.sample_brief_template) return;
+    try {
+      await navigator.clipboard.writeText(creator.sample_brief_template);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API unavailable (Safari permissions / older browser).
+      // Fall through silently — user can copy manually from the
+      // expanded preview.
+    }
+  };
+
+  const openContact = () => {
+    if (!creator.contact_url) return;
+    if (creator.contact_url.startsWith('mailto:')) {
+      window.location.href = creator.contact_url;
+    } else {
+      window.open(creator.contact_url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  return (
+    <div className="rounded border border-purple-200 bg-purple-50/40 p-2 text-xs text-slate-800">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1">
+          <div className="font-semibold text-slate-900">
+            {creator.display_name ?? creator.creator_id}
+            {creator.platform_url ? (
+              <a
+                href={creator.platform_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-1 text-[10px] font-normal text-purple-700 hover:underline"
+              >
+                ↗ {platformLabel}
+              </a>
+            ) : null}
+          </div>
+          <div className="mt-0.5 text-[11px] text-slate-600">
+            Audience: {audienceLabel}
+            {creator.recent_coverage.length ? (
+              <>
+                {' · Covered: '}
+                {creator.recent_coverage.slice(0, 3).join(', ')}
+              </>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col gap-1">
+          {creator.sample_brief_template ? (
+            <button
+              type="button"
+              onClick={copyBrief}
+              className="rounded border border-purple-400 bg-white px-2 py-0.5 text-[10px] font-medium text-purple-800 hover:bg-purple-100"
+            >
+              {copied ? 'Copied!' : 'Copy brief'}
+            </button>
+          ) : null}
+          {creator.contact_url ? (
+            <button
+              type="button"
+              onClick={openContact}
+              className="rounded bg-purple-700 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-purple-800"
+            >
+              Contact
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function PivotaIntegrationCta({

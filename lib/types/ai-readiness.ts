@@ -51,6 +51,24 @@ export interface AgentCenterBdCoOccurrenceVerification {
   article_url: string;
 }
 
+/**
+ * Phase E: a candidate creator returned by services.creator_matcher.
+ * Surfaced via action.evidence.matched_creators when the audit emits
+ * a creator_partnership action.
+ */
+export interface AgentCenterBdMatchedCreator {
+  creator_id: string;
+  display_name: string | null;
+  platform: string | null;
+  platform_url: string | null;
+  audience_size_band: string | null;
+  recent_coverage: string[];
+  contact_method: string | null;
+  contact_url: string | null;
+  sample_brief_template: string | null;
+  score: number;
+}
+
 export interface AgentCenterBdActionItem {
   severity: AgentCenterBdActionSeverity;
   title: string;
