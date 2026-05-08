@@ -37,6 +37,20 @@ export interface AgentCenterBdPitchDraft {
   recipient_note: string;
 }
 
+/**
+ * Phase B: result of fetching the cited article and checking
+ * Gemini's `competitors_appearing` claim against the actual text.
+ * Stamped on action.evidence.co_occurrence_verification.
+ */
+export interface AgentCenterBdCoOccurrenceVerification {
+  verified_brands: string[];
+  contradicted_brands: string[];
+  merchant_present: boolean;
+  merchant_absent: boolean;
+  fetch_status: 'ok' | 'cached' | 'blocked' | 'error' | 'no_url';
+  article_url: string;
+}
+
 export interface AgentCenterBdActionItem {
   severity: AgentCenterBdActionSeverity;
   title: string;

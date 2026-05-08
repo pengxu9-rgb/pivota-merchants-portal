@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/merchant-primitives';
 import type {
   AgentCenterBdBrandReport,
+  AgentCenterBdCoOccurrenceVerification,
   AgentCenterBdPitchDraft,
   AgentCenterBdQueryRow,
   AgentCenterBdReport,
@@ -880,6 +881,21 @@ function PrioritizedActions({
               {a.pitch_draft && a.lever !== 'pivota_integration' ? (
                 <DraftPitchButton draft={a.pitch_draft} />
               ) : null}
+              {/* Phase B: co-occurrence verification badge. When the
+                  backend fetched the cited article and verified
+                  Gemini's competitor claims, surface "✓ Verified"
+                  with the verified brand list. When fetch failed
+                  (robots-blocked, network error), surface a small
+                  hedge so merchants don't read unverified Gemini
+                  self-report as ground truth. */}
+              {(() => {
+                const v = (a.evidence as Record<string, unknown> | undefined)
+                  ?.co_occurrence_verification as
+                  | AgentCenterBdCoOccurrenceVerification
+                  | undefined;
+                if (!v) return null;
+                return <CoOccurrenceBadge verification={v} />;
+              })()}
               {a.expected_timeline_weeks?.length === 2 ? (
                 <div className="mt-1 text-[11px] text-slate-500">
                   Expected timeline:{' '}
@@ -893,6 +909,63 @@ function PrioritizedActions({
       </ol>
     </div>
   );
+}
+
+function CoOccurrenceBadge({
+  verification,
+}: {
+  verification: AgentCenterBdCoOccurrenceVerification;
+}) {
+  const { fetch_status, verified_brands, merchant_absent, merchant_present } =
+    verification;
+
+  // Three classes of badge:
+  //   * Strongest: fetched article, verified ≥1 brand, merchant absent
+  //   * Surprise: fetched, merchant brand IS in article (different play)
+  //   * Hedge: fetch failed → say so, don't pretend we verified
+  if (
+    (fetch_status === 'ok' || fetch_status === 'cached') &&
+    verified_brands.length > 0 &&
+    merchant_absent
+  ) {
+    const list = verified_brands.slice(0, 3).join(', ');
+    return (
+      <div className="mt-2 rounded border border-emerald-300 bg-emerald-50/80 px-2 py-1 text-[11px] text-emerald-900">
+        <span className="font-semibold">✓ Verified against article:</span>{' '}
+        their content lists {list}; your brand is absent.
+      </div>
+    );
+  }
+
+  if ((fetch_status === 'ok' || fetch_status === 'cached') && merchant_present) {
+    return (
+      <div className="mt-2 rounded border border-blue-300 bg-blue-50/80 px-2 py-1 text-[11px] text-blue-900">
+        <span className="font-semibold">ℹ Article includes your brand:</span>{' '}
+        the pitch should target where existing coverage leaves room.
+      </div>
+    );
+  }
+
+  if (fetch_status === 'blocked') {
+    return (
+      <div className="mt-2 rounded border border-slate-300 bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
+        <span className="font-semibold">Couldn't verify:</span> the host's
+        robots.txt blocks our fetch. The competitor list comes from Gemini's
+        self-report, unverified against the article text.
+      </div>
+    );
+  }
+
+  if (fetch_status === 'error') {
+    return (
+      <div className="mt-2 rounded border border-slate-300 bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
+        <span className="font-semibold">Couldn't verify:</span> couldn't fetch
+        the article. The competitor list is Gemini's self-report, unverified.
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function PivotaIntegrationCta({
