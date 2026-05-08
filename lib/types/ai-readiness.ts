@@ -55,6 +55,11 @@ export interface AgentCenterBdActionItem {
   // pitch actions. Null on actions whose playbook has no pitch_template
   // (wholesale, GSC, etc.) or whose target host has no pitch_recipient.
   pitch_draft?: AgentCenterBdPitchDraft | null;
+  // Execution-layer Phase 0: Pivota integration CTA. When the action's
+  // lever is "pivota_integration", these fields drive the green CTA
+  // panel that opens the onboarding wizard.
+  cta_url?: string | null;
+  cta_label?: string | null;
 }
 
 export interface AgentCenterBdHostClassification {
