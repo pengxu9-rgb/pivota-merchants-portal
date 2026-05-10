@@ -120,6 +120,13 @@ export const workflowNavigation: MerchantNavigationItem[] = [
     description: "Audit up to 5 SKUs against AI shopping agents",
   },
   {
+    label: "Conversion funnel",
+    href: "/dashboard/agent-center/funnel",
+    icon: BarChart3,
+    matchPrefixes: ["/dashboard/agent-center/funnel"],
+    description: "Stage drop-off across AI / social / SEO / retail",
+  },
+  {
     label: "PDP status",
     href: "/dashboard/pdp-status",
     icon: ClipboardCheck,
