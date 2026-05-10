@@ -1208,6 +1208,26 @@ class ApiClient {
   // detail object {limit, window_seconds, next_reset_in_seconds}.
   // Audit run takes ~60–90 sec; client timeout is 3 min.
   // -------------------------------------------------------------------
+  // -------------------------------------------------------------------
+  // APM funnel (PR-5): stage-level conversion funnel for this merchant.
+  // GET /api/merchant-center/funnel?channel=&window_days=
+  //
+  // Backend rolls up funnel_events by stage in the trailing window;
+  // returns the canonical 6-stage funnel (impression → profile_visit
+  // → click → pdp_view → add_to_cart → conversion) with per-stage
+  // counts + drop-off rates, plus a per-channel breakdown so the
+  // operator can pick which channel to drill into.
+  // -------------------------------------------------------------------
+  async getApmFunnel(params?: {
+    channel?: string;
+    window_days?: number;
+  }) {
+    const response = await this.client.get('/api/merchant-center/funnel', {
+      params,
+    });
+    return response.data as ApmFunnelResponse;
+  }
+
   async runAiReadinessAudit(
     products: { platform: string; source_product_id: string }[],
     maxRuns: number = 3,
@@ -1226,6 +1246,48 @@ class ApiClient {
 
 // Export singleton instance
 export const apiClient = new ApiClient();
+
+// APM funnel response shape — kept here since it's referenced from
+// the dashboard page and a stand-alone funnel chart component.
+export type ApmFunnelStage =
+  | 'impression'
+  | 'profile_visit'
+  | 'click'
+  | 'pdp_view'
+  | 'add_to_cart'
+  | 'conversion';
+
+export type ApmSourceChannel =
+  | 'ai_grounded_search'
+  | 'ai_agent'
+  | 'social_own'
+  | 'social_kol'
+  | 'editorial'
+  | 'seo_organic'
+  | 'retail'
+  | 'direct'
+  | 'unknown';
+
+export interface ApmFunnelStageRow {
+  stage: ApmFunnelStage;
+  count: number;
+  conversion_to_next: number | null;
+  drop_off_pct: number | null;
+}
+
+export interface ApmFunnelChannelBreakdownRow {
+  source_channel: ApmSourceChannel;
+  total_events: number;
+}
+
+export interface ApmFunnelResponse {
+  merchant_id: string;
+  source_channel: ApmSourceChannel | null;
+  window_days: number;
+  total_events: number;
+  stages: ApmFunnelStageRow[];
+  channel_breakdown: ApmFunnelChannelBreakdownRow[];
+}
 
 // Export types
 export interface MerchantUser {
