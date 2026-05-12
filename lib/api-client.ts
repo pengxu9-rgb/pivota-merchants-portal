@@ -1243,9 +1243,11 @@ class ApiClient {
     return response.data?.data || response.data;
   }
 
-  // P1.3: list merchant tasks. Backend already exposes this at
-  // /api/merchant-center/tasks; merchant portal previously didn't
-  // call it. Default filter = open work (pending + in_progress).
+  // P1.3: list merchant tasks. Backend exposes these at
+  // /api/merchant-center/audit/* (the merchant audit router has
+  // prefix /api/merchant-center/audit). Merchant portal previously
+  // didn't call them. Default filter = open work
+  // (pending + in_progress).
   async listMerchantTasks(options?: {
     statusFilter?: string;
     limit?: number;
@@ -1258,7 +1260,7 @@ class ApiClient {
       limit: options?.limit ?? 50,
     };
     if (options?.statusFilter) params.status_filter = options.statusFilter;
-    const response = await this.client.get('/api/merchant-center/tasks', {
+    const response = await this.client.get('/api/merchant-center/audit/tasks', {
       params,
     });
     return response.data;
@@ -1273,7 +1275,7 @@ class ApiClient {
     },
   ): Promise<{ task: import('./types/ai-readiness').MerchantTask }> {
     const response = await this.client.patch(
-      `/api/merchant-center/tasks/${encodeURIComponent(taskId)}`,
+      `/api/merchant-center/audit/tasks/${encodeURIComponent(taskId)}`,
       body,
     );
     return response.data;
@@ -1283,7 +1285,7 @@ class ApiClient {
     taskId: string, reason: string,
   ): Promise<{ task: import('./types/ai-readiness').MerchantTask }> {
     const response = await this.client.post(
-      `/api/merchant-center/tasks/${encodeURIComponent(taskId)}/dismiss`,
+      `/api/merchant-center/audit/tasks/${encodeURIComponent(taskId)}/dismiss`,
       { reason },
     );
     return response.data;
@@ -1303,7 +1305,7 @@ class ApiClient {
     };
     if (options?.agentName) params.agent_name = options.agentName;
     const response = await this.client.get(
-      '/api/merchant-center/executor-runs',
+      '/api/merchant-center/audit/executor-runs',
       { params },
     );
     return response.data;
