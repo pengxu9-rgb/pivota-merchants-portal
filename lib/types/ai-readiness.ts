@@ -446,4 +446,71 @@ export interface AiReadinessAuditResponse {
    * indexing arc post-creation). Empty when the merchant's own
    * URLs covered every selected SKU. */
   audited_via_pivota_canonical?: string[];
+  /** P1.3: backend-already-emitted fields the merchant portal
+   * was ignoring. Wired into the page so merchants see the same
+   * task queue + executor activity their employee BD does.
+   * The audit_run_id lets the polling-based async lifecycle
+   * (Phase 2) fall back to legacy mode when the run completes
+   * within the 30s window. */
+  audit_run_id?: string | null;
+  tasks?: {
+    materialized?: number;
+    skipped_pitch_only?: number;
+    skipped_duplicate?: number;
+    reason?: string;
+  } | null;
+  executors?: {
+    queued?: boolean;
+    poll_via_executor_runs_table?: boolean;
+  } | null;
+}
+
+// P1.3: minimal task / executor row types for the merchant portal
+// to render the same panels as the employee portal. Mirror the
+// backend dual-key shim (P1.1) so reads work against pre/post
+// shim windows.
+export type MerchantTaskStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'done'
+  | 'dismissed'
+  | 'failed';
+
+export type MerchantTaskSeverity = 'critical' | 'high' | 'medium' | 'low';
+
+export interface MerchantTask {
+  task_id: string;
+  merchant_id: string;
+  parent_audit_run_id: string | null;
+  source_executor_run_id: string | null;
+  lever: string | null;
+  severity: MerchantTaskSeverity;
+  title: string;
+  body: string | null;
+  status: MerchantTaskStatus;
+  assigned_to_agent: string | null;
+  assigned_to_human: string | null;
+  evidence_jsonb: Record<string, unknown> | null;
+  evidence?: Record<string, unknown> | null;
+  created_at: string | null;
+  updated_at: string | null;
+  completed_at: string | null;
+  dismissed_reason: string | null;
+}
+
+export interface MerchantExecutorRun {
+  run_id: string;
+  agent_name: string;
+  merchant_id: string | null;
+  parent_audit_run_id: string | null;
+  status: 'running' | 'succeeded' | 'failed' | 'skipped';
+  evidence_jsonb: Record<string, unknown> | null;
+  evidence?: Record<string, unknown> | null;
+  error_message: string | null;
+  started_at: string | null;
+  requested_at?: string | null;
+  completed_at: string | null;
+  result_type?: 'direct_action_completed' | 'human_task_recommended'
+                | 'verification_needed' | 'no_op';
+  materialized_task_id?: string | null;
 }

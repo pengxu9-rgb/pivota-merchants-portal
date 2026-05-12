@@ -1242,6 +1242,72 @@ class ApiClient {
     );
     return response.data?.data || response.data;
   }
+
+  // P1.3: list merchant tasks. Backend already exposes this at
+  // /api/merchant-center/tasks; merchant portal previously didn't
+  // call it. Default filter = open work (pending + in_progress).
+  async listMerchantTasks(options?: {
+    statusFilter?: string;
+    limit?: number;
+  }): Promise<{
+    merchant_id: string;
+    count: number;
+    tasks: import('./types/ai-readiness').MerchantTask[];
+  }> {
+    const params: Record<string, string | number> = {
+      limit: options?.limit ?? 50,
+    };
+    if (options?.statusFilter) params.status_filter = options.statusFilter;
+    const response = await this.client.get('/api/merchant-center/tasks', {
+      params,
+    });
+    return response.data;
+  }
+
+  async updateMerchantTask(
+    taskId: string,
+    body: {
+      status: 'pending' | 'in_progress' | 'done' | 'failed';
+      assigned_to_human?: string | null;
+      evidence?: Record<string, unknown> | null;
+    },
+  ): Promise<{ task: import('./types/ai-readiness').MerchantTask }> {
+    const response = await this.client.patch(
+      `/api/merchant-center/tasks/${encodeURIComponent(taskId)}`,
+      body,
+    );
+    return response.data;
+  }
+
+  async dismissMerchantTask(
+    taskId: string, reason: string,
+  ): Promise<{ task: import('./types/ai-readiness').MerchantTask }> {
+    const response = await this.client.post(
+      `/api/merchant-center/tasks/${encodeURIComponent(taskId)}/dismiss`,
+      { reason },
+    );
+    return response.data;
+  }
+
+  async listMerchantExecutorRuns(options?: {
+    agentName?: string;
+    limit?: number;
+  }): Promise<{
+    merchant_id: string;
+    agent_name: string | null;
+    count: number;
+    runs: import('./types/ai-readiness').MerchantExecutorRun[];
+  }> {
+    const params: Record<string, string | number> = {
+      limit: options?.limit ?? 20,
+    };
+    if (options?.agentName) params.agent_name = options.agentName;
+    const response = await this.client.get(
+      '/api/merchant-center/executor-runs',
+      { params },
+    );
+    return response.data;
+  }
 }
 
 // Export singleton instance

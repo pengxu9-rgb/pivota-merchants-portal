@@ -22,6 +22,8 @@ import {
   PageHeader,
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
+import { MerchantTaskQueuePanel } from '@/components/audit/MerchantTaskQueuePanel';
+import { MerchantExecutorActivityPanel } from '@/components/audit/MerchantExecutorActivityPanel';
 import type {
   AgentCenterBdBrandReport,
   AgentCenterBdCoOccurrenceVerification,
@@ -377,11 +379,22 @@ export default function AiReadinessAuditPage() {
       ) : null}
 
       {auditResult ? (
-        <AuditReportRenderer
-          report={auditResult.brand_report}
-          remaining={auditResult.rate_limit_remaining}
-          pivotaCanonicalKeys={auditResult.audited_via_pivota_canonical}
-        />
+        <>
+          <AuditReportRenderer
+            report={auditResult.brand_report}
+            remaining={auditResult.rate_limit_remaining}
+            pivotaCanonicalKeys={auditResult.audited_via_pivota_canonical}
+          />
+          {/* P1.3: surface backend-already-emitted task queue +
+              executor activity. Backend has been returning these
+              fields since PR-6 / PR-4a; merchant portal previously
+              ignored them. Mounted below the report so merchants
+              can act on the audit findings inline (work the
+              architecture audit doc §4.5 calls "make the merchant
+              portal a workbench, not just a report"). */}
+          <MerchantTaskQueuePanel />
+          <MerchantExecutorActivityPanel />
+        </>
       ) : null}
     </div>
   );
