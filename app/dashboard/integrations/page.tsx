@@ -110,6 +110,16 @@ interface WebhookFormState {
   events: string[];
 }
 
+interface LoadIntegrationOptions {
+  preferredPrimaryStoreId?: string;
+}
+
+const applyPrimaryStoreSelection = (stores: any[], storeId: string) =>
+  stores.map((store) => ({
+    ...store,
+    is_primary: store.id === storeId,
+  }));
+
 export default function IntegrationsPage() {
   const { t, language } = useMerchantLanguage();
   const [loading, setLoading] = useState(true);
@@ -144,7 +154,10 @@ export default function IntegrationsPage() {
     events: ['order.created', 'payment.completed', 'payment.failed'],
   });
 
-  const primaryStoreId = connectedStores.find((store) => store?.is_active)?.id || null;
+  const explicitPrimaryStoreId = connectedStores.find((store) => store?.is_primary)?.id || null;
+  const primaryStoreId =
+    explicitPrimaryStoreId ||
+    (connectedStores.length === 1 && connectedStores[0]?.is_active ? connectedStores[0].id : null);
   const activePSPCount = connectedPSPs.filter((psp) => psp.is_active).length;
   const liveReadyPSPCount = connectedPSPs.filter((psp) => psp.is_active && psp.live_charge_ready).length;
   const blockedActivePSPCount = connectedPSPs.filter((psp) => psp.is_active && !psp.live_charge_ready).length;
@@ -198,7 +211,10 @@ export default function IntegrationsPage() {
     });
   }, [webhookConfig]);
 
-  const loadIntegrationData = async (merchantIdValue: string) => {
+  const loadIntegrationData = async (
+    merchantIdValue: string,
+    options: LoadIntegrationOptions = {},
+  ) => {
     try {
       setLoading(true);
       setNotice(null);
@@ -211,7 +227,12 @@ export default function IntegrationsPage() {
         apiClient.getWebhookLogs(20).catch(() => ({ deliveries: [], summary_24h: null })),
       ]);
 
-      setConnectedStores(stores);
+      const hasServerPrimary = stores.some((store: any) => store?.is_primary);
+      setConnectedStores(
+        options.preferredPrimaryStoreId && !hasServerPrimary
+          ? applyPrimaryStoreSelection(stores, options.preferredPrimaryStoreId)
+          : stores,
+      );
       setConnectedPSPs(psps);
       setApiCredentials(apiKey);
       setWebhookConfig(webhook);
@@ -284,11 +305,12 @@ export default function IntegrationsPage() {
     if (!store?.id) return;
     try {
       const response = await apiClient.setPrimaryStore(store.id);
+      setConnectedStores((currentStores) => applyPrimaryStoreSelection(currentStores, store.id));
       setNotice({
         tone: 'success',
         text: response.message || 'Primary sales channel updated.',
       });
-      await loadIntegrationData(merchantId);
+      await loadIntegrationData(merchantId, { preferredPrimaryStoreId: store.id });
     } catch (error: any) {
       setNotice({
         tone: 'critical',
@@ -728,6 +750,7 @@ export default function IntegrationsPage() {
               {connectedStores.length > 0 ? (
                 connectedStores.map((store, index) => {
                   const guideKey = normalizeIntegrationGuideKey(store.platform);
+                  const isPrimaryStore = primaryStoreId === store.id;
 
                   return (
                     <div
@@ -750,7 +773,7 @@ export default function IntegrationsPage() {
                                 onClick={() => openGuide(guideKey)}
                               />
                             ) : null}
-                            {primaryStoreId && store.id === primaryStoreId ? (
+                            {isPrimaryStore ? (
                               <StatusBadge tone="brand">
                                 {t('dashboard.integrations.salesChannels.primary')}
                               </StatusBadge>
@@ -770,7 +793,7 @@ export default function IntegrationsPage() {
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        {store?.is_active && primaryStoreId && store.id !== primaryStoreId ? (
+                        {store?.is_active && !isPrimaryStore ? (
                           <button
                             onClick={() => handleSetPrimaryStore(store)}
                             className="merchant-button-secondary px-3 py-2 text-sm"

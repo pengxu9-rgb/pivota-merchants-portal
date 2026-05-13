@@ -37,6 +37,135 @@ function finiteNumberOrNull(value: unknown): number | null {
   return Number.isFinite(numberValue) ? numberValue : null;
 }
 
+const ACTIVE_STORE_STATUSES = new Set(['active', 'connected']);
+const REMOVED_STORE_STATUSES = new Set([
+  'archived',
+  'deleted',
+  'disabled',
+  'disconnected',
+  'inactive',
+  'removed',
+]);
+
+function normalizeBooleanFlag(value: unknown): boolean {
+  if (value === true || value === 1) return true;
+  if (typeof value === 'string') {
+    return ['1', 'true', 'yes', 'primary'].includes(value.trim().toLowerCase());
+  }
+  return false;
+}
+
+function normalizeStoreStatus(value: unknown): string {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizeStoreTimestamp(value: unknown): number {
+  if (!value) return 0;
+  const timestamp = new Date(String(value)).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function normalizeConnectedStore(rawStore: any, index: number) {
+  const platform = String(rawStore.platform || '').trim().toLowerCase();
+  const domain = String(rawStore.domain || rawStore.store_url || rawStore.shop_domain || '').trim();
+  const status = normalizeStoreStatus(rawStore.status);
+  const id =
+    rawStore.id ||
+    rawStore.store_id ||
+    rawStore.storeId ||
+    `${platform || 'store'}-${domain || rawStore.name || rawStore.store_name || index}`;
+  const isActive =
+    normalizeBooleanFlag(rawStore.is_active) ||
+    ACTIVE_STORE_STATUSES.has(status);
+  const isPrimary =
+    normalizeBooleanFlag(rawStore.is_primary) ||
+    normalizeBooleanFlag(rawStore.isPrimary) ||
+    normalizeBooleanFlag(rawStore.primary) ||
+    normalizeBooleanFlag(rawStore.is_default) ||
+    normalizeBooleanFlag(rawStore.isDefault) ||
+    normalizeBooleanFlag(rawStore.primary_store);
+
+  return {
+    id: String(id),
+    store_id: String(id),
+    platform,
+    name: rawStore.name || rawStore.store_name || domain || 'Store',
+    store_name: rawStore.name || rawStore.store_name || domain || 'Store',
+    domain,
+    status: rawStore.status,
+    is_active: isActive,
+    is_primary: isPrimary,
+    product_count: rawStore.product_count ?? 0,
+    last_sync: rawStore.last_sync || null,
+    connected_at: rawStore.connected_at || null,
+    updated_at: rawStore.updated_at || null,
+  };
+}
+
+function normalizeConnectedStores(rawStores: any[]) {
+  const stores = rawStores
+    .map((store, index) => normalizeConnectedStore(store, index))
+    .filter((store) => !REMOVED_STORE_STATUSES.has(normalizeStoreStatus(store.status)));
+
+  const dedupedById = new Map<string, (typeof stores)[number]>();
+  for (const store of stores) {
+    const existing = dedupedById.get(store.id);
+    if (!existing) {
+      dedupedById.set(store.id, store);
+      continue;
+    }
+    const existingTimestamp = Math.max(
+      normalizeStoreTimestamp(existing.updated_at),
+      normalizeStoreTimestamp(existing.connected_at),
+    );
+    const nextTimestamp = Math.max(
+      normalizeStoreTimestamp(store.updated_at),
+      normalizeStoreTimestamp(store.connected_at),
+    );
+    if ((store.is_primary && !existing.is_primary) || nextTimestamp >= existingTimestamp) {
+      dedupedById.set(store.id, store);
+    }
+  }
+
+  const dedupedByLocation = new Map<string, (typeof stores)[number]>();
+  for (const store of dedupedById.values()) {
+    const locationKey =
+      store.platform && store.domain
+        ? `${store.platform}:${store.domain.toLowerCase()}`
+        : store.id;
+    const existing = dedupedByLocation.get(locationKey);
+    if (!existing) {
+      dedupedByLocation.set(locationKey, store);
+      continue;
+    }
+    const existingTimestamp = Math.max(
+      normalizeStoreTimestamp(existing.updated_at),
+      normalizeStoreTimestamp(existing.connected_at),
+    );
+    const nextTimestamp = Math.max(
+      normalizeStoreTimestamp(store.updated_at),
+      normalizeStoreTimestamp(store.connected_at),
+    );
+    if ((store.is_primary && !existing.is_primary) || nextTimestamp >= existingTimestamp) {
+      dedupedByLocation.set(locationKey, store);
+    }
+  }
+
+  const primarySeen = { value: false };
+  return Array.from(dedupedByLocation.values()).map((store) => {
+    if (!store.is_primary) return store;
+    if (primarySeen.value) return { ...store, is_primary: false };
+    primarySeen.value = true;
+    return store;
+  }).sort((left, right) => {
+    if (left.is_primary !== right.is_primary) return left.is_primary ? -1 : 1;
+    return (
+      Math.max(normalizeStoreTimestamp(right.updated_at), normalizeStoreTimestamp(right.connected_at)) -
+      Math.max(normalizeStoreTimestamp(left.updated_at), normalizeStoreTimestamp(left.connected_at))
+    );
+  });
+}
+
 class ApiClient {
   private client: AxiosInstance;
 
@@ -714,20 +843,7 @@ class ApiClient {
     // Use dashboard routes that merge runtime and demo stores
     const response = await this.client.get(`/merchant/${merchantId}/integrations`);
     const raw = response.data?.data?.stores || [];
-    // Normalize to UI expected fields
-    return raw.map((s: any) => ({
-      id: s.id || s.store_id || `${s.platform}-${s.domain || s.name}`,
-      platform: s.platform,
-      store_name: s.name || s.store_name || s.domain || 'Store',
-      domain: s.domain || s.store_url || '',
-      status: s.status,
-      is_active: (() => {
-        const status = (s.status || '').toLowerCase();
-        return status === 'connected' || status === 'active' || s.is_active === true;
-      })(),
-      product_count: s.product_count ?? 0,
-      last_sync: s.last_sync || new Date().toISOString(),
-    }));
+    return normalizeConnectedStores(Array.isArray(raw) ? raw : []);
   }
 
   async setPrimaryStore(storeId: string) {
