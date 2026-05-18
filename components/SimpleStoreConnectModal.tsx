@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { X, Store } from 'lucide-react';
+import { formatApiError, formatApiErrorPayload } from '@/lib/api-error';
 import { API_CONFIG } from '@/lib/config';
 
 interface SimpleStoreConnectModalProps {
@@ -72,7 +73,7 @@ export default function SimpleStoreConnectModal({
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.detail || 'Connection failed');
+        throw new Error(formatApiErrorPayload(error, 'Connection failed'));
       }
 
       const result = await response.json();
@@ -80,7 +81,7 @@ export default function SimpleStoreConnectModal({
       onSuccess();
       onClose();
     } catch (error: any) {
-      alert(`❌ Failed to connect ${platform}: ${error.message}`);
+      alert(`❌ Failed to connect ${platform}: ${formatApiError(error, 'Connection failed')}`);
     } finally {
       setSaving(false);
     }
@@ -168,7 +169,7 @@ export default function SimpleStoreConnectModal({
                   type="text"
                   value={siteId}
                   onChange={(e) => setSiteId(e.target.value)}
-                  placeholder="Your Wix Site ID"
+                  placeholder="Wix Site ID or Wix URL"
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -191,7 +192,7 @@ export default function SimpleStoreConnectModal({
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <p className="text-sm text-blue-800">
               {platform === 'shopify' && '💡 Your store domain should end with .myshopify.com. Enter your app client ID/secret and Pivota will refresh Admin token automatically.'}
-              {platform === 'wix' && '💡 Find your Site ID and API key in Wix Dashboard → Settings → Developer Tools.'}
+              {platform === 'wix' && '💡 Copy the Site ID from the Wix site URL, or paste the full Wix URL if it contains the Site ID. Then enter the API key from Wix API Keys Manager.'}
             </p>
           </div>
         </div>
@@ -215,7 +216,6 @@ export default function SimpleStoreConnectModal({
     </div>
   );
 }
-
 
 
 

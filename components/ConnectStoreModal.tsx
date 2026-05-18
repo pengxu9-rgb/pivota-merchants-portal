@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { X, Store, Loader2, Link as LinkIcon, Copy } from 'lucide-react';
 import { IntegrationGuideDialog } from '@/components/integration-guides/IntegrationGuideDialog';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
+import { formatApiError, formatApiErrorPayload } from '@/lib/api-error';
 import { API_CONFIG } from '@/lib/config';
 import { formatIntegrationCopy, getStoreFormCopy } from '@/lib/integration-form-copy';
 import {
@@ -176,10 +177,10 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
           handleClose();
         }
       } else {
-        alert(`${copy.failedPrefix}: ${data.detail || data.message || 'Unknown error'}`);
+        alert(`${copy.failedPrefix}: ${formatApiErrorPayload(data, 'Unknown error')}`);
       }
     } catch (error: any) {
-      alert(`${copy.errorPrefix}: ${error.message}`);
+      alert(`${copy.errorPrefix}: ${formatApiError(error, 'Unknown error')}`);
     } finally {
       setLoading(false);
     }
@@ -406,7 +407,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                   value={wixSiteId}
                   onChange={(e) => setWixSiteId(e.target.value)}
                   className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
-                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx or Wix URL"
                   required
                 />
               </div>

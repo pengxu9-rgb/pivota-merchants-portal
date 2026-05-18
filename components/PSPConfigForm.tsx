@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { IntegrationGuideDialog } from '@/components/integration-guides/IntegrationGuideDialog';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
+import { formatApiError } from '@/lib/api-error';
 import { formatIntegrationCopy, getPspFormCopy } from '@/lib/integration-form-copy';
 import {
   getIntegrationGuideUiText,
@@ -90,7 +91,7 @@ export function PSPConfigForm({
     } catch (error: any) {
       alert(
         `${formatIntegrationCopy(copy.failedToConnect, { provider })}: ${
-          error.response?.data?.detail || error.message
+          formatApiError(error, 'Connection failed')
         }`,
       );
     } finally {

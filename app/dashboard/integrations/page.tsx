@@ -21,6 +21,7 @@ import { IntegrationHelpButton } from '@/components/integration-guides/Integrati
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import PSPRoutingConfig from '@/components/PSPRoutingConfig';
 import { PSPConfigForm } from '@/components/PSPConfigForm';
+import { formatApiError } from '@/lib/api-error';
 import { apiClient } from '@/lib/api-client';
 import {
   getIntegrationGuideUiText,
@@ -291,10 +292,7 @@ export default function IntegrationsPage() {
     } catch (error: any) {
       setNotice({
         tone: 'critical',
-        text:
-          error.response?.data?.detail ||
-          error.message ||
-          'Failed to sync products for this sales channel.',
+        text: formatApiError(error, 'Failed to sync products for this sales channel.'),
       });
     } finally {
       setSyncingStoreId(null);
@@ -314,10 +312,7 @@ export default function IntegrationsPage() {
     } catch (error: any) {
       setNotice({
         tone: 'critical',
-        text:
-          error.response?.data?.detail ||
-          error.message ||
-          'Failed to set the primary sales channel.',
+        text: formatApiError(error, 'Failed to set the primary sales channel.'),
       });
     }
   };
@@ -338,10 +333,7 @@ export default function IntegrationsPage() {
     } catch (error: any) {
       setNotice({
         tone: 'critical',
-        text:
-          error.response?.data?.detail ||
-          error.message ||
-          'Failed to remove the sales channel.',
+        text: formatApiError(error, 'Failed to remove the sales channel.'),
       });
     } finally {
       setLoading(false);
@@ -364,10 +356,7 @@ export default function IntegrationsPage() {
     } catch (error: any) {
       setNotice({
         tone: 'critical',
-        text:
-          error.response?.data?.detail ||
-          error.message ||
-          'Failed to remove the payment processor.',
+        text: formatApiError(error, 'Failed to remove the payment processor.'),
       });
     } finally {
       setLoading(false);
@@ -392,10 +381,7 @@ export default function IntegrationsPage() {
     } catch (error: any) {
       setNotice({
         tone: 'critical',
-        text:
-          error.response?.data?.detail ||
-          error.message ||
-          'Processor test failed.',
+        text: formatApiError(error, 'Processor test failed.'),
       });
     } finally {
       setTestingPspId(null);
@@ -428,10 +414,7 @@ export default function IntegrationsPage() {
     } catch (error: any) {
       setNotice({
         tone: 'critical',
-        text:
-          error.response?.data?.detail ||
-          error.message ||
-          'Failed to save webhook configuration.',
+        text: formatApiError(error, 'Failed to save webhook configuration.'),
       });
     } finally {
       setSavingWebhook(false);
@@ -462,10 +445,7 @@ export default function IntegrationsPage() {
     } catch (error: any) {
       setNotice({
         tone: 'critical',
-        text:
-          error.response?.data?.detail ||
-          error.message ||
-          'Failed to rotate the merchant API key.',
+        text: formatApiError(error, 'Failed to rotate the merchant API key.'),
       });
     } finally {
       setRotatingApiKey(false);
@@ -480,10 +460,7 @@ export default function IntegrationsPage() {
     } catch (error: any) {
       setNotice({
         tone: 'critical',
-        text:
-          error.response?.data?.detail ||
-          error.message ||
-          'Failed to load the webhook signing secret.',
+        text: formatApiError(error, 'Failed to load the webhook signing secret.'),
       });
     } finally {
       setLoadingSecret(false);
@@ -503,10 +480,7 @@ export default function IntegrationsPage() {
     } catch (error: any) {
       setNotice({
         tone: 'critical',
-        text:
-          error.response?.data?.detail ||
-          error.message ||
-          'Failed to rotate the webhook signing secret.',
+        text: formatApiError(error, 'Failed to rotate the webhook signing secret.'),
       });
     } finally {
       setRotatingSecret(false);
@@ -526,10 +500,7 @@ export default function IntegrationsPage() {
     } catch (error: any) {
       setNotice({
         tone: 'critical',
-        text:
-          error.response?.data?.detail ||
-          error.message ||
-          'Failed to send the test webhook.',
+        text: formatApiError(error, 'Failed to send the test webhook.'),
       });
     } finally {
       setSendingWebhookTest(false);

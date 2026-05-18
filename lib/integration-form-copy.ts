@@ -101,7 +101,7 @@ const enStore: StoreFormCopy = {
   clientSecretPlaceholder: "Shopify app client secret",
   shopifyCredentialHelp:
     "Get from Shopify Admin > Apps > Develop apps > Your app > API credentials.",
-  siteId: "Site ID",
+  siteId: "Site ID or Wix URL",
   apiKey: "API Key",
   storeNameOptional: "Store Name (Optional)",
   storeNamePlaceholder: "My Wix Store",
@@ -148,7 +148,7 @@ const zhStore: StoreFormCopy = {
   clientId: "Client ID",
   clientSecret: "Client Secret",
   shopifyCredentialHelp: "从 Shopify Admin > Apps > Develop apps > Your app > API credentials 获取。",
-  siteId: "Site ID",
+  siteId: "Site ID 或 Wix URL",
   apiKey: "API Key",
   storeNameOptional: "Store Name（可选）",
   storeUrl: "Store URL",
@@ -327,4 +327,3 @@ export function formatIntegrationCopy(
 ) {
   return template.replace(/\{(\w+)\}/g, (_match, key: string) => values[key] || "");
 }
-
