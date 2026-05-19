@@ -6,6 +6,7 @@ import { useMerchantFashionStore } from "@/lib/merchant-fashion-store";
 import type { FieldName } from "@/types/fashion-authoring";
 
 import { AgentBubble } from "./AgentBubble";
+import { AiTip } from "./AiTip";
 import { ProductChip } from "./ProductChip";
 import { ReplyChip } from "./ReplyChip";
 import { StatStrip } from "./StatStrip";
@@ -138,6 +139,21 @@ export function TriggerCard() {
           I&apos;ll walk you through them one at a time. Type what you know and skip
           what you don&apos;t — I won&apos;t make anything up.
         </p>
+      ) : null}
+
+      {/* Overflow note — surfaces when the merchant has more than what
+          the current fetch loaded. v1 loads up to 200 in one request;
+          backend supports up to 500. Bigger catalogs need v2's bulk
+          paths. Telling the merchant honestly is better than letting
+          them wonder why they "ran out" mid-flow. */}
+      {totals?.has_more ? (
+        <div style={{ marginBottom: 14 }}>
+          <AiTip variant="info" title="There are more to come">
+            You have <strong>{totalIncomplete}</strong> products needing review.
+            I&apos;ll walk you through the first batch now — when you finish,
+            come back to this chat and I&apos;ll load the next.
+          </AiTip>
+        </div>
       ) : null}
 
       {/* Response chips — simplified to two clear actions. v1.2: dropped
