@@ -34,3 +34,6 @@ This app is deployed on Vercel at [https://agent.pivota.cc](https://agent.pivota
 - Tailwind CSS
 - Lucide Icons
 
+## Brand System
+
+This app uses Pivota Brand Kit v2.0 from `public/pivota-brand/`. Treat `public/pivota-brand/CLAUDE.md` as the local source of truth for logo, favicon, color, and brand-token usage.

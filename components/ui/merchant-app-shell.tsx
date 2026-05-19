@@ -8,7 +8,6 @@ import {
   ChevronDown,
   LogOut,
   Menu,
-  Store,
   X,
 } from "lucide-react";
 import { cx } from "@/lib/cx";
@@ -177,16 +176,14 @@ export function MerchantAppShell({
               )}
               title={`Pivota ${t("auth.shell.portalWordmark")}`}
             >
-              <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]">
-                <Store className="h-4.5 w-4.5" />
-              </div>
+              <span className="pv-logo pv-logo--gradient pv-logo--md" aria-hidden="true" />
               <div
                 className={cx(
                   "min-w-0 space-y-0.5",
                   sidebarCollapsed && "lg:hidden"
                 )}
               >
-                <p className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
+                <p className="pv-wordmark pv-wordmark--sm">
                   Pivota
                 </p>
                 <p className="text-[11px] text-[color:var(--merchant-muted)]">{t("shell.controlCenter")}</p>

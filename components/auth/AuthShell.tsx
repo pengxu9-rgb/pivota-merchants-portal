@@ -160,11 +160,9 @@ export function AuthShell({
           >
             <div className="flex items-start justify-between gap-4">
               <Link href="/login" className="flex items-center gap-3" aria-label="Pivota Merchant Portal">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--merchant-line-strong)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]">
-                  <Store className="h-5 w-5" />
-                </div>
+                <span className="pv-logo pv-logo--gradient pv-logo--lg" aria-hidden="true" />
                 <div>
-                  <p className="text-sm font-semibold tracking-[0.01em] text-[color:var(--merchant-ink)]">
+                  <p className="pv-wordmark pv-wordmark--sm">
                     Pivota
                   </p>
                   <p className="text-[11px] uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
