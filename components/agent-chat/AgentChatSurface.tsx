@@ -22,15 +22,23 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
-import { useMerchantFashionStore } from "@/lib/merchant-fashion-store";
+import {
+  selectCurrentProduct,
+  useMerchantFashionStore,
+} from "@/lib/merchant-fashion-store";
 import type {
-  FashionTotals,
-  FieldName,
+  BeautyFieldName,
+  BeautySubcategoryKind,
+  CategoryTab,
+  CategoryTotals,
+  FashionFieldName,
+  FieldSchema,
   FieldStateSummary,
   FieldStatus,
   IncompleteProduct,
 } from "@/types/fashion-authoring";
 
+import { BeautyEditor } from "./BeautyEditor";
 import { DeferCard } from "./DeferCard";
 import { DoneCard } from "./DoneCard";
 import { HonestFeedbackCard } from "./HonestFeedbackCard";
@@ -71,14 +79,17 @@ function _normalizeFieldState(raw: unknown): FieldStateSummary {
 }
 
 /**
- * Defensive shaper for the /merchant/products/fashion_completeness
- * payload. The contract is narrow and stable but we guard against
- * field renames / null nesting so a single bad row doesn't crash the
- * whole surface.
+ * Defensive shaper for the per-category completeness payloads.
+ * Same outer shape (data.queue + data.totals) — the per-product
+ * field set differs by category. The shaper switches on the
+ * category param and produces a discriminated-union queue.
  */
-function _shapeQueue(payload: unknown): {
+function _shapeQueue(
+  payload: unknown,
+  category: CategoryTab,
+): {
   queue: IncompleteProduct[];
-  totals: FashionTotals | null;
+  totals: CategoryTotals | null;
 } {
   if (!payload || typeof payload !== "object") return { queue: [], totals: null };
   const root = payload as Record<string, unknown>;
@@ -86,7 +97,7 @@ function _shapeQueue(payload: unknown): {
     ? (root.data as Record<string, unknown>)
     : root;
   const rawQueue = data.queue;
-  if (!Array.isArray(rawQueue)) return { queue: [], totals: _shapeTotals(data.totals) };
+  if (!Array.isArray(rawQueue)) return { queue: [], totals: _shapeTotals(data.totals, category) };
 
   const queue: IncompleteProduct[] = [];
   for (const item of rawQueue) {
@@ -96,36 +107,103 @@ function _shapeQueue(payload: unknown): {
     const rawFields = (it.fields && typeof it.fields === "object")
       ? (it.fields as Record<string, unknown>)
       : {};
-    const fields: Record<FieldName, FieldStateSummary> = {
-      material: _normalizeFieldState(rawFields.material),
-      care: _normalizeFieldState(rawFields.care),
-      size_guide: _normalizeFieldState(rawFields.size_guide),
-    };
-    queue.push({
+    const base = {
       platform: it.platform,
       platform_product_id: it.platform_product_id,
       title: typeof it.title === "string" ? it.title : "Untitled product",
       image_url: typeof it.image_url === "string" ? it.image_url : null,
       sku: typeof it.sku === "string" ? it.sku : null,
-      fields,
-    });
+    };
+    if (category === "fashion") {
+      const fields: Record<FashionFieldName, FieldStateSummary> = {
+        material: _normalizeFieldState(rawFields.material),
+        care: _normalizeFieldState(rawFields.care),
+        size_guide: _normalizeFieldState(rawFields.size_guide),
+      };
+      queue.push({ ...base, category_kind: "fashion", fields });
+    } else {
+      // v2.1: beauty products carry their own subcategory_kind +
+      // field_schemas. The fields object holds only the subcategory's
+      // applicable fields (a Partial of BeautyFieldName).
+      const subcategory_kind = (typeof it.subcategory_kind === "string"
+        ? it.subcategory_kind
+        : "skincare") as BeautySubcategoryKind;
+      const fieldSchemas: FieldSchema[] = Array.isArray(it.field_schemas)
+        ? (it.field_schemas as FieldSchema[]).filter(
+            (s): s is FieldSchema =>
+              !!s && typeof s === "object" && typeof s.name === "string",
+          )
+        : [];
+      const fields: Partial<Record<BeautyFieldName, FieldStateSummary>> = {};
+      for (const schema of fieldSchemas) {
+        const name = schema.name as BeautyFieldName;
+        fields[name] = _normalizeFieldState(rawFields[name]);
+      }
+      queue.push({
+        ...base,
+        category_kind: "beauty",
+        subcategory_kind,
+        subcategory_label:
+          typeof it.subcategory_label === "string" ? it.subcategory_label : undefined,
+        category_path:
+          typeof it.category_path === "string" ? it.category_path : null,
+        field_schemas: fieldSchemas,
+        fields,
+      });
+    }
   }
-  return { queue, totals: _shapeTotals(data.totals) };
+  return { queue, totals: _shapeTotals(data.totals, category) };
 }
 
-function _shapeTotals(raw: unknown): FashionTotals | null {
+function _shapeTotals(raw: unknown, category: CategoryTab): CategoryTotals | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   const n = (k: string): number => typeof r[k] === "number" ? r[k] as number : 0;
+  if (category === "fashion") {
+    return {
+      category: "fashion",
+      category_total: n("fashion_total"),
+      total_incomplete: n("total_incomplete"),
+      missing_per_field: {
+        material: n("missing_material"),
+        care: n("missing_care"),
+        size_guide: n("missing_size_guide"),
+      },
+      has_more: typeof r.has_more === "boolean" ? r.has_more : false,
+      page_size: n("page_size") || 50,
+    };
+  }
+  // v2.1.1 — both beauty_care and beauty_tools tabs land here. They
+  // hit the same /beauty_completeness endpoint with different
+  // subcategory_group filters; the response shape is identical.
+  // v2.1 beauty totals come back as a flat beauty_total +
+  // per_subcategory breakdown. The trigger card sums across
+  // subcategories' missing_per_field for the StatStrip.
+  const rawPerSub = (r.per_subcategory && typeof r.per_subcategory === "object")
+    ? (r.per_subcategory as Record<string, { total?: number; missing_per_field?: Record<string, number> }>)
+    : {};
+  const aggregatedMissing: Record<string, number> = {};
+  const perSub: CategoryTotals["per_subcategory"] = {};
+  for (const [subKind, sub] of Object.entries(rawPerSub)) {
+    const mpf = (sub && typeof sub === "object" && sub.missing_per_field) || {};
+    for (const [field, count] of Object.entries(mpf)) {
+      aggregatedMissing[field] = (aggregatedMissing[field] || 0) + (typeof count === "number" ? count : 0);
+    }
+    perSub[subKind as BeautySubcategoryKind] = {
+      total: typeof sub?.total === "number" ? sub.total : 0,
+      missing_per_field: Object.fromEntries(
+        Object.entries(mpf).filter(([, v]) => typeof v === "number"),
+      ),
+    };
+  }
   return {
-    fashion_total: n("fashion_total"),
-    missing_material: n("missing_material"),
-    missing_care: n("missing_care"),
-    missing_size_guide: n("missing_size_guide"),
+    category, // preserves the tab — beauty_care or beauty_tools
+    category_total: n("beauty_total"),
     total_incomplete: n("total_incomplete"),
-    page: n("page"),
-    page_size: n("page_size") || 50,
+    missing_per_field: aggregatedMissing,
     has_more: typeof r.has_more === "boolean" ? r.has_more : false,
+    page_size: n("page_size") || 50,
+    per_subcategory: perSub,
   };
 }
 
@@ -134,6 +212,8 @@ export function AgentChatSurface() {
   const setScreen = useMerchantFashionStore((s) => s.setScreen);
   const setQueue = useMerchantFashionStore((s) => s.setQueue);
   const queueLength = useMerchantFashionStore((s) => s.queue.length);
+  const category = useMerchantFashionStore((s) => s.category);
+  const current = useMerchantFashionStore(selectCurrentProduct);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -145,22 +225,29 @@ export function AgentChatSurface() {
       setLoadError(null);
       try {
         // Pull a wide page so the cursor walks the full queue. Backend
-        // caps at 200; for catalogs larger than 200 fashion-incomplete
-        // items the UI surfaces `totals.has_more` as a v2 paging hook.
-        const payload = await apiClient.getMerchantFashionCompleteness({
-          page: 1,
-          page_size: 200,
-        });
+        // caps at 500; for larger catalogs `totals.has_more` is the
+        // paging hook (v2.x).
+        //
+        // v2.1.1: three tabs. Fashion uses the dedicated fashion
+        // endpoint. Beauty's two tabs share the beauty_completeness
+        // endpoint, scoped via the subcategory_group query param.
+        let fetchPromise;
+        if (category === "fashion") {
+          fetchPromise = apiClient.getMerchantFashionCompleteness({
+            page: 1,
+            page_size: 200,
+          });
+        } else {
+          fetchPromise = apiClient.getMerchantBeautyCompleteness({
+            page: 1,
+            page_size: 200,
+            subcategory_group: category, // "beauty_care" | "beauty_tools"
+          });
+        }
+        const payload = await fetchPromise;
         if (cancelled) return;
-        const { queue, totals } = _shapeQueue(payload);
+        const { queue, totals } = _shapeQueue(payload, category);
         setQueue(queue, totals);
-        // Routing rules:
-        //   - empty queue + non-paused screen → A (covered)
-        //   - non-empty queue + stale "done" screen → flip to trigger
-        //     (was a v1 bug where Done lingered after the user came
-        //     back from a different page)
-        //   - "paused" is honored regardless of queue state — the
-        //     merchant chose it, don't override
         if (queue.length === 0) {
           if (screen !== "paused") setScreen("done");
         } else if (screen === "done") {
@@ -168,7 +255,7 @@ export function AgentChatSurface() {
         }
       } catch (err) {
         if (cancelled) return;
-        setLoadError(err instanceof Error ? err.message : "Failed to load fashion completeness");
+        setLoadError(err instanceof Error ? err.message : "Failed to load completeness");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -177,10 +264,11 @@ export function AgentChatSurface() {
     return () => {
       cancelled = true;
     };
-    // Intentionally only run on mount — refreshes happen via explicit
-    // action chips, not a polling loop.
+    // Re-fetch on category change too — the queue + totals are per-
+    // category. setCategory in the store clears state before this
+    // effect re-runs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [category]);
 
   const content = useMemo(() => {
     if (loading) return <LoadingBubble />;
@@ -206,7 +294,14 @@ export function AgentChatSurface() {
       case "trigger":
         return <TriggerCard />;
       case "structured":
-        return <StructuredEditor />;
+        // Dispatch the per-category editor based on the current
+        // product's discriminator. Both editors share the cursor
+        // (advanceCursor / markUnknown / etc.) via the store.
+        return current && current.category_kind === "beauty" ? (
+          <BeautyEditor />
+        ) : (
+          <StructuredEditor />
+        );
       case "done":
         return <DoneCard />;
       case "honest_feedback":
@@ -218,7 +313,7 @@ export function AgentChatSurface() {
       default:
         return <TriggerCard />;
     }
-  }, [loading, loadError, queueLength, screen]);
+  }, [loading, loadError, queueLength, screen, current]);
 
   // Two-column layout only on the structured screen — that's where the
   // queue sidebar adds value. Trigger / done / paused / honest_feedback

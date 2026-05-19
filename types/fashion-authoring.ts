@@ -8,7 +8,96 @@
  * State-machine names mirror the design handoff state map (artboard 10).
  */
 
-export type FieldName = "material" | "care" | "size_guide";
+/**
+ * Field names per category. v2.1 adds beauty subcategory fields
+ * (tools-specific: tool_material / use_with / care_instructions).
+ *
+ * The agent surface dispatches the editor based on the current
+ * product's `subcategory_kind`; each side speaks its category's field
+ * names. The discriminated union on IncompleteProduct narrows down
+ * to the right Record shape so components don't need to type-cast.
+ */
+export type FashionFieldName = "material" | "care" | "size_guide";
+export type BeautyFieldName =
+  // Skincare-shape (also used by haircare / bath / body / makeup)
+  | "raw_inci"
+  | "how_to_use_text"
+  | "skin_concerns"
+  // Tools-shape (v2.1 — brushes / sponges / applicators)
+  | "tool_material"
+  | "use_with"
+  | "care_instructions";
+export type FieldName = FashionFieldName | BeautyFieldName;
+
+/**
+ * v2.1 beauty subcategory discriminator. Backend's
+ * /beauty_completeness payload returns `subcategory_kind` per product;
+ * UI uses it to pick the right form. Out-of-scope subcategories
+ * (fragrance, accessories) aren't in the queue today.
+ */
+export type BeautySubcategoryKind =
+  | "skincare"
+  | "haircare"
+  | "bath"
+  | "body"
+  | "makeup"
+  | "tools";
+
+/**
+ * Field metadata surfaced by the backend's subcategory_schemas list.
+ * The form is rendered generically from this — UI doesn't hard-code
+ * which fields apply to which subcategory.
+ */
+export interface FieldSchema {
+  name: string;
+  type: "text" | "textarea" | "enum" | "enum_multi";
+  label: string;
+  placeholder?: string;
+  hint?: string;
+  allowed_values?: string[];
+}
+
+/**
+ * Category discriminator on EACH PRODUCT in the queue. Today products
+ * are either fashion or beauty (regardless of subcategory). The store
+ * walks ONE category at a time; this discriminator is what the editor
+ * uses to pick StructuredEditor vs BeautyEditor.
+ */
+export type CategoryKind = "fashion" | "beauty";
+
+/**
+ * The TAB the merchant has selected. v2.1.1 splits beauty into two
+ * top-level tabs (care vs tools) because a single Beauty tab that
+ * switches forms mid-flow was confusing in preview tests. The
+ * backend's subcategory_group filter on /beauty_completeness scopes
+ * the queue to the right slice.
+ *
+ * `beauty_care` and `beauty_tools` both produce products with
+ * `category_kind: "beauty"` — they just have different
+ * subcategory_kind values and different field schemas.
+ */
+export type CategoryTab = "fashion" | "beauty_care" | "beauty_tools";
+
+/**
+ * Closed enum of allowed skin_concerns values. Mirrors
+ * services/beauty_field_authoring.ALLOWED_SKIN_CONCERNS — keep in
+ * sync. The GET response also surfaces this list so the multi-select
+ * can read it from the API instead of the constant; the constant is
+ * still here for typing.
+ */
+export const ALLOWED_SKIN_CONCERNS = [
+  "oily",
+  "dry",
+  "combination",
+  "normal",
+  "sensitive",
+  "acne-prone",
+  "aging",
+  "hyperpigmentation",
+  "redness",
+  "dullness",
+] as const;
+export type SkinConcern = (typeof ALLOWED_SKIN_CONCERNS)[number];
 
 /** Backend per-field outcome from PUT /fashion_fields. */
 export type FieldOutcome =
@@ -39,17 +128,47 @@ export type ChatState =
 
 /**
  * Per-product summary as displayed in the trigger and structured editor.
- * Sourced from /merchant/readiness/optimization (per-product blockers).
+ * Sourced from the category-specific completeness endpoint.
+ *
+ * The discriminated union keeps the per-category field-name set tight
+ * (fashion has material/care/size_guide; beauty has
+ * raw_inci/how_to_use_text/skin_concerns) so a component switching on
+ * `category_kind` gets the right narrowing without dynamic type
+ * assertions.
  */
-export interface IncompleteProduct {
+interface IncompleteProductBase {
   platform: string;
   platform_product_id: string;
   title: string;
   image_url?: string | null;
   sku?: string | null;
-  // Per-field current state, derived from the readiness payload.
-  fields: Record<FieldName, FieldStateSummary>;
 }
+
+export interface IncompleteFashionProduct extends IncompleteProductBase {
+  category_kind: "fashion";
+  fields: Record<FashionFieldName, FieldStateSummary>;
+}
+
+export interface IncompleteBeautyProduct extends IncompleteProductBase {
+  category_kind: "beauty";
+  /** v2.1: which beauty subcategory this product belongs to. Drives
+   *  which field set the editor renders. */
+  subcategory_kind: BeautySubcategoryKind;
+  /** Human-readable subcategory label ("Skincare" / "Beauty tools"). */
+  subcategory_label?: string;
+  /** Canonical category_path from catalog_products — useful for
+   *  surfacing context to the merchant ("beauty/tools/brush"). */
+  category_path?: string | null;
+  /** Per-product field schema list. Maps 1:1 to keys in `fields`.
+   *  v2.1 backend surfaces this so the UI renders the form generically. */
+  field_schemas: FieldSchema[];
+  /** Per-field state for THIS subcategory's fields only. Indexed by
+   *  field name; the keys are a subset of BeautyFieldName matching the
+   *  subcategory's schema. */
+  fields: Partial<Record<BeautyFieldName, FieldStateSummary>>;
+}
+
+export type IncompleteProduct = IncompleteFashionProduct | IncompleteBeautyProduct;
 
 export interface FieldStateSummary {
   status: FieldStatus;
@@ -68,6 +187,25 @@ export interface FashionFieldsDraft {
   care?: string | null;
   size_guide?: string | Record<string, any> | null;
 }
+
+/** Beauty per-product draft. Carries every possible field across all
+ *  subcategories; the editor reads only the ones in the product's
+ *  field_schemas. skin_concerns is a multi-select list; the rest are
+ *  free-text. */
+export interface BeautyFieldsDraft {
+  raw_inci?: string | null;
+  how_to_use_text?: string | null;
+  skin_concerns?: SkinConcern[] | null;
+  // v2.1 tool fields
+  tool_material?: string | null;
+  use_with?: string | null;
+  care_instructions?: string | null;
+}
+
+/** Union over both per-category drafts; store keys per product by
+ *  productKey() and the draft shape comes from the product's
+ *  category_kind. Components narrow via the discriminator. */
+export type FieldsDraft = FashionFieldsDraft | BeautyFieldsDraft;
 
 /** Per-product map of field -> outcome from the most recent PUT. */
 export type FieldOutcomeMap = Partial<Record<FieldName, FieldOutcome>>;
@@ -103,6 +241,42 @@ export interface FashionTotals {
   has_more: boolean;
 }
 
+/** What `GET /merchant/products/beauty_completeness` returns under
+ *  `data.totals`. Same shape as fashion's but per beauty fields. */
+export interface BeautyTotals {
+  beauty_total: number;
+  missing_inci: number;
+  missing_how_to_use: number;
+  missing_concerns: number;
+  total_incomplete: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
+
+/** Generic counts the trigger card surfaces — derived from either
+ *  category's totals payload. Keeps the trigger's render logic
+ *  agnostic to which category it's showing. */
+export interface CategoryTotals {
+  /** The TAB the totals were fetched for. v2.1.1: beauty_care and
+   *  beauty_tools both produce category_kind="beauty" products but
+   *  come from disjoint subcategory_group fetches. */
+  category: CategoryTab;
+  category_total: number;
+  total_incomplete: number;
+  missing_per_field: Partial<Record<FieldName, number>>;
+  has_more: boolean;
+  page_size: number;
+  /** v2.1 beauty: per-subcategory breakdown ("tools: 608, skincare: 3").
+   *  Null for fashion (single category). */
+  per_subcategory?: Partial<
+    Record<
+      BeautySubcategoryKind,
+      { total: number; missing_per_field: Partial<Record<FieldName, number>> }
+    >
+  >;
+}
+
 /** What survives across renders (persisted by Zustand). */
 export interface FashionThreadState {
   /** Stable id for the thread; persists cursor across sidebar collapse, etc. */
@@ -128,20 +302,30 @@ export interface FashionThreadState {
   queue: IncompleteProduct[];
   /** Per-product accumulated PUT outcomes (so honest-feedback can read them). */
   outcomes: Record<string, FieldOutcomeMap>;
-  /** Per-product current draft values (unsaved). */
-  drafts: Record<string, FashionFieldsDraft>;
+  /** Per-product current draft values (unsaved). Keyed by productKey().
+   *  Type-wise this is a union — the discriminator on the matching
+   *  product in `queue` tells the editor which shape to expect. */
+  drafts: Record<string, FieldsDraft>;
   /** Reminder cadence the merchant picked on Screen 09. */
   cadence?: ReminderCadence;
   /** Set of platform_product_ids the merchant marked "no answer known"
    *  (state G; never re-prompt). Queue-exclusion list per Open Q §4. */
   unknownProductIds: string[];
   /**
-   * Snapshot of merchant-wide totals from the last
-   * /merchant/products/fashion_completeness response. queue is page-
-   * limited (max 200); UI counts must read from here, not queue.length.
-   * Null until the first successful load.
+   * Snapshot of merchant-wide totals from the last completeness fetch
+   * for the active category. queue is page-limited; UI counts must
+   * read from here, not queue.length. Null until the first
+   * successful load.
    */
-  totals: FashionTotals | null;
+  totals: CategoryTotals | null;
+  /**
+   * Which tab the surface is currently walking. v2.1.1 split this from
+   * the per-product CategoryKind so we can have two distinct beauty
+   * tabs (care vs tools) backed by the same beauty endpoint with a
+   * subcategory_group filter. Switching clears the queue + outcomes +
+   * drafts.
+   */
+  category: CategoryTab;
 }
 
 /** Key helper — products are identified end-to-end by (platform, id). */

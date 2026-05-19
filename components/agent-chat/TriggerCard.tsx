@@ -3,7 +3,7 @@
 import { ArrowRight, Clock, RefreshCcw } from "lucide-react";
 
 import { useMerchantFashionStore } from "@/lib/merchant-fashion-store";
-import type { FieldName } from "@/types/fashion-authoring";
+import type { CategoryTab, FieldName } from "@/types/fashion-authoring";
 
 import { AgentBubble } from "./AgentBubble";
 import { AiTip } from "./AiTip";
@@ -14,40 +14,159 @@ import { StatStrip } from "./StatStrip";
 /**
  * Screen 04 — Trigger surface.
  *
- * First touchpoint after a sync that landed fashion products lacking
- * material/care/size_guide info.
+ * v2.0 update: category-aware. Top-of-card toggle between Fashion and
+ * Beauty; counts + stat strip + body copy update based on selection.
  *
- * v1.2 fixes from preview testing:
- *   - Headline count now reads from `totals.total_incomplete` instead
- *     of `queue.length` (queue was page-limited at 50; the merchant
- *     actually has 146 incomplete on PawStyle)
- *   - StatStrip reads per-field counts from totals, not from the
- *     page-sliced queue
- *   - Dropped the "Tell me about the whole line" chip — it routed to
- *     the same per-product editor as "one at a time" (Screen 05 bulk
- *     free-text is deferred to v2). The misleading framing left users
- *     confused about what they were about to do.
- *   - Dropped the "See all N →" link (no dedicated catalog-fashion-
- *     issues list page exists in v1)
+ * Reads:
+ *   - store.category for the active category
+ *   - store.totals — already category-aware (CategoryTotals) so the
+ *     same render path works for fashion + beauty
+ *
+ * v1.2 fixes still in place:
+ *   - Counts read from totals.total_incomplete (queue is page-limited)
+ *   - StatStrip reads per-field counts from totals
+ *   - Simplified to two clear actions: "Start filling these in" + "Remind me later"
  */
+
+const CATEGORY_LABEL: Record<CategoryTab, string> = {
+  fashion: "Fashion",
+  beauty_care: "Beauty care",
+  beauty_tools: "Beauty tools",
+};
+
+const CATEGORY_NOUN: Record<CategoryTab, string> = {
+  fashion: "fashion",
+  beauty_care: "beauty care",
+  beauty_tools: "beauty tool",
+};
+
+// Per-tab headline copy reflects what's specifically missing.
+const PER_CATEGORY_HEADLINE: Record<CategoryTab, (n: number) => string> = {
+  fashion: (n) =>
+    n > 0
+      ? "Quick one — some of your fashion products are missing material info."
+      : "Your fashion catalog is fully covered.",
+  beauty_care: (n) =>
+    n > 0
+      ? "Quick one — some of your beauty-care products are missing ingredient info."
+      : "Your beauty-care catalog is fully covered.",
+  beauty_tools: (n) =>
+    n > 0
+      ? "Quick one — some of your beauty tools are missing material + care info."
+      : "Your beauty tools catalog is fully covered.",
+};
+
+const PER_CATEGORY_BODY: Record<
+  CategoryTab,
+  (missing: number, total: number) => React.ReactNode
+> = {
+  fashion: (missing, total) => (
+    <>
+      <strong>
+        {missing} of your {total} fashion products
+      </strong>{" "}
+      are missing at least one of material, care, or size guide. They&apos;ll
+      still show up in shopping searches, but agents asking{" "}
+      <em>&quot;is this satin or polyester?&quot;</em> will say{" "}
+      <em>not specified</em> instead of pulling your answer.
+    </>
+  ),
+  beauty_care: (missing, total) => (
+    <>
+      <strong>
+        {missing} of your {total} beauty-care products
+      </strong>{" "}
+      are missing at least one of ingredient list, how-to-use, or skin
+      concerns. Agents asking <em>&quot;does this have parabens?&quot;</em> or{" "}
+      <em>&quot;is this good for oily skin?&quot;</em> will say{" "}
+      <em>not specified</em>.
+    </>
+  ),
+  beauty_tools: (missing, total) => (
+    <>
+      <strong>
+        {missing} of your {total} beauty tools
+      </strong>{" "}
+      are missing details. Brushes / sponges / applicators surface better
+      when shoppers can see what they&apos;re made of, what to use them with,
+      and how to keep them clean.
+    </>
+  ),
+};
+
 export function TriggerCard() {
   const queue = useMerchantFashionStore((s) => s.queue);
   const totals = useMerchantFashionStore((s) => s.totals);
+  const category = useMerchantFashionStore((s) => s.category);
   const setScreen = useMerchantFashionStore((s) => s.setScreen);
+  const setCategory = useMerchantFashionStore((s) => s.setCategory);
 
-  // Real merchant-wide counts come from totals (queue is page-limited).
-  const totalFashion = totals?.fashion_total ?? queue.length;
+  const totalForCategory = totals?.category_total ?? queue.length;
   const totalIncomplete = totals?.total_incomplete ?? queue.length;
-  const populated: Record<FieldName, number> = {
-    material: Math.max(0, totalFashion - (totals?.missing_material ?? 0)),
-    care: Math.max(0, totalFashion - (totals?.missing_care ?? 0)),
-    size_guide: Math.max(0, totalFashion - (totals?.missing_size_guide ?? 0)),
-  };
+
+  // StatStrip wants populated counts per field. Build per-tab.
+  const populated: Record<FieldName, number> = {} as Record<FieldName, number>;
+  if (category === "fashion") {
+    populated.material = Math.max(0, totalForCategory - (totals?.missing_per_field.material ?? 0));
+    populated.care = Math.max(0, totalForCategory - (totals?.missing_per_field.care ?? 0));
+    populated.size_guide = Math.max(0, totalForCategory - (totals?.missing_per_field.size_guide ?? 0));
+  } else if (category === "beauty_care") {
+    populated.raw_inci = Math.max(0, totalForCategory - (totals?.missing_per_field.raw_inci ?? 0));
+    populated.how_to_use_text = Math.max(0, totalForCategory - (totals?.missing_per_field.how_to_use_text ?? 0));
+    populated.skin_concerns = Math.max(0, totalForCategory - (totals?.missing_per_field.skin_concerns ?? 0));
+  } else {
+    // beauty_tools
+    populated.tool_material = Math.max(0, totalForCategory - (totals?.missing_per_field.tool_material ?? 0));
+    populated.use_with = Math.max(0, totalForCategory - (totals?.missing_per_field.use_with ?? 0));
+    populated.care_instructions = Math.max(0, totalForCategory - (totals?.missing_per_field.care_instructions ?? 0));
+  }
 
   const sample = queue.slice(0, 3);
 
   return (
     <AgentBubble>
+      {/* Category toggle — top of the card so the merchant always sees
+          which category's numbers they're looking at. */}
+      <div
+        role="tablist"
+        aria-label="Product category"
+        style={{
+          display: "inline-flex",
+          gap: 4,
+          background: "var(--p-surface-muted)",
+          borderRadius: 999,
+          padding: 2,
+          marginBottom: 14,
+        }}
+      >
+        {(["fashion", "beauty_care", "beauty_tools"] as const).map((cat) => {
+          const active = category === cat;
+          return (
+            <button
+              key={cat}
+              role="tab"
+              aria-selected={active}
+              type="button"
+              onClick={() => setCategory(cat)}
+              style={{
+                background: active ? "var(--p-surface)" : "transparent",
+                color: active ? "var(--p-neutral-900)" : "var(--p-neutral-500)",
+                border: "none",
+                borderRadius: 999,
+                padding: "5px 14px",
+                fontSize: 12,
+                fontWeight: active ? 600 : 500,
+                cursor: "pointer",
+                boxShadow: active ? "var(--p-shadow-sm)" : "none",
+                transition: "all 160ms var(--p-easing)",
+              }}
+            >
+              {CATEGORY_LABEL[cat]}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Context strip */}
       <div style={{ display: "flex", marginBottom: 12 }}>
         <span
@@ -62,7 +181,7 @@ export function TriggerCard() {
           <RefreshCcw size={12} strokeWidth={1.8} />
           <span>
             Catalog scan · <strong>{totalIncomplete}</strong>{" "}
-            {totalIncomplete === 1 ? "product" : "products"} missing fashion details
+            {CATEGORY_NOUN[category]} {totalIncomplete === 1 ? "product" : "products"} missing details
           </span>
         </span>
       </div>
@@ -77,26 +196,26 @@ export function TriggerCard() {
           color: "var(--p-neutral-900)",
         }}
       >
-        {totalIncomplete > 0
-          ? "Quick one — some of your fashion products are missing material info."
-          : "Your fashion catalog is fully covered."}
+        {PER_CATEGORY_HEADLINE[category](totalIncomplete)}
       </h2>
 
       {/* Body */}
       <p style={{ fontSize: 13.5, lineHeight: 1.6, margin: 0, marginBottom: 14 }}>
-        <strong>{totalIncomplete} of your {totalFashion} fashion products</strong>{" "}
-        are missing at least one of material, care, or size guide. They&apos;ll still
-        show up in shopping searches, but agents asking{" "}
-        <em>&quot;is this satin or polyester?&quot;</em> will say{" "}
-        <em>not specified</em> instead of pulling your answer.
+        {totalIncomplete > 0
+          ? PER_CATEGORY_BODY[category](totalIncomplete, totalForCategory)
+          : null}
       </p>
 
-      {/* Stat strip — uses totals so the bars reflect the full catalog */}
+      {/* Stat strip — populated counts per category. */}
       <div style={{ marginBottom: 14 }}>
-        <StatStrip populated={populated} total={totalFashion} />
+        <StatStrip
+          populated={populated}
+          total={totalForCategory}
+          category={category}
+        />
       </div>
 
-      {/* Sample preview — first 3 of whatever's in the current page. */}
+      {/* Sample preview */}
       {sample.length > 0 ? (
         <>
           <div
@@ -107,8 +226,8 @@ export function TriggerCard() {
             }}
           >
             {sample.length === 1
-              ? "Sample product missing fashion info:"
-              : "A few products missing fashion info:"}
+              ? "Sample product missing info:"
+              : `A few ${CATEGORY_NOUN[category]} products missing info:`}
           </div>
           <div
             style={{
@@ -141,25 +260,18 @@ export function TriggerCard() {
         </p>
       ) : null}
 
-      {/* Overflow note — surfaces when the merchant has more than what
-          the current fetch loaded. v1 loads up to 200 in one request;
-          backend supports up to 500. Bigger catalogs need v2's bulk
-          paths. Telling the merchant honestly is better than letting
-          them wonder why they "ran out" mid-flow. */}
+      {/* Overflow note */}
       {totals?.has_more ? (
         <div style={{ marginBottom: 14 }}>
           <AiTip variant="info" title="There are more to come">
-            You have <strong>{totalIncomplete}</strong> products needing review.
-            I&apos;ll walk you through the first batch now — when you finish,
+            You have <strong>{totalIncomplete}</strong> {CATEGORY_NOUN[category]} products needing
+            review. I&apos;ll walk you through the first batch now — when you finish,
             come back to this chat and I&apos;ll load the next.
           </AiTip>
         </div>
       ) : null}
 
-      {/* Response chips — simplified to two clear actions. v1.2: dropped
-          "Tell me about the whole line" (was Screen 05 bulk free-text,
-          deferred to v2); the previous "one at a time" chip is now the
-          primary action with clearer copy. */}
+      {/* Response chips */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {totalIncomplete > 0 ? (
           <>
@@ -175,9 +287,7 @@ export function TriggerCard() {
             </ReplyChip>
           </>
         ) : (
-          <ReplyChip onClick={() => setScreen("done")}>
-            See coverage
-          </ReplyChip>
+          <ReplyChip onClick={() => setScreen("done")}>See coverage</ReplyChip>
         )}
       </div>
     </AgentBubble>

@@ -808,6 +808,128 @@ class ApiClient {
     return response.data;
   }
 
+  /**
+   * Beauty completeness read — parallel of getMerchantFashionCompleteness.
+   * Backed by pivota-backend PR #567's GET /merchant/products/beauty_completeness.
+   * Same queue + totals shape as fashion so the agent surface can share
+   * parsing logic; the per-field set differs (raw_inci / how_to_use_text /
+   * skin_concerns).
+   */
+  async getMerchantBeautyCompleteness(options?: {
+    page?: number;
+    page_size?: number;
+    /** v2.1.1: filter to a specific subcategory group so the UI's
+     *  "Beauty care" and "Beauty tools" tabs return disjoint queues. */
+    subcategory_group?: "beauty_care" | "beauty_tools";
+  }): Promise<{
+    status: string;
+    data: {
+      queue: Array<{
+        platform: string;
+        platform_product_id: string;
+        title: string;
+        image_url: string | null;
+        sku: string | null;
+        category_kind: "beauty";
+        // v2.1 — backend tells the UI which subcategory + field set.
+        subcategory_kind: "skincare" | "haircare" | "bath" | "body" | "makeup" | "tools";
+        subcategory_label?: string;
+        category_path?: string | null;
+        field_schemas: Array<{
+          name: string;
+          type: "text" | "textarea" | "enum" | "enum_multi";
+          label: string;
+          placeholder?: string;
+          hint?: string;
+          allowed_values?: string[];
+        }>;
+        // Field values keyed by name; per-product set varies by subcategory.
+        fields: Record<
+          string,
+          {
+            status:
+              | "missing"
+              | "filled-by-llm"
+              | "merchant-authored"
+              | "merchant-payload-locked"
+              | "inherited";
+            value: string | string[] | Record<string, unknown> | null;
+            confidence: number | null;
+          }
+        >;
+      }>;
+      totals: {
+        beauty_total: number;
+        total_incomplete: number;
+        page: number;
+        page_size: number;
+        has_more: boolean;
+        per_subcategory?: Record<
+          string,
+          { total: number; missing_per_field: Record<string, number> }
+        >;
+      };
+      allowed_skin_concerns: string[];
+      subcategory_schemas: Array<{
+        subcategory_kind: string;
+        label: string;
+        fields: Array<{
+          name: string;
+          type: "text" | "textarea" | "enum" | "enum_multi";
+          label: string;
+          placeholder?: string;
+          hint?: string;
+          allowed_values?: string[];
+        }>;
+      }>;
+    };
+  }> {
+    const response = await this.client.get("/merchant/products/beauty_completeness", {
+      params: {
+        page: options?.page,
+        page_size: options?.page_size,
+        subcategory_group: options?.subcategory_group,
+      },
+    });
+    return response.data;
+  }
+
+  /**
+   * Merchant-authored beauty-field write — v2.1 supports the union of
+   * skincare + tools fields. Backend dispatches per field name.
+   * Backed by pivota-backend PR #569's
+   *   PUT /merchant/products/{platform}/{platform_product_id}/beauty_fields
+   */
+  async updateMerchantProductBeautyFields(
+    platform: string,
+    platformProductId: string,
+    fields: {
+      // Skincare-shape
+      raw_inci?: string | null;
+      how_to_use_text?: string | null;
+      skin_concerns?: string[] | null;
+      // Tools-shape (v2.1)
+      tool_material?: string | null;
+      use_with?: string | null;
+      care_instructions?: string | null;
+    }
+  ): Promise<{
+    status: string;
+    outcomes: Partial<Record<
+      "raw_inci" | "how_to_use_text" | "skin_concerns"
+        | "tool_material" | "use_with" | "care_instructions",
+      "written" | "skipped_payload_owned" | "product_not_found" | "unchanged"
+    >>;
+    allowed_skin_concerns: string[];
+  }> {
+    const encodedId = encodeURIComponent(platformProductId);
+    const response = await this.client.put(
+      `/merchant/products/${platform}/${encodedId}/beauty_fields`,
+      fields
+    );
+    return response.data;
+  }
+
   async runMerchantProductOptimization(
     platform: string,
     platformProductId: string

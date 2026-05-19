@@ -27,9 +27,18 @@ import { AgentBubble } from "./AgentBubble";
 import { ReplyChip } from "./ReplyChip";
 
 const FIELD_LABELS: Record<FieldName, string> = {
+  // Fashion
   material: "Material",
   care: "Care",
   size_guide: "Size guide",
+  // Beauty — skincare shape
+  raw_inci: "Ingredients",
+  how_to_use_text: "How to use",
+  skin_concerns: "Skin concerns",
+  // Beauty — tools shape (v2.1)
+  tool_material: "Material",
+  use_with: "Use with",
+  care_instructions: "Care",
 };
 
 export function HonestFeedbackCard() {
