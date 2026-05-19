@@ -318,3 +318,224 @@ textarea {
     padding-right: 1.35rem;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Agent-chat surface — Pivota purple scope.
+   Scoped tokens for the merchant fashion-authoring flow at
+   /dashboard/agent-chat. The wrapper `.agent-chat-surface` redeclares the
+   Pivota purple brand tokens locally so the chat reads as a distinct
+   conversational surface from the rest of the navy merchant portal,
+   without bleeding the purple into surrounding dashboard chrome.
+   Mirrors the design handoff at design_handoff_merchant_fashion_authoring/.
+   --------------------------------------------------------------------------- */
+
+.agent-chat-surface {
+  --p-primary: #534ab7;
+  --p-primary-50: #eeedfe;
+  --p-primary-800: #3c3489;
+  --p-primary-fg: #ffffff;
+  --p-coral: #d85a30;
+  --p-coral-bg: #faece7;
+  --p-coral-icon: #993c1d;
+  --p-teal: #1d9e75;
+  --p-teal-bg: #e1f5ee;
+  --p-teal-icon: #0f6e56;
+  --p-tip-bg: #faeeda;
+  --p-tip-fg: #633806;
+  --p-neutral-900: #2c2c2a;
+  --p-neutral-500: rgba(44, 44, 42, 0.60);
+  --p-neutral-400: rgba(44, 44, 42, 0.45);
+  --p-border: rgba(44, 44, 42, 0.08);
+  --p-border-strong: rgba(44, 44, 42, 0.12);
+  --p-bg: #fafaf8;
+  --p-surface: #ffffff;
+  --p-surface-muted: #f4f4f2;
+  --p-radius-sm: 6px;
+  --p-radius-md: 10px;
+  --p-radius-lg: 16px;
+  --p-radius-pill: 999px;
+  --p-shadow-sm: 0 1px 3px rgba(44, 44, 42, 0.08);
+  --p-easing: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --p-gradient-primary: linear-gradient(135deg, #534ab7, #7b6fd4);
+
+  /* Body baseline — Pivota is dense, default 13px not 16px. */
+  font-family: var(--font-inter), "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--p-neutral-900);
+  background: var(--p-bg);
+}
+
+.agent-chat-surface .p-serif {
+  font-family: var(--font-cormorant), "Cormorant Garamond", Georgia, serif;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.agent-chat-surface .p-eyebrow {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--p-neutral-500);
+}
+
+.agent-chat-surface .p-mono {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 11.5px;
+}
+
+/* Card / surface primitives shared by every screen.
+   Hairline-first per design — resting cards are border-only. */
+.agent-chat-surface .p-card {
+  background: var(--p-surface);
+  border: 0.5px solid var(--p-border);
+  border-radius: var(--p-radius-lg);
+}
+.agent-chat-surface .p-card-md {
+  border-radius: 14px;
+}
+.agent-chat-surface .p-card-sm {
+  border-radius: 12px;
+}
+
+/* Pill / chip primitives. */
+.agent-chat-surface .p-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--p-radius-pill);
+  background: var(--p-surface-muted);
+  font-size: 11px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: background 180ms var(--p-easing), transform 180ms var(--p-easing);
+}
+.agent-chat-surface .p-pill:hover {
+  background: var(--p-border);
+}
+.agent-chat-surface .p-pill:active {
+  background: var(--p-primary-50);
+}
+.agent-chat-surface .p-pill--primary {
+  background: var(--p-primary);
+  color: var(--p-primary-fg);
+}
+.agent-chat-surface .p-pill--primary:hover {
+  background: var(--p-primary-800);
+}
+.agent-chat-surface .p-pill--ghost {
+  background: var(--p-surface);
+  border: 0.5px solid var(--p-border-strong);
+}
+
+/* Status pill semantics — coral / tip / teal / neutral. */
+.agent-chat-surface .p-pill--coral {
+  background: var(--p-coral-bg);
+  color: var(--p-coral-icon);
+  font-weight: 600;
+  font-size: 9.5px;
+  padding: 2px 8px;
+}
+.agent-chat-surface .p-pill--tip {
+  background: var(--p-tip-bg);
+  color: var(--p-tip-fg);
+  font-weight: 600;
+  font-size: 9.5px;
+  padding: 2px 8px;
+}
+.agent-chat-surface .p-pill--teal {
+  background: var(--p-teal-bg);
+  color: var(--p-teal-icon);
+  font-weight: 600;
+  font-size: 9.5px;
+  padding: 2px 8px;
+}
+.agent-chat-surface .p-pill--locked {
+  background: var(--p-surface-muted);
+  color: var(--p-neutral-500);
+  font-weight: 600;
+  font-size: 9.5px;
+  padding: 2px 8px;
+}
+
+/* AI tip block — the info-variant box used to surface helpful sub-hints
+   inside agent bubbles. Yellow-tip is the warning/info accent. */
+.agent-chat-surface .p-tip {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--p-radius-md);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.agent-chat-surface .p-tip--info {
+  background: var(--p-primary-50);
+  color: var(--p-primary-800);
+}
+.agent-chat-surface .p-tip--warn {
+  background: var(--p-tip-bg);
+  color: var(--p-tip-fg);
+}
+.agent-chat-surface .p-tip-title {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+/* Bubbles. */
+.agent-chat-surface .p-bubble {
+  max-width: 720px;
+  display: flex;
+  gap: 12px;
+}
+.agent-chat-surface .p-bubble-avatar {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--p-gradient-primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.agent-chat-surface .p-bubble-body {
+  flex: 1;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.agent-chat-surface .p-bubble--user {
+  justify-content: flex-end;
+  max-width: 720px;
+  margin-left: auto;
+}
+.agent-chat-surface .p-bubble--user .p-bubble-body {
+  background: var(--p-primary);
+  color: var(--p-primary-fg);
+  border-radius: 14px;
+  padding: 10px 14px;
+  max-width: 480px;
+}
+
+/* Inputs. */
+.agent-chat-surface .p-input {
+  width: 100%;
+  background: var(--p-bg);
+  border: 0.5px solid var(--p-border-strong);
+  border-radius: var(--p-radius-md);
+  padding: 9px 12px;
+  font: inherit;
+  color: var(--p-neutral-900);
+  min-height: 36px;
+}
+.agent-chat-surface .p-input:focus {
+  outline: 2px solid var(--p-primary);
+  outline-offset: -1px;
+}
+.agent-chat-surface .p-input--locked {
+  background: var(--p-surface-muted);
+  color: var(--p-neutral-500);
+  cursor: not-allowed;
+}

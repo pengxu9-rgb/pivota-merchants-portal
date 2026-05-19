@@ -5,6 +5,7 @@ import {
   ClipboardCheck,
   CreditCard,
   LayoutDashboard,
+  MessageSquare,
   Package,
   Settings,
   ShoppingBag,
@@ -103,6 +104,13 @@ export const settingsNavigationItem: MerchantNavigationItem = {
 };
 
 export const workflowNavigation: MerchantNavigationItem[] = [
+  {
+    label: "Agent chat",
+    href: "/dashboard/agent-chat",
+    icon: MessageSquare,
+    matchPrefixes: ["/dashboard/agent-chat"],
+    description: "Fill gaps in your catalog",
+  },
   {
     label: "Catalog health",
     labelKey: "shell.nav.catalogHealth",

@@ -706,6 +706,38 @@ class ApiClient {
     return response.data;
   }
 
+  /**
+   * Merchant-authored fashion-field write path (material / care / size_guide).
+   * Backed by pivota-backend PR #563:
+   *   PUT /merchant/products/{platform}/{platform_product_id}/fashion_fields
+   *
+   * null on a field means "leave unchanged". Response.outcomes maps each
+   * provided field to one of: 'written' | 'skipped_payload_owned' |
+   * 'product_not_found' | 'unchanged'. skipped_payload_owned is NOT an
+   * error — it signals that a Shopify metafield is authoritative and the
+   * merchant's value was not overwritten. Surface that honestly in the UI
+   * via Screen 08.
+   */
+  async updateMerchantProductFashionFields(
+    platform: string,
+    platformProductId: string,
+    fields: {
+      material?: string | null;
+      care?: string | null;
+      size_guide?: string | Record<string, any> | null;
+    }
+  ): Promise<{
+    status: string;
+    outcomes: Record<string, "written" | "skipped_payload_owned" | "product_not_found" | "unchanged">;
+  }> {
+    const encodedId = encodeURIComponent(platformProductId);
+    const response = await this.client.put(
+      `/merchant/products/${platform}/${encodedId}/fashion_fields`,
+      fields
+    );
+    return response.data;
+  }
+
   async runMerchantProductOptimization(
     platform: string,
     platformProductId: string
