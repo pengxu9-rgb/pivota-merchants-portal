@@ -21,8 +21,8 @@
  *     done / honest_feedback transition past the last product.
  */
 
-import { ArrowRight, Pencil } from "lucide-react";
-import { useEffect, useState } from "react";
+import { AlertTriangle, ArrowRight, Pencil } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
 import {
@@ -66,6 +66,11 @@ export function StructuredEditor() {
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [notFoundWarning, setNotFoundWarning] = useState<string | null>(null);
+  // Re-entry guard — `saving` flips after React commits, leaving a small
+  // window where a fast double-click can fire two PUTs. The ref blocks
+  // the second call synchronously. Codex flagged this as 🟡 race-unsafe.
+  const inflightRef = useRef(false);
 
   if (!current) {
     return (
@@ -96,8 +101,11 @@ export function StructuredEditor() {
 
   async function save() {
     if (!current) return;
+    if (inflightRef.current) return; // re-entry guard
+    inflightRef.current = true;
     setSaving(true);
     setSaveError(null);
+    setNotFoundWarning(null);
     try {
       const body: FashionFieldsDraft = {};
       // null means "leave unchanged" per backend; we send only fields the
@@ -118,20 +126,39 @@ export function StructuredEditor() {
         current.platform_product_id,
         body,
       );
-      recordOutcomes(key, resp.outcomes || {});
+      const outcomes = resp.outcomes || {};
+      recordOutcomes(key, outcomes);
+      // Surface product_not_found visibly — codex review flagged that we
+      // silently advanced past a deleted / missing product, ending in
+      // "covered" with no merchant-visible warning.
+      if (Object.values(outcomes).some((o) => o === "product_not_found")) {
+        setNotFoundWarning(
+          "We couldn't find this product in your synced catalog. Re-sync from your platform and try again.",
+        );
+        return; // do NOT auto-advance — let the merchant read the warning
+      }
       advance();
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Save failed");
     } finally {
+      inflightRef.current = false;
       setSaving(false);
     }
   }
 
   function skip() {
+    if (inflightRef.current) return;
     // "I don't know — skip" is documented as a soft skip in the design
     // (advance, do NOT mark unknown). State G is the explicit terminal
-    // opt-out; in v1 we surface that via the Defer screen's tip block.
+    // opt-out; in v1 we surface that via the "No answer known" chip,
+    // which marks the product unknown and transitions the screen when
+    // the queue empties (see merchant-fashion-store.markUnknown).
     advance();
+  }
+
+  function markUnknownAndAdvance() {
+    if (inflightRef.current) return;
+    if (current) markUnknown(key);
   }
 
   return (
@@ -255,12 +282,14 @@ export function StructuredEditor() {
           <button
             type="button"
             onClick={skip}
+            disabled={saving}
             style={{
               border: "none",
               background: "none",
               fontSize: 12,
               color: "var(--p-neutral-500)",
-              cursor: "pointer",
+              cursor: saving ? "not-allowed" : "pointer",
+              opacity: saving ? 0.5 : 1,
             }}
           >
             I don&apos;t know — skip
@@ -268,9 +297,8 @@ export function StructuredEditor() {
           <div style={{ flex: 1 }} />
           <ReplyChip
             icon={Pencil}
-            onClick={() => {
-              if (current) markUnknown(key);
-            }}
+            onClick={markUnknownAndAdvance}
+            disabled={saving}
           >
             No answer known
           </ReplyChip>
@@ -307,6 +335,24 @@ export function StructuredEditor() {
           }}
         >
           Couldn&apos;t save: {saveError}. Try again — your typing isn&apos;t lost.
+        </div>
+      ) : null}
+      {notFoundWarning ? (
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "flex-start",
+            fontSize: 12.5,
+            color: "var(--p-tip-fg)",
+            background: "var(--p-tip-bg)",
+            padding: "8px 12px",
+            borderRadius: 10,
+            marginTop: 8,
+          }}
+        >
+          <AlertTriangle size={14} strokeWidth={1.8} style={{ flex: "0 0 14px", marginTop: 2 }} />
+          <div>{notFoundWarning}</div>
         </div>
       ) : null}
     </AgentBubble>

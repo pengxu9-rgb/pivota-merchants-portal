@@ -58,8 +58,9 @@ export function DeferCard() {
           }}
         >
           No problem. Your <strong>{queueLength} products will still surface in search</strong>,
-          just without the material field. I&apos;ll bring it back up in a week, or
-          sooner if a new sync changes the count.
+          just without the material field. I&apos;ll surface this thread again the
+          next time you open the agent chat — or whenever a new sync changes the
+          count.
         </p>
 
         <div className="p-card p-card-md" style={{ overflow: "hidden", padding: 14 }}>
@@ -161,9 +162,12 @@ export function DeferCard() {
             variant="primary"
             icon={Check}
             onClick={() => {
-              // Persist cadence; bounce to the empty state.
+              // Persist cadence; transition to the `paused` terminal screen.
+              // Codex review: routing to `done` here was misleading — DoneCard's
+              // copy says "the catalog is covered" even when the queue is
+              // non-empty. PausedCard surfaces what's still missing honestly.
               setCadence(cadence);
-              setScreen("done");
+              setScreen("paused");
             }}
           >
             Sounds good

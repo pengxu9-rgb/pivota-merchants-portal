@@ -89,8 +89,21 @@ export interface ScopeSummary {
 export interface FashionThreadState {
   /** Stable id for the thread; persists cursor across sidebar collapse, etc. */
   threadId: string;
-  /** What overall screen the chat is rendering right now. */
-  screen: "trigger" | "structured" | "done" | "honest_feedback" | "defer";
+  /**
+   * What overall screen the chat is rendering right now.
+   *
+   * State map (handoff artboard 10):
+   *   - trigger          → Screen 04
+   *   - structured       → Screen 06
+   *   - done             → Screen 07 (only when something was actually covered)
+   *   - honest_feedback  → Screen 08 (skipped_payload_owned outcomes)
+   *   - defer            → Screen 09 (cadence picker)
+   *   - paused           → Terminal state for the merchant who chose
+   *                        "remind me later" OR who marked everything
+   *                        "no answer known". Distinct from `done`
+   *                        because the catalog isn't actually covered.
+   */
+  screen: "trigger" | "structured" | "done" | "honest_feedback" | "defer" | "paused";
   /** Cursor through the per-product editor; 0-indexed. */
   cursor: number;
   /** The ordered list of products the editor steps through. */

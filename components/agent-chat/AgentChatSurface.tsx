@@ -33,6 +33,7 @@ import { Composer } from "./Composer";
 import { DeferCard } from "./DeferCard";
 import { DoneCard } from "./DoneCard";
 import { HonestFeedbackCard } from "./HonestFeedbackCard";
+import { PausedCard } from "./PausedCard";
 import { StructuredEditor } from "./StructuredEditor";
 import { TriggerCard } from "./TriggerCard";
 
@@ -50,15 +51,19 @@ function toIncompleteQueue(payload: unknown): IncompleteProduct[] {
   const root = payload as Record<string, unknown>;
   // The endpoint returns `{ queue: [...] }` or `{ data: { queue: [...] } }`
   // historically; api-client.ts already unwraps `.data` at the outer layer.
-  const queue =
-    (root.queue as unknown[] | undefined) ||
-    (root.products as unknown[] | undefined) ||
-    [];
+  // Defensively guard against non-array truthy values — a backend shape
+  // change shouldn't crash the agent surface (codex flagged this as 🟡).
+  const rawQueue = root.queue ?? root.products;
+  if (!Array.isArray(rawQueue)) return [];
+
   const fashion: IncompleteProduct[] = [];
-  for (const item of queue) {
+  for (const item of rawQueue) {
     if (!item || typeof item !== "object") continue;
     const it = item as Record<string, unknown>;
-    const codes = (it.reason_codes as string[] | undefined) || [];
+    const rawCodes = it.reason_codes;
+    const codes: string[] = Array.isArray(rawCodes)
+      ? rawCodes.filter((c): c is string => typeof c === "string")
+      : [];
     const lacksMaterial = codes.includes("product_material_or_ingredient_info_missing");
     const lacksSizeGuide = codes.includes("product_size_guidance_missing");
     if (!lacksMaterial && !lacksSizeGuide) continue;
@@ -73,12 +78,23 @@ function toIncompleteQueue(payload: unknown): IncompleteProduct[] {
         ? { status: "missing" }
         : { status: "merchant-authored" },
     };
+    const platform = typeof it.platform === "string" ? it.platform : "shopify";
+    const ppid = typeof it.platform_product_id === "string"
+      ? it.platform_product_id
+      : typeof it.id === "string"
+        ? it.id
+        : "";
+    if (!ppid) continue;
     fashion.push({
-      platform: String(it.platform || "shopify"),
-      platform_product_id: String(it.platform_product_id || it.id || ""),
-      title: String(it.title || it.product_title || "Untitled product"),
-      image_url: (it.image_url as string | null) || null,
-      sku: (it.sku as string | null) || null,
+      platform,
+      platform_product_id: ppid,
+      title: typeof it.title === "string"
+        ? it.title
+        : typeof it.product_title === "string"
+          ? it.product_title
+          : "Untitled product",
+      image_url: typeof it.image_url === "string" ? it.image_url : null,
+      sku: typeof it.sku === "string" ? it.sku : null,
       fields,
     });
   }
@@ -156,6 +172,8 @@ export function AgentChatSurface() {
         return <HonestFeedbackCard />;
       case "defer":
         return <DeferCard />;
+      case "paused":
+        return <PausedCard />;
       default:
         return <TriggerCard />;
     }

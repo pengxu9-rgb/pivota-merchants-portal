@@ -9,11 +9,22 @@
  *   - Accumulates PUT outcomes so Screen 08 (honest feedback) can render
  *     the skipped_payload_owned cases without re-fetching
  *
+ * Codex review fixes:
+ *   - Persist key is namespaced per merchant_id so two merchants on the
+ *     same browser can't see each other's queue / drafts / outcomes
+ *     (cross-merchant data leak, ship-blocker).
+ *   - markUnknown clamps the cursor and transitions to the paused
+ *     terminal screen when the filtered queue empties (was a dead-end).
+ *   - setQueue clears outcomes + drafts when the product set changes,
+ *     so a prior skipped_payload_owned can't route a fresh batch to the
+ *     honest-feedback screen incorrectly.
+ *   - setQueue preserves the cursor when the product set is unchanged
+ *     (refresh on remount), so "I'll keep your spot" is actually true.
+ *
  * NOT in scope (deliberately):
- *   - Fetching the readiness payload — that lives in a React Query / SWR-style
- *     hook on the component, or here as a one-shot async on store init
- *   - Network calls themselves — components call apiClient and feed results
- *     into the store via the setters here
+ *   - Fetching the readiness payload — that lives on the component
+ *   - Network calls themselves — components call apiClient and feed
+ *     results into the store via the setters here
  */
 
 import { create } from "zustand";
@@ -63,25 +74,65 @@ const initialState: FashionThreadState = {
   unknownProductIds: [],
 };
 
+/**
+ * Persist-key namespace: the merchant_id from the auth blob in
+ * localStorage. Two merchants on the same browser get disjoint
+ * storage keys, so logout/login does not leak queue or draft state.
+ *
+ * Computed once at module load (i.e. once per page load) on the client.
+ * On SSR or pre-auth pages it falls back to a placeholder; the
+ * dashboard layout's auth guard means an authenticated merchant_id is
+ * already in localStorage by the time this module loads on /dashboard/*.
+ */
+function persistName(): string {
+  if (typeof window === "undefined") return "merchant-fashion-thread-v1-ssr";
+  try {
+    const raw = window.localStorage.getItem("merchant_user");
+    if (!raw) return "merchant-fashion-thread-v1-anon";
+    const parsed = JSON.parse(raw) as { merchant_id?: unknown } | null;
+    const id = parsed && typeof parsed.merchant_id === "string"
+      ? parsed.merchant_id
+      : "anon";
+    return `merchant-fashion-thread-v1-${id}`;
+  } catch {
+    return "merchant-fashion-thread-v1-anon";
+  }
+}
+
+/** Two queues share the same product set iff they have identical
+ *  product_keys in the same order. Stricter than equality but cheaper
+ *  than a set comparison — and the fetch is stable-ordered server-side. */
+function sameProductSet(a: IncompleteProduct[], b: IncompleteProduct[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (productKey(a[i]) !== productKey(b[i])) return false;
+  }
+  return true;
+}
+
 export const useMerchantFashionStore = create<FashionThreadState & Actions>()(
   persist(
     (set, get) => ({
       ...initialState,
 
       setQueue: (queue) => {
-        // Filter out unknownProductIds — they're terminally excluded.
-        const { unknownProductIds } = get();
-        const excluded = new Set(unknownProductIds);
-        const filtered = queue.filter(
-          (p) => !excluded.has(productKey(p)),
-        );
+        const prev = get();
+        const excluded = new Set(prev.unknownProductIds);
+        const filtered = queue.filter((p) => !excluded.has(productKey(p)));
+        const queueUnchanged = sameProductSet(prev.queue, filtered);
+
         set({
           queue: filtered,
-          cursor: 0,
-          // New queue means stale drafts/outcomes for products no longer in it.
-          // Keep the maps but they'll be looked up by key, so stale entries
-          // simply sit unused. Cheap; no need to GC.
-          threadId: get().threadId || `thread_${Date.now().toString(36)}`,
+          // Preserve cursor when the product set is unchanged — the
+          // merchant's "I'll keep your spot" message is then literally
+          // true. Otherwise reset to the head of the new queue.
+          cursor: queueUnchanged ? Math.min(prev.cursor, Math.max(0, filtered.length - 1)) : 0,
+          // Clear outcomes + drafts when the product set changes. Stale
+          // outcomes from a prior queue must NOT influence the next
+          // batch's outcome-screen routing.
+          outcomes: queueUnchanged ? prev.outcomes : {},
+          drafts: queueUnchanged ? prev.drafts : {},
+          threadId: prev.threadId || `thread_${Date.now().toString(36)}`,
         });
       },
 
@@ -94,8 +145,6 @@ export const useMerchantFashionStore = create<FashionThreadState & Actions>()(
           const next = s.cursor + 1;
           if (next >= s.queue.length) {
             // Past the end of the queue → outcome screen.
-            // The component decides done vs honest-feedback based on
-            // whether any outcomes contain "skipped_payload_owned".
             return { cursor: next, screen: outcomeScreenFor(s.outcomes) };
           }
           return { cursor: next };
@@ -123,18 +172,31 @@ export const useMerchantFashionStore = create<FashionThreadState & Actions>()(
       setCadence: (cadence) => set({ cadence }),
 
       markUnknown: (productKeyArg) =>
-        set((s) => ({
-          unknownProductIds: s.unknownProductIds.includes(productKeyArg)
+        set((s) => {
+          const alreadyUnknown = s.unknownProductIds.includes(productKeyArg);
+          const nextUnknown = alreadyUnknown
             ? s.unknownProductIds
-            : [...s.unknownProductIds, productKeyArg],
-          // Drop from queue so the cursor doesn't land on it next.
-          queue: s.queue.filter((p) => productKey(p) !== productKeyArg),
-        })),
+            : [...s.unknownProductIds, productKeyArg];
+          const nextQueue = s.queue.filter((p) => productKey(p) !== productKeyArg);
+          // Clamp cursor — the old cursor might have pointed past the end.
+          const nextCursor = Math.min(s.cursor, Math.max(0, nextQueue.length - 1));
+          // If the queue is now empty the merchant has terminally opted
+          // out of the prompt — route to the paused terminal screen, NOT
+          // to "done" (which falsely says "catalog is covered").
+          const nextScreen: FashionThreadState["screen"] =
+            nextQueue.length === 0 && s.screen === "structured" ? "paused" : s.screen;
+          return {
+            unknownProductIds: nextUnknown,
+            queue: nextQueue,
+            cursor: nextCursor,
+            screen: nextScreen,
+          };
+        }),
 
       reset: () => set({ ...initialState, threadId: "" }),
     }),
     {
-      name: "merchant-fashion-thread-v1",
+      name: persistName(),
       // Only persist the stuff that should survive navigation away.
       // Drafts persist so unsaved typing isn't lost. Outcomes persist so
       // the user can come back to the honest-feedback screen.

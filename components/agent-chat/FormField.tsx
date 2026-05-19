@@ -1,7 +1,7 @@
 "use client";
 
 import { ExternalLink, Lock } from "lucide-react";
-import type { ChangeEvent, ReactNode } from "react";
+import { useId, type ChangeEvent, type ReactNode } from "react";
 
 import type { FieldStatus } from "@/types/fashion-authoring";
 
@@ -67,6 +67,11 @@ export function FormField({
 }: FormFieldProps) {
   const locked = status === "merchant-payload-locked";
   const badge = badgeFor(status);
+  // Stable per-instance id so the <label htmlFor> binds to the right
+  // input. Codex review flagged the visual-only label as an
+  // accessibility regression.
+  const inputId = useId();
+  const hintId = `${inputId}-hint`;
 
   const hint = hintFor(status, confidence);
 
@@ -78,9 +83,12 @@ export function FormField({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--p-neutral-900)" }}>
+        <label
+          htmlFor={inputId}
+          style={{ fontSize: 11.5, fontWeight: 600, color: "var(--p-neutral-900)" }}
+        >
           {label}
-        </span>
+        </label>
         <span className={`p-pill ${BADGE_CLASS[badge]}`}>
           {badge === "locked" ? <Lock size={9} strokeWidth={2} /> : null}
           {BADGE_TEXT[badge]}
@@ -93,10 +101,12 @@ export function FormField({
         ) : null}
       </div>
       <input
+        id={inputId}
         type="text"
         value={locked ? "" : value}
         placeholder={locked ? "Shopify metafield value is authoritative" : placeholder}
         readOnly={locked}
+        aria-describedby={hint ? hintId : undefined}
         onChange={
           locked
             ? undefined
@@ -105,7 +115,7 @@ export function FormField({
         className={`p-input ${locked ? "p-input--locked" : ""}`}
       />
       {hint ? (
-        <div style={{ fontSize: 11, color: "var(--p-neutral-500)" }}>{hint}</div>
+        <div id={hintId} style={{ fontSize: 11, color: "var(--p-neutral-500)" }}>{hint}</div>
       ) : null}
       {!locked && samples && samples.length > 0 ? (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2 }}>

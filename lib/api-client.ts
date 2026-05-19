@@ -728,7 +728,15 @@ class ApiClient {
     }
   ): Promise<{
     status: string;
-    outcomes: Record<string, "written" | "skipped_payload_owned" | "product_not_found" | "unchanged">;
+    // Per-field outcomes are narrow strings, not arbitrary `Record<string, …>`.
+    // Imported as the exact type from @/types/fashion-authoring would create
+    // an import cycle (the types module is consumed by Zustand store etc.);
+    // pin the union here so the structural contract still tightens vs the
+    // prior loose `Record<string, ...>` (codex 🟢).
+    outcomes: Partial<Record<
+      "material" | "care" | "size_guide",
+      "written" | "skipped_payload_owned" | "product_not_found" | "unchanged"
+    >>;
   }> {
     const encodedId = encodeURIComponent(platformProductId);
     const response = await this.client.put(
