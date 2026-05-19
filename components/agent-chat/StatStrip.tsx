@@ -9,7 +9,7 @@
  * Each card: eyebrow label, big Cormorant missing-count number,
  * "/ total missing" muted, then a 3px tinted bar showing the missing fraction.
  */
-import type { CategoryKind, FieldName } from "@/types/fashion-authoring";
+import type { CategoryTab, FieldName } from "@/types/fashion-authoring";
 
 const LABELS: Record<FieldName, string> = {
   material: "MATERIAL",
@@ -41,9 +41,10 @@ const TINTS: Record<FieldName, { bg: string; bar: string }> = {
   care_instructions: { bg: "var(--p-teal-bg)", bar: "var(--p-teal)" },
 };
 
-const FIELDS_BY_CATEGORY: Record<CategoryKind, FieldName[]> = {
+const FIELDS_BY_CATEGORY: Record<CategoryTab, FieldName[]> = {
   fashion: ["material", "care", "size_guide"],
-  beauty: ["raw_inci", "how_to_use_text", "skin_concerns"],
+  beauty_care: ["raw_inci", "how_to_use_text", "skin_concerns"],
+  beauty_tools: ["tool_material", "use_with", "care_instructions"],
 };
 
 interface StatStripProps {
@@ -51,8 +52,8 @@ interface StatStripProps {
   populated: Partial<Record<FieldName, number>>;
   /** total products in the active category. */
   total: number;
-  /** Which category's fields to render. */
-  category: CategoryKind;
+  /** Which tab's fields to render. */
+  category: CategoryTab;
 }
 
 export function StatStrip({ populated, total, category }: StatStripProps) {

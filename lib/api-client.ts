@@ -818,6 +818,9 @@ class ApiClient {
   async getMerchantBeautyCompleteness(options?: {
     page?: number;
     page_size?: number;
+    /** v2.1.1: filter to a specific subcategory group so the UI's
+     *  "Beauty care" and "Beauty tools" tabs return disjoint queues. */
+    subcategory_group?: "beauty_care" | "beauty_tools";
   }): Promise<{
     status: string;
     data: {
@@ -885,6 +888,7 @@ class ApiClient {
       params: {
         page: options?.page,
         page_size: options?.page_size,
+        subcategory_group: options?.subcategory_group,
       },
     });
     return response.data;

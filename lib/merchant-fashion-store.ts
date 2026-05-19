@@ -31,7 +31,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import type {
-  CategoryKind,
+  CategoryTab,
   CategoryTotals,
   FashionThreadState,
   FieldName,
@@ -51,7 +51,7 @@ interface Actions {
   setScreen: (screen: FashionThreadState["screen"]) => void;
   /** Switch category (fashion ↔ beauty). Clears queue/outcomes/drafts
    *  for the previous category — they're per-category state. */
-  setCategory: (category: CategoryKind) => void;
+  setCategory: (category: CategoryTab) => void;
   /** Reset cursor to start; called when the queue is replaced. */
   resetCursor: () => void;
   /** Advance to the next product. Auto-pivots to "done" past the last one. */

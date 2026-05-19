@@ -29,7 +29,7 @@ import {
 import type {
   BeautyFieldName,
   BeautySubcategoryKind,
-  CategoryKind,
+  CategoryTab,
   CategoryTotals,
   FashionFieldName,
   FieldSchema,
@@ -86,7 +86,7 @@ function _normalizeFieldState(raw: unknown): FieldStateSummary {
  */
 function _shapeQueue(
   payload: unknown,
-  category: CategoryKind,
+  category: CategoryTab,
 ): {
   queue: IncompleteProduct[];
   totals: CategoryTotals | null;
@@ -155,7 +155,7 @@ function _shapeQueue(
   return { queue, totals: _shapeTotals(data.totals, category) };
 }
 
-function _shapeTotals(raw: unknown, category: CategoryKind): CategoryTotals | null {
+function _shapeTotals(raw: unknown, category: CategoryTab): CategoryTotals | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   const n = (k: string): number => typeof r[k] === "number" ? r[k] as number : 0;
@@ -173,8 +173,11 @@ function _shapeTotals(raw: unknown, category: CategoryKind): CategoryTotals | nu
       page_size: n("page_size") || 50,
     };
   }
+  // v2.1.1 — both beauty_care and beauty_tools tabs land here. They
+  // hit the same /beauty_completeness endpoint with different
+  // subcategory_group filters; the response shape is identical.
   // v2.1 beauty totals come back as a flat beauty_total +
-  // per_subcategory breakdown. The trigger card can sum across
+  // per_subcategory breakdown. The trigger card sums across
   // subcategories' missing_per_field for the StatStrip.
   const rawPerSub = (r.per_subcategory && typeof r.per_subcategory === "object")
     ? (r.per_subcategory as Record<string, { total?: number; missing_per_field?: Record<string, number> }>)
@@ -194,7 +197,7 @@ function _shapeTotals(raw: unknown, category: CategoryKind): CategoryTotals | nu
     };
   }
   return {
-    category: "beauty",
+    category, // preserves the tab — beauty_care or beauty_tools
     category_total: n("beauty_total"),
     total_incomplete: n("total_incomplete"),
     missing_per_field: aggregatedMissing,
@@ -224,11 +227,24 @@ export function AgentChatSurface() {
         // Pull a wide page so the cursor walks the full queue. Backend
         // caps at 500; for larger catalogs `totals.has_more` is the
         // paging hook (v2.x).
-        const fetch =
-          category === "fashion"
-            ? apiClient.getMerchantFashionCompleteness({ page: 1, page_size: 200 })
-            : apiClient.getMerchantBeautyCompleteness({ page: 1, page_size: 200 });
-        const payload = await fetch;
+        //
+        // v2.1.1: three tabs. Fashion uses the dedicated fashion
+        // endpoint. Beauty's two tabs share the beauty_completeness
+        // endpoint, scoped via the subcategory_group query param.
+        let fetchPromise;
+        if (category === "fashion") {
+          fetchPromise = apiClient.getMerchantFashionCompleteness({
+            page: 1,
+            page_size: 200,
+          });
+        } else {
+          fetchPromise = apiClient.getMerchantBeautyCompleteness({
+            page: 1,
+            page_size: 200,
+            subcategory_group: category, // "beauty_care" | "beauty_tools"
+          });
+        }
+        const payload = await fetchPromise;
         if (cancelled) return;
         const { queue, totals } = _shapeQueue(payload, category);
         setQueue(queue, totals);

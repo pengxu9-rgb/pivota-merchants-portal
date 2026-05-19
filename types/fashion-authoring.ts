@@ -58,12 +58,25 @@ export interface FieldSchema {
 }
 
 /**
- * Category discriminator on every product in the queue. The store
- * walks ONE category at a time; the discriminator is on the product
- * so a future mixed-queue surfacing both categories together doesn't
- * need a type refactor.
+ * Category discriminator on EACH PRODUCT in the queue. Today products
+ * are either fashion or beauty (regardless of subcategory). The store
+ * walks ONE category at a time; this discriminator is what the editor
+ * uses to pick StructuredEditor vs BeautyEditor.
  */
 export type CategoryKind = "fashion" | "beauty";
+
+/**
+ * The TAB the merchant has selected. v2.1.1 splits beauty into two
+ * top-level tabs (care vs tools) because a single Beauty tab that
+ * switches forms mid-flow was confusing in preview tests. The
+ * backend's subcategory_group filter on /beauty_completeness scopes
+ * the queue to the right slice.
+ *
+ * `beauty_care` and `beauty_tools` both produce products with
+ * `category_kind: "beauty"` — they just have different
+ * subcategory_kind values and different field schemas.
+ */
+export type CategoryTab = "fashion" | "beauty_care" | "beauty_tools";
 
 /**
  * Closed enum of allowed skin_concerns values. Mirrors
@@ -245,7 +258,10 @@ export interface BeautyTotals {
  *  category's totals payload. Keeps the trigger's render logic
  *  agnostic to which category it's showing. */
 export interface CategoryTotals {
-  category: CategoryKind;
+  /** The TAB the totals were fetched for. v2.1.1: beauty_care and
+   *  beauty_tools both produce category_kind="beauty" products but
+   *  come from disjoint subcategory_group fetches. */
+  category: CategoryTab;
   category_total: number;
   total_incomplete: number;
   missing_per_field: Partial<Record<FieldName, number>>;
@@ -303,11 +319,13 @@ export interface FashionThreadState {
    */
   totals: CategoryTotals | null;
   /**
-   * Which category the surface is currently walking. The trigger card
-   * has a toggle to switch; switching clears the queue + outcomes +
-   * drafts for the previous category and fetches the new one.
+   * Which tab the surface is currently walking. v2.1.1 split this from
+   * the per-product CategoryKind so we can have two distinct beauty
+   * tabs (care vs tools) backed by the same beauty endpoint with a
+   * subcategory_group filter. Switching clears the queue + outcomes +
+   * drafts.
    */
-  category: CategoryKind;
+  category: CategoryTab;
 }
 
 /** Key helper — products are identified end-to-end by (platform, id). */

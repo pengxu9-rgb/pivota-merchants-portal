@@ -23,7 +23,7 @@ import {
   useMerchantFashionStore,
 } from "@/lib/merchant-fashion-store";
 import type {
-  CategoryKind,
+  CategoryTab,
   FieldName,
   IncompleteProduct,
 } from "@/types/fashion-authoring";
@@ -48,16 +48,21 @@ const FIELD_PILL_LABELS: Record<FieldName, string> = {
 // chips show the v2.0 skincare-shape filters; tools-only filters will
 // be a v2.2 polish (the queue can mix subcategories so global filters
 // have less meaning when subcategories don't share a field).
-const FILTER_LABELS_PER_CATEGORY: Record<CategoryKind, Array<{ field: FieldName; label: string }>> = {
+const FILTER_LABELS_PER_CATEGORY: Record<CategoryTab, Array<{ field: FieldName; label: string }>> = {
   fashion: [
     { field: "material", label: "Need material" },
     { field: "care", label: "Need care" },
     { field: "size_guide", label: "Need size" },
   ],
-  beauty: [
+  beauty_care: [
     { field: "raw_inci", label: "Need INCI" },
     { field: "how_to_use_text", label: "Need how-to-use" },
     { field: "skin_concerns", label: "Need concerns" },
+  ],
+  beauty_tools: [
+    { field: "tool_material", label: "Need material" },
+    { field: "use_with", label: "Need use-with" },
+    { field: "care_instructions", label: "Need care" },
   ],
 };
 

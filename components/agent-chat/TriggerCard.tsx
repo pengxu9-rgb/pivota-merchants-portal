@@ -3,7 +3,7 @@
 import { ArrowRight, Clock, RefreshCcw } from "lucide-react";
 
 import { useMerchantFashionStore } from "@/lib/merchant-fashion-store";
-import type { CategoryKind, FieldName } from "@/types/fashion-authoring";
+import type { CategoryTab, FieldName } from "@/types/fashion-authoring";
 
 import { AgentBubble } from "./AgentBubble";
 import { AiTip } from "./AiTip";
@@ -28,26 +28,36 @@ import { StatStrip } from "./StatStrip";
  *   - Simplified to two clear actions: "Start filling these in" + "Remind me later"
  */
 
-const CATEGORY_LABEL: Record<CategoryKind, string> = {
+const CATEGORY_LABEL: Record<CategoryTab, string> = {
   fashion: "Fashion",
-  beauty: "Beauty",
+  beauty_care: "Beauty care",
+  beauty_tools: "Beauty tools",
 };
 
-// Per-category headline copy reflects what the merchant is actually
-// missing in that category. Free-text strings keep it conversational.
-const PER_CATEGORY_HEADLINE: Record<CategoryKind, (n: number) => string> = {
+const CATEGORY_NOUN: Record<CategoryTab, string> = {
+  fashion: "fashion",
+  beauty_care: "beauty care",
+  beauty_tools: "beauty tool",
+};
+
+// Per-tab headline copy reflects what's specifically missing.
+const PER_CATEGORY_HEADLINE: Record<CategoryTab, (n: number) => string> = {
   fashion: (n) =>
     n > 0
       ? "Quick one — some of your fashion products are missing material info."
       : "Your fashion catalog is fully covered.",
-  beauty: (n) =>
+  beauty_care: (n) =>
     n > 0
-      ? "Quick one — some of your beauty products are missing ingredient info."
-      : "Your beauty catalog is fully covered.",
+      ? "Quick one — some of your beauty-care products are missing ingredient info."
+      : "Your beauty-care catalog is fully covered.",
+  beauty_tools: (n) =>
+    n > 0
+      ? "Quick one — some of your beauty tools are missing material + care info."
+      : "Your beauty tools catalog is fully covered.",
 };
 
 const PER_CATEGORY_BODY: Record<
-  CategoryKind,
+  CategoryTab,
   (missing: number, total: number) => React.ReactNode
 > = {
   fashion: (missing, total) => (
@@ -61,16 +71,25 @@ const PER_CATEGORY_BODY: Record<
       <em>not specified</em> instead of pulling your answer.
     </>
   ),
-  beauty: (missing, total) => (
+  beauty_care: (missing, total) => (
     <>
       <strong>
-        {missing} of your {total} beauty products
+        {missing} of your {total} beauty-care products
       </strong>{" "}
       are missing at least one of ingredient list, how-to-use, or skin
-      concerns. They&apos;ll still appear in shopping searches, but agents
-      asking <em>&quot;does this have parabens?&quot;</em> or{" "}
+      concerns. Agents asking <em>&quot;does this have parabens?&quot;</em> or{" "}
       <em>&quot;is this good for oily skin?&quot;</em> will say{" "}
       <em>not specified</em>.
+    </>
+  ),
+  beauty_tools: (missing, total) => (
+    <>
+      <strong>
+        {missing} of your {total} beauty tools
+      </strong>{" "}
+      are missing details. Brushes / sponges / applicators surface better
+      when shoppers can see what they&apos;re made of, what to use them with,
+      and how to keep them clean.
     </>
   ),
 };
@@ -85,16 +104,21 @@ export function TriggerCard() {
   const totalForCategory = totals?.category_total ?? queue.length;
   const totalIncomplete = totals?.total_incomplete ?? queue.length;
 
-  // StatStrip wants populated counts per field. Build per-category.
+  // StatStrip wants populated counts per field. Build per-tab.
   const populated: Record<FieldName, number> = {} as Record<FieldName, number>;
   if (category === "fashion") {
     populated.material = Math.max(0, totalForCategory - (totals?.missing_per_field.material ?? 0));
     populated.care = Math.max(0, totalForCategory - (totals?.missing_per_field.care ?? 0));
     populated.size_guide = Math.max(0, totalForCategory - (totals?.missing_per_field.size_guide ?? 0));
-  } else {
+  } else if (category === "beauty_care") {
     populated.raw_inci = Math.max(0, totalForCategory - (totals?.missing_per_field.raw_inci ?? 0));
     populated.how_to_use_text = Math.max(0, totalForCategory - (totals?.missing_per_field.how_to_use_text ?? 0));
     populated.skin_concerns = Math.max(0, totalForCategory - (totals?.missing_per_field.skin_concerns ?? 0));
+  } else {
+    // beauty_tools
+    populated.tool_material = Math.max(0, totalForCategory - (totals?.missing_per_field.tool_material ?? 0));
+    populated.use_with = Math.max(0, totalForCategory - (totals?.missing_per_field.use_with ?? 0));
+    populated.care_instructions = Math.max(0, totalForCategory - (totals?.missing_per_field.care_instructions ?? 0));
   }
 
   const sample = queue.slice(0, 3);
@@ -115,7 +139,7 @@ export function TriggerCard() {
           marginBottom: 14,
         }}
       >
-        {(["fashion", "beauty"] as const).map((cat) => {
+        {(["fashion", "beauty_care", "beauty_tools"] as const).map((cat) => {
           const active = category === cat;
           return (
             <button
@@ -157,7 +181,7 @@ export function TriggerCard() {
           <RefreshCcw size={12} strokeWidth={1.8} />
           <span>
             Catalog scan · <strong>{totalIncomplete}</strong>{" "}
-            {category} {totalIncomplete === 1 ? "product" : "products"} missing details
+            {CATEGORY_NOUN[category]} {totalIncomplete === 1 ? "product" : "products"} missing details
           </span>
         </span>
       </div>
@@ -203,7 +227,7 @@ export function TriggerCard() {
           >
             {sample.length === 1
               ? "Sample product missing info:"
-              : `A few ${category} products missing info:`}
+              : `A few ${CATEGORY_NOUN[category]} products missing info:`}
           </div>
           <div
             style={{
@@ -240,7 +264,7 @@ export function TriggerCard() {
       {totals?.has_more ? (
         <div style={{ marginBottom: 14 }}>
           <AiTip variant="info" title="There are more to come">
-            You have <strong>{totalIncomplete}</strong> {category} products needing
+            You have <strong>{totalIncomplete}</strong> {CATEGORY_NOUN[category]} products needing
             review. I&apos;ll walk you through the first batch now — when you finish,
             come back to this chat and I&apos;ll load the next.
           </AiTip>
