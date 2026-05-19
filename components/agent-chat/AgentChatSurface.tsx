@@ -35,6 +35,7 @@ import { DeferCard } from "./DeferCard";
 import { DoneCard } from "./DoneCard";
 import { HonestFeedbackCard } from "./HonestFeedbackCard";
 import { PausedCard } from "./PausedCard";
+import { QueueSidebar } from "./QueueSidebar";
 import { StructuredEditor } from "./StructuredEditor";
 import { TriggerCard } from "./TriggerCard";
 
@@ -219,20 +220,37 @@ export function AgentChatSurface() {
     }
   }, [loading, loadError, queueLength, screen]);
 
+  // Two-column layout only on the structured screen — that's where the
+  // queue sidebar adds value. Trigger / done / paused / honest_feedback
+  // / defer all stay single-column so their messaging stays focused.
+  const showSidebar = screen === "structured" && queueLength > 0;
+
   return (
     <div
       className="agent-chat-surface"
       style={{
         display: "flex",
-        flexDirection: "column",
+        flexDirection: showSidebar ? "row" : "column",
+        gap: 16,
         minHeight: "calc(100vh - 120px)",
         padding: "24px 16px 32px",
-        maxWidth: 880,
+        maxWidth: showSidebar ? 1200 : 880,
         margin: "0 auto",
-        gap: 16,
+        alignItems: "flex-start",
       }}
     >
-      {content}
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+        }}
+      >
+        {content}
+      </div>
+      {showSidebar ? <QueueSidebar /> : null}
       {/*
         v1 uses action chips to drive the flow; free-text input would
         require an NLP layer we haven't built yet. Hiding the composer

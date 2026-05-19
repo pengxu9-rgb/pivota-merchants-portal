@@ -55,6 +55,10 @@ interface Actions {
   advanceCursor: () => void;
   /** Move cursor backward (e.g. user wants to revisit). */
   retreatCursor: () => void;
+  /** Jump cursor to a specific product by key. Used by the queue
+   *  sidebar (v1.4) for non-sequential editing. No-op if the product
+   *  isn't in the current queue. */
+  jumpToProduct: (productKeyArg: string) => void;
   /** Set draft field values for the current (or specified) product. */
   setDraft: (productKeyArg: string, draft: Partial<FashionFieldsDraft>) => void;
   /** Record per-field PUT outcomes. */
@@ -163,6 +167,13 @@ export const useMerchantFashionStore = create<FashionThreadState & Actions>()(
 
       retreatCursor: () =>
         set((s) => ({ cursor: Math.max(0, s.cursor - 1) })),
+
+      jumpToProduct: (productKeyArg) =>
+        set((s) => {
+          const idx = s.queue.findIndex((p) => productKey(p) === productKeyArg);
+          if (idx < 0) return {}; // not in queue — silently ignore
+          return { cursor: idx, screen: "structured" };
+        }),
 
       setDraft: (productKeyArg, draft) =>
         set((s) => ({
