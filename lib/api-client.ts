@@ -718,6 +718,68 @@ class ApiClient {
    * merchant's value was not overwritten. Surface that honestly in the UI
    * via Screen 08.
    */
+  /**
+   * Per-product fashion-completeness queue for the merchant agent
+   * surface. Backed by pivota-backend PR #565:
+   *   GET /merchant/products/fashion_completeness
+   *
+   * Returns only products with at least one missing fashion field, so
+   * the agent surface can drive the trigger + structured editor flows
+   * directly off this list. Per-field `status` mirrors the UI's
+   * FieldStatus enum (missing / filled-by-llm / merchant-authored /
+   * merchant-payload-locked / inherited).
+   */
+  async getMerchantFashionCompleteness(options?: {
+    page?: number;
+    page_size?: number;
+  }): Promise<{
+    status: string;
+    data: {
+      queue: Array<{
+        platform: string;
+        platform_product_id: string;
+        title: string;
+        image_url: string | null;
+        sku: string | null;
+        fields: {
+          material: {
+            status: "missing" | "filled-by-llm" | "merchant-authored" | "merchant-payload-locked" | "inherited";
+            value: string | null;
+            confidence: number | null;
+          };
+          care: {
+            status: "missing" | "filled-by-llm" | "merchant-authored" | "merchant-payload-locked" | "inherited";
+            value: string | null;
+            confidence: number | null;
+          };
+          size_guide: {
+            status: "missing" | "filled-by-llm" | "merchant-authored" | "merchant-payload-locked" | "inherited";
+            value: string | Record<string, any> | null;
+            confidence: number | null;
+          };
+        };
+      }>;
+      totals: {
+        fashion_total: number;
+        missing_material: number;
+        missing_care: number;
+        missing_size_guide: number;
+        total_incomplete: number;
+        page: number;
+        page_size: number;
+        has_more: boolean;
+      };
+    };
+  }> {
+    const response = await this.client.get("/merchant/products/fashion_completeness", {
+      params: {
+        page: options?.page,
+        page_size: options?.page_size,
+      },
+    });
+    return response.data;
+  }
+
   async updateMerchantProductFashionFields(
     platform: string,
     platformProductId: string,

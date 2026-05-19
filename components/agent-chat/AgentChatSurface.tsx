@@ -8,15 +8,15 @@
  *   A · Fully covered — sidebar/silent; renders empty state
  *   C · Action needed — Screen 04 (Trigger)
  *   D · Authoring     — Screen 06 (Structured one-by-one)
- *   E · Paused        — Screen 09 (Defer state)
+ *   E · Paused        — Screen 09 (Defer state) / PausedCard
  *   F · Conflict      — Screen 08 (Honest feedback)
  *   G · Genuinely unknown — equivalent to E (silent until cadence)
  *
  * The store persists `screen` so navigating away + back resumes at the
- * same point. Initial load fetches the readiness payload and:
- *   - If lane has no missing-data products → A (idle / fully-covered card)
- *   - Otherwise → C (Trigger) on first visit, or whatever screen was last
- *     persisted (D/E/F).
+ * same point. Initial load fetches the fashion-completeness payload
+ * from the backend (PR #565) and routes:
+ *   - empty queue (all products covered) → A · Fully covered
+ *   - non-empty queue → keep persisted screen, defaulting to Trigger
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -26,10 +26,10 @@ import { useMerchantFashionStore } from "@/lib/merchant-fashion-store";
 import type {
   FieldName,
   FieldStateSummary,
+  FieldStatus,
   IncompleteProduct,
 } from "@/types/fashion-authoring";
 
-import { Composer } from "./Composer";
 import { DeferCard } from "./DeferCard";
 import { DoneCard } from "./DoneCard";
 import { HonestFeedbackCard } from "./HonestFeedbackCard";
@@ -37,68 +37,75 @@ import { PausedCard } from "./PausedCard";
 import { StructuredEditor } from "./StructuredEditor";
 import { TriggerCard } from "./TriggerCard";
 
+const _VALID_STATUSES: ReadonlySet<FieldStatus> = new Set([
+  "missing",
+  "filled-by-llm",
+  "merchant-authored",
+  "merchant-payload-locked",
+  "inherited",
+]);
+
+function _normalizeStatus(s: unknown): FieldStatus {
+  if (typeof s === "string" && _VALID_STATUSES.has(s as FieldStatus)) {
+    return s as FieldStatus;
+  }
+  return "missing";
+}
+
+function _normalizeFieldState(raw: unknown): FieldStateSummary {
+  if (!raw || typeof raw !== "object") return { status: "missing" };
+  const r = raw as Record<string, unknown>;
+  const status = _normalizeStatus(r.status);
+  const value = r.value;
+  const confidence =
+    typeof r.confidence === "number" && r.confidence >= 0 && r.confidence <= 1
+      ? r.confidence
+      : null;
+  return {
+    status,
+    value: (typeof value === "string" || (value && typeof value === "object")) ? value as string | Record<string, any> : null,
+    confidence,
+  };
+}
+
 /**
- * Pull the per-product fashion-field state from a readiness-optimization
- * response and shape it into the queue our store expects.
- *
- * The backend returns a list of products with `reason_codes` per
- * product. For each fashion-categorized product missing material/
- * care/size_guide, we promote it into the queue. The shape here is
- * defensive — readiness payload schemas have evolved a few times.
+ * Defensive shaper for the /merchant/products/fashion_completeness
+ * payload. The contract is narrow and stable but we guard against
+ * field renames / null nesting so a single bad row doesn't crash the
+ * whole surface.
  */
-function toIncompleteQueue(payload: unknown): IncompleteProduct[] {
+function _shapeQueue(payload: unknown): IncompleteProduct[] {
   if (!payload || typeof payload !== "object") return [];
   const root = payload as Record<string, unknown>;
-  // The endpoint returns `{ queue: [...] }` or `{ data: { queue: [...] } }`
-  // historically; api-client.ts already unwraps `.data` at the outer layer.
-  // Defensively guard against non-array truthy values — a backend shape
-  // change shouldn't crash the agent surface (codex flagged this as 🟡).
-  const rawQueue = root.queue ?? root.products;
+  const data = (root.data && typeof root.data === "object")
+    ? (root.data as Record<string, unknown>)
+    : root;
+  const rawQueue = data.queue;
   if (!Array.isArray(rawQueue)) return [];
 
-  const fashion: IncompleteProduct[] = [];
+  const out: IncompleteProduct[] = [];
   for (const item of rawQueue) {
     if (!item || typeof item !== "object") continue;
     const it = item as Record<string, unknown>;
-    const rawCodes = it.reason_codes;
-    const codes: string[] = Array.isArray(rawCodes)
-      ? rawCodes.filter((c): c is string => typeof c === "string")
-      : [];
-    const lacksMaterial = codes.includes("product_material_or_ingredient_info_missing");
-    const lacksSizeGuide = codes.includes("product_size_guidance_missing");
-    if (!lacksMaterial && !lacksSizeGuide) continue;
+    if (typeof it.platform !== "string" || typeof it.platform_product_id !== "string") continue;
+    const rawFields = (it.fields && typeof it.fields === "object")
+      ? (it.fields as Record<string, unknown>)
+      : {};
     const fields: Record<FieldName, FieldStateSummary> = {
-      material: lacksMaterial
-        ? { status: "missing" }
-        : { status: "merchant-authored", value: null },
-      // The readiness payload doesn't differentiate care today — surface
-      // care as missing whenever material is, since for now they cluster.
-      care: lacksMaterial ? { status: "missing" } : { status: "merchant-authored" },
-      size_guide: lacksSizeGuide
-        ? { status: "missing" }
-        : { status: "merchant-authored" },
+      material: _normalizeFieldState(rawFields.material),
+      care: _normalizeFieldState(rawFields.care),
+      size_guide: _normalizeFieldState(rawFields.size_guide),
     };
-    const platform = typeof it.platform === "string" ? it.platform : "shopify";
-    const ppid = typeof it.platform_product_id === "string"
-      ? it.platform_product_id
-      : typeof it.id === "string"
-        ? it.id
-        : "";
-    if (!ppid) continue;
-    fashion.push({
-      platform,
-      platform_product_id: ppid,
-      title: typeof it.title === "string"
-        ? it.title
-        : typeof it.product_title === "string"
-          ? it.product_title
-          : "Untitled product",
+    out.push({
+      platform: it.platform,
+      platform_product_id: it.platform_product_id,
+      title: typeof it.title === "string" ? it.title : "Untitled product",
       image_url: typeof it.image_url === "string" ? it.image_url : null,
       sku: typeof it.sku === "string" ? it.sku : null,
       fields,
     });
   }
-  return fashion;
+  return out;
 }
 
 export function AgentChatSurface() {
@@ -116,27 +123,25 @@ export function AgentChatSurface() {
       setLoading(true);
       setLoadError(null);
       try {
-        const payload = await apiClient.getMerchantReadinessOptimization({
-          queue_mode: "page",
+        const payload = await apiClient.getMerchantFashionCompleteness({
           page: 1,
           page_size: 50,
-          // The trigger surface specifically wants fashion-related blockers.
-          // The backend filters by reason-code via `issue_bucket`.
-          issue_bucket: "product_fit_composition_completeness",
         });
         if (cancelled) return;
-        const queue = toIncompleteQueue(payload);
+        const queue = _shapeQueue(payload);
         setQueue(queue);
-        // First-visit screen routing: if the queue is empty, go to "done"
-        // (or rather, the A · Fully covered idle state which we render
-        // inline below as an empty state). Otherwise stay on the persisted
-        // screen — typically "trigger" on first arrival.
+        // Routing: empty queue → A (covered). Non-empty → keep the
+        // persisted screen, but if it's the empty-default "done", flip
+        // it to trigger so the merchant lands on the prompt rather
+        // than a stale Done state.
         if (queue.length === 0) {
           setScreen("done");
+        } else if (screen === "done") {
+          setScreen("trigger");
         }
       } catch (err) {
         if (cancelled) return;
-        setLoadError(err instanceof Error ? err.message : "Failed to load readiness");
+        setLoadError(err instanceof Error ? err.message : "Failed to load fashion completeness");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -155,7 +160,7 @@ export function AgentChatSurface() {
     if (loadError)
       return (
         <div style={{ color: "var(--p-coral-icon)", fontSize: 13 }}>
-          Couldn't load your catalog state: {loadError}
+          Couldn&apos;t load your catalog state: {loadError}
         </div>
       );
     if (queueLength === 0 && screen === "done") {
@@ -192,10 +197,14 @@ export function AgentChatSurface() {
         gap: 16,
       }}
     >
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20 }}>
-        {content}
-      </div>
-      <Composer disabled />
+      {content}
+      {/*
+        v1 uses action chips to drive the flow; free-text input would
+        require an NLP layer we haven't built yet. Hiding the composer
+        entirely instead of showing a disabled stub avoids the
+        "I clicked the box and nothing happened" UX that surfaced in
+        preview testing.
+      */}
     </div>
   );
 }
