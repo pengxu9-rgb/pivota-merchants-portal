@@ -706,6 +706,108 @@ class ApiClient {
     return response.data;
   }
 
+  /**
+   * Merchant-authored fashion-field write path (material / care / size_guide).
+   * Backed by pivota-backend PR #563:
+   *   PUT /merchant/products/{platform}/{platform_product_id}/fashion_fields
+   *
+   * null on a field means "leave unchanged". Response.outcomes maps each
+   * provided field to one of: 'written' | 'skipped_payload_owned' |
+   * 'product_not_found' | 'unchanged'. skipped_payload_owned is NOT an
+   * error — it signals that a Shopify metafield is authoritative and the
+   * merchant's value was not overwritten. Surface that honestly in the UI
+   * via Screen 08.
+   */
+  /**
+   * Per-product fashion-completeness queue for the merchant agent
+   * surface. Backed by pivota-backend PR #565:
+   *   GET /merchant/products/fashion_completeness
+   *
+   * Returns only products with at least one missing fashion field, so
+   * the agent surface can drive the trigger + structured editor flows
+   * directly off this list. Per-field `status` mirrors the UI's
+   * FieldStatus enum (missing / filled-by-llm / merchant-authored /
+   * merchant-payload-locked / inherited).
+   */
+  async getMerchantFashionCompleteness(options?: {
+    page?: number;
+    page_size?: number;
+  }): Promise<{
+    status: string;
+    data: {
+      queue: Array<{
+        platform: string;
+        platform_product_id: string;
+        title: string;
+        image_url: string | null;
+        sku: string | null;
+        fields: {
+          material: {
+            status: "missing" | "filled-by-llm" | "merchant-authored" | "merchant-payload-locked" | "inherited";
+            value: string | null;
+            confidence: number | null;
+          };
+          care: {
+            status: "missing" | "filled-by-llm" | "merchant-authored" | "merchant-payload-locked" | "inherited";
+            value: string | null;
+            confidence: number | null;
+          };
+          size_guide: {
+            status: "missing" | "filled-by-llm" | "merchant-authored" | "merchant-payload-locked" | "inherited";
+            value: string | Record<string, any> | null;
+            confidence: number | null;
+          };
+        };
+      }>;
+      totals: {
+        fashion_total: number;
+        missing_material: number;
+        missing_care: number;
+        missing_size_guide: number;
+        total_incomplete: number;
+        page: number;
+        page_size: number;
+        has_more: boolean;
+      };
+    };
+  }> {
+    const response = await this.client.get("/merchant/products/fashion_completeness", {
+      params: {
+        page: options?.page,
+        page_size: options?.page_size,
+      },
+    });
+    return response.data;
+  }
+
+  async updateMerchantProductFashionFields(
+    platform: string,
+    platformProductId: string,
+    fields: {
+      material?: string | null;
+      care?: string | null;
+      size_guide?: string | Record<string, any> | null;
+    }
+  ): Promise<{
+    status: string;
+    // Per-field outcomes are narrow strings, not arbitrary `Record<string, …>`.
+    // Imported as the exact type from @/types/fashion-authoring would create
+    // an import cycle (the types module is consumed by Zustand store etc.);
+    // pin the union here so the structural contract still tightens vs the
+    // prior loose `Record<string, ...>` (codex 🟢).
+    outcomes: Partial<Record<
+      "material" | "care" | "size_guide",
+      "written" | "skipped_payload_owned" | "product_not_found" | "unchanged"
+    >>;
+  }> {
+    const encodedId = encodeURIComponent(platformProductId);
+    const response = await this.client.put(
+      `/merchant/products/${platform}/${encodedId}/fashion_fields`,
+      fields
+    );
+    return response.data;
+  }
+
   async runMerchantProductOptimization(
     platform: string,
     platformProductId: string
