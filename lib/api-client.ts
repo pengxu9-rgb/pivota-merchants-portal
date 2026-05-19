@@ -808,6 +808,95 @@ class ApiClient {
     return response.data;
   }
 
+  /**
+   * Beauty completeness read — parallel of getMerchantFashionCompleteness.
+   * Backed by pivota-backend PR #567's GET /merchant/products/beauty_completeness.
+   * Same queue + totals shape as fashion so the agent surface can share
+   * parsing logic; the per-field set differs (raw_inci / how_to_use_text /
+   * skin_concerns).
+   */
+  async getMerchantBeautyCompleteness(options?: {
+    page?: number;
+    page_size?: number;
+  }): Promise<{
+    status: string;
+    data: {
+      queue: Array<{
+        platform: string;
+        platform_product_id: string;
+        title: string;
+        image_url: string | null;
+        sku: string | null;
+        category_kind: "beauty";
+        fields: {
+          raw_inci: {
+            status: "missing" | "filled-by-llm" | "merchant-authored" | "merchant-payload-locked" | "inherited";
+            value: string | null;
+            confidence: number | null;
+          };
+          how_to_use_text: {
+            status: "missing" | "filled-by-llm" | "merchant-authored" | "merchant-payload-locked" | "inherited";
+            value: string | null;
+            confidence: number | null;
+          };
+          skin_concerns: {
+            status: "missing" | "filled-by-llm" | "merchant-authored" | "merchant-payload-locked" | "inherited";
+            value: string[] | null;
+            confidence: number | null;
+          };
+        };
+      }>;
+      totals: {
+        beauty_total: number;
+        missing_inci: number;
+        missing_how_to_use: number;
+        missing_concerns: number;
+        total_incomplete: number;
+        page: number;
+        page_size: number;
+        has_more: boolean;
+      };
+      allowed_skin_concerns: string[];
+    };
+  }> {
+    const response = await this.client.get("/merchant/products/beauty_completeness", {
+      params: {
+        page: options?.page,
+        page_size: options?.page_size,
+      },
+    });
+    return response.data;
+  }
+
+  /**
+   * Merchant-authored beauty-field write — parallel of the fashion PUT.
+   * Backed by pivota-backend PR #567's
+   *   PUT /merchant/products/{platform}/{platform_product_id}/beauty_fields
+   */
+  async updateMerchantProductBeautyFields(
+    platform: string,
+    platformProductId: string,
+    fields: {
+      raw_inci?: string | null;
+      how_to_use_text?: string | null;
+      skin_concerns?: string[] | null;
+    }
+  ): Promise<{
+    status: string;
+    outcomes: Partial<Record<
+      "raw_inci" | "how_to_use_text" | "skin_concerns",
+      "written" | "skipped_payload_owned" | "product_not_found" | "unchanged"
+    >>;
+    allowed_skin_concerns: string[];
+  }> {
+    const encodedId = encodeURIComponent(platformProductId);
+    const response = await this.client.put(
+      `/merchant/products/${platform}/${encodedId}/beauty_fields`,
+      fields
+    );
+    return response.data;
+  }
+
   async runMerchantProductOptimization(
     platform: string,
     platformProductId: string

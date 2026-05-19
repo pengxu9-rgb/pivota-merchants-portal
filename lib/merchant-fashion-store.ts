@@ -31,24 +31,27 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import type {
-  FashionFieldsDraft,
+  CategoryKind,
+  CategoryTotals,
   FashionThreadState,
-  FashionTotals,
   FieldName,
   FieldOutcomeMap,
+  FieldsDraft,
   IncompleteProduct,
   ReminderCadence,
 } from "@/types/fashion-authoring";
 import { productKey } from "@/types/fashion-authoring";
 
 interface Actions {
-  /** Initialize / refresh the queue from a fresh readiness fetch.
+  /** Initialize / refresh the queue from a fresh completeness fetch.
    *  Pass totals so trigger/done/paused screens can show real counts
-   *  (queue is page-limited; "50 of your products" is wrong when the
-   *  merchant actually has 146 missing — v1.2 fix). */
-  setQueue: (queue: IncompleteProduct[], totals?: FashionTotals | null) => void;
+   *  (queue is page-limited). */
+  setQueue: (queue: IncompleteProduct[], totals?: CategoryTotals | null) => void;
   /** Pivot to a different screen within the thread. */
   setScreen: (screen: FashionThreadState["screen"]) => void;
+  /** Switch category (fashion ↔ beauty). Clears queue/outcomes/drafts
+   *  for the previous category — they're per-category state. */
+  setCategory: (category: CategoryKind) => void;
   /** Reset cursor to start; called when the queue is replaced. */
   resetCursor: () => void;
   /** Advance to the next product. Auto-pivots to "done" past the last one. */
@@ -59,8 +62,10 @@ interface Actions {
    *  sidebar (v1.4) for non-sequential editing. No-op if the product
    *  isn't in the current queue. */
   jumpToProduct: (productKeyArg: string) => void;
-  /** Set draft field values for the current (or specified) product. */
-  setDraft: (productKeyArg: string, draft: Partial<FashionFieldsDraft>) => void;
+  /** Set draft field values for the current (or specified) product.
+   *  Draft shape is per-category — narrowed by callers via the
+   *  matching product's category_kind. */
+  setDraft: (productKeyArg: string, draft: Partial<FieldsDraft>) => void;
   /** Record per-field PUT outcomes. */
   recordOutcomes: (productKeyArg: string, outcomes: FieldOutcomeMap) => void;
   /** Persist user's cadence pick. */
@@ -81,6 +86,9 @@ const initialState: FashionThreadState = {
   cadence: undefined,
   unknownProductIds: [],
   totals: null,
+  // Default to fashion so existing single-merchant test flows that
+  // never call setCategory work the same as before.
+  category: "fashion",
 };
 
 /**
@@ -152,6 +160,27 @@ export const useMerchantFashionStore = create<FashionThreadState & Actions>()(
       },
 
       setScreen: (screen) => set({ screen }),
+
+      setCategory: (category) =>
+        set((s) => {
+          if (s.category === category) return {};
+          // Switching category invalidates the queue / cursor /
+          // outcomes / drafts (those are per-category). The user's
+          // cadence + unknownProductIds carry over because they're
+          // merchant-level prefs, not per-category state.
+          return {
+            category,
+            queue: [],
+            cursor: 0,
+            outcomes: {},
+            drafts: {},
+            totals: null,
+            // Reset screen to trigger so the merchant sees the new
+            // category's counts; otherwise a mid-flow editor would
+            // render with the previous category's stale queue.
+            screen: "trigger",
+          };
+        }),
 
       resetCursor: () => set({ cursor: 0 }),
 
@@ -234,6 +263,7 @@ export const useMerchantFashionStore = create<FashionThreadState & Actions>()(
         cadence: s.cadence,
         unknownProductIds: s.unknownProductIds,
         totals: s.totals,
+        category: s.category,
       }),
     },
   ),

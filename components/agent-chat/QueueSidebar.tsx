@@ -22,14 +22,45 @@ import {
   selectCurrentProduct,
   useMerchantFashionStore,
 } from "@/lib/merchant-fashion-store";
-import type { FieldName, IncompleteProduct } from "@/types/fashion-authoring";
+import type {
+  CategoryKind,
+  FieldName,
+  IncompleteProduct,
+} from "@/types/fashion-authoring";
 import { productKey } from "@/types/fashion-authoring";
 
 const FIELD_PILL_LABELS: Record<FieldName, string> = {
+  // Fashion
   material: "M",
   care: "C",
   size_guide: "SG",
+  // Beauty
+  raw_inci: "INCI",
+  how_to_use_text: "HTU",
+  skin_concerns: "SC",
 };
+
+const FILTER_LABELS_PER_CATEGORY: Record<CategoryKind, Array<{ field: FieldName; label: string }>> = {
+  fashion: [
+    { field: "material", label: "Need material" },
+    { field: "care", label: "Need care" },
+    { field: "size_guide", label: "Need size" },
+  ],
+  beauty: [
+    { field: "raw_inci", label: "Need INCI" },
+    { field: "how_to_use_text", label: "Need how-to-use" },
+    { field: "skin_concerns", label: "Need concerns" },
+  ],
+};
+
+/** Status of a per-product field, regardless of which category arm
+ *  produced it. Returns null for fields not present in this product's
+ *  category (which never happens given how we filter; safe default). */
+function fieldStatus(product: IncompleteProduct, field: FieldName): string | null {
+  const map = product.fields as Record<string, { status: string }>;
+  const f = map[field];
+  return f ? f.status : null;
+}
 
 interface QueueSidebarProps {
   /** Hide the panel entirely. Used by the surface to suppress the
@@ -41,6 +72,7 @@ export function QueueSidebar({ hidden }: QueueSidebarProps) {
   const queue = useMerchantFashionStore((s) => s.queue);
   const current = useMerchantFashionStore(selectCurrentProduct);
   const totals = useMerchantFashionStore((s) => s.totals);
+  const category = useMerchantFashionStore((s) => s.category);
   const jumpToProduct = useMerchantFashionStore((s) => s.jumpToProduct);
 
   const [query, setQuery] = useState("");
@@ -59,7 +91,10 @@ export function QueueSidebar({ hidden }: QueueSidebarProps) {
         }
       }
       if (filter !== "all") {
-        if (p.fields[filter].status !== "missing") return false;
+        // The filter is a FieldName across both category arms; the
+        // product might not have that field if it's in the wrong
+        // category. Treat absent as "doesn't match filter."
+        if (fieldStatus(p, filter) !== "missing") return false;
       }
       return true;
     });
@@ -192,24 +227,15 @@ export function QueueSidebar({ hidden }: QueueSidebarProps) {
             label="All"
             count={queue.length}
           />
-          <FilterChip
-            active={filter === "material"}
-            onClick={() => setFilter("material")}
-            label="Need material"
-            count={queue.filter((p) => p.fields.material.status === "missing").length}
-          />
-          <FilterChip
-            active={filter === "care"}
-            onClick={() => setFilter("care")}
-            label="Need care"
-            count={queue.filter((p) => p.fields.care.status === "missing").length}
-          />
-          <FilterChip
-            active={filter === "size_guide"}
-            onClick={() => setFilter("size_guide")}
-            label="Need size"
-            count={queue.filter((p) => p.fields.size_guide.status === "missing").length}
-          />
+          {FILTER_LABELS_PER_CATEGORY[category].map((chip) => (
+            <FilterChip
+              key={chip.field}
+              active={filter === chip.field}
+              onClick={() => setFilter(chip.field)}
+              label={chip.label}
+              count={queue.filter((p) => fieldStatus(p, chip.field) === "missing").length}
+            />
+          ))}
         </div>
       </div>
 

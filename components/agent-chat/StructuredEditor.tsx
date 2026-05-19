@@ -30,8 +30,9 @@ import {
   useMerchantFashionStore,
 } from "@/lib/merchant-fashion-store";
 import type {
+  FashionFieldName,
   FashionFieldsDraft,
-  FieldName,
+  IncompleteFashionProduct,
 } from "@/types/fashion-authoring";
 import { productKey } from "@/types/fashion-authoring";
 
@@ -74,18 +75,19 @@ export function StructuredEditor() {
   // the second call synchronously. Codex flagged this as 🟡 race-unsafe.
   const inflightRef = useRef(false);
 
-  if (!current) {
-    // AgentChatSurface routes to PausedCard when queue is empty +
-    // screen is "structured", so this branch is normally unreachable.
-    // Render nothing as a defensive null instead of a useless
-    // "No products left" stub if it ever fires.
+  if (!current || current.category_kind !== "fashion") {
+    // AgentChatSurface routes to PausedCard when queue is empty + screen
+    // is "structured", and to BeautyEditor when the current product is
+    // beauty. This branch is defensive only.
     return null;
   }
 
-  const key = productKey(current);
-  const draft: FashionFieldsDraft = drafts[key] || {};
+  const fashionCurrent = current as IncompleteFashionProduct;
+  const key = productKey(fashionCurrent);
+  const draft: FashionFieldsDraft =
+    (drafts[key] as FashionFieldsDraft | undefined) || {};
 
-  function field(name: FieldName): string {
+  function field(name: FashionFieldName): string {
     const v = draft[name];
     if (v == null) return "";
     if (typeof v === "string") return v;
@@ -94,7 +96,7 @@ export function StructuredEditor() {
     return "";
   }
 
-  function update(name: FieldName, next: string) {
+  function update(name: FashionFieldName, next: string) {
     setSaveError(null);
     setDraft(key, { [name]: next });
   }
@@ -110,7 +112,7 @@ export function StructuredEditor() {
       const body: FashionFieldsDraft = {};
       // null means "leave unchanged" per backend; we send only fields the
       // merchant actually typed into (non-empty).
-      (Object.keys(draft) as FieldName[]).forEach((f) => {
+      (Object.keys(draft) as FashionFieldName[]).forEach((f) => {
         const v = draft[f];
         if (typeof v === "string" && v.trim().length > 0) {
           body[f] = v.trim();
