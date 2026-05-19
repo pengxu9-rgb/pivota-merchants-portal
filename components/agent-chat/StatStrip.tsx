@@ -18,6 +18,10 @@ const LABELS: Record<FieldName, string> = {
   raw_inci: "INGREDIENTS",
   how_to_use_text: "HOW TO USE",
   skin_concerns: "SKIN CONCERNS",
+  // v2.1 tools-shape
+  tool_material: "MATERIAL",
+  use_with: "USE WITH",
+  care_instructions: "CARE",
 };
 
 const TINTS: Record<FieldName, { bg: string; bar: string }> = {
@@ -31,6 +35,10 @@ const TINTS: Record<FieldName, { bg: string; bar: string }> = {
   raw_inci: { bg: "var(--p-coral-bg)", bar: "var(--p-coral)" },
   how_to_use_text: { bg: "var(--p-tip-bg)", bar: "#c98a3a" },
   skin_concerns: { bg: "var(--p-teal-bg)", bar: "var(--p-teal)" },
+  // v2.1 tools-shape — reuse the same palette
+  tool_material: { bg: "var(--p-coral-bg)", bar: "var(--p-coral)" },
+  use_with: { bg: "var(--p-tip-bg)", bar: "#c98a3a" },
+  care_instructions: { bg: "var(--p-teal-bg)", bar: "var(--p-teal)" },
 };
 
 const FIELDS_BY_CATEGORY: Record<CategoryKind, FieldName[]> = {

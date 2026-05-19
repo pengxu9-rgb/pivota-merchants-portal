@@ -34,12 +34,20 @@ const FIELD_PILL_LABELS: Record<FieldName, string> = {
   material: "M",
   care: "C",
   size_guide: "SG",
-  // Beauty
+  // Beauty — skincare shape
   raw_inci: "INCI",
   how_to_use_text: "HTU",
   skin_concerns: "SC",
+  // Beauty — tools shape (v2.1)
+  tool_material: "Mat",
+  use_with: "Use",
+  care_instructions: "Care",
 };
 
+// v2.1 beauty has variable per-subcategory fields. For now the filter
+// chips show the v2.0 skincare-shape filters; tools-only filters will
+// be a v2.2 polish (the queue can mix subcategories so global filters
+// have less meaning when subcategories don't share a field).
 const FILTER_LABELS_PER_CATEGORY: Record<CategoryKind, Array<{ field: FieldName; label: string }>> = {
   fashion: [
     { field: "material", label: "Need material" },

@@ -14,6 +14,10 @@ const FIELD_LABELS: Record<FieldName, string> = {
   raw_inci: "Ingredients",
   how_to_use_text: "How to use",
   skin_concerns: "Concerns",
+  // v2.1 tools-shape
+  tool_material: "Material",
+  use_with: "Use with",
+  care_instructions: "Care",
 };
 
 /** Enumerate missing field names across either union arm. The

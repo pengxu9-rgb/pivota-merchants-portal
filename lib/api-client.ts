@@ -828,35 +828,57 @@ class ApiClient {
         image_url: string | null;
         sku: string | null;
         category_kind: "beauty";
-        fields: {
-          raw_inci: {
-            status: "missing" | "filled-by-llm" | "merchant-authored" | "merchant-payload-locked" | "inherited";
-            value: string | null;
+        // v2.1 — backend tells the UI which subcategory + field set.
+        subcategory_kind: "skincare" | "haircare" | "bath" | "body" | "makeup" | "tools";
+        subcategory_label?: string;
+        category_path?: string | null;
+        field_schemas: Array<{
+          name: string;
+          type: "text" | "textarea" | "enum" | "enum_multi";
+          label: string;
+          placeholder?: string;
+          hint?: string;
+          allowed_values?: string[];
+        }>;
+        // Field values keyed by name; per-product set varies by subcategory.
+        fields: Record<
+          string,
+          {
+            status:
+              | "missing"
+              | "filled-by-llm"
+              | "merchant-authored"
+              | "merchant-payload-locked"
+              | "inherited";
+            value: string | string[] | Record<string, unknown> | null;
             confidence: number | null;
-          };
-          how_to_use_text: {
-            status: "missing" | "filled-by-llm" | "merchant-authored" | "merchant-payload-locked" | "inherited";
-            value: string | null;
-            confidence: number | null;
-          };
-          skin_concerns: {
-            status: "missing" | "filled-by-llm" | "merchant-authored" | "merchant-payload-locked" | "inherited";
-            value: string[] | null;
-            confidence: number | null;
-          };
-        };
+          }
+        >;
       }>;
       totals: {
         beauty_total: number;
-        missing_inci: number;
-        missing_how_to_use: number;
-        missing_concerns: number;
         total_incomplete: number;
         page: number;
         page_size: number;
         has_more: boolean;
+        per_subcategory?: Record<
+          string,
+          { total: number; missing_per_field: Record<string, number> }
+        >;
       };
       allowed_skin_concerns: string[];
+      subcategory_schemas: Array<{
+        subcategory_kind: string;
+        label: string;
+        fields: Array<{
+          name: string;
+          type: "text" | "textarea" | "enum" | "enum_multi";
+          label: string;
+          placeholder?: string;
+          hint?: string;
+          allowed_values?: string[];
+        }>;
+      }>;
     };
   }> {
     const response = await this.client.get("/merchant/products/beauty_completeness", {
@@ -869,22 +891,29 @@ class ApiClient {
   }
 
   /**
-   * Merchant-authored beauty-field write — parallel of the fashion PUT.
-   * Backed by pivota-backend PR #567's
+   * Merchant-authored beauty-field write — v2.1 supports the union of
+   * skincare + tools fields. Backend dispatches per field name.
+   * Backed by pivota-backend PR #569's
    *   PUT /merchant/products/{platform}/{platform_product_id}/beauty_fields
    */
   async updateMerchantProductBeautyFields(
     platform: string,
     platformProductId: string,
     fields: {
+      // Skincare-shape
       raw_inci?: string | null;
       how_to_use_text?: string | null;
       skin_concerns?: string[] | null;
+      // Tools-shape (v2.1)
+      tool_material?: string | null;
+      use_with?: string | null;
+      care_instructions?: string | null;
     }
   ): Promise<{
     status: string;
     outcomes: Partial<Record<
-      "raw_inci" | "how_to_use_text" | "skin_concerns",
+      "raw_inci" | "how_to_use_text" | "skin_concerns"
+        | "tool_material" | "use_with" | "care_instructions",
       "written" | "skipped_payload_owned" | "product_not_found" | "unchanged"
     >>;
     allowed_skin_concerns: string[];

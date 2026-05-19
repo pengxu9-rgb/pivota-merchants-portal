@@ -1,20 +1,21 @@
 "use client";
 
 /**
- * Beauty parallel of StructuredEditor. Same cursor/queue/save shape;
- * different fields (raw_inci / how_to_use_text / skin_concerns).
+ * v2.1 beauty editor — renders fields generically from the backend's
+ * per-product field_schemas list. The same component renders skincare,
+ * makeup, and tools forms because the schema (label, placeholder, type,
+ * allowed_values) comes from `current.field_schemas` rather than
+ * hard-coded UI logic.
  *
- * Walks the merchant's beauty queue one-at-a-time. Fields:
- *   - raw_inci          → free-text INCI list (textarea — these are long)
- *   - how_to_use_text   → free-text usage instructions (textarea)
- *   - skin_concerns     → multi-select from a fixed enum surfaced by the
- *                         GET /beauty_completeness response
+ * Cursor / save / skip / markUnknown / Back-to-overview mirror
+ * StructuredEditor. Future refactor could extract the shared
+ * scaffolding into a base component; v2.1 keeps the duplication so the
+ * fashion path stays untouched while beauty stabilizes.
  *
- * The structured editor's pattern (header, footer, save/skip/markUnknown
- * affordances, race-safe inflightRef, product_not_found warning) is
- * preserved. Future refactor could extract the shared scaffolding into
- * a base; for v2.0 alpha the duplication is intentional — keeps the
- * fashion code path untouched while beauty stabilizes.
+ * Codex review-style concerns carried over from v2.0:
+ *   - inflightRef race guard on save (double-click safe)
+ *   - product_not_found visible warning + no auto-advance
+ *   - merchant_payload-locked fields render as read-only with explanation
  */
 
 import {
@@ -23,7 +24,7 @@ import {
   ArrowRight,
   Pencil,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
 import {
@@ -31,30 +32,15 @@ import {
   useMerchantFashionStore,
 } from "@/lib/merchant-fashion-store";
 import type {
+  BeautyFieldName,
   BeautyFieldsDraft,
+  FieldSchema,
   IncompleteBeautyProduct,
-  SkinConcern,
 } from "@/types/fashion-authoring";
-import {
-  ALLOWED_SKIN_CONCERNS,
-  productKey,
-} from "@/types/fashion-authoring";
+import { productKey } from "@/types/fashion-authoring";
 
 import { AgentBubble } from "./AgentBubble";
 import { ReplyChip } from "./ReplyChip";
-
-const CONCERN_LABELS: Record<SkinConcern, string> = {
-  oily: "Oily",
-  dry: "Dry",
-  combination: "Combination",
-  normal: "Normal",
-  sensitive: "Sensitive",
-  "acne-prone": "Acne-prone",
-  aging: "Aging",
-  hyperpigmentation: "Hyperpigmentation",
-  redness: "Redness",
-  dullness: "Dullness",
-};
 
 export function BeautyEditor() {
   const current = useMerchantFashionStore(selectCurrentProduct) as
@@ -75,8 +61,6 @@ export function BeautyEditor() {
   const inflightRef = useRef(false);
 
   if (!current || current.category_kind !== "beauty") {
-    // AgentChatSurface dispatches to PausedCard for empty queue and to
-    // StructuredEditor for fashion — this branch is defensive only.
     return null;
   }
 
@@ -84,28 +68,26 @@ export function BeautyEditor() {
   const draft: BeautyFieldsDraft =
     (drafts[key] as BeautyFieldsDraft | undefined) || {};
 
-  function readText(name: "raw_inci" | "how_to_use_text"): string {
-    const v = draft[name];
-    return typeof v === "string" ? v : "";
+  function getDraftValue(field: BeautyFieldName): string | string[] | null {
+    const v = (draft as Record<string, unknown>)[field];
+    if (v == null) return null;
+    if (typeof v === "string" || Array.isArray(v)) return v as string | string[];
+    return null;
   }
 
-  function readConcerns(): SkinConcern[] {
-    const v = draft.skin_concerns;
-    return Array.isArray(v) ? v : [];
-  }
-
-  function updateText(name: "raw_inci" | "how_to_use_text", next: string) {
+  function setText(field: BeautyFieldName, next: string) {
     setSaveError(null);
-    setDraft(key, { [name]: next });
+    setDraft(key, { [field]: next } as Partial<BeautyFieldsDraft>);
   }
 
-  function toggleConcern(concern: SkinConcern) {
+  function toggleEnumValue(field: BeautyFieldName, value: string) {
     setSaveError(null);
-    const current = readConcerns();
-    const next = current.includes(concern)
-      ? current.filter((c) => c !== concern)
-      : [...current, concern];
-    setDraft(key, { skin_concerns: next });
+    const existing = (draft as Record<string, unknown>)[field];
+    const list: string[] = Array.isArray(existing) ? (existing as string[]) : [];
+    const next = list.includes(value)
+      ? list.filter((v) => v !== value)
+      : [...list, value];
+    setDraft(key, { [field]: next } as Partial<BeautyFieldsDraft>);
   }
 
   async function save() {
@@ -116,24 +98,17 @@ export function BeautyEditor() {
     setSaveError(null);
     setNotFoundWarning(null);
     try {
-      const body: {
-        raw_inci?: string;
-        how_to_use_text?: string;
-        skin_concerns?: SkinConcern[];
-      } = {};
-      const inci = draft.raw_inci;
-      if (typeof inci === "string" && inci.trim().length > 0) {
-        body.raw_inci = inci.trim();
+      const body: Record<string, string | string[]> = {};
+      for (const schema of current.field_schemas) {
+        const v = (draft as Record<string, unknown>)[schema.name];
+        if (schema.type === "enum_multi") {
+          if (Array.isArray(v) && v.length > 0) {
+            body[schema.name] = v as string[];
+          }
+        } else if (typeof v === "string" && v.trim().length > 0) {
+          body[schema.name] = v.trim();
+        }
       }
-      const how = draft.how_to_use_text;
-      if (typeof how === "string" && how.trim().length > 0) {
-        body.how_to_use_text = how.trim();
-      }
-      const concerns = readConcerns();
-      if (concerns.length > 0) {
-        body.skin_concerns = concerns;
-      }
-
       if (Object.keys(body).length === 0) {
         advance();
         return;
@@ -141,7 +116,7 @@ export function BeautyEditor() {
       const resp = await apiClient.updateMerchantProductBeautyFields(
         current.platform,
         current.platform_product_id,
-        body,
+        body as Parameters<typeof apiClient.updateMerchantProductBeautyFields>[2],
       );
       const outcomes = resp.outcomes || {};
       recordOutcomes(key, outcomes);
@@ -167,17 +142,11 @@ export function BeautyEditor() {
 
   function markUnknownAndAdvance() {
     if (inflightRef.current) return;
-    if (current) markUnknown(key);
+    markUnknown(key);
   }
-
-  const fields = current.fields;
-  const inciStatus = fields.raw_inci.status;
-  const howStatus = fields.how_to_use_text.status;
-  const concernsStatus = fields.skin_concerns.status;
 
   return (
     <AgentBubble>
-      {/* Header */}
       <div
         style={{
           display: "flex",
@@ -258,6 +227,7 @@ export function BeautyEditor() {
                 marginTop: 2,
                 display: "flex",
                 gap: 8,
+                alignItems: "center",
               }}
             >
               <span
@@ -270,8 +240,13 @@ export function BeautyEditor() {
                   fontWeight: 600,
                 }}
               >
-                BEAUTY
+                {(current.subcategory_label || current.subcategory_kind).toUpperCase()}
               </span>
+              {current.category_path ? (
+                <span className="p-mono" style={{ fontSize: 10 }}>
+                  {current.category_path}
+                </span>
+              ) : null}
               <span style={{ textTransform: "capitalize" }}>{current.platform}</span>
             </div>
           </div>
@@ -280,7 +255,7 @@ export function BeautyEditor() {
           </div>
         </div>
 
-        {/* Form */}
+        {/* Form — render each field generically based on its schema. */}
         <div
           style={{
             display: "flex",
@@ -289,30 +264,21 @@ export function BeautyEditor() {
             padding: 14,
           }}
         >
-          <BeautyTextarea
-            label="Ingredient list (INCI)"
-            placeholder="Aqua / Water, Glycerin, Niacinamide, …"
-            value={readText("raw_inci")}
-            status={inciStatus}
-            onChange={(v) => updateText("raw_inci", v)}
-            hint="Paste the full INCI list. Shopping agents use this to answer ingredient questions like &quot;does this have parabens?&quot;"
-            sampleValue={fields.raw_inci.value as string | null}
-          />
-          <BeautyTextarea
-            label="How to use"
-            placeholder="Apply morning and evening to clean skin. Follow with moisturizer."
-            value={readText("how_to_use_text")}
-            status={howStatus}
-            onChange={(v) => updateText("how_to_use_text", v)}
-            hint="Application instructions or routine notes."
-            sampleValue={fields.how_to_use_text.value as string | null}
-          />
-          <ConcernsMultiSelect
-            selected={readConcerns()}
-            status={concernsStatus}
-            currentValue={fields.skin_concerns.value as string[] | null}
-            onToggle={toggleConcern}
-          />
+          {current.field_schemas.map((schema) => {
+            const fieldName = schema.name as BeautyFieldName;
+            const fieldState = current.fields[fieldName];
+            return (
+              <SchemaField
+                key={schema.name}
+                schema={schema}
+                status={fieldState?.status || "missing"}
+                currentValue={fieldState?.value ?? null}
+                draftValue={getDraftValue(fieldName)}
+                onTextChange={(v) => setText(fieldName, v)}
+                onEnumToggle={(v) => toggleEnumValue(fieldName, v)}
+              />
+            );
+          })}
         </div>
 
         {/* Footer */}
@@ -407,144 +373,169 @@ export function BeautyEditor() {
   );
 }
 
-/** Long-text editor for INCI / how-to-use. Renders the existing
- *  value as a hint when the field is filled but the merchant hasn't
- *  edited yet (so they can read what's there before deciding to
- *  override). */
-function BeautyTextarea({
-  label,
-  placeholder,
-  value,
+/** One field row, type-dispatched by schema.type. */
+function SchemaField({
+  schema,
   status,
-  hint,
-  sampleValue,
-  onChange,
+  currentValue,
+  draftValue,
+  onTextChange,
+  onEnumToggle,
 }: {
-  label: string;
-  placeholder: string;
-  value: string;
+  schema: FieldSchema;
   status: string;
-  hint?: string;
-  sampleValue?: string | null;
-  onChange: (v: string) => void;
+  currentValue: string | string[] | Record<string, unknown> | null | undefined;
+  draftValue: string | string[] | null;
+  onTextChange: (v: string) => void;
+  onEnumToggle: (v: string) => void;
 }) {
+  const inputId = useId();
+  const hintId = `${inputId}-hint`;
   const locked = status === "merchant-payload-locked";
+
+  const draftText = typeof draftValue === "string" ? draftValue : "";
+  const draftMultiList = Array.isArray(draftValue) ? draftValue : [];
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <label
+          htmlFor={inputId}
           style={{
             fontSize: 11.5,
             fontWeight: 600,
             color: "var(--p-neutral-900)",
           }}
         >
-          {label}
+          {schema.label}
         </label>
         <FieldStatusBadge status={status} />
       </div>
-      <textarea
-        value={locked ? "" : value}
-        placeholder={
-          locked
-            ? "Shopify metafield value is authoritative"
-            : placeholder
-        }
-        readOnly={locked}
-        onChange={locked ? undefined : (e) => onChange(e.target.value)}
-        rows={3}
-        className={`p-input ${locked ? "p-input--locked" : ""}`}
-        style={{
-          minHeight: 64,
-          fontSize: 12.5,
-          fontFamily: "inherit",
-          resize: "vertical",
-          lineHeight: 1.5,
-        }}
-      />
-      {sampleValue && !locked ? (
+
+      {schema.type === "textarea" ? (
+        <textarea
+          id={inputId}
+          value={locked ? "" : draftText}
+          placeholder={locked ? "Shopify metafield value is authoritative" : schema.placeholder}
+          readOnly={locked}
+          aria-describedby={schema.hint ? hintId : undefined}
+          onChange={locked ? undefined : (e) => onTextChange(e.target.value)}
+          rows={3}
+          className={`p-input ${locked ? "p-input--locked" : ""}`}
+          style={{
+            minHeight: 64,
+            fontSize: 12.5,
+            fontFamily: "inherit",
+            resize: "vertical",
+            lineHeight: 1.5,
+          }}
+        />
+      ) : schema.type === "text" ? (
+        <input
+          id={inputId}
+          type="text"
+          value={locked ? "" : draftText}
+          placeholder={locked ? "Shopify metafield value is authoritative" : schema.placeholder}
+          readOnly={locked}
+          aria-describedby={schema.hint ? hintId : undefined}
+          onChange={locked ? undefined : (e) => onTextChange(e.target.value)}
+          className={`p-input ${locked ? "p-input--locked" : ""}`}
+        />
+      ) : schema.type === "enum" ? (
+        <select
+          id={inputId}
+          value={draftText || (typeof currentValue === "string" ? currentValue : "")}
+          disabled={locked}
+          onChange={(e) => onTextChange(e.target.value)}
+          className={`p-input ${locked ? "p-input--locked" : ""}`}
+          style={{ fontSize: 12.5 }}
+        >
+          <option value="">Pick one…</option>
+          {(schema.allowed_values || []).map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <EnumMulti
+          allowed={schema.allowed_values || []}
+          selected={
+            draftMultiList.length > 0
+              ? draftMultiList
+              : Array.isArray(currentValue)
+                ? currentValue
+                : []
+          }
+          locked={locked}
+          onToggle={onEnumToggle}
+        />
+      )}
+
+      {/* Show existing value as context when merchant hasn't started typing. */}
+      {!locked && draftText.length === 0 && draftMultiList.length === 0 && currentValue ? (
         <div style={{ fontSize: 11, color: "var(--p-neutral-500)", lineHeight: 1.4 }}>
           Current value:{" "}
-          <span style={{ color: "var(--p-neutral-900)" }}>{sampleValue.slice(0, 200)}{sampleValue.length > 200 ? "…" : ""}</span>
+          <span style={{ color: "var(--p-neutral-900)" }}>
+            {Array.isArray(currentValue)
+              ? currentValue.join(", ")
+              : typeof currentValue === "string"
+                ? currentValue.slice(0, 200) + (currentValue.length > 200 ? "…" : "")
+                : JSON.stringify(currentValue)}
+          </span>
         </div>
       ) : null}
-      {hint ? (
-        <div style={{ fontSize: 11, color: "var(--p-neutral-500)" }}>{hint}</div>
+
+      {schema.hint ? (
+        <div id={hintId} style={{ fontSize: 11, color: "var(--p-neutral-500)" }}>
+          {schema.hint}
+        </div>
       ) : null}
     </div>
   );
 }
 
-function ConcernsMultiSelect({
+function EnumMulti({
+  allowed,
   selected,
-  status,
-  currentValue,
+  locked,
   onToggle,
 }: {
-  selected: SkinConcern[];
-  status: string;
-  currentValue?: string[] | null;
-  onToggle: (concern: SkinConcern) => void;
+  allowed: string[];
+  selected: string[];
+  locked: boolean;
+  onToggle: (v: string) => void;
 }) {
-  const locked = status === "merchant-payload-locked";
-  // If selected is empty and the product already has stored concerns,
-  // show those as the baseline so the merchant sees "you already said
-  // X; click to deselect or add more." Pre-fill the draft on first
-  // render via the parent's draft init — but we don't have a hook
-  // here. For v1 we just display them with selected styling if they
-  // match.
-  const displayed = selected.length > 0 ? selected : ((currentValue || []).filter((v): v is SkinConcern =>
-    (ALLOWED_SKIN_CONCERNS as readonly string[]).includes(v),
-  ));
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <label
-          style={{
-            fontSize: 11.5,
-            fontWeight: 600,
-            color: "var(--p-neutral-900)",
-          }}
-        >
-          Skin concerns this product targets
-        </label>
-        <FieldStatusBadge status={status} />
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-        {ALLOWED_SKIN_CONCERNS.map((concern) => {
-          const isOn = displayed.includes(concern);
-          return (
-            <button
-              key={concern}
-              type="button"
-              onClick={locked ? undefined : () => onToggle(concern)}
-              disabled={locked}
-              aria-pressed={isOn}
-              style={{
-                background: isOn ? "var(--p-primary-50)" : "var(--p-surface)",
-                border: isOn
-                  ? "1px solid var(--p-primary)"
-                  : "0.5px solid var(--p-border-strong)",
-                color: isOn ? "var(--p-primary-800)" : "var(--p-neutral-500)",
-                borderRadius: 999,
-                padding: "5px 11px",
-                fontSize: 11.5,
-                fontWeight: isOn ? 600 : 500,
-                cursor: locked ? "not-allowed" : "pointer",
-                opacity: locked ? 0.6 : 1,
-                transition: "background 160ms var(--p-easing)",
-              }}
-            >
-              {CONCERN_LABELS[concern]}
-            </button>
-          );
-        })}
-      </div>
-      <div style={{ fontSize: 11, color: "var(--p-neutral-500)" }}>
-        Pick all that apply. These tag the product for shopper searches like &quot;serum
-        for oily skin.&quot;
-      </div>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      {allowed.map((value) => {
+        const isOn = selected.includes(value);
+        return (
+          <button
+            key={value}
+            type="button"
+            onClick={locked ? undefined : () => onToggle(value)}
+            disabled={locked}
+            aria-pressed={isOn}
+            style={{
+              background: isOn ? "var(--p-primary-50)" : "var(--p-surface)",
+              border: isOn
+                ? "1px solid var(--p-primary)"
+                : "0.5px solid var(--p-border-strong)",
+              color: isOn ? "var(--p-primary-800)" : "var(--p-neutral-500)",
+              borderRadius: 999,
+              padding: "5px 11px",
+              fontSize: 11.5,
+              fontWeight: isOn ? 600 : 500,
+              cursor: locked ? "not-allowed" : "pointer",
+              opacity: locked ? 0.6 : 1,
+              transition: "background 160ms var(--p-easing)",
+            }}
+          >
+            {value}
+          </button>
+        );
+      })}
     </div>
   );
 }

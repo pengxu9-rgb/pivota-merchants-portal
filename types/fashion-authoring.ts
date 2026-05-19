@@ -9,13 +9,53 @@
  */
 
 /**
- * Field names per category. The agent surface dispatches the editor
- * and the API client method based on the current category in the
- * store; each side speaks its category's field names.
+ * Field names per category. v2.1 adds beauty subcategory fields
+ * (tools-specific: tool_material / use_with / care_instructions).
+ *
+ * The agent surface dispatches the editor based on the current
+ * product's `subcategory_kind`; each side speaks its category's field
+ * names. The discriminated union on IncompleteProduct narrows down
+ * to the right Record shape so components don't need to type-cast.
  */
 export type FashionFieldName = "material" | "care" | "size_guide";
-export type BeautyFieldName = "raw_inci" | "how_to_use_text" | "skin_concerns";
+export type BeautyFieldName =
+  // Skincare-shape (also used by haircare / bath / body / makeup)
+  | "raw_inci"
+  | "how_to_use_text"
+  | "skin_concerns"
+  // Tools-shape (v2.1 — brushes / sponges / applicators)
+  | "tool_material"
+  | "use_with"
+  | "care_instructions";
 export type FieldName = FashionFieldName | BeautyFieldName;
+
+/**
+ * v2.1 beauty subcategory discriminator. Backend's
+ * /beauty_completeness payload returns `subcategory_kind` per product;
+ * UI uses it to pick the right form. Out-of-scope subcategories
+ * (fragrance, accessories) aren't in the queue today.
+ */
+export type BeautySubcategoryKind =
+  | "skincare"
+  | "haircare"
+  | "bath"
+  | "body"
+  | "makeup"
+  | "tools";
+
+/**
+ * Field metadata surfaced by the backend's subcategory_schemas list.
+ * The form is rendered generically from this — UI doesn't hard-code
+ * which fields apply to which subcategory.
+ */
+export interface FieldSchema {
+  name: string;
+  type: "text" | "textarea" | "enum" | "enum_multi";
+  label: string;
+  placeholder?: string;
+  hint?: string;
+  allowed_values?: string[];
+}
 
 /**
  * Category discriminator on every product in the queue. The store
@@ -98,7 +138,21 @@ export interface IncompleteFashionProduct extends IncompleteProductBase {
 
 export interface IncompleteBeautyProduct extends IncompleteProductBase {
   category_kind: "beauty";
-  fields: Record<BeautyFieldName, FieldStateSummary>;
+  /** v2.1: which beauty subcategory this product belongs to. Drives
+   *  which field set the editor renders. */
+  subcategory_kind: BeautySubcategoryKind;
+  /** Human-readable subcategory label ("Skincare" / "Beauty tools"). */
+  subcategory_label?: string;
+  /** Canonical category_path from catalog_products — useful for
+   *  surfacing context to the merchant ("beauty/tools/brush"). */
+  category_path?: string | null;
+  /** Per-product field schema list. Maps 1:1 to keys in `fields`.
+   *  v2.1 backend surfaces this so the UI renders the form generically. */
+  field_schemas: FieldSchema[];
+  /** Per-field state for THIS subcategory's fields only. Indexed by
+   *  field name; the keys are a subset of BeautyFieldName matching the
+   *  subcategory's schema. */
+  fields: Partial<Record<BeautyFieldName, FieldStateSummary>>;
 }
 
 export type IncompleteProduct = IncompleteFashionProduct | IncompleteBeautyProduct;
@@ -121,11 +175,18 @@ export interface FashionFieldsDraft {
   size_guide?: string | Record<string, any> | null;
 }
 
-/** Beauty per-product draft. skin_concerns is a multi-select list. */
+/** Beauty per-product draft. Carries every possible field across all
+ *  subcategories; the editor reads only the ones in the product's
+ *  field_schemas. skin_concerns is a multi-select list; the rest are
+ *  free-text. */
 export interface BeautyFieldsDraft {
   raw_inci?: string | null;
   how_to_use_text?: string | null;
   skin_concerns?: SkinConcern[] | null;
+  // v2.1 tool fields
+  tool_material?: string | null;
+  use_with?: string | null;
+  care_instructions?: string | null;
 }
 
 /** Union over both per-category drafts; store keys per product by
@@ -190,6 +251,14 @@ export interface CategoryTotals {
   missing_per_field: Partial<Record<FieldName, number>>;
   has_more: boolean;
   page_size: number;
+  /** v2.1 beauty: per-subcategory breakdown ("tools: 608, skincare: 3").
+   *  Null for fashion (single category). */
+  per_subcategory?: Partial<
+    Record<
+      BeautySubcategoryKind,
+      { total: number; missing_per_field: Partial<Record<FieldName, number>> }
+    >
+  >;
 }
 
 /** What survives across renders (persisted by Zustand). */

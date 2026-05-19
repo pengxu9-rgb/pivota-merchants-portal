@@ -28,9 +28,11 @@ import {
 } from "@/lib/merchant-fashion-store";
 import type {
   BeautyFieldName,
+  BeautySubcategoryKind,
   CategoryKind,
   CategoryTotals,
   FashionFieldName,
+  FieldSchema,
   FieldStateSummary,
   FieldStatus,
   IncompleteProduct,
@@ -120,12 +122,34 @@ function _shapeQueue(
       };
       queue.push({ ...base, category_kind: "fashion", fields });
     } else {
-      const fields: Record<BeautyFieldName, FieldStateSummary> = {
-        raw_inci: _normalizeFieldState(rawFields.raw_inci),
-        how_to_use_text: _normalizeFieldState(rawFields.how_to_use_text),
-        skin_concerns: _normalizeFieldState(rawFields.skin_concerns),
-      };
-      queue.push({ ...base, category_kind: "beauty", fields });
+      // v2.1: beauty products carry their own subcategory_kind +
+      // field_schemas. The fields object holds only the subcategory's
+      // applicable fields (a Partial of BeautyFieldName).
+      const subcategory_kind = (typeof it.subcategory_kind === "string"
+        ? it.subcategory_kind
+        : "skincare") as BeautySubcategoryKind;
+      const fieldSchemas: FieldSchema[] = Array.isArray(it.field_schemas)
+        ? (it.field_schemas as FieldSchema[]).filter(
+            (s): s is FieldSchema =>
+              !!s && typeof s === "object" && typeof s.name === "string",
+          )
+        : [];
+      const fields: Partial<Record<BeautyFieldName, FieldStateSummary>> = {};
+      for (const schema of fieldSchemas) {
+        const name = schema.name as BeautyFieldName;
+        fields[name] = _normalizeFieldState(rawFields[name]);
+      }
+      queue.push({
+        ...base,
+        category_kind: "beauty",
+        subcategory_kind,
+        subcategory_label:
+          typeof it.subcategory_label === "string" ? it.subcategory_label : undefined,
+        category_path:
+          typeof it.category_path === "string" ? it.category_path : null,
+        field_schemas: fieldSchemas,
+        fields,
+      });
     }
   }
   return { queue, totals: _shapeTotals(data.totals, category) };
@@ -149,17 +173,34 @@ function _shapeTotals(raw: unknown, category: CategoryKind): CategoryTotals | nu
       page_size: n("page_size") || 50,
     };
   }
+  // v2.1 beauty totals come back as a flat beauty_total +
+  // per_subcategory breakdown. The trigger card can sum across
+  // subcategories' missing_per_field for the StatStrip.
+  const rawPerSub = (r.per_subcategory && typeof r.per_subcategory === "object")
+    ? (r.per_subcategory as Record<string, { total?: number; missing_per_field?: Record<string, number> }>)
+    : {};
+  const aggregatedMissing: Record<string, number> = {};
+  const perSub: CategoryTotals["per_subcategory"] = {};
+  for (const [subKind, sub] of Object.entries(rawPerSub)) {
+    const mpf = (sub && typeof sub === "object" && sub.missing_per_field) || {};
+    for (const [field, count] of Object.entries(mpf)) {
+      aggregatedMissing[field] = (aggregatedMissing[field] || 0) + (typeof count === "number" ? count : 0);
+    }
+    perSub[subKind as BeautySubcategoryKind] = {
+      total: typeof sub?.total === "number" ? sub.total : 0,
+      missing_per_field: Object.fromEntries(
+        Object.entries(mpf).filter(([, v]) => typeof v === "number"),
+      ),
+    };
+  }
   return {
     category: "beauty",
     category_total: n("beauty_total"),
     total_incomplete: n("total_incomplete"),
-    missing_per_field: {
-      raw_inci: n("missing_inci"),
-      how_to_use_text: n("missing_how_to_use"),
-      skin_concerns: n("missing_concerns"),
-    },
+    missing_per_field: aggregatedMissing,
     has_more: typeof r.has_more === "boolean" ? r.has_more : false,
     page_size: n("page_size") || 50,
+    per_subcategory: perSub,
   };
 }
 
