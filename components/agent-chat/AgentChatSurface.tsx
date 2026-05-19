@@ -24,6 +24,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiClient } from "@/lib/api-client";
 import { useMerchantFashionStore } from "@/lib/merchant-fashion-store";
 import type {
+  FashionTotals,
   FieldName,
   FieldStateSummary,
   FieldStatus,
@@ -74,16 +75,19 @@ function _normalizeFieldState(raw: unknown): FieldStateSummary {
  * field renames / null nesting so a single bad row doesn't crash the
  * whole surface.
  */
-function _shapeQueue(payload: unknown): IncompleteProduct[] {
-  if (!payload || typeof payload !== "object") return [];
+function _shapeQueue(payload: unknown): {
+  queue: IncompleteProduct[];
+  totals: FashionTotals | null;
+} {
+  if (!payload || typeof payload !== "object") return { queue: [], totals: null };
   const root = payload as Record<string, unknown>;
   const data = (root.data && typeof root.data === "object")
     ? (root.data as Record<string, unknown>)
     : root;
   const rawQueue = data.queue;
-  if (!Array.isArray(rawQueue)) return [];
+  if (!Array.isArray(rawQueue)) return { queue: [], totals: _shapeTotals(data.totals) };
 
-  const out: IncompleteProduct[] = [];
+  const queue: IncompleteProduct[] = [];
   for (const item of rawQueue) {
     if (!item || typeof item !== "object") continue;
     const it = item as Record<string, unknown>;
@@ -96,7 +100,7 @@ function _shapeQueue(payload: unknown): IncompleteProduct[] {
       care: _normalizeFieldState(rawFields.care),
       size_guide: _normalizeFieldState(rawFields.size_guide),
     };
-    out.push({
+    queue.push({
       platform: it.platform,
       platform_product_id: it.platform_product_id,
       title: typeof it.title === "string" ? it.title : "Untitled product",
@@ -105,7 +109,23 @@ function _shapeQueue(payload: unknown): IncompleteProduct[] {
       fields,
     });
   }
-  return out;
+  return { queue, totals: _shapeTotals(data.totals) };
+}
+
+function _shapeTotals(raw: unknown): FashionTotals | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const n = (k: string): number => typeof r[k] === "number" ? r[k] as number : 0;
+  return {
+    fashion_total: n("fashion_total"),
+    missing_material: n("missing_material"),
+    missing_care: n("missing_care"),
+    missing_size_guide: n("missing_size_guide"),
+    total_incomplete: n("total_incomplete"),
+    page: n("page"),
+    page_size: n("page_size") || 50,
+    has_more: typeof r.has_more === "boolean" ? r.has_more : false,
+  };
 }
 
 export function AgentChatSurface() {
@@ -123,19 +143,25 @@ export function AgentChatSurface() {
       setLoading(true);
       setLoadError(null);
       try {
+        // Pull a wide page so the cursor walks the full queue. Backend
+        // caps at 200; for catalogs larger than 200 fashion-incomplete
+        // items the UI surfaces `totals.has_more` as a v2 paging hook.
         const payload = await apiClient.getMerchantFashionCompleteness({
           page: 1,
-          page_size: 50,
+          page_size: 200,
         });
         if (cancelled) return;
-        const queue = _shapeQueue(payload);
-        setQueue(queue);
-        // Routing: empty queue → A (covered). Non-empty → keep the
-        // persisted screen, but if it's the empty-default "done", flip
-        // it to trigger so the merchant lands on the prompt rather
-        // than a stale Done state.
+        const { queue, totals } = _shapeQueue(payload);
+        setQueue(queue, totals);
+        // Routing rules:
+        //   - empty queue + non-paused screen → A (covered)
+        //   - non-empty queue + stale "done" screen → flip to trigger
+        //     (was a v1 bug where Done lingered after the user came
+        //     back from a different page)
+        //   - "paused" is honored regardless of queue state — the
+        //     merchant chose it, don't override
         if (queue.length === 0) {
-          setScreen("done");
+          if (screen !== "paused") setScreen("done");
         } else if (screen === "done") {
           setScreen("trigger");
         }
@@ -165,6 +191,15 @@ export function AgentChatSurface() {
       );
     if (queueLength === 0 && screen === "done") {
       return <FullyCoveredIdle />;
+    }
+    // v1.2 fix: if we somehow land on `structured` with an empty queue
+    // (e.g. user persisted into that state then navigated back, or
+    // burned through the queue via "No answer known" elsewhere),
+    // recover by sending them to PausedCard rather than rendering the
+    // confusing "No products left in the queue" stub. Mutating screen
+    // here is intentional — it's a recovery path, not a normal route.
+    if (queueLength === 0 && screen === "structured") {
+      return <PausedCard />;
     }
     switch (screen) {
       case "trigger":

@@ -33,6 +33,7 @@ import { persist } from "zustand/middleware";
 import type {
   FashionFieldsDraft,
   FashionThreadState,
+  FashionTotals,
   FieldName,
   FieldOutcomeMap,
   IncompleteProduct,
@@ -41,8 +42,11 @@ import type {
 import { productKey } from "@/types/fashion-authoring";
 
 interface Actions {
-  /** Initialize / refresh the queue from a fresh readiness fetch. */
-  setQueue: (queue: IncompleteProduct[]) => void;
+  /** Initialize / refresh the queue from a fresh readiness fetch.
+   *  Pass totals so trigger/done/paused screens can show real counts
+   *  (queue is page-limited; "50 of your products" is wrong when the
+   *  merchant actually has 146 missing — v1.2 fix). */
+  setQueue: (queue: IncompleteProduct[], totals?: FashionTotals | null) => void;
   /** Pivot to a different screen within the thread. */
   setScreen: (screen: FashionThreadState["screen"]) => void;
   /** Reset cursor to start; called when the queue is replaced. */
@@ -72,6 +76,7 @@ const initialState: FashionThreadState = {
   drafts: {},
   cadence: undefined,
   unknownProductIds: [],
+  totals: null,
 };
 
 /**
@@ -115,7 +120,7 @@ export const useMerchantFashionStore = create<FashionThreadState & Actions>()(
     (set, get) => ({
       ...initialState,
 
-      setQueue: (queue) => {
+      setQueue: (queue, totals) => {
         const prev = get();
         const excluded = new Set(prev.unknownProductIds);
         const filtered = queue.filter((p) => !excluded.has(productKey(p)));
@@ -133,6 +138,12 @@ export const useMerchantFashionStore = create<FashionThreadState & Actions>()(
           outcomes: queueUnchanged ? prev.outcomes : {},
           drafts: queueUnchanged ? prev.drafts : {},
           threadId: prev.threadId || `thread_${Date.now().toString(36)}`,
+          // Always replace totals on refresh — they reflect the
+          // merchant-wide state, not the page-limited queue. Bug fixed
+          // in v1.2: TriggerCard was reading queue.length and showing
+          // "50 of your fashion products" when the merchant actually
+          // had 146 missing.
+          totals: totals ?? prev.totals,
         });
       },
 
@@ -199,7 +210,9 @@ export const useMerchantFashionStore = create<FashionThreadState & Actions>()(
       name: persistName(),
       // Only persist the stuff that should survive navigation away.
       // Drafts persist so unsaved typing isn't lost. Outcomes persist so
-      // the user can come back to the honest-feedback screen.
+      // the user can come back to the honest-feedback screen. Totals
+      // also persist so a brief network blip doesn't reset the
+      // headline counts.
       partialize: (s) => ({
         threadId: s.threadId,
         screen: s.screen,
@@ -209,6 +222,7 @@ export const useMerchantFashionStore = create<FashionThreadState & Actions>()(
         drafts: s.drafts,
         cadence: s.cadence,
         unknownProductIds: s.unknownProductIds,
+        totals: s.totals,
       }),
     },
   ),

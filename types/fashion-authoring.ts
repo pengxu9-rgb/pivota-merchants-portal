@@ -85,6 +85,24 @@ export interface ScopeSummary {
   total_missing: number;
 }
 
+/**
+ * What `GET /merchant/products/fashion_completeness` returns under
+ * `data.totals`. The `queue` is page-limited (default page_size=50,
+ * max 200), so any UI that shows "you have N products missing X" must
+ * read from this struct rather than from `queue.length` — that's the
+ * preview-test bug fixed in v1.2.
+ */
+export interface FashionTotals {
+  fashion_total: number;
+  missing_material: number;
+  missing_care: number;
+  missing_size_guide: number;
+  total_incomplete: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
+
 /** What survives across renders (persisted by Zustand). */
 export interface FashionThreadState {
   /** Stable id for the thread; persists cursor across sidebar collapse, etc. */
@@ -117,6 +135,13 @@ export interface FashionThreadState {
   /** Set of platform_product_ids the merchant marked "no answer known"
    *  (state G; never re-prompt). Queue-exclusion list per Open Q §4. */
   unknownProductIds: string[];
+  /**
+   * Snapshot of merchant-wide totals from the last
+   * /merchant/products/fashion_completeness response. queue is page-
+   * limited (max 200); UI counts must read from here, not queue.length.
+   * Null until the first successful load.
+   */
+  totals: FashionTotals | null;
 }
 
 /** Key helper — products are identified end-to-end by (platform, id). */

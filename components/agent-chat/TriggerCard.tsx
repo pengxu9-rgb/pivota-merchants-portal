@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock, Layers, RefreshCcw, Shirt } from "lucide-react";
+import { ArrowRight, Clock, RefreshCcw } from "lucide-react";
 
 import { useMerchantFashionStore } from "@/lib/merchant-fashion-store";
 import type { FieldName } from "@/types/fashion-authoring";
@@ -13,52 +13,42 @@ import { StatStrip } from "./StatStrip";
 /**
  * Screen 04 — Trigger surface.
  *
- * First-time the merchant sees the agent prompt after a sync that added
- * or changed fashion products lacking material/care/size_guide info.
+ * First touchpoint after a sync that landed fashion products lacking
+ * material/care/size_guide info.
  *
- * Per design handoff: context strip pill (sync recency), Cormorant
- * headline, body with inline emphasis, 3-col stat strip, sample chips,
- * follow-up text, and 3 response chips.
- *
- * Tap routing per design:
- *   - "Tell you about the whole line" → defer to Screen 06 in v1
- *     (Screen 05 bulk free-text is deferred; see plan Open Q §3)
- *   - "Go one product at a time" → Screen 06 (Structured)
- *   - "Remind me later" → Screen 09 (Defer)
+ * v1.2 fixes from preview testing:
+ *   - Headline count now reads from `totals.total_incomplete` instead
+ *     of `queue.length` (queue was page-limited at 50; the merchant
+ *     actually has 146 incomplete on PawStyle)
+ *   - StatStrip reads per-field counts from totals, not from the
+ *     page-sliced queue
+ *   - Dropped the "Tell me about the whole line" chip — it routed to
+ *     the same per-product editor as "one at a time" (Screen 05 bulk
+ *     free-text is deferred to v2). The misleading framing left users
+ *     confused about what they were about to do.
+ *   - Dropped the "See all N →" link (no dedicated catalog-fashion-
+ *     issues list page exists in v1)
  */
 export function TriggerCard() {
   const queue = useMerchantFashionStore((s) => s.queue);
+  const totals = useMerchantFashionStore((s) => s.totals);
   const setScreen = useMerchantFashionStore((s) => s.setScreen);
 
-  // Per-field populated count for the stat strip. The store's queue is
-  // products that need attention — so "missing" is the queue size. We
-  // count per-field within the queue.
-  const total = queue.length;
+  // Real merchant-wide counts come from totals (queue is page-limited).
+  const totalFashion = totals?.fashion_total ?? queue.length;
+  const totalIncomplete = totals?.total_incomplete ?? queue.length;
   const populated: Record<FieldName, number> = {
-    material: 0,
-    care: 0,
-    size_guide: 0,
+    material: Math.max(0, totalFashion - (totals?.missing_material ?? 0)),
+    care: Math.max(0, totalFashion - (totals?.missing_care ?? 0)),
+    size_guide: Math.max(0, totalFashion - (totals?.missing_size_guide ?? 0)),
   };
-  for (const p of queue) {
-    (Object.keys(populated) as FieldName[]).forEach((f) => {
-      if (p.fields[f].status !== "missing") populated[f] += 1;
-    });
-  }
-  // The stat-strip "missing" bar reads from populated relative to total.
-  // We pass the populated counts; the strip computes missing internally.
 
   const sample = queue.slice(0, 3);
-  const remaining = Math.max(0, queue.length - sample.length);
 
   return (
     <AgentBubble>
       {/* Context strip */}
-      <div
-        style={{
-          display: "flex",
-          marginBottom: 12,
-        }}
-      >
+      <div style={{ display: "flex", marginBottom: 12 }}>
         <span
           className="p-pill"
           style={{
@@ -70,8 +60,8 @@ export function TriggerCard() {
         >
           <RefreshCcw size={12} strokeWidth={1.8} />
           <span>
-            Sync · just now · <strong>{queue.length}</strong>{" "}
-            {queue.length === 1 ? "product" : "products"} missing fashion details
+            Catalog scan · <strong>{totalIncomplete}</strong>{" "}
+            {totalIncomplete === 1 ? "product" : "products"} missing fashion details
           </span>
         </span>
       </div>
@@ -86,23 +76,26 @@ export function TriggerCard() {
           color: "var(--p-neutral-900)",
         }}
       >
-        Quick one — some of your fashion products are missing material info.
+        {totalIncomplete > 0
+          ? "Quick one — some of your fashion products are missing material info."
+          : "Your fashion catalog is fully covered."}
       </h2>
 
       {/* Body */}
       <p style={{ fontSize: 13.5, lineHeight: 1.6, margin: 0, marginBottom: 14 }}>
-        After this sync, <strong>{total} of your fashion products</strong> have no
-        material listed. They&apos;ll still show up in shopping searches, but
-        agents that ask <em>&quot;is this satin or polyester?&quot;</em> will say{" "}
+        <strong>{totalIncomplete} of your {totalFashion} fashion products</strong>{" "}
+        are missing at least one of material, care, or size guide. They&apos;ll still
+        show up in shopping searches, but agents asking{" "}
+        <em>&quot;is this satin or polyester?&quot;</em> will say{" "}
         <em>not specified</em> instead of pulling your answer.
       </p>
 
-      {/* Stat strip */}
+      {/* Stat strip — uses totals so the bars reflect the full catalog */}
       <div style={{ marginBottom: 14 }}>
-        <StatStrip populated={populated} total={total} />
+        <StatStrip populated={populated} total={totalFashion} />
       </div>
 
-      {/* Sample preview */}
+      {/* Sample preview — first 3 of whatever's in the current page. */}
       {sample.length > 0 ? (
         <>
           <div
@@ -112,7 +105,9 @@ export function TriggerCard() {
               marginBottom: 8,
             }}
           >
-            A few of the ones missing material:
+            {sample.length === 1
+              ? "Sample product missing fashion info:"
+              : "A few products missing fashion info:"}
           </div>
           <div
             style={{
@@ -125,56 +120,49 @@ export function TriggerCard() {
             {sample.map((p) => (
               <ProductChip key={`${p.platform}-${p.platform_product_id}`} product={p} />
             ))}
-            {remaining > 0 ? (
-              <a
-                href="/dashboard/product-optimization"
-                style={{
-                  fontSize: 12,
-                  color: "var(--p-primary)",
-                  fontWeight: 500,
-                  marginTop: 2,
-                  alignSelf: "flex-end",
-                }}
-              >
-                See all {queue.length} →
-              </a>
-            ) : null}
           </div>
         </>
       ) : null}
 
       {/* Follow-up */}
-      <p
-        style={{
-          fontSize: 13.5,
-          lineHeight: 1.6,
-          margin: 0,
-          marginBottom: 14,
-          color: "var(--p-neutral-900)",
-        }}
-      >
-        Want to fill these in together? You can answer once for the whole line, or go
-        one product at a time. I won&apos;t make anything up — if you skip a product,
-        its PDP just shows without the field.
-      </p>
-
-      {/* Response chips */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <ReplyChip
-          variant="primary"
-          icon={Layers}
-          onClick={() => setScreen("structured")}
-          // Per Open Q §3 — bulk free-text (Screen 05) is deferred to v2.
-          // Until grouping is ready, this falls back to structured editing.
+      {totalIncomplete > 0 ? (
+        <p
+          style={{
+            fontSize: 13.5,
+            lineHeight: 1.6,
+            margin: 0,
+            marginBottom: 14,
+            color: "var(--p-neutral-900)",
+          }}
         >
-          Tell me about the whole line
-        </ReplyChip>
-        <ReplyChip icon={Shirt} onClick={() => setScreen("structured")}>
-          Go one product at a time
-        </ReplyChip>
-        <ReplyChip icon={Clock} onClick={() => setScreen("defer")}>
-          Remind me later
-        </ReplyChip>
+          I&apos;ll walk you through them one at a time. Type what you know and skip
+          what you don&apos;t — I won&apos;t make anything up.
+        </p>
+      ) : null}
+
+      {/* Response chips — simplified to two clear actions. v1.2: dropped
+          "Tell me about the whole line" (was Screen 05 bulk free-text,
+          deferred to v2); the previous "one at a time" chip is now the
+          primary action with clearer copy. */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {totalIncomplete > 0 ? (
+          <>
+            <ReplyChip
+              variant="primary"
+              icon={ArrowRight}
+              onClick={() => setScreen("structured")}
+            >
+              Start filling these in
+            </ReplyChip>
+            <ReplyChip icon={Clock} onClick={() => setScreen("defer")}>
+              Remind me later
+            </ReplyChip>
+          </>
+        ) : (
+          <ReplyChip onClick={() => setScreen("done")}>
+            See coverage
+          </ReplyChip>
+        )}
       </div>
     </AgentBubble>
   );

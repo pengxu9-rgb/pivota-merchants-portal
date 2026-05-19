@@ -21,7 +21,7 @@
  *     done / honest_feedback transition past the last product.
  */
 
-import { AlertTriangle, ArrowRight, Pencil } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, Pencil } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
@@ -64,6 +64,8 @@ export function StructuredEditor() {
   const recordOutcomes = useMerchantFashionStore((s) => s.recordOutcomes);
   const markUnknown = useMerchantFashionStore((s) => s.markUnknown);
 
+  const setScreen = useMerchantFashionStore((s) => s.setScreen);
+
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [notFoundWarning, setNotFoundWarning] = useState<string | null>(null);
@@ -73,13 +75,11 @@ export function StructuredEditor() {
   const inflightRef = useRef(false);
 
   if (!current) {
-    return (
-      <AgentBubble>
-        <div style={{ color: "var(--p-neutral-500)", fontSize: 13 }}>
-          No products left in the queue.
-        </div>
-      </AgentBubble>
-    );
+    // AgentChatSurface routes to PausedCard when queue is empty +
+    // screen is "structured", so this branch is normally unreachable.
+    // Render nothing as a defensive null instead of a useless
+    // "No products left" stub if it ever fires.
+    return null;
   }
 
   const key = productKey(current);
@@ -163,10 +163,48 @@ export function StructuredEditor() {
 
   return (
     <AgentBubble>
-      {/* Conversation header */}
-      <p style={{ fontSize: 13.5, lineHeight: 1.6, margin: 0, marginBottom: 12 }}>
-        Let&apos;s go one at a time. Fill in what you know; skip what you don&apos;t.
-      </p>
+      {/* Header row: title + exit affordance.
+          v1.2 fix: previous version had no way to leave the editor
+          mid-flow. The merchant who didn't want to go through every
+          product was stuck advancing/skipping until the queue emptied.
+          Now there's a "Back to overview" link that returns to the
+          trigger so they can choose to defer or stop. */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 12,
+        }}
+      >
+        <p style={{ fontSize: 13.5, lineHeight: 1.6, margin: 0 }}>
+          Let&apos;s go one at a time. Fill in what you know; skip what you
+          don&apos;t.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            if (inflightRef.current) return;
+            setScreen("trigger");
+          }}
+          disabled={saving}
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--p-primary)",
+            fontSize: 12,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            cursor: saving ? "not-allowed" : "pointer",
+            opacity: saving ? 0.5 : 1,
+            padding: 4,
+          }}
+        >
+          <ArrowLeft size={12} strokeWidth={1.8} />
+          Back to overview
+        </button>
+      </div>
 
       <div className="p-card p-card-md" style={{ overflow: "hidden" }}>
         {/* Header row */}
