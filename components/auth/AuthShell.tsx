@@ -40,6 +40,8 @@ export function AuthShell({
   panelClassName,
 }: AuthShellProps) {
   const { t } = useMerchantLanguage();
+  const hasTitle = title.trim().length > 0;
+  const hasDescription = description.trim().length > 0;
 
   return (
     <div className="min-h-screen bg-[color:var(--merchant-canvas)] text-[color:var(--merchant-ink)]">
@@ -59,10 +61,12 @@ export function AuthShell({
               {eyebrow}
             </div>
 
-            <h1 className="mt-5 text-[clamp(2.65rem,4.6vw,4.4rem)] font-semibold tracking-[-0.055em] text-[color:var(--merchant-ink)]">
-              {title}
-            </h1>
-            {description.trim() ? (
+            {hasTitle ? (
+              <h1 className="mt-5 text-[clamp(2.65rem,4.6vw,4.4rem)] font-semibold tracking-[-0.055em] text-[color:var(--merchant-ink)]">
+                {title}
+              </h1>
+            ) : null}
+            {hasDescription ? (
               <p className="mt-4 max-w-lg text-[15px] leading-7 text-[color:var(--merchant-muted-strong)]">
                 {description}
               </p>
@@ -132,15 +136,17 @@ export function AuthShell({
               <Store className="h-3.5 w-3.5 text-[color:var(--merchant-brand)]" />
               {eyebrow}
             </div>
-            <h1
-              className={cx(
-                'mt-4 font-semibold tracking-[-0.055em] text-[color:var(--merchant-ink)]',
-                showSidebar ? 'text-[2.45rem]' : 'text-[2.1rem] sm:text-[2.6rem]',
-              )}
-            >
-              {title}
-            </h1>
-            {description.trim() ? (
+            {hasTitle ? (
+              <h1
+                className={cx(
+                  'mt-4 font-semibold tracking-[-0.055em] text-[color:var(--merchant-ink)]',
+                  showSidebar ? 'text-[2.45rem]' : 'text-[2.1rem] sm:text-[2.6rem]',
+                )}
+              >
+                {title}
+              </h1>
+            ) : null}
+            {hasDescription ? (
               <p
                 className={cx(
                   'mt-3 leading-6 text-[color:var(--merchant-muted-strong)]',
