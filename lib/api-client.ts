@@ -808,6 +808,76 @@ class ApiClient {
     return response.data;
   }
 
+  /**
+   * Per-product beauty-completeness queue.
+   *   GET /merchant/products/beauty_completeness
+   * Returns only beauty products missing at least one field for their subcategory.
+   * Each product includes subcategory_kind so the UI can render the right form.
+   */
+  async getMerchantBeautyCompleteness(options?: {
+    page?: number;
+    page_size?: number;
+  }): Promise<{
+    status: string;
+    data: {
+      queue: Array<{
+        platform: string;
+        platform_product_id: string;
+        title: string;
+        image_url: string | null;
+        sku: string | null;
+        subcategory_kind: string;
+        fields: Record<
+          string,
+          {
+            status: "missing" | "filled-by-llm" | "merchant-authored" | "merchant-payload-locked" | "inherited";
+            value: string | null;
+            confidence: number | null;
+          }
+        >;
+      }>;
+      totals: {
+        beauty_total: number;
+        total_incomplete: number;
+        page: number;
+        page_size: number;
+        has_more: boolean;
+      };
+    };
+  }> {
+    const response = await this.client.get("/merchant/products/beauty_completeness", {
+      params: {
+        page: options?.page,
+        page_size: options?.page_size,
+      },
+    });
+    return response.data;
+  }
+
+  /**
+   * Merchant-authored beauty-field write path.
+   *   PUT /merchant/products/{platform}/{platform_product_id}/beauty_fields
+   * Only post fields applicable to the product's subcategory_kind.
+   */
+  async updateMerchantProductBeautyFields(
+    platform: string,
+    platformProductId: string,
+    fields: Record<string, string | null>
+  ): Promise<{
+    status: string;
+    outcomes: Record<
+      string,
+      "written" | "skipped_payload_owned" | "product_not_found" | "unchanged"
+    >;
+  }> {
+    const encodedId = encodeURIComponent(platformProductId);
+    const response = await this.client.put(
+      `/merchant/products/${platform}/${encodedId}/beauty_fields`,
+      fields
+    );
+    return response.data;
+  }
+
   async runMerchantProductOptimization(
     platform: string,
     platformProductId: string

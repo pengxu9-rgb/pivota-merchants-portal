@@ -1,8 +1,5 @@
-import { AgentChatSurface } from "@/components/agent-chat/AgentChatSurface";
+import { AgentChatTabs } from "@/components/agent-chat/AgentChatTabs";
 
-// Server component — the page is a thin wrapper around the client
-// `AgentChatSurface`. Marking the page itself as "use client" was
-// unnecessary (codex 🟢).
 export default function AgentChatPage() {
-  return <AgentChatSurface />;
+  return <AgentChatTabs />;
 }
