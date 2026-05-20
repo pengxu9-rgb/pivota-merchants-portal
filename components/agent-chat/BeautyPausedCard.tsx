@@ -2,7 +2,7 @@
 
 import { ArrowRight } from "lucide-react";
 
-import { useMerchantBeautyStore } from "@/lib/merchant-beauty-store";
+import { useBeautyStore } from "./BeautyStoreContext";
 import { AgentBubble } from "./AgentBubble";
 import { ReplyChip } from "./ReplyChip";
 
@@ -14,10 +14,10 @@ const cadenceCopy: Record<string, string> = {
 };
 
 export function BeautyPausedCard() {
-  const queueLength = useMerchantBeautyStore((s) => s.queue.length);
-  const cadence = useMerchantBeautyStore((s) => s.cadence);
-  const unknownCount = useMerchantBeautyStore((s) => s.unknownProductIds.length);
-  const setScreen = useMerchantBeautyStore((s) => s.setScreen);
+  const queueLength = useBeautyStore((s) => s.queue.length);
+  const cadence = useBeautyStore((s) => s.cadence);
+  const unknownCount = useBeautyStore((s) => s.unknownProductIds.length);
+  const setScreen = useBeautyStore((s) => s.setScreen);
 
   const cadenceLabel = cadence
     ? cadenceCopy[cadence]

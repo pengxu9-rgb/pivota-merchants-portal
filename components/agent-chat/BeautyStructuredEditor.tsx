@@ -6,8 +6,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { apiClient } from "@/lib/api-client";
 import {
   selectCurrentBeautyProduct,
-  useMerchantBeautyStore,
-} from "@/lib/merchant-beauty-store";
+  useBeautyStore,
+} from "./BeautyStoreContext";
 import {
   BEAUTY_FIELD_LABELS,
   FIELDS_FOR_SUBCATEGORY,
@@ -193,16 +193,16 @@ function StatusBadge({
 // ── main editor ─────────────────────────────────────────────────────────────
 
 export function BeautyStructuredEditor() {
-  const product = useMerchantBeautyStore(selectCurrentBeautyProduct);
-  const cursor = useMerchantBeautyStore((s) => s.cursor);
-  const queueLength = useMerchantBeautyStore((s) => s.queue.length);
-  const drafts = useMerchantBeautyStore((s) => s.drafts);
-  const setDraft = useMerchantBeautyStore((s) => s.setDraft);
-  const advanceCursor = useMerchantBeautyStore((s) => s.advanceCursor);
-  const retreatCursor = useMerchantBeautyStore((s) => s.retreatCursor);
-  const recordOutcomes = useMerchantBeautyStore((s) => s.recordOutcomes);
-  const markUnknown = useMerchantBeautyStore((s) => s.markUnknown);
-  const setScreen = useMerchantBeautyStore((s) => s.setScreen);
+  const product = useBeautyStore(selectCurrentBeautyProduct);
+  const cursor = useBeautyStore((s) => s.cursor);
+  const queueLength = useBeautyStore((s) => s.queue.length);
+  const drafts = useBeautyStore((s) => s.drafts);
+  const setDraft = useBeautyStore((s) => s.setDraft);
+  const advanceCursor = useBeautyStore((s) => s.advanceCursor);
+  const retreatCursor = useBeautyStore((s) => s.retreatCursor);
+  const recordOutcomes = useBeautyStore((s) => s.recordOutcomes);
+  const markUnknown = useBeautyStore((s) => s.markUnknown);
+  const setScreen = useBeautyStore((s) => s.setScreen);
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);

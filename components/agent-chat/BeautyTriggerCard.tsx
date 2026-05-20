@@ -2,7 +2,7 @@
 
 import { ArrowRight, Clock, RefreshCcw } from "lucide-react";
 
-import { useMerchantBeautyStore } from "@/lib/merchant-beauty-store";
+import { useBeautyStore } from "./BeautyStoreContext";
 import { SUBCATEGORY_LABELS } from "@/types/beauty-authoring";
 import type { IncompleteBeautyProduct } from "@/types/beauty-authoring";
 
@@ -40,9 +40,9 @@ function BeautyProductChip({ product }: { product: IncompleteBeautyProduct }) {
 }
 
 export function BeautyTriggerCard() {
-  const queue = useMerchantBeautyStore((s) => s.queue);
-  const totals = useMerchantBeautyStore((s) => s.totals);
-  const setScreen = useMerchantBeautyStore((s) => s.setScreen);
+  const queue = useBeautyStore((s) => s.queue);
+  const totals = useBeautyStore((s) => s.totals);
+  const setScreen = useBeautyStore((s) => s.setScreen);
 
   const totalBeauty = totals?.beauty_total ?? queue.length;
   const totalIncomplete = totals?.total_incomplete ?? queue.length;

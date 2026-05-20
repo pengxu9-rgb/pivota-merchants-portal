@@ -1,13 +1,13 @@
 "use client";
 
-import { useMerchantBeautyStore } from "@/lib/merchant-beauty-store";
+import { useBeautyStore } from "./BeautyStoreContext";
 import { AgentBubble } from "./AgentBubble";
 import { AiTip } from "./AiTip";
 import { ReplyChip } from "./ReplyChip";
 
 export function BeautyDoneCard() {
-  const outcomes = useMerchantBeautyStore((s) => s.outcomes);
-  const setScreen = useMerchantBeautyStore((s) => s.setScreen);
+  const outcomes = useBeautyStore((s) => s.outcomes);
+  const setScreen = useBeautyStore((s) => s.setScreen);
 
   let merchantWritten = 0;
   let payloadOwned = 0;

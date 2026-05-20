@@ -5,8 +5,8 @@ import { useMemo, useState } from "react";
 
 import {
   selectCurrentBeautyProduct,
-  useMerchantBeautyStore,
-} from "@/lib/merchant-beauty-store";
+  useBeautyStore,
+} from "./BeautyStoreContext";
 import {
   beautyProductKey,
   FIELDS_FOR_SUBCATEGORY,
@@ -20,10 +20,10 @@ function missingCount(p: IncompleteBeautyProduct): number {
 }
 
 export function BeautyQueueSidebar() {
-  const queue = useMerchantBeautyStore((s) => s.queue);
-  const current = useMerchantBeautyStore(selectCurrentBeautyProduct);
-  const totals = useMerchantBeautyStore((s) => s.totals);
-  const jumpToProduct = useMerchantBeautyStore((s) => s.jumpToProduct);
+  const queue = useBeautyStore((s) => s.queue);
+  const current = useBeautyStore(selectCurrentBeautyProduct);
+  const totals = useBeautyStore((s) => s.totals);
+  const jumpToProduct = useBeautyStore((s) => s.jumpToProduct);
 
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState(false);

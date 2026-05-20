@@ -2,7 +2,7 @@
 
 import { Check } from "lucide-react";
 
-import { useMerchantBeautyStore } from "@/lib/merchant-beauty-store";
+import { useBeautyStore } from "./BeautyStoreContext";
 import type { ReminderCadence } from "@/types/beauty-authoring";
 import { AgentBubble } from "./AgentBubble";
 import { AiTip } from "./AiTip";
@@ -25,10 +25,10 @@ const CADENCE_OPTIONS: CadenceOption[] = [
 const DEFAULT_CADENCE: ReminderCadence = "1w";
 
 export function BeautyDeferCard() {
-  const cadence = useMerchantBeautyStore((s) => s.cadence) || DEFAULT_CADENCE;
-  const setCadence = useMerchantBeautyStore((s) => s.setCadence);
-  const setScreen = useMerchantBeautyStore((s) => s.setScreen);
-  const queueLength = useMerchantBeautyStore((s) => s.queue.length);
+  const cadence = useBeautyStore((s) => s.cadence) || DEFAULT_CADENCE;
+  const setCadence = useBeautyStore((s) => s.setCadence);
+  const setScreen = useBeautyStore((s) => s.setScreen);
+  const queueLength = useBeautyStore((s) => s.queue.length);
 
   return (
     <>

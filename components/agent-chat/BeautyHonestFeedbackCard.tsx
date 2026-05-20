@@ -4,16 +4,16 @@ import { ExternalLink } from "lucide-react";
 
 import {
   selectSkippedBeautyProducts,
-  useMerchantBeautyStore,
-} from "@/lib/merchant-beauty-store";
+  useBeautyStore,
+} from "./BeautyStoreContext";
 import { BEAUTY_FIELD_LABELS } from "@/types/beauty-authoring";
 import { AgentBubble } from "./AgentBubble";
 import { ReplyChip } from "./ReplyChip";
 
 export function BeautyHonestFeedbackCard() {
-  const skipped = useMerchantBeautyStore(selectSkippedBeautyProducts);
-  const outcomes = useMerchantBeautyStore((s) => s.outcomes);
-  const setScreen = useMerchantBeautyStore((s) => s.setScreen);
+  const skipped = useBeautyStore(selectSkippedBeautyProducts);
+  const outcomes = useBeautyStore((s) => s.outcomes);
+  const setScreen = useBeautyStore((s) => s.setScreen);
 
   let savedCount = 0;
   let keptCount = 0;
