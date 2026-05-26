@@ -85,7 +85,12 @@ export const onboardingApi = {
   issueApiKey: async (merchantId: string) => {
     const response = await apiClient.post(`/merchant/onboarding/api-key/${merchantId}`);
     return response.data;
-  }
+  },
+
+  redeemInviteToken: async (token: string) => {
+    const response = await apiClient.post('/api/onboarding/redeem-invite-token', { token });
+    return response.data;
+  },
 };
 
 export const platformOnboardingApi = {
