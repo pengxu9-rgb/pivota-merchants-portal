@@ -8,6 +8,8 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { onboardingApi } from '@/lib/api';
+import { getStoredInviteRef, clearInviteRef } from '@/lib/invite-ref';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import type { OnboardingData } from '@/lib/onboarding';
 
@@ -73,6 +75,18 @@ export default function CompletionStep({
         }
 
         if (cancelled) return;
+
+        const inviteRef = getStoredInviteRef();
+        if (inviteRef) {
+          try {
+            await onboardingApi.redeemInviteToken(inviteRef);
+          } catch {
+            // best-effort: 404 (invalid) and 409 (already consumed/revoked) are both non-blocking
+          } finally {
+            clearInviteRef();
+          }
+        }
+
         onClearSession();
         router.push('/dashboard');
       } catch (err) {

@@ -11,6 +11,7 @@ import { AuthShell } from '@/components/auth/AuthShell';
 import { OnboardingProgress } from '@/components/auth/OnboardingProgress';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { onboardingApi } from '@/lib/api';
+import { captureInviteRef } from '@/lib/invite-ref';
 import {
   emptyPspDraft,
   emptyRegistrationDraft,
@@ -128,6 +129,8 @@ export default function MerchantSignup() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    captureInviteRef();
 
     const stored = normalizeStoredSession(sessionStorage.getItem(SIGNUP_SESSION_STORAGE_KEY));
     if (stored) {
