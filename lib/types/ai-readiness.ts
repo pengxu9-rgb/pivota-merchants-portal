@@ -514,3 +514,211 @@ export interface MerchantExecutorRun {
                 | 'verification_needed' | 'no_op';
   materialized_task_id?: string | null;
 }
+
+// ===========================================================================
+// v3 per-SKU audit types (spec §A-E + §I).
+//
+// The v3 audit replaces the single brand verdict with a per-SKU scorecard
+// view. The legacy AgentCenterBd* types above are preserved for callers on
+// the audit_mode='legacy' path; the types below describe the new
+// audit_mode='per_sku' path. Backend contract lives in
+// pivota-backend-discovery-feed/services/agent_center_bd_report_service.py
+// (build_per_sku_report / build_brand_rollup / build_authority_map).
+// ===========================================================================
+
+export type SkuScoreBand = 'blocked' | 'partial' | 'ready' | 'agent_ready';
+
+export interface SkuScoreBucket {
+  points: number;
+  max: number;
+  reason: string;
+}
+
+export interface SkuScoreBreakdown {
+  total: number;
+  buckets: Record<string, SkuScoreBucket>;
+  missing_inputs?: string[];
+}
+
+export interface SkuDimensionScore {
+  score: number;
+  breakdown: SkuScoreBreakdown;
+}
+
+export interface SkuGroundingSource {
+  uri: string;
+  title: string;
+  host: string | null;
+}
+
+export interface SkuGroundingEvidence {
+  prompt: string;
+  grounded_sources: SkuGroundingSource[];
+  evidence_excerpt: string;
+}
+
+export interface AgentCenterPerSkuReport {
+  sku_key: string;
+  product_key: string;
+  content_key: string | null;
+  title?: string;
+  scores: {
+    identity: SkuDimensionScore;
+    content_richness: SkuDimensionScore;
+    routability: SkuDimensionScore;
+    citation: SkuDimensionScore;
+  };
+  band: SkuScoreBand;
+  primary_gaps: string[];
+  verbatim_grounding_evidence: SkuGroundingEvidence[];
+  axis_coverage: Record<string, number>;
+}
+
+export interface BrandDimensionStats {
+  identity: number;
+  content_richness: number;
+  routability: number;
+  citation: number;
+}
+
+export interface BrandPriorityQueueEntry {
+  sku_key: string;
+  impact: number;
+  gap: number;
+  fixability: number;
+  score: number;
+}
+
+export interface AgentCenterBrandRollup {
+  median: BrandDimensionStats;
+  p25: BrandDimensionStats;
+  p75: BrandDimensionStats;
+  winning_skus_by_citation: string[];
+  winning_skus_by_band: string[];
+  blocked_skus: string[];
+  priority_queue: BrandPriorityQueueEntry[];
+}
+
+export type AuthorityHostType =
+  | 'editorial'
+  | 'reddit'
+  | 'retailer'
+  | 'creator'
+  | 'trade'
+  | 'unclassified';
+
+export interface AuthorityHostEntry {
+  host: string;
+  host_type: AuthorityHostType;
+  cites_exact_sku: boolean;
+  cites_near_variant: boolean;
+  cites_category_not_sku: boolean;
+  prompts_cited_count: number;
+  evidence_urls: string[];
+  evidence_excerpt: string;
+  competitors_named: string[];
+}
+
+export interface AuthorityRedditThread {
+  url: string;
+  title: string;
+  sentiment: 'positive' | 'mixed' | 'negative' | null;
+  matched_sku: boolean;
+}
+
+export interface AuthorityRedditSubreddit {
+  name: string;
+  threads: AuthorityRedditThread[];
+  sentiment_proxy: number | null;
+  recurring_objections: string[];
+}
+
+export interface AuthorityPerSkuEntry {
+  hosts: AuthorityHostEntry[];
+  reddit: {
+    subreddits: AuthorityRedditSubreddit[];
+  };
+}
+
+export interface AgentCenterAuthorityMap {
+  per_sku: Record<string, AuthorityPerSkuEntry>;
+}
+
+export interface AgentCenterCostSummary {
+  prompts: number;
+  providers: string[];
+  audit_credits_debited: number;
+  prompt_credits_debited: number;
+  cache_hits: number;
+  estimated_cost_usd: number;
+}
+
+export interface AgentCenterPerSkuAuditResponse {
+  audit_run_id: string;
+  merchant_id: string;
+  audit_mode: 'per_sku';
+  per_sku_reports: AgentCenterPerSkuReport[];
+  brand_rollup: AgentCenterBrandRollup;
+  authority_map: AgentCenterAuthorityMap;
+  legacy_verdict: string;
+  cost_summary: AgentCenterCostSummary;
+}
+
+// Spec §I — pre-flight cost preview before launching an audit. Returns
+// projected probe count + estimated credits + current balance + a
+// `sufficient` flag. The merchant decides; we never auto-shrink scope.
+
+export type CreditPlanTier = 'free' | 'starter' | 'growth' | 'enterprise' | 'custom';
+
+export interface MerchantCreditBalance {
+  audit_credits: number;
+  prompt_credits: number;
+  execution_credits: number;
+  plan_tier: CreditPlanTier;
+}
+
+export interface AuditPreviewGap {
+  kind: 'audit' | 'prompt' | 'execution';
+  required: number;
+  available: number;
+  short: number;
+}
+
+export type AuditPreviewProvider = 'gemini' | 'deepseek' | 'claude' | 'openai';
+
+export type AuditPreviewScope =
+  | { sku_keys: string[] }
+  | { select_top_n_by_revenue: number };
+
+export interface AgentCenterAuditPreviewRequest {
+  merchant_id: string;
+  scope: AuditPreviewScope;
+  prompts_per_sku?: number;
+  custom_prompts?: string[];
+  providers?: AuditPreviewProvider[];
+}
+
+export interface AgentCenterAuditPreviewResponse {
+  audit_run_id_preview: string;
+  merchant_id: string;
+  sku_count: number;
+  prompts_per_sku: number;
+  total_prompts: number;
+  custom_prompt_slots_used: number;
+  estimated_cache_savings: {
+    prompts_cached: number;
+    cache_hit_rate: number;
+  };
+  providers: string[];
+  estimated_audit_credits: number;
+  estimated_prompt_credits: number;
+  estimated_execution_credits: number;
+  current_balance: MerchantCreditBalance;
+  sufficient: boolean;
+  gaps: AuditPreviewGap[];
+}
+
+// Discriminated union so render-time exhaustiveness checks compile.
+export type AgentCenterAuditResponse =
+  | (AiReadinessAuditResponse & { audit_mode?: 'legacy' })
+  | AgentCenterPerSkuAuditResponse;
