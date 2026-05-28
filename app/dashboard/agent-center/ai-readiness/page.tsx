@@ -1,22 +1,29 @@
 'use client';
 
 /**
- * Merchant self-service AI Commerce Readiness Audit (multi-SKU).
+ * Merchant self-service AI Commerce Readiness Audit (v3 — per-SKU).
  *
- * Pick 1–5 of your own SKUs from the catalog → click Run → wait
- * ~60–90 sec for grounded Gemini probes → see brand-level aggregate
- * + per-product cards.
+ * Pick 1–50 of your own SKUs → preview cost → launch credit-gated audit →
+ * see per-SKU scorecards (Identity / Content / Routability / Citation) +
+ * brand rollup + authority host map + priority queue.
  *
- * Cost guard (backend-enforced): 2 audits per merchant per 24h.
+ * Two render paths: `audit_mode='per_sku'` uses the v3 per-SKU dashboard;
+ * `audit_mode='legacy'` (or absent) falls back to the original brand
+ * verdict renderer for backward compat.
+ *
+ * Cost guards:
+ *   - Credit pre-flight (spec §I) is authoritative; launch returns 402 if
+ *     balance insufficient. We never auto-shrink scope.
+ *   - Free tier keeps the 2-audits-per-24h rate limit alongside credits.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Brain,
   Loader2,
 } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, InsufficientCreditsError } from '@/lib/api-client';
 import {
   MerchantButton,
   PageHeader,
@@ -32,7 +39,17 @@ import type {
   AgentCenterBdQueryRow,
   AgentCenterBdReport,
   AgentCenterBdVerdictLabel,
+  AgentCenterAuditPreviewResponse,
+  AgentCenterPerSkuAuditResponse,
+  AgentCenterPerSkuReport,
+  AgentCenterBrandRollup,
+  AgentCenterAuthorityMap,
+  AgentCenterCostSummary,
+  AuthorityHostEntry,
+  AuthorityRedditSubreddit,
   AiReadinessAuditResponse,
+  SkuScoreBand,
+  SkuDimensionScore,
 } from '@/lib/types/ai-readiness';
 
 /**
@@ -109,7 +126,17 @@ function pickCurrency(p: CatalogProductRow): string {
   return standard.currency || p.currency || 'USD';
 }
 
-const MAX_SELECTED = 5;
+// Spec §I — launch cap raised from 5 → 50 SKUs because the credit pre-flight
+// (POST /api/audits/preview) is now the authoritative cost gate. Larger
+// audits debit proportionally more audit_credits at launch.
+const MAX_SELECTED = 50;
+const QUICK_PICK_SIZES = [10, 25, MAX_SELECTED] as const;
+const MAX_CUSTOM_PROMPTS = 10;
+const PREVIEW_DEBOUNCE_MS = 300;
+
+type LaunchResult =
+  | { mode: 'legacy'; payload: AiReadinessAuditResponse }
+  | { mode: 'per_sku'; payload: AgentCenterPerSkuAuditResponse };
 
 export default function AiReadinessAuditPage() {
   const [products, setProducts] = useState<CatalogProductRow[]>([]);
@@ -119,7 +146,29 @@ export default function AiReadinessAuditPage() {
 
   const [running, setRunning] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
-  const [auditResult, setAuditResult] = useState<AiReadinessAuditResponse | null>(null);
+  const [auditResult, setAuditResult] = useState<LaunchResult | null>(null);
+  const [insufficient, setInsufficient] = useState<InsufficientCreditsError | null>(null);
+
+  // Custom prompts — reserved slots for marketing-team use-case prompts
+  // (hydration / acne / picky-eaters / etc.). Up to 10; trim + dedupe
+  // client-side; >10 surfaces inline error.
+  const [customPromptsText, setCustomPromptsText] = useState('');
+
+  // Preview state — spec §I. The preview endpoint runs no probes; it
+  // returns projected cost + current balance + sufficient flag. We
+  // debounce calls to it as the merchant adjusts SKU selection.
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewData, setPreviewData] = useState<AgentCenterAuditPreviewResponse | null>(null);
+  const previewRequestSeqRef = useRef(0); // race-guards stale responses
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Merchant id is needed for preview + launch. We don't have a direct
+  // getter on apiClient today, but the backend resolves it from the
+  // session cookie — we send the placeholder 'self' and let the backend
+  // attach the authenticated merchant_id server-side. If a downstream
+  // refactor surfaces the merchant id client-side, swap this for that.
+  const merchantId = 'self';
 
   useEffect(() => {
     let cancelled = false;
@@ -179,12 +228,12 @@ export default function AiReadinessAuditPage() {
     });
   };
 
-  const fillTopByPrice = () => {
-    const top = sortedByPrice.slice(0, MAX_SELECTED).map(productKey);
+  const fillTopByPrice = (n: number) => {
+    const top = sortedByPrice.slice(0, Math.min(n, MAX_SELECTED)).map(productKey);
     setSelected(new Set(top));
   };
-  const fillFirstFive = () => {
-    const top = usableProducts.slice(0, MAX_SELECTED).map(productKey);
+  const fillFirstN = (n: number) => {
+    const top = usableProducts.slice(0, Math.min(n, MAX_SELECTED)).map(productKey);
     setSelected(new Set(top));
   };
   const clear = () => setSelected(new Set());
@@ -198,44 +247,141 @@ export default function AiReadinessAuditPage() {
     [selected],
   );
 
+  // Synthetic sku_keys for the preview/launch endpoints. The backend
+  // resolves `platform:source_product_id` to the catalog row's
+  // `sku_key` server-side; we send the composite for now to keep the
+  // client model honest about what the merchant picked.
+  const selectedSkuKeys = useMemo(
+    () => Array.from(selected),
+    [selected],
+  );
+
+  // Parse custom prompts: split on newline, trim, drop empties, dedupe.
+  // Validation is "soft" — we only block launch if count > MAX_CUSTOM_PROMPTS;
+  // duplicates are silently merged so the merchant doesn't fight the UI.
+  const customPromptsParsed = useMemo(() => {
+    const lines = customPromptsText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const line of lines) {
+      const key = line.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(line);
+    }
+    return out;
+  }, [customPromptsText]);
+
+  const customPromptsError = useMemo(() => {
+    if (customPromptsParsed.length > MAX_CUSTOM_PROMPTS) {
+      return `Too many custom prompts: ${customPromptsParsed.length} / ${MAX_CUSTOM_PROMPTS} max reserved slots per audit.`;
+    }
+    return null;
+  }, [customPromptsParsed]);
+
+  // Debounced preview — runs whenever the selection or custom prompts
+  // change. We use a request-sequence ref to discard stale responses
+  // when the user clicks rapidly. Spec §I + memory feedback_llm_call_multipliers
+  // — debounce protects the backend from hammering as merchants toggle.
+  useEffect(() => {
+    if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    if (selectedSkuKeys.length < 1 || customPromptsError) {
+      setPreviewData(null);
+      setPreviewError(null);
+      setPreviewLoading(false);
+      return;
+    }
+    previewTimerRef.current = setTimeout(() => {
+      const seq = ++previewRequestSeqRef.current;
+      setPreviewLoading(true);
+      setPreviewError(null);
+      apiClient
+        .previewAudit({
+          merchant_id: merchantId,
+          scope: { sku_keys: selectedSkuKeys },
+          prompts_per_sku: 40,
+          custom_prompts: customPromptsParsed,
+          providers: ['gemini'],
+        })
+        .then((res) => {
+          if (seq !== previewRequestSeqRef.current) return; // stale
+          setPreviewData(res);
+        })
+        .catch((err) => {
+          if (seq !== previewRequestSeqRef.current) return; // stale
+          const msg =
+            err instanceof Error
+              ? err.message
+              : 'preview unavailable — try again';
+          setPreviewError(msg);
+          setPreviewData(null);
+        })
+        .finally(() => {
+          if (seq === previewRequestSeqRef.current) setPreviewLoading(false);
+        });
+    }, PREVIEW_DEBOUNCE_MS);
+    return () => {
+      if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    };
+  }, [selectedSkuKeys, customPromptsParsed, customPromptsError]);
+
+  const previewSufficient = previewData?.sufficient === true;
+
   const runAudit = async () => {
-    if (selectedRefs.length < 1 || selectedRefs.length > 5) return;
+    if (selectedRefs.length < 1 || selectedRefs.length > MAX_SELECTED) return;
+    if (customPromptsError) return;
+    // Hard block when preview says insufficient. Per memory
+    // feedback_no_execution_layer_fallbacks: never auto-shrink scope.
+    if (previewData && !previewData.sufficient) return;
     setRunning(true);
     setAuditError(null);
+    setInsufficient(null);
     setAuditResult(null);
+    const idempotencyKey = `audit_run_${merchantId}_${Date.now()}`;
     try {
-      const res = await apiClient.runAiReadinessAudit(selectedRefs);
-      setAuditResult(res);
+      const res = await apiClient.runPerSkuAudit({
+        merchant_id: merchantId,
+        sku_keys: selectedSkuKeys,
+        prompts_per_sku: 40,
+        custom_prompts: customPromptsParsed,
+        providers: ['gemini'],
+        idempotency_key: idempotencyKey,
+      });
+      setAuditResult({ mode: 'per_sku', payload: res });
     } catch (err) {
-      // Try to surface backend-supplied detail (429 / 422 / 404 messages).
-      const e = err as {
-        response?: { status?: number; data?: { detail?: unknown } };
-        message?: string;
-      };
-      const status = e.response?.status;
-      const detail = e.response?.data?.detail;
-      if (status === 429) {
-        const d = detail as { next_reset_in_seconds?: number; limit?: number };
-        const hrs = d?.next_reset_in_seconds
-          ? Math.ceil(d.next_reset_in_seconds / 3600)
-          : 24;
-        setAuditError(
-          `You've used today's audit budget (${d?.limit || 2}/24h). Resets in ~${hrs}h.`,
-        );
-      } else if (status === 422 && typeof detail === 'object' && detail) {
-        // Generic 422 — backend returned a validation error (e.g.
-        // empty product list, > 5 products). The Pivota canonical
-        // fallback means individual URL-less products no longer
-        // 422; we shouldn't see this in practice for typical input.
-        const d = detail as { message?: string };
-        setAuditError(d.message || 'Validation error.');
-      } else if (status === 404 && typeof detail === 'object' && detail) {
-        const d = detail as { message?: string };
-        setAuditError(d.message || 'Some products not found in your catalog.');
+      if (err instanceof InsufficientCreditsError) {
+        setInsufficient(err);
       } else {
-        setAuditError(
-          e.message || 'Audit failed. Try again in a few seconds.',
-        );
+        // Surface backend-supplied detail for 429 / 422 / 404 (legacy
+        // shapes still apply on the launch endpoint).
+        const e = err as {
+          response?: { status?: number; data?: { detail?: unknown } };
+          message?: string;
+        };
+        const status = e.response?.status;
+        const detail = e.response?.data?.detail;
+        if (status === 429) {
+          const d = detail as { next_reset_in_seconds?: number; limit?: number };
+          const hrs = d?.next_reset_in_seconds
+            ? Math.ceil(d.next_reset_in_seconds / 3600)
+            : 24;
+          setAuditError(
+            `Free-tier daily audit budget used (${d?.limit || 2}/24h). Resets in ~${hrs}h. Upgrade your plan to remove the rate limit.`,
+          );
+        } else if (status === 422 && typeof detail === 'object' && detail) {
+          const d = detail as { message?: string };
+          setAuditError(d.message || 'Validation error.');
+        } else if (status === 404 && typeof detail === 'object' && detail) {
+          const d = detail as { message?: string };
+          setAuditError(d.message || 'Some products not found in your catalog.');
+        } else {
+          setAuditError(
+            e.message || 'Audit failed. Try again in a few seconds.',
+          );
+        }
       }
     } finally {
       setRunning(false);
@@ -245,21 +391,28 @@ export default function AiReadinessAuditPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Beta"
+        eyebrow="v3"
         title="AI Commerce Readiness Audit"
-        description="Audit up to 5 of your SKUs against AI shopping agents (Gemini grounded search). Same engine our BD team uses; gives you discovery + attribution + competitive pressure data per product."
+        description="Audit up to 50 of your SKUs against AI shopping agents (Gemini grounded search; DeepSeek verification). Per-SKU scorecards: Identity / Content / Routability / Citation. Coverage is credit-driven — preview the cost before launch."
       />
 
       <SurfaceCard
-        title="1. Pick 1–5 SKUs to audit"
-        description={`${selected.size} of ${MAX_SELECTED} selected · audit cost ≈ ${selected.size * 9} grounded probes ≈ ${Math.max(15, selected.size * 18)} sec`}
+        title="1. Pick 1–50 SKUs to audit"
+        description={`${selected.size} of ${MAX_SELECTED} selected · ~40 prompts per SKU · ~${selected.size * 40} grounded probes`}
         action={
           <div className="flex flex-wrap gap-2">
-            <MerchantButton variant="ghost" onClick={fillTopByPrice} disabled={running}>
-              Top {MAX_SELECTED} by price
-            </MerchantButton>
-            <MerchantButton variant="ghost" onClick={fillFirstFive} disabled={running}>
-              First {MAX_SELECTED}
+            {QUICK_PICK_SIZES.map((n) => (
+              <MerchantButton
+                key={`top-${n}`}
+                variant="ghost"
+                onClick={() => fillTopByPrice(n)}
+                disabled={running}
+              >
+                Top {n} by price
+              </MerchantButton>
+            ))}
+            <MerchantButton variant="ghost" onClick={() => fillFirstN(10)} disabled={running}>
+              First 10
             </MerchantButton>
             <MerchantButton variant="ghost" onClick={clear} disabled={running}>
               Clear
@@ -343,16 +496,87 @@ export default function AiReadinessAuditPage() {
         </div>
       </SurfaceCard>
 
+      <SurfaceCard
+        title="2. Custom prompts (optional)"
+        description={`Marketing team's use-case prompts — hydration, acne, picky eaters, AG1-alternative, etc. ${customPromptsParsed.length} / ${MAX_CUSTOM_PROMPTS} reserved slots used.`}
+      >
+        <div className="px-5 py-4">
+          <textarea
+            className="w-full rounded border border-slate-300 p-2 font-mono text-sm focus:border-indigo-500 focus:outline-none"
+            rows={4}
+            value={customPromptsText}
+            onChange={(e) => setCustomPromptsText(e.target.value)}
+            placeholder={
+              'best supplement for new moms post-partum\n' +
+              'greens gummies for travelers\n' +
+              'kids vitamins for picky eaters\n' +
+              '(one prompt per line — max 10)'
+            }
+            disabled={running}
+          />
+          {customPromptsError ? (
+            <p className="mt-2 flex items-center gap-2 text-sm text-red-700">
+              <AlertTriangle className="h-4 w-4" />
+              {customPromptsError}
+            </p>
+          ) : null}
+          {customPromptsParsed.length > 0 && !customPromptsError ? (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {customPromptsParsed.map((p, idx) => (
+                <span
+                  key={`prompt-${idx}`}
+                  className="inline-flex items-center gap-1 rounded bg-indigo-50 px-2 py-1 text-xs text-indigo-900"
+                >
+                  <span className="rounded-sm bg-indigo-200 px-1 text-[10px] uppercase tracking-wide text-indigo-900">
+                    merchant_input
+                  </span>
+                  {p}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </SurfaceCard>
+
+      <SurfaceCard
+        title="3. Preview audit cost"
+        description="Estimated credits + current balance. Coverage is credit-driven; we never auto-shrink scope to fit available credits — the merchant decides."
+      >
+        <div className="px-5 py-4">
+          <CostMeterPanel
+            selectedCount={selected.size}
+            customPromptCount={customPromptsParsed.length}
+            customPromptsError={customPromptsError}
+            previewLoading={previewLoading}
+            previewError={previewError}
+            previewData={previewData}
+          />
+        </div>
+      </SurfaceCard>
+
       <div className="flex items-center justify-between rounded border border-indigo-200 bg-indigo-50/50 px-4 py-3">
         <div className="text-sm text-slate-700">
-          Limit: <strong>2 audits per 24h</strong>. Each audit runs
-          ~{selected.size || 0} × 9 = {(selected.size || 0) * 9} grounded
-          Gemini probes (typically 60–90 sec).
+          {previewData?.current_balance?.plan_tier === 'free' ? (
+            <>
+              Free tier: <strong>2 audits per 24h</strong> rate limit applies
+              alongside credits. Paid tiers bypass the rate limit.
+            </>
+          ) : (
+            <>
+              Credit-driven coverage. 1 audit credit = 1 SKU × 40 prompts.
+              Custom prompts consume prompt-credits at 1/40 the rate.
+            </>
+          )}
         </div>
         <MerchantButton
           onClick={runAudit}
           disabled={
-            running || selected.size < 1 || selected.size > MAX_SELECTED
+            running ||
+            selected.size < 1 ||
+            selected.size > MAX_SELECTED ||
+            !!customPromptsError ||
+            !!previewError ||
+            (previewData !== null && !previewSufficient)
           }
         >
           {running ? (
@@ -369,6 +593,10 @@ export default function AiReadinessAuditPage() {
         </MerchantButton>
       </div>
 
+      {insufficient ? (
+        <InsufficientCreditsBanner error={insufficient} />
+      ) : null}
+
       {auditError ? (
         <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4">
           <div className="flex items-start gap-3">
@@ -378,24 +606,194 @@ export default function AiReadinessAuditPage() {
         </div>
       ) : null}
 
-      {auditResult ? (
+      {auditResult?.mode === 'per_sku' ? (
         <>
-          <AuditReportRenderer
-            report={auditResult.brand_report}
-            remaining={auditResult.rate_limit_remaining}
-            pivotaCanonicalKeys={auditResult.audited_via_pivota_canonical}
-          />
-          {/* P1.3: surface backend-already-emitted task queue +
-              executor activity. Backend has been returning these
-              fields since PR-6 / PR-4a; merchant portal previously
-              ignored them. Mounted below the report so merchants
-              can act on the audit findings inline (work the
-              architecture audit doc §4.5 calls "make the merchant
-              portal a workbench, not just a report"). */}
+          <PerSkuAuditReportRenderer report={auditResult.payload} />
           <MerchantTaskQueuePanel />
           <MerchantExecutorActivityPanel />
         </>
       ) : null}
+
+      {auditResult?.mode === 'legacy' ? (
+        <>
+          <AuditReportRenderer
+            report={auditResult.payload.brand_report}
+            remaining={auditResult.payload.rate_limit_remaining}
+            pivotaCanonicalKeys={auditResult.payload.audited_via_pivota_canonical}
+          />
+          <MerchantTaskQueuePanel />
+          <MerchantExecutorActivityPanel />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Cost meter (spec §I) — render the preview-endpoint response. Shows
+// projected scope, cache savings, credits required vs available, and
+// honest gap reporting when insufficient. We never auto-shrink scope.
+// ---------------------------------------------------------------------
+function CostMeterPanel({
+  selectedCount,
+  customPromptCount,
+  customPromptsError,
+  previewLoading,
+  previewError,
+  previewData,
+}: {
+  selectedCount: number;
+  customPromptCount: number;
+  customPromptsError: string | null;
+  previewLoading: boolean;
+  previewError: string | null;
+  previewData: AgentCenterAuditPreviewResponse | null;
+}) {
+  if (selectedCount < 1) {
+    return <p className="text-sm text-slate-500">Select at least one SKU to see cost.</p>;
+  }
+  if (customPromptsError) {
+    return <p className="text-sm text-slate-500">Fix custom prompts above to see preview.</p>;
+  }
+  if (previewLoading) {
+    return (
+      <p className="text-sm text-slate-500">
+        <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+        Calculating cost preview…
+      </p>
+    );
+  }
+  if (previewError) {
+    return (
+      <p className="text-sm text-red-700">
+        <AlertTriangle className="mr-2 inline h-4 w-4" />
+        {previewError}
+      </p>
+    );
+  }
+  if (!previewData) {
+    return <p className="text-sm text-slate-500">Adjust SKU selection to refresh preview.</p>;
+  }
+
+  const balance = previewData.current_balance;
+  const cacheRate = Math.round(previewData.estimated_cache_savings.cache_hit_rate * 100);
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <CostStat label="SKUs" value={previewData.sku_count.toString()} />
+        <CostStat label="Total probes" value={previewData.total_prompts.toLocaleString()} />
+        <CostStat label="Custom prompts" value={`${customPromptCount} / ${MAX_CUSTOM_PROMPTS}`} />
+        <CostStat
+          label="Cache savings"
+          value={`${previewData.estimated_cache_savings.prompts_cached} (${cacheRate}%)`}
+        />
+      </div>
+      <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+        <CreditStat
+          label="Audit credits"
+          required={previewData.estimated_audit_credits}
+          available={balance.audit_credits}
+        />
+        <CreditStat
+          label="Prompt credits"
+          required={previewData.estimated_prompt_credits}
+          available={balance.prompt_credits}
+        />
+        <CreditStat
+          label="Execution credits"
+          required={previewData.estimated_execution_credits}
+          available={balance.execution_credits}
+        />
+      </div>
+      <div
+        className={`rounded border px-3 py-2 text-sm ${
+          previewData.sufficient
+            ? 'border-green-200 bg-green-50 text-green-900'
+            : 'border-red-300 bg-red-50 text-red-900'
+        }`}
+      >
+        {previewData.sufficient ? (
+          <>
+            <strong>Ready to launch.</strong> Plan: {balance.plan_tier}.
+          </>
+        ) : (
+          <>
+            <AlertTriangle className="mr-2 inline h-4 w-4" />
+            <strong>Insufficient credits.</strong>{' '}
+            {previewData.gaps
+              .map((g) => `${g.kind}: short by ${g.short}`)
+              .join(' · ')}
+            . Reduce SKU selection or contact Pivota to upgrade your plan.
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CostStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded border border-slate-200 bg-slate-50/60 px-3 py-2">
+      <div className="text-[11px] uppercase tracking-wide text-slate-500">
+        {label}
+      </div>
+      <div className="text-base font-semibold text-slate-900">{value}</div>
+    </div>
+  );
+}
+
+function CreditStat({
+  label,
+  required,
+  available,
+}: {
+  label: string;
+  required: number;
+  available: number;
+}) {
+  const sufficient = available >= required;
+  return (
+    <div
+      className={`rounded border px-3 py-2 ${
+        sufficient
+          ? 'border-slate-200 bg-slate-50/60'
+          : 'border-red-300 bg-red-50'
+      }`}
+    >
+      <div className="text-[11px] uppercase tracking-wide text-slate-500">
+        {label}
+      </div>
+      <div
+        className={`text-base font-semibold ${
+          sufficient ? 'text-slate-900' : 'text-red-900'
+        }`}
+      >
+        {required} / {available} {sufficient ? '✓' : `short ${required - available}`}
+      </div>
+    </div>
+  );
+}
+
+function InsufficientCreditsBanner({ error }: { error: InsufficientCreditsError }) {
+  return (
+    <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="h-5 w-5 text-red-600" />
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-red-900">
+            Insufficient {error.kind} credits — short by {error.short}
+          </div>
+          <p className="mt-1 text-xs text-red-900/80">
+            Required: {error.required} · Available: {error.available}. Reduce the
+            SKU selection or contact Pivota to upgrade your plan.
+          </p>
+          {error.previewUrl ? (
+            <p className="mt-1 text-[11px] text-red-900/70">
+              Preview URL: <code>{error.previewUrl}</code>
+            </p>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1488,6 +1886,471 @@ function AllQueriesTable({
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// v3 per-SKU dashboard renderer (spec §C-E + §D).
+//
+// Renders when audit_mode === 'per_sku'. Shows:
+//   1. Brand rollup cover (median + winning/blocked counts)
+//   2. Per-SKU cards (4-score table + band + top 3 gaps + expandable
+//      detail with verbatim grounding, authority hosts, Reddit subreddits)
+//   3. Priority queue panel (top-10 by impact × gap × fixability)
+//   4. Cost summary footer
+//
+// Per memory feedback_mock_data_never_to_merchant: when arrays are empty
+// we render an honest "none cited" surface, not fabricated placeholders.
+// ---------------------------------------------------------------------
+
+function PerSkuAuditReportRenderer({
+  report,
+}: {
+  report: AgentCenterPerSkuAuditResponse;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="text-xs text-slate-500">
+        v3 per-SKU audit complete · run {report.audit_run_id} ·{' '}
+        {report.cost_summary.prompts} probes across{' '}
+        {report.cost_summary.providers.join(', ')} ·{' '}
+        {report.cost_summary.audit_credits_debited} audit credits debited
+      </div>
+      <BrandRollupCover
+        rollup={report.brand_rollup}
+        skuCount={report.per_sku_reports.length}
+        costSummary={report.cost_summary}
+      />
+      <PrioritizedQueuePanel
+        rollup={report.brand_rollup}
+        perSku={report.per_sku_reports}
+      />
+      <PerSkuCardList
+        reports={report.per_sku_reports}
+        authorityMap={report.authority_map}
+      />
+      <CostSummaryFooter summary={report.cost_summary} legacy={report.legacy_verdict} />
+    </div>
+  );
+}
+
+function bandColorClasses(band: SkuScoreBand): string {
+  switch (band) {
+    case 'agent_ready':
+      return 'border-green-200 bg-green-50 text-green-900';
+    case 'ready':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-900';
+    case 'partial':
+      return 'border-amber-300 bg-amber-50 text-amber-900';
+    case 'blocked':
+    default:
+      return 'border-red-300 bg-red-50 text-red-900';
+  }
+}
+
+function dimensionScoreColor(score: number): string {
+  if (score >= 85) return 'text-green-700';
+  if (score >= 70) return 'text-emerald-700';
+  if (score >= 40) return 'text-amber-700';
+  return 'text-red-700';
+}
+
+function BrandRollupCover({
+  rollup,
+  skuCount,
+  costSummary,
+}: {
+  rollup: AgentCenterBrandRollup;
+  skuCount: number;
+  costSummary: AgentCenterCostSummary;
+}) {
+  return (
+    <div className="rounded-lg border-2 border-indigo-200 bg-indigo-50/40 p-4">
+      <div className="text-xs font-semibold uppercase tracking-wide text-indigo-900/70">
+        Brand rollup ({skuCount} SKUs audited)
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <RollupDimensionStat label="Identity" stats={pickStat(rollup, 'identity')} />
+        <RollupDimensionStat label="Content" stats={pickStat(rollup, 'content_richness')} />
+        <RollupDimensionStat label="Routability" stats={pickStat(rollup, 'routability')} />
+        <RollupDimensionStat label="Citation" stats={pickStat(rollup, 'citation')} highlight />
+      </div>
+      <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-indigo-900/80 sm:grid-cols-3">
+        <div>
+          <strong>{rollup.winning_skus_by_citation.length}</strong> winning by citation
+        </div>
+        <div>
+          <strong>{rollup.winning_skus_by_band.length}</strong> winning by band
+        </div>
+        <div>
+          <strong>{rollup.blocked_skus.length}</strong> blocked
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function pickStat(
+  rollup: AgentCenterBrandRollup,
+  dim: 'identity' | 'content_richness' | 'routability' | 'citation',
+) {
+  return { median: rollup.median[dim], p25: rollup.p25[dim], p75: rollup.p75[dim] };
+}
+
+function RollupDimensionStat({
+  label,
+  stats,
+  highlight,
+}: {
+  label: string;
+  stats: { median: number; p25: number; p75: number };
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded border px-3 py-2 ${
+        highlight
+          ? 'border-indigo-300 bg-white'
+          : 'border-slate-200 bg-white/80'
+      }`}
+    >
+      <div className="text-[11px] uppercase tracking-wide text-slate-500">
+        {label}
+        {highlight ? ' (output)' : ''}
+      </div>
+      <div className={`text-xl font-bold ${dimensionScoreColor(stats.median)}`}>
+        {stats.median}
+      </div>
+      <div className="text-[10px] text-slate-500">
+        P25 {stats.p25} · P75 {stats.p75}
+      </div>
+    </div>
+  );
+}
+
+function PrioritizedQueuePanel({
+  rollup,
+  perSku,
+}: {
+  rollup: AgentCenterBrandRollup;
+  perSku: AgentCenterPerSkuReport[];
+}) {
+  const top = rollup.priority_queue.slice(0, 10);
+  if (top.length === 0) {
+    return null;
+  }
+  const titleMap = new Map(perSku.map((r) => [r.sku_key, r.title || r.sku_key]));
+  return (
+    <SurfaceCard
+      title="Priority queue"
+      description="Top SKUs to fix first, ranked by impact × gap × fixability (spec §C)."
+    >
+      <div className="px-5 py-4">
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs uppercase text-slate-500">
+            <tr>
+              <th className="py-1 pr-2">#</th>
+              <th className="py-1 pr-2">SKU</th>
+              <th className="py-1 pr-2 text-right">Impact</th>
+              <th className="py-1 pr-2 text-right">Gap</th>
+              <th className="py-1 pr-2 text-right">Fixability</th>
+              <th className="py-1 pr-2 text-right">Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            {top.map((entry, idx) => (
+              <tr key={entry.sku_key} className="border-t border-slate-100">
+                <td className="py-1.5 pr-2 text-slate-500">{idx + 1}</td>
+                <td className="py-1.5 pr-2">
+                  {titleMap.get(entry.sku_key) ?? entry.sku_key}
+                  <div className="font-mono text-[10px] text-slate-400">{entry.sku_key}</div>
+                </td>
+                <td className="py-1.5 pr-2 text-right">{entry.impact.toFixed(2)}</td>
+                <td className="py-1.5 pr-2 text-right">{entry.gap}</td>
+                <td className="py-1.5 pr-2 text-right">{entry.fixability.toFixed(2)}</td>
+                <td className="py-1.5 pr-2 text-right font-semibold">
+                  {entry.score.toFixed(2)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </SurfaceCard>
+  );
+}
+
+function PerSkuCardList({
+  reports,
+  authorityMap,
+}: {
+  reports: AgentCenterPerSkuReport[];
+  authorityMap: AgentCenterAuthorityMap;
+}) {
+  if (reports.length === 0) {
+    return (
+      <SurfaceCard title="Per-SKU scorecards">
+        <div className="px-5 py-4 text-sm text-slate-500">
+          No SKU reports returned — likely all SKUs were blocked at preflight.
+        </div>
+      </SurfaceCard>
+    );
+  }
+  return (
+    <SurfaceCard
+      title="Per-SKU scorecards"
+      description="Identity / Content / Routability are inputs Pivota can act on. Citation is the output the merchant cares about. Click a card to expand evidence."
+    >
+      <div className="space-y-3 px-5 py-4">
+        {reports.map((r) => (
+          <PerSkuCard
+            key={r.sku_key}
+            report={r}
+            authority={authorityMap.per_sku?.[r.sku_key]}
+          />
+        ))}
+      </div>
+    </SurfaceCard>
+  );
+}
+
+function PerSkuCard({
+  report,
+  authority,
+}: {
+  report: AgentCenterPerSkuReport;
+  authority: AgentCenterAuthorityMap['per_sku'][string] | undefined;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const bandCls = bandColorClasses(report.band);
+  return (
+    <div className={`rounded-lg border-2 ${bandCls}`}>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-start justify-between px-4 py-3 text-left"
+      >
+        <div className="flex-1">
+          <div className="text-sm font-semibold">{report.title || report.sku_key}</div>
+          <div className="font-mono text-[10px] opacity-70">
+            sku_key: {report.sku_key} · band: {report.band}
+            {report.content_key ? ` · ${report.content_key}` : ''}
+          </div>
+        </div>
+        <div className="text-xs opacity-70">{expanded ? '−' : '+'}</div>
+      </button>
+      <div className="px-4 pb-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <DimensionCell label="Identity" score={report.scores.identity} />
+          <DimensionCell label="Content" score={report.scores.content_richness} />
+          <DimensionCell label="Routability" score={report.scores.routability} />
+          <DimensionCell label="Citation" score={report.scores.citation} highlight />
+        </div>
+        {report.primary_gaps.length > 0 ? (
+          <div className="mt-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
+              Primary gaps
+            </div>
+            <ul className="ml-4 mt-1 list-disc text-xs">
+              {report.primary_gaps.slice(0, 3).map((gap, idx) => (
+                <li key={`${report.sku_key}-gap-${idx}`}>{gap}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {expanded ? (
+          <div className="mt-4 space-y-3 border-t border-current/10 pt-3">
+            <GroundingEvidenceList evidence={report.verbatim_grounding_evidence} />
+            <AuthorityHostsBlock entry={authority} />
+            <AxisCoverageBlock coverage={report.axis_coverage} />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function DimensionCell({
+  label,
+  score,
+  highlight,
+}: {
+  label: string;
+  score: SkuDimensionScore;
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded border px-2 py-1.5 ${
+        highlight
+          ? 'border-current/40 bg-white/80'
+          : 'border-current/20 bg-white/40'
+      }`}
+    >
+      <div className="text-[10px] uppercase tracking-wide opacity-60">
+        {label}
+        {highlight ? ' (output)' : ''}
+      </div>
+      <div className={`text-lg font-bold ${dimensionScoreColor(score.score)}`}>
+        {score.score}
+      </div>
+    </div>
+  );
+}
+
+function GroundingEvidenceList({
+  evidence,
+}: {
+  evidence: AgentCenterPerSkuReport['verbatim_grounding_evidence'];
+}) {
+  if (!evidence || evidence.length === 0) {
+    return (
+      <div className="text-xs opacity-70">
+        No verbatim grounding evidence captured for this SKU.
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
+        Verbatim grounded evidence
+      </div>
+      <div className="mt-1 space-y-2">
+        {evidence.slice(0, 5).map((e, idx) => (
+          <blockquote
+            key={`ev-${idx}`}
+            className="border-l-2 border-current/30 bg-white/40 px-3 py-1.5 text-xs italic"
+          >
+            <div className="not-italic font-semibold opacity-70">{e.prompt}</div>
+            {e.evidence_excerpt ? <p className="mt-1">{e.evidence_excerpt}</p> : null}
+            {e.grounded_sources.length > 0 ? (
+              <div className="not-italic mt-1 text-[10px] opacity-60">
+                Cited:{' '}
+                {e.grounded_sources
+                  .slice(0, 5)
+                  .map((s) => s.host || s.title || s.uri)
+                  .join(', ')}
+              </div>
+            ) : null}
+          </blockquote>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AuthorityHostsBlock({
+  entry,
+}: {
+  entry: AgentCenterAuthorityMap['per_sku'][string] | undefined;
+}) {
+  if (!entry || (entry.hosts.length === 0 && entry.reddit.subreddits.length === 0)) {
+    return (
+      <div className="text-xs opacity-70">
+        No authority hosts or Reddit threads cited for this SKU.
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      {entry.hosts.length > 0 ? (
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
+            Authority hosts cited
+          </div>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {entry.hosts.slice(0, 12).map((h: AuthorityHostEntry, idx) => (
+              <span
+                key={`host-${idx}`}
+                className="inline-flex items-center gap-1 rounded bg-white/60 px-2 py-0.5 text-[11px]"
+                title={h.evidence_excerpt}
+              >
+                <span className="rounded-sm bg-current/10 px-1 text-[9px] uppercase tracking-wide">
+                  {h.host_type}
+                </span>
+                {h.host}
+                <span className="opacity-60">·{h.prompts_cited_count}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {entry.reddit.subreddits.length > 0 ? (
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
+            Reddit (monitor-only)
+          </div>
+          <div className="mt-1 space-y-1">
+            {entry.reddit.subreddits.slice(0, 5).map((sub: AuthorityRedditSubreddit, idx) => (
+              <div key={`sub-${idx}`} className="text-[11px]">
+                <strong>r/{sub.name}</strong>
+                {sub.sentiment_proxy !== null ? (
+                  <span className="ml-2 opacity-70">
+                    sentiment {sub.sentiment_proxy.toFixed(2)}
+                  </span>
+                ) : null}
+                {sub.recurring_objections.length > 0 ? (
+                  <span className="ml-2 opacity-70">
+                    objections: {sub.recurring_objections.slice(0, 3).join(', ')}
+                  </span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AxisCoverageBlock({
+  coverage,
+}: {
+  coverage: AgentCenterPerSkuReport['axis_coverage'];
+}) {
+  const entries = Object.entries(coverage || {});
+  if (entries.length === 0) return null;
+  const max = Math.max(1, ...entries.map(([, n]) => n));
+  return (
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
+        Axis coverage
+      </div>
+      <div className="mt-1 space-y-1">
+        {entries.map(([axis, count]) => (
+          <div key={`axis-${axis}`} className="flex items-center gap-2 text-[11px]">
+            <span className="w-32 truncate font-mono opacity-70">{axis}</span>
+            <div className="flex-1 rounded bg-current/10">
+              <div
+                className="h-2 rounded bg-current/40"
+                style={{ width: `${Math.round((count / max) * 100)}%` }}
+              />
+            </div>
+            <span className="w-8 text-right opacity-70">{count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CostSummaryFooter({
+  summary,
+  legacy,
+}: {
+  summary: AgentCenterCostSummary;
+  legacy: string;
+}) {
+  return (
+    <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+      Probes: {summary.prompts.toLocaleString()} ·{' '}
+      Providers: {summary.providers.join(', ')} ·{' '}
+      Cache hits: {summary.cache_hits} ·{' '}
+      Audit credits debited: {summary.audit_credits_debited} ·{' '}
+      Prompt credits debited: {summary.prompt_credits_debited} ·{' '}
+      Est. cost: ${summary.estimated_cost_usd.toFixed(2)} ·{' '}
+      Legacy verdict: <span className="font-mono">{legacy}</span>
     </div>
   );
 }

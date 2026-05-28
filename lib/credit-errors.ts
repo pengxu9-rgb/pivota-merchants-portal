@@ -1,0 +1,40 @@
+/**
+ * Typed error surfaces for the credit-balance system (spec §I).
+ *
+ * Extracted to its own module so node:test (which only handles
+ * self-contained TS modules without extensionless imports) can
+ * smoke-test the error class. Re-exported from `lib/api-client.ts`
+ * for caller compatibility.
+ *
+ * Per memory feedback_no_execution_layer_fallbacks: callers catch
+ * this specifically to render the gap honestly. Never auto-shrink
+ * scope to fit available credits — the merchant decides.
+ */
+
+export type CreditKind = 'audit' | 'prompt' | 'execution';
+
+export class InsufficientCreditsError extends Error {
+  readonly kind: CreditKind;
+  readonly required: number;
+  readonly available: number;
+  readonly short: number;
+  readonly previewUrl: string | null;
+
+  constructor(detail: {
+    kind: CreditKind;
+    required: number;
+    available: number;
+    previewUrl: string | null;
+    message: string;
+  }) {
+    super(detail.message);
+    this.name = 'InsufficientCreditsError';
+    this.kind = detail.kind;
+    this.required = detail.required;
+    this.available = detail.available;
+    // Floor at 0 so a stale-preview / race-condition response where
+    // required < available doesn't surface a negative "short" amount.
+    this.short = Math.max(0, detail.required - detail.available);
+    this.previewUrl = detail.previewUrl;
+  }
+}
