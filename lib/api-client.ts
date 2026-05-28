@@ -31,6 +31,14 @@ interface RequestOptions {
   timeoutMs?: number;
 }
 
+// Re-export `InsufficientCreditsError` (spec §I) from its standalone
+// module so callers can keep importing it via the api-client surface.
+// Lives in `./credit-errors.ts` to keep the smoke test runnable under
+// node:test (which can't traverse the extensionless imports the
+// api-client itself triggers).
+export { InsufficientCreditsError } from './credit-errors';
+import { InsufficientCreditsError } from './credit-errors';
+
 function finiteNumberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const numberValue = Number(value);
@@ -1520,8 +1528,12 @@ class ApiClient {
     products: { platform: string; source_product_id: string }[],
     maxRuns: number = 3,
   ): Promise<import('./types/ai-readiness').AiReadinessAuditResponse> {
-    if (products.length < 1 || products.length > 5) {
-      throw new Error('Pick 1–5 SKUs to audit per run.');
+    // Per spec §I, the 1–5 cap is replaced by the credit pre-flight as the
+    // authoritative cost gate. We keep a generous 1–50 ceiling client-side
+    // to catch obvious typos before hitting the backend (which enforces
+    // the real cap and the credit balance).
+    if (products.length < 1 || products.length > 50) {
+      throw new Error('Pick 1–50 SKUs to audit per run.');
     }
     const response = await this.client.post(
       '/api/merchant-center/audit/ai-commerce-readiness',
@@ -1529,6 +1541,73 @@ class ApiClient {
       { timeout: 180_000 },
     );
     return response.data?.data || response.data;
+  }
+
+  // -------------------------------------------------------------------
+  // v3 per-SKU audit — preview + launch (spec §I).
+  //
+  // The preview endpoint returns projected probe count + estimated
+  // credits + current balance + sufficient flag. No probes are run.
+  // The launch endpoint runs the actual audit and debits credits;
+  // returns HTTP 402 with InsufficientCreditsError shape when the
+  // balance can't cover the scope.
+  //
+  // Per memory feedback_no_execution_layer_fallbacks: callers do NOT
+  // auto-shrink scope on 402. The merchant decides what to do.
+  // -------------------------------------------------------------------
+
+  async previewAudit(
+    request: import('./types/ai-readiness').AgentCenterAuditPreviewRequest,
+  ): Promise<import('./types/ai-readiness').AgentCenterAuditPreviewResponse> {
+    const response = await this.client.post(
+      '/api/audits/preview',
+      request,
+      { timeout: 30_000 },
+    );
+    return response.data?.data || response.data;
+  }
+
+  async runPerSkuAudit(request: {
+    merchant_id: string;
+    sku_keys: string[];
+    prompts_per_sku?: number;
+    custom_prompts?: string[];
+    providers?: import('./types/ai-readiness').AuditPreviewProvider[];
+    idempotency_key: string;
+  }): Promise<import('./types/ai-readiness').AgentCenterPerSkuAuditResponse> {
+    try {
+      const response = await this.client.post(
+        '/api/audits',
+        {
+          audit_mode: 'per_sku',
+          merchant_id: request.merchant_id,
+          sku_keys: request.sku_keys,
+          prompts_per_sku: request.prompts_per_sku ?? 40,
+          custom_prompts: request.custom_prompts ?? [],
+          providers: request.providers ?? ['gemini'],
+        },
+        {
+          timeout: 600_000, // 10 min; long-running grounded probes
+          headers: { 'Idempotency-Key': request.idempotency_key },
+        },
+      );
+      return response.data?.data || response.data;
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 402) {
+        const detail = (err.response.data as { detail?: unknown })?.detail;
+        const payload = (typeof detail === 'object' && detail !== null
+          ? (detail as Record<string, unknown>)
+          : (err.response.data as Record<string, unknown> | undefined)) ?? {};
+        throw new InsufficientCreditsError({
+          kind: (payload.kind as 'audit' | 'prompt' | 'execution') ?? 'audit',
+          required: typeof payload.required === 'number' ? payload.required : 0,
+          available: typeof payload.available === 'number' ? payload.available : 0,
+          previewUrl: typeof payload.preview_url === 'string' ? payload.preview_url : null,
+          message: typeof payload.error === 'string' ? payload.error : 'insufficient_credits',
+        });
+      }
+      throw err;
+    }
   }
 
   // P1.3: list merchant tasks. Backend exposes these at
