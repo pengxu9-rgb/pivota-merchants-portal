@@ -3,17 +3,28 @@
 /**
  * Tier-1 URL-audit wedge — the low-friction front door to AI Commerce Readiness.
  *
- * Paste your store URL → we crawl it (no catalog sync needed) and show how AI
- * shopping agents see your brand + top products. The first 2 audits per merchant
- * are free; the deeper per-SKU audit (which unlocks serving + checkout) lives at
+ * Merchant-CURATED: you give us your brand site + up to 5 product URLs (your
+ * hero SKUs); we fetch each for clean data and show how AI shopping agents
+ * (Gemini grounded search) see exactly those — no catalog sync, no guessing
+ * which products to audit. The first 2 audits per merchant are free. The deeper
+ * per-SKU audit (which unlocks serving + checkout) lives at
  * /dashboard/agent-center/ai-readiness and requires connecting your store.
  *
- * Backend: POST /api/merchant-center/audit/url-readiness (returns a brand_report
- * — the same shape the legacy brand audit renders).
+ * Backend: POST /api/merchant-center/audit/url-readiness — body
+ * { product_urls[1-5], website?, brand? }.
  */
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, ArrowRight, Globe, Loader2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  Globe,
+  Info,
+  Link2,
+  Loader2,
+  Plus,
+  X,
+} from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import {
   MerchantButton,
@@ -25,6 +36,8 @@ import type {
   AgentCenterBdVerdictLabel,
   UrlReadinessAuditResponse,
 } from '@/lib/types/ai-readiness';
+
+const MAX_PRODUCT_URLS = 5;
 
 function verdictTone(label: AgentCenterBdVerdictLabel | null | undefined): string {
   const l = (label || '').toUpperCase();
@@ -44,18 +57,22 @@ function scorePill(label: string, value: number | null | undefined) {
 }
 
 export default function UrlAuditPage() {
-  const [url, setUrl] = useState('');
+  const [website, setWebsite] = useState('');
+  const [brand, setBrand] = useState('');
+  const [productUrls, setProductUrls] = useState<string[]>(['']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UrlReadinessAuditResponse | null>(null);
 
-  // Prefill with the merchant's onboarding store URL (best-effort).
+  // Prefill the brand site + name from the merchant's onboarding profile.
   useEffect(() => {
     let cancelled = false;
     apiClient
       .getProfile()
-      .then((p: { website?: string } | null) => {
-        if (!cancelled && p?.website) setUrl(p.website);
+      .then((p: { website?: string; business_name?: string } | null) => {
+        if (cancelled || !p) return;
+        if (p.website) setWebsite(p.website);
+        if (p.business_name) setBrand(p.business_name);
       })
       .catch(() => {});
     return () => {
@@ -63,13 +80,33 @@ export default function UrlAuditPage() {
     };
   }, []);
 
+  const setUrlAt = (i: number, v: string) =>
+    setProductUrls((prev) => prev.map((u, idx) => (idx === i ? v : u)));
+  const addUrl = () =>
+    setProductUrls((prev) =>
+      prev.length >= MAX_PRODUCT_URLS ? prev : [...prev, ''],
+    );
+  const removeUrl = (i: number) =>
+    setProductUrls((prev) =>
+      prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i),
+    );
+
+  const cleanedUrls = productUrls.map((u) => u.trim()).filter(Boolean);
+  const canRun = cleanedUrls.length > 0 && !loading;
+
   const run = async () => {
+    if (cleanedUrls.length === 0) {
+      setError('Add at least one product URL to audit.');
+      return;
+    }
     setLoading(true);
     setError(null);
     setResult(null);
     try {
       const res = await apiClient.runUrlReadinessAudit({
-        url: url.trim() || undefined,
+        productUrls: cleanedUrls,
+        website: website.trim() || undefined,
+        brand: brand.trim() || undefined,
       });
       setResult(res);
     } catch (e: any) {
@@ -81,9 +118,16 @@ export default function UrlAuditPage() {
             "You've used your free URL audits. Connect your store for the full per-SKU audit, or upgrade to keep auditing by URL.",
         );
       } else if (status === 422) {
+        const unresolved = Array.isArray(detail?.unresolved)
+          ? detail.unresolved
+              .map((u: { url?: string }) => u?.url)
+              .filter(Boolean)
+              .join(', ')
+          : '';
         setError(
-          detail?.message ||
-            "We couldn't audit that URL. Check the address, or try your store's homepage.",
+          (detail?.message ||
+            "We couldn't read a product from those URLs. Make sure each link opens a single product page.") +
+            (unresolved ? ` (${unresolved})` : ''),
         );
       } else {
         setError(e?.message || 'Audit failed. Please try again.');
@@ -95,36 +139,111 @@ export default function UrlAuditPage() {
 
   const report = result?.brand_report;
   const agg = report?.aggregate;
+  const methodology = result?.methodology;
 
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Free · no sync"
-        title="See how AI sees your store"
-        description="Paste your store URL and we'll crawl it to show how AI shopping agents (Gemini grounded search) find your brand and top products — no catalog sync required. Your first 2 audits are free."
+        title="See how AI sees your products"
+        description="Give us your top product links and we'll show how AI shopping agents (Gemini grounded search) find them — no catalog sync required. You pick the products; we audit exactly those. Your first 2 audits are free."
       />
 
-      <SurfaceCard title="Audit by URL">
-        <div className="space-y-3 px-5 py-4">
-          <label className="block text-sm font-medium" htmlFor="store-url">
-            Your store URL
-          </label>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <div className="relative flex-1">
+      <SurfaceCard title="Audit your products">
+        <div className="space-y-4 px-5 py-4">
+          {/* Brand site (optional, prefilled). */}
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium" htmlFor="brand-site">
+              Your brand site{' '}
+              <span className="merchant-text-muted font-normal">(optional)</span>
+            </label>
+            <div className="relative">
               <Globe className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 opacity-50" />
               <input
-                id="store-url"
+                id="brand-site"
                 type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://yourstore.com"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                placeholder="https://yourbrand.com"
                 disabled={loading}
                 className="w-full rounded-lg border border-[color:var(--merchant-line)] bg-transparent py-2 pl-9 pr-3 text-sm outline-none focus:border-[color:var(--merchant-accent,#6366f1)]"
               />
             </div>
+          </div>
+
+          {/* Brand name (optional) — lets the merchant self-identify so the
+              audit probes the name buyers actually use, not the storefront
+              vendor string. Derived from the site/products when blank. */}
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium" htmlFor="brand-name">
+              Brand name{' '}
+              <span className="merchant-text-muted font-normal">(optional)</span>
+            </label>
+            <input
+              id="brand-name"
+              type="text"
+              value={brand}
+              onChange={(e) => setBrand(e.target.value)}
+              placeholder="How shoppers refer to your brand"
+              disabled={loading}
+              className="w-full rounded-lg border border-[color:var(--merchant-line)] bg-transparent py-2 px-3 text-sm outline-none focus:border-[color:var(--merchant-accent,#6366f1)]"
+            />
+          </div>
+
+          {/* Product URLs (1–5, merchant-curated). */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium">
+              Product URLs{' '}
+              <span className="merchant-text-muted font-normal">
+                (up to {MAX_PRODUCT_URLS} — your hero SKUs)
+              </span>
+            </label>
+            {productUrls.map((u, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 opacity-50" />
+                  <input
+                    type="url"
+                    value={u}
+                    onChange={(e) => setUrlAt(i, e.target.value)}
+                    placeholder="https://yourbrand.com/products/your-bestseller"
+                    disabled={loading}
+                    className="w-full rounded-lg border border-[color:var(--merchant-line)] bg-transparent py-2 pl-9 pr-3 text-sm outline-none focus:border-[color:var(--merchant-accent,#6366f1)]"
+                  />
+                </div>
+                {productUrls.length > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => removeUrl(i)}
+                    disabled={loading}
+                    aria-label="Remove product URL"
+                    className="rounded-md border border-[color:var(--merchant-line)] p-2 opacity-70 hover:opacity-100"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
+            ))}
+            {productUrls.length < MAX_PRODUCT_URLS ? (
+              <button
+                type="button"
+                onClick={addUrl}
+                disabled={loading}
+                className="inline-flex items-center gap-1 text-xs font-medium text-[color:var(--merchant-accent,#6366f1)]"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add another product
+              </button>
+            ) : null}
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="merchant-text-muted text-xs">
+              We fetch each link for clean data (Shopify, Wix, or any product
+              page) and run it through AI shopping-agent queries. Takes ~60–90s.
+            </p>
             <MerchantButton
               onClick={run}
-              disabled={loading}
+              disabled={!canRun}
               icon={loading ? undefined : ArrowRight}
             >
               {loading ? (
@@ -132,19 +251,10 @@ export default function UrlAuditPage() {
                   <Loader2 className="h-4 w-4 animate-spin" /> Auditing…
                 </span>
               ) : (
-                'Audit my store'
+                'Audit my products'
               )}
             </MerchantButton>
           </div>
-          <p className="merchant-text-muted text-xs">
-            Crawls your public storefront (Shopify, Wix, or any sitemap). Takes
-            ~60–90 seconds. For the deeper per-SKU audit that unlocks agent
-            serving &amp; checkout,{' '}
-            <a className="underline" href="/dashboard/agent-center/ai-readiness">
-              connect your store
-            </a>
-            .
-          </p>
         </div>
       </SurfaceCard>
 
@@ -162,7 +272,7 @@ export default function UrlAuditPage() {
           <SurfaceCard
             eyebrow="Brand verdict"
             title={report.merchant_name}
-            description={result?.audited_url}
+            description={result?.audited_url || undefined}
           >
             <div className="space-y-3 px-5 py-4">
               <div
@@ -172,6 +282,14 @@ export default function UrlAuditPage() {
               >
                 {agg.brand_verdict_label || 'INSUFFICIENT DATA'}
               </div>
+              {methodology ? (
+                <p className="merchant-text-muted text-xs">
+                  Based on {methodology.products_audited} product
+                  {methodology.products_audited === 1 ? '' : 's'} ×{' '}
+                  {methodology.queries_per_product} buyer-intent queries — a
+                  small free sample, not a definitive measurement.
+                </p>
+              ) : null}
               {agg.brand_verdict_explanation ? (
                 <p className="text-sm">{agg.brand_verdict_explanation}</p>
               ) : null}
@@ -227,6 +345,69 @@ export default function UrlAuditPage() {
                   ) : null}
                 </div>
               ))}
+            </div>
+          </SurfaceCard>
+
+          {/* Honest, upfront disclosure of what this free sample did + didn't do. */}
+          {methodology ? (
+            <SurfaceCard eyebrow="Methodology" title="How we measured this">
+              <div className="space-y-3 px-5 py-4 text-sm">
+                <p>{methodology.what_we_checked}</p>
+                <ul className="space-y-1.5">
+                  {methodology.limitations.map((lim, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-60" />
+                      <span className="merchant-text-muted text-xs">{lim}</span>
+                    </li>
+                  ))}
+                </ul>
+                {methodology.unresolved_urls.length > 0 ? (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    We couldn't read a product from{' '}
+                    {methodology.unresolved_urls.length} of the URLs you gave
+                    us, so they weren't audited:
+                    <ul className="mt-1 list-disc pl-4">
+                      {methodology.unresolved_urls.map((u, i) => (
+                        <li key={i} className="break-all">
+                          {u.url}
+                          {u.reason ? ` — ${u.reason}` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            </SurfaceCard>
+          ) : null}
+
+          {/* Funnel: integrate (sync → buyable) + subscribe (recurring). */}
+          <SurfaceCard
+            eyebrow="Go deeper"
+            title="Get the full picture"
+            description="This free sample checks a handful of queries. Connect your store for a verified, full-catalog audit — and to become buyable inside AI agents."
+          >
+            <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row">
+              <a
+                href="/dashboard/agent-center/ai-readiness"
+                className="flex-1 rounded-lg border border-[color:var(--merchant-line)] p-4 transition hover:border-[color:var(--merchant-accent,#6366f1)]"
+              >
+                <div className="text-sm font-semibold">Connect your store</div>
+                <p className="merchant-text-muted mt-1 text-xs">
+                  Sync your catalog → we audit every SKU automatically with
+                  availability + serving data, and make you transactable in
+                  agent checkout.
+                </p>
+              </a>
+              <a
+                href="/dashboard/billing"
+                className="flex-1 rounded-lg border border-[color:var(--merchant-line)] p-4 transition hover:border-[color:var(--merchant-accent,#6366f1)]"
+              >
+                <div className="text-sm font-semibold">Subscribe</div>
+                <p className="merchant-text-muted mt-1 text-xs">
+                  Recurring audits + monitoring + more SKUs per run, so you catch
+                  visibility drops before they cost you sales.
+                </p>
+              </a>
             </div>
           </SurfaceCard>
         </div>
