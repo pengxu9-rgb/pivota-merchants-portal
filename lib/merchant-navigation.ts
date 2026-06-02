@@ -47,6 +47,13 @@ export const primaryNavigation: MerchantNavigationItem[] = [
     descriptionKey: "shell.nav.catalogDesc",
   },
   {
+    label: "AI visibility",
+    href: "/dashboard/agent-center/url-audit",
+    icon: Brain,
+    matchPrefixes: ["/dashboard/agent-center"],
+    description: "How AI agents see your store",
+  },
+  {
     label: "Orders",
     labelKey: "shell.nav.orders",
     href: "/dashboard/orders",
