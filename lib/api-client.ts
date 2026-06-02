@@ -1545,20 +1545,25 @@ class ApiClient {
 
   // -------------------------------------------------------------------
   // Tier-1 URL-audit wedge: POST /api/merchant-center/audit/url-readiness.
-  // Audits the merchant's storefront by crawling it (Shopify .json +
-  // sitemap fallback) — NO catalog sync required. `url` defaults to the
+  // Merchant-CURATED: the merchant gives us their site + up to 5 product
+  // URLs (their hero SKUs); we FETCH each for clean data and audit exactly
+  // those — NO catalog sync, NO auto-discovery. `website` defaults to the
   // merchant's onboarding store_url server-side. The first 2 audits per
   // merchant are free; beyond that the backend returns HTTP 402 with a
   // { code: 'free_audit_limit_reached', message, free_audits_* } detail.
+  // 422 { code: 'no_products_resolved', unresolved } when no URL resolves.
   // Run takes ~60–90s; client timeout 3 min.
   // -------------------------------------------------------------------
-  async runUrlReadinessAudit(params?: {
-    url?: string;
-    maxProducts?: number;
+  async runUrlReadinessAudit(params: {
+    productUrls: string[];
+    website?: string;
+    brand?: string;
   }): Promise<import('./types/ai-readiness').UrlReadinessAuditResponse> {
-    const body: Record<string, unknown> = {};
-    if (params?.url) body.url = params.url;
-    if (params?.maxProducts) body.max_products = params.maxProducts;
+    const body: Record<string, unknown> = {
+      product_urls: params.productUrls,
+    };
+    if (params.website) body.website = params.website;
+    if (params.brand) body.brand = params.brand;
     const response = await this.client.post(
       '/api/merchant-center/audit/url-readiness',
       body,

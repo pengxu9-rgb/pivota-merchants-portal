@@ -437,17 +437,35 @@ export interface AgentCenterBdBrandReport {
 /** Tier-1 URL-audit wedge response — POST /api/merchant-center/audit/url-readiness.
  * Audits a storefront by crawling it (no catalog sync); the first N per
  * merchant are free, then the endpoint returns HTTP 402. */
+/** One product the merchant asked us to audit, after we fetched it. */
+export interface UrlReadinessAuditedProduct {
+  title: string;
+  pdp_url: string;
+}
+
+/** Upfront, honest disclosure of what the free wedge measured and what it
+ * did NOT — so a low score reads as "not found in this sample", not a
+ * definitive "invisible". The verification limitation lives here (once),
+ * not buried inside every verdict line. */
+export interface UrlReadinessMethodology {
+  model: 'merchant_curated';
+  products_audited: number;
+  products_requested: number;
+  queries_per_product: number;
+  what_we_checked: string;
+  limitations: string[];
+  unresolved_urls: Array<{ url: string; reason: string }>;
+}
+
 export interface UrlReadinessAuditResponse {
   brand_report: AgentCenterBdBrandReport;
   audit_run_id: string | null;
-  audited_url: string;
+  /** The brand site we used for context (= request website / store_url). */
+  audited_url: string | null;
   tier: string;
-  discovery: {
-    method: string | null;
-    products_audited: number;
-    products_discovered_total: number | null;
-    coverage: unknown;
-  };
+  /** Exactly the products the merchant chose, as we fetched them. */
+  audited_products: UrlReadinessAuditedProduct[];
+  methodology: UrlReadinessMethodology;
   free_audits_allowed: number;
   free_audits_used: number;
   free_audits_remaining: number;
