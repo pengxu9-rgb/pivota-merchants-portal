@@ -434,6 +434,25 @@ export interface AgentCenterBdBrandReport {
   failed: { pdp_url: string; title: string; error: string }[];
 }
 
+/** Tier-1 URL-audit wedge response — POST /api/merchant-center/audit/url-readiness.
+ * Audits a storefront by crawling it (no catalog sync); the first N per
+ * merchant are free, then the endpoint returns HTTP 402. */
+export interface UrlReadinessAuditResponse {
+  brand_report: AgentCenterBdBrandReport;
+  audit_run_id: string | null;
+  audited_url: string;
+  tier: string;
+  discovery: {
+    method: string | null;
+    products_audited: number;
+    products_discovered_total: number | null;
+    coverage: unknown;
+  };
+  free_audits_allowed: number;
+  free_audits_used: number;
+  free_audits_remaining: number;
+}
+
 /** Wrapper returned by the merchant audit endpoint. */
 export interface AiReadinessAuditResponse {
   brand_report: AgentCenterBdBrandReport;

@@ -1544,6 +1544,30 @@ class ApiClient {
   }
 
   // -------------------------------------------------------------------
+  // Tier-1 URL-audit wedge: POST /api/merchant-center/audit/url-readiness.
+  // Audits the merchant's storefront by crawling it (Shopify .json +
+  // sitemap fallback) — NO catalog sync required. `url` defaults to the
+  // merchant's onboarding store_url server-side. The first 2 audits per
+  // merchant are free; beyond that the backend returns HTTP 402 with a
+  // { code: 'free_audit_limit_reached', message, free_audits_* } detail.
+  // Run takes ~60–90s; client timeout 3 min.
+  // -------------------------------------------------------------------
+  async runUrlReadinessAudit(params?: {
+    url?: string;
+    maxProducts?: number;
+  }): Promise<import('./types/ai-readiness').UrlReadinessAuditResponse> {
+    const body: Record<string, unknown> = {};
+    if (params?.url) body.url = params.url;
+    if (params?.maxProducts) body.max_products = params.maxProducts;
+    const response = await this.client.post(
+      '/api/merchant-center/audit/url-readiness',
+      body,
+      { timeout: 180_000 },
+    );
+    return response.data?.data || response.data;
+  }
+
+  // -------------------------------------------------------------------
   // v3 per-SKU audit — preview + launch (spec §I).
   //
   // The preview endpoint returns projected probe count + estimated
