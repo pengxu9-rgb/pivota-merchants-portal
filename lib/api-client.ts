@@ -1552,7 +1552,8 @@ class ApiClient {
   // merchant are free; beyond that the backend returns HTTP 402 with a
   // { code: 'free_audit_limit_reached', message, free_audits_* } detail.
   // 422 { code: 'no_products_resolved', unresolved } when no URL resolves.
-  // Run takes ~60–90s; client timeout 3 min.
+  // Run takes ~60–90s (backend audits the products with bounded concurrency);
+  // client timeout 4 min as a safety margin against slow grounded-LLM calls.
   // -------------------------------------------------------------------
   async runUrlReadinessAudit(params: {
     productUrls: string[];
@@ -1567,7 +1568,7 @@ class ApiClient {
     const response = await this.client.post(
       '/api/merchant-center/audit/url-readiness',
       body,
-      { timeout: 180_000 },
+      { timeout: 240_000 },
     );
     return response.data?.data || response.data;
   }
