@@ -1545,32 +1545,76 @@ class ApiClient {
 
   // -------------------------------------------------------------------
   // Tier-1 URL-audit wedge: POST /api/merchant-center/audit/url-readiness.
-  // Merchant-CURATED: the merchant gives us their site + up to 5 product
-  // URLs (their hero SKUs); we FETCH each for clean data and audit exactly
-  // those — NO catalog sync, NO auto-discovery. `website` defaults to the
-  // merchant's onboarding store_url server-side. The first 2 audits per
-  // merchant are free; beyond that the backend returns HTTP 402 with a
-  // { code: 'free_audit_limit_reached', message, free_audits_* } detail.
-  // 422 { code: 'no_products_resolved', unresolved } when no URL resolves.
-  // Run takes ~60–90s (backend audits the products with bounded concurrency);
-  // client timeout 4 min as a safety margin against slow grounded-LLM calls.
+  // Merchant-CURATED + ASYNC: the merchant gives us their site + up to 5
+  // product URLs (their hero SKUs); we FETCH each for clean data and audit
+  // exactly those — NO catalog sync, NO auto-discovery.
+  //
+  // The grounded probes can take several MINUTES (the upstream serializes
+  // them), so the POST kicks the audit off and returns a run_id immediately
+  // (status: 'running'); we then POLL GET /url-readiness/{run_id} until it's
+  // done. Request duration no longer bounds the audit — no more timeouts.
+  //
+  // `website` defaults to the merchant's onboarding store_url server-side.
+  // POST errors surface synchronously: 402 { code: 'free_audit_limit_reached' }
+  // past the free cap; 422 { code: 'no_products_resolved', unresolved } when no
+  // URL resolves. A failed background run throws Error(message).
   // -------------------------------------------------------------------
   async runUrlReadinessAudit(params: {
     productUrls: string[];
     website?: string;
     brand?: string;
+    onProgress?: (info: { elapsedMs: number; status: string }) => void;
   }): Promise<import('./types/ai-readiness').UrlReadinessAuditResponse> {
     const body: Record<string, unknown> = {
       product_urls: params.productUrls,
     };
     if (params.website) body.website = params.website;
     if (params.brand) body.brand = params.brand;
-    const response = await this.client.post(
+
+    // 1. Kick off — returns quickly with a run_id (status: 'running').
+    const startRes = await this.client.post(
       '/api/merchant-center/audit/url-readiness',
       body,
-      { timeout: 240_000 },
+      { timeout: 60_000 },
     );
-    return response.data?.data || response.data;
+    const kicked = startRes.data?.data || startRes.data;
+    // Defensive: handle a synchronous result if the backend ever returns one.
+    if (kicked?.status === 'succeeded' || kicked?.brand_report) return kicked;
+    const runId = kicked?.run_id || kicked?.audit_run_id;
+    if (!runId) throw new Error('Audit did not start. Please try again.');
+
+    // 2. Poll until the background audit finishes.
+    const startedAt = Date.now();
+    const MAX_MS = 6 * 60_000; // give up after ~6 min of polling
+    const INTERVAL_MS = 5_000;
+    for (;;) {
+      await new Promise((r) => setTimeout(r, INTERVAL_MS));
+      const elapsedMs = Date.now() - startedAt;
+      let poll: any;
+      try {
+        const res = await this.client.get(
+          `/api/merchant-center/audit/url-readiness/${encodeURIComponent(runId)}`,
+          { timeout: 20_000 },
+        );
+        poll = res.data?.data || res.data;
+      } catch (e) {
+        // A single poll failing (transient) shouldn't abort — keep trying
+        // until the overall budget is spent.
+        if (elapsedMs >= MAX_MS) throw e;
+        params.onProgress?.({ elapsedMs, status: 'running' });
+        continue;
+      }
+      if (poll?.status === 'succeeded') return poll;
+      if (poll?.status === 'failed') {
+        throw new Error(poll?.error || 'Audit failed. Please re-run.');
+      }
+      params.onProgress?.({ elapsedMs, status: poll?.status || 'running' });
+      if (elapsedMs >= MAX_MS) {
+        throw new Error(
+          'The audit is taking longer than expected — it may still finish. Check back shortly.',
+        );
+      }
+    }
   }
 
   // -------------------------------------------------------------------

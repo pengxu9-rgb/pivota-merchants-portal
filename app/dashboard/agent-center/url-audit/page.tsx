@@ -61,6 +61,7 @@ export default function UrlAuditPage() {
   const [brand, setBrand] = useState('');
   const [productUrls, setProductUrls] = useState<string[]>(['']);
   const [loading, setLoading] = useState(false);
+  const [elapsedSec, setElapsedSec] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UrlReadinessAuditResponse | null>(null);
 
@@ -100,6 +101,7 @@ export default function UrlAuditPage() {
       return;
     }
     setLoading(true);
+    setElapsedSec(0);
     setError(null);
     setResult(null);
     try {
@@ -107,6 +109,8 @@ export default function UrlAuditPage() {
         productUrls: cleanedUrls,
         website: website.trim() || undefined,
         brand: brand.trim() || undefined,
+        onProgress: ({ elapsedMs }) =>
+          setElapsedSec(Math.round(elapsedMs / 1000)),
       });
       setResult(res);
     } catch (e: any) {
@@ -239,7 +243,8 @@ export default function UrlAuditPage() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="merchant-text-muted text-xs">
               We fetch each link for clean data (Shopify, Wix, or any product
-              page) and run it through AI shopping-agent queries. Takes ~60–90s.
+              page) and run it through AI shopping-agent queries. This can take
+              1–3 minutes — you can leave this tab open.
             </p>
             <MerchantButton
               onClick={run}
@@ -248,7 +253,8 @@ export default function UrlAuditPage() {
             >
               {loading ? (
                 <span className="inline-flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Auditing…
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {elapsedSec > 0 ? `Auditing… (${elapsedSec}s)` : 'Auditing…'}
                 </span>
               ) : (
                 'Audit my products'
