@@ -457,8 +457,81 @@ export interface UrlReadinessMethodology {
   unresolved_urls: Array<{ url: string; reason: string }>;
 }
 
+// ── Per-SKU "AI-visibility intelligence" (the hero-SKU sidewalk money-shot).
+// Mirrors the backend `_display_sku_intelligence` payload (agent_center_bd_
+// report_service.run_wedge_hero_sku_intelligence). The prompt is the unit:
+// which buyer prompts win, which lose, and which sidewalk lanes are open.
+export type SkuOwnershipState =
+  | 'merchant-owned'
+  | 'merchant-mentioned'
+  | 'competitor-owned'
+  | 'retailer-owned'
+  | 'publisher-owned'
+  | 'forum-owned'
+  | 'open-lane'
+  | 'no-demand';
+
+export type SkuProviderVerdict = 'win' | 'partial' | 'loss' | 'absent';
+
+export interface SkuIntelligenceLane {
+  query: string;
+  /** Substantiated attributes the lane is built from (PDP evidence). */
+  why_fit?: string[];
+  current_ownership?: SkuOwnershipState | string;
+  density_band?: 'low' | 'medium' | 'high';
+  intent?: { label?: string; weight?: number } | null;
+  source_route?: string;
+  demand_state?: string;
+  opportunity_score?: number;
+  /** Short next-move hint derived from ownership/source route. */
+  first_move?: string;
+}
+
+export interface SkuIntelligencePromptRow {
+  query: string;
+  intent_ladder_layer?: string | null;
+  gemini?: SkuProviderVerdict | string;
+  deepseek?: SkuProviderVerdict | string;
+  ownership_state?: SkuOwnershipState | string;
+  who_owns?: string | null;
+  sources?: Array<{ host?: string } | string>;
+  opportunity_score?: number;
+}
+
+export interface SkuIntelligenceLadderLayer {
+  score: number;
+  prompts?: number;
+  open_lanes?: number;
+  [k: string]: unknown;
+}
+
+export interface SkuSubstitutionAlert {
+  present: boolean;
+  prompt?: string;
+  substituted_by?: string;
+  engines?: string[];
+}
+
+export interface SkuIntelligence {
+  hero_sku: { title: string | null; pdp_url: string | null; vendor: string | null };
+  /** The money-shot lead sentence (or honest empty-state line). */
+  headline: string;
+  intent_ladder: Record<string, SkuIntelligenceLadderLayer>;
+  top_open_lanes: SkuIntelligenceLane[];
+  substitution_alert: SkuSubstitutionAlert;
+  prompt_matrix: SkuIntelligencePromptRow[];
+  demand_state_summary: string | null;
+  coverage?: Record<string, unknown>;
+  /** True when no open lane stood out (lexicon gap, no demand, or mock upstream). */
+  is_empty: boolean;
+  /** Set when the per-SKU upstream couldn't be verified (don't fabricate lanes). */
+  note?: string;
+}
+
 export interface UrlReadinessAuditResponse {
   brand_report: AgentCenterBdBrandReport;
+  /** Per-SKU hero intelligence (sidewalk money-shot). Absent on older runs. */
+  sku_intelligence?: SkuIntelligence | null;
   audit_run_id: string | null;
   /** The brand site we used for context (= request website / store_url). */
   audited_url: string | null;
