@@ -92,6 +92,9 @@ function SkuIntelligenceCard({ data }: { data: SkuIntelligence }) {
   const lanes = data.top_open_lanes || [];
   const matrix = data.prompt_matrix || [];
   const ladder = data.intent_ladder || {};
+  // Only show the ChatGPT column once it has actually run (OPENAI_API_KEY live);
+  // before that every row is "absent", so the column stays hidden.
+  const hasChatgpt = matrix.some((r) => r.chatgpt && r.chatgpt !== 'absent');
   return (
     <SurfaceCard
       eyebrow="Hero SKU · how AI sees this product"
@@ -191,6 +194,9 @@ function SkuIntelligenceCard({ data }: { data: SkuIntelligence }) {
                     <th className="py-1.5 pr-2 font-medium">Buyer prompt</th>
                     <th className="px-2 py-1.5 font-medium">Gemini</th>
                     <th className="px-2 py-1.5 font-medium">DeepSeek</th>
+                    {hasChatgpt ? (
+                      <th className="px-2 py-1.5 font-medium">ChatGPT</th>
+                    ) : null}
                     <th className="px-2 py-1.5 font-medium">Who owns it</th>
                   </tr>
                 </thead>
@@ -207,6 +213,11 @@ function SkuIntelligenceCard({ data }: { data: SkuIntelligence }) {
                       <td className={`px-2 py-1.5 font-medium ${verdictColor(row.deepseek)}`}>
                         {row.deepseek || '—'}
                       </td>
+                      {hasChatgpt ? (
+                        <td className={`px-2 py-1.5 font-medium ${verdictColor(row.chatgpt)}`}>
+                          {row.chatgpt || '—'}
+                        </td>
+                      ) : null}
                       <td className="px-2 py-1.5 merchant-text-muted">
                         {row.who_owns ||
                           (row.ownership_state === 'merchant-owned'

@@ -492,6 +492,8 @@ export interface SkuIntelligencePromptRow {
   intent_ladder_layer?: string | null;
   gemini?: SkuProviderVerdict | string;
   deepseek?: SkuProviderVerdict | string;
+  /** Present only when ChatGPT ran (hero-SKU tri-prober, OPENAI_API_KEY live). */
+  chatgpt?: SkuProviderVerdict | string;
   ownership_state?: SkuOwnershipState | string;
   who_owns?: string | null;
   sources?: Array<{ host?: string } | string>;
