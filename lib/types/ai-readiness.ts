@@ -514,6 +514,20 @@ export interface SkuSubstitutionAlert {
   engines?: string[];
 }
 
+/** The single distilled "what should you do next?" for a hero SKU
+ * (backend `build_sku_next_best_action`). Deterministic, evidence-bound,
+ * 70/30: two merchant-owned `self_serve_actions` + one `pivota_path`. */
+export interface SkuNextBestAction {
+  primary_gap: string;
+  headline: string;
+  why_this_first: string;
+  first_move: string;
+  self_serve_actions: string[];
+  pivota_path: string;
+  evidence_used?: Record<string, unknown>;
+  secondary_moves?: unknown[];
+}
+
 export interface SkuIntelligence {
   hero_sku: { title: string | null; pdp_url: string | null; vendor: string | null };
   /** The money-shot lead sentence (or honest empty-state line). */
@@ -528,6 +542,8 @@ export interface SkuIntelligence {
   is_empty: boolean;
   /** Set when the per-SKU upstream couldn't be verified (don't fabricate lanes). */
   note?: string;
+  /** The single distilled "what to do next" for this hero SKU (Wave 2). */
+  next_best_action?: SkuNextBestAction | null;
 }
 
 export interface UrlReadinessAuditResponse {
