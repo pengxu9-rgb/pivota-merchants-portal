@@ -120,10 +120,9 @@ function SkuIntelligenceCard({ data }: { data: SkuIntelligence }) {
               <ArrowRight className="h-4 w-4" />
               What to do next
             </div>
+            {/* why_this_first is intentionally omitted on the wedge — the
+                money-shot headline above already gives the situation + why. */}
             <p className="text-sm font-medium">{nba.first_move}</p>
-            {nba.why_this_first ? (
-              <p className="merchant-text-muted text-xs leading-snug">{nba.why_this_first}</p>
-            ) : null}
             {nba.self_serve_actions?.length ? (
               <div className="space-y-1">
                 <div className="text-xs font-medium">Do this yourself this week</div>
