@@ -85,7 +85,11 @@ export const primaryNavigation: MerchantNavigationItem[] = [
     labelKey: "shell.nav.payments",
     href: "/dashboard/payouts",
     icon: Wallet,
-    matchPrefixes: ["/dashboard/payouts", "/dashboard/commission"],
+    matchPrefixes: [
+      "/dashboard/payouts",
+      "/dashboard/commission",
+      "/dashboard/billing",
+    ],
     description: "Payouts and settlement",
     descriptionKey: "shell.nav.paymentsDesc",
   },

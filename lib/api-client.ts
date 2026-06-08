@@ -1,5 +1,12 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { API_CONFIG } from './config';
+import type {
+  BillingCheckoutSession,
+  BillingCheckoutSessionRequest,
+  BillingCurrentPeriod,
+  BillingPlansResponse,
+  BillingStatementsResponse,
+} from './types/billing';
 
 export type CommerceFunnelGroupBy =
   | 'product'
@@ -1425,6 +1432,33 @@ class ApiClient {
 
   async deleteCommissionOffer(merchantId: string, offerId: number) {
     const response = await this.client.delete(`/merchants/${merchantId}/commission/offers/${offerId}`);
+    return response.data;
+  }
+
+  // Billing (self-serve subscription) methods.
+  // The backend derives the merchant from the JWT (no merchantId in the path);
+  // the request interceptor already attaches `Authorization: Bearer <token>`.
+  async getBillingCurrentPeriod(): Promise<BillingCurrentPeriod> {
+    const response = await this.client.get('/api/billing/me/current-period');
+    return response.data;
+  }
+
+  async getBillingStatements(limit = 12): Promise<BillingStatementsResponse> {
+    const response = await this.client.get('/api/billing/me/statements', {
+      params: { limit },
+    });
+    return response.data;
+  }
+
+  async getBillingPlans(): Promise<BillingPlansResponse> {
+    const response = await this.client.get('/api/billing/plans');
+    return response.data;
+  }
+
+  async createBillingCheckoutSession(
+    data: BillingCheckoutSessionRequest,
+  ): Promise<BillingCheckoutSession> {
+    const response = await this.client.post('/api/billing/checkout-session', data);
     return response.data;
   }
 
