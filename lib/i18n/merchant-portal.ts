@@ -1153,6 +1153,50 @@ Object.assign(enMessages, {
     "Delete this commission offer?\n\nThis action will remove the offer from your list.",
   "dashboard.commission.alerts.deleteSuccess": "Offer deleted successfully",
   "dashboard.commission.alerts.deleteFailed": "Failed to delete: {detail}",
+  "dashboard.billing.eyebrow": "Payments",
+  "dashboard.billing.title": "Billing & subscription",
+  "dashboard.billing.description":
+    "Track your plan, this period's credit usage, and your statement history.",
+  "dashboard.billing.errors.load": "Failed to load billing details",
+  "dashboard.billing.plan.eyebrow": "Current plan",
+  "dashboard.billing.plan.none": "No active plan",
+  "dashboard.billing.plan.noneBody":
+    "You don't have an active subscription yet. Choose a plan below to get started.",
+  "dashboard.billing.plan.noneHint":
+    "Once you subscribe, your plan and credit usage will appear here.",
+  "dashboard.billing.usage.activeBadge": "Active",
+  "dashboard.billing.usage.overageBadge": "In overage",
+  "dashboard.billing.usage.creditsUsed": "{used} of {allowance} credits used",
+  "dashboard.billing.usage.daysRemaining": "{days} days left in this period",
+  "dashboard.billing.usage.overageBanner":
+    "You're {count} credits over your allowance — an extra {amount} will be billed this period.",
+  "dashboard.billing.upgrade.eyebrow": "Plans",
+  "dashboard.billing.upgrade.title": "Choose a plan",
+  "dashboard.billing.upgrade.creditsPerMonth": "{credits} credits / mo",
+  "dashboard.billing.upgrade.description":
+    "Upgrades are handled securely through Stripe Checkout.",
+  "dashboard.billing.upgrade.cta": "Upgrade",
+  "dashboard.billing.upgrade.starting": "Redirecting…",
+  "dashboard.billing.upgrade.current": "Current plan",
+  "dashboard.billing.upgrade.none":
+    "Plans are being finalized. Contact your account manager to subscribe.",
+  "dashboard.billing.upgrade.cancelled": "Checkout cancelled — no changes were made.",
+  "dashboard.billing.upgrade.error": "Could not start checkout. Please try again.",
+  "dashboard.billing.activating.title": "Activating your plan…",
+  "dashboard.billing.activating.body": "This usually takes a few seconds.",
+  "dashboard.billing.activating.timeout":
+    "This is taking a little longer than usual — your plan will update shortly. Refresh in a minute.",
+  "dashboard.billing.statements.eyebrow": "History",
+  "dashboard.billing.statements.title": "Statement history",
+  "dashboard.billing.statements.month": "Month",
+  "dashboard.billing.statements.plan": "Plan",
+  "dashboard.billing.statements.subscription": "Subscription",
+  "dashboard.billing.statements.overage": "Overage",
+  "dashboard.billing.statements.status": "Status",
+  "dashboard.billing.statements.empty":
+    "No statements yet. Your first statement appears after your first full billing cycle.",
+  "dashboard.billing.statements.statusFrozen": "Frozen",
+  "dashboard.billing.statements.statusInvoiced": "Invoiced",
   "dashboard.platformOnboarding.disabledTitle": "Platform Merchant Onboarding",
   "dashboard.platformOnboarding.disabledDescription":
     "This feature is currently disabled for this environment. Enable NEXT_PUBLIC_FEATURE_PLATFORM_ONBOARDING_V2 and redeploy the merchant portal.",
