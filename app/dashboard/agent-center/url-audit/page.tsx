@@ -14,7 +14,7 @@
  * { product_urls[1-5], website?, brand? }.
  */
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeftRight,
@@ -92,6 +92,7 @@ function SkuIntelligenceCard({ data }: { data: SkuIntelligence }) {
   const lanes = data.top_open_lanes || [];
   const matrix = data.prompt_matrix || [];
   const ladder = data.intent_ladder || {};
+  const nba = data.next_best_action;
   // Only show the ChatGPT column once it has actually run (OPENAI_API_KEY live);
   // before that every row is "absent", so the column stays hidden.
   const hasChatgpt = matrix.some((r) => r.chatgpt && r.chatgpt !== 'absent');
@@ -201,31 +202,55 @@ function SkuIntelligenceCard({ data }: { data: SkuIntelligence }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {matrix.map((row, i) => (
-                    <tr
-                      key={`${row.query}-${i}`}
-                      className="border-b border-[color:var(--merchant-line)]"
-                    >
-                      <td className="py-1.5 pr-2">{row.query}</td>
-                      <td className={`px-2 py-1.5 font-medium ${verdictColor(row.gemini)}`}>
-                        {row.gemini || '—'}
-                      </td>
-                      <td className={`px-2 py-1.5 font-medium ${verdictColor(row.deepseek)}`}>
-                        {row.deepseek || '—'}
-                      </td>
-                      {hasChatgpt ? (
-                        <td className={`px-2 py-1.5 font-medium ${verdictColor(row.chatgpt)}`}>
-                          {row.chatgpt || '—'}
-                        </td>
-                      ) : null}
-                      <td className="px-2 py-1.5 merchant-text-muted">
-                        {row.who_owns ||
-                          (row.ownership_state === 'merchant-owned'
-                            ? 'You'
-                            : row.ownership_state || '—')}
-                      </td>
-                    </tr>
-                  ))}
+                  {matrix.map((row, i) => {
+                    const cited = row.cited_evidence;
+                    const showExcerpt =
+                      row.ownership_state !== 'merchant-owned' && !!cited?.excerpt;
+                    return (
+                      <Fragment key={`${row.query}-${i}`}>
+                        <tr className="border-b border-[color:var(--merchant-line)]">
+                          <td className="py-1.5 pr-2">
+                            {row.query}
+                            {row.demand_label ? (
+                              <span className="ml-1.5 text-[10px] uppercase tracking-wide merchant-text-muted">
+                                · {row.demand_label} demand
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className={`px-2 py-1.5 font-medium ${verdictColor(row.gemini)}`}>
+                            {row.gemini || '—'}
+                          </td>
+                          <td className={`px-2 py-1.5 font-medium ${verdictColor(row.deepseek)}`}>
+                            {row.deepseek || '—'}
+                          </td>
+                          {hasChatgpt ? (
+                            <td className={`px-2 py-1.5 font-medium ${verdictColor(row.chatgpt)}`}>
+                              {row.chatgpt || '—'}
+                            </td>
+                          ) : null}
+                          <td className="px-2 py-1.5 merchant-text-muted">
+                            {row.who_owns ||
+                              (row.ownership_state === 'merchant-owned'
+                                ? 'You'
+                                : row.ownership_state || '—')}
+                          </td>
+                        </tr>
+                        {showExcerpt ? (
+                          <tr className="border-b border-[color:var(--merchant-line)]">
+                            <td
+                              colSpan={hasChatgpt ? 5 : 4}
+                              className="px-2 pb-2 merchant-text-muted text-xs italic"
+                            >
+                              AI said: “{cited!.excerpt}”
+                              {cited!.cited_hosts && cited!.cited_hosts.length > 0
+                                ? ` — pointing buyers to ${cited!.cited_hosts.join(', ')}`
+                                : ''}
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -236,6 +261,46 @@ function SkuIntelligenceCard({ data }: { data: SkuIntelligence }) {
           <p className="merchant-text-muted text-xs">
             Demand read: {data.demand_state_summary}
           </p>
+        ) : null}
+
+        {/* What to do next — the per-SKU operational playbook (the prescription,
+            not just the diagnosis). */}
+        {nba ? (
+          <div className="space-y-2 rounded-lg border border-[color:var(--merchant-line)] px-4 py-3">
+            <div className="flex items-center gap-1.5 text-sm font-medium">
+              <ArrowRight className="h-4 w-4" /> What to do next
+            </div>
+            {nba.headline ? (
+              <p className="text-sm font-medium leading-snug">{nba.headline}</p>
+            ) : null}
+            {nba.first_move ? (
+              <p className="text-xs">
+                <span className="merchant-text-muted">First move: </span>
+                {nba.first_move}
+              </p>
+            ) : null}
+            {nba.self_serve?.length ? (
+              <div>
+                <p className="text-xs font-medium">You can do this yourself</p>
+                <ul className="ml-4 list-disc text-xs merchant-text-muted">
+                  {nba.self_serve.map((s, j) => (
+                    <li key={j}>{s}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {nba.pivota_assisted?.length ? (
+              <p className="text-xs">
+                <span className="merchant-text-muted">With Pivota: </span>
+                {nba.pivota_assisted[0]}
+              </p>
+            ) : null}
+            {nba.tracking_metrics?.length ? (
+              <p className="text-xs merchant-text-muted">
+                Track: {nba.tracking_metrics.join(' · ')}
+              </p>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </SurfaceCard>
@@ -533,6 +598,11 @@ export default function UrlAuditPage() {
                     {scorePill('Attribution', p.verdict?.attribution_score)}
                     {scorePill('Category', p.verdict?.category_visibility_score)}
                   </div>
+                  {p.merchant_view?.headline?.plain_summary ? (
+                    <p className="text-xs merchant-text-muted">
+                      {p.merchant_view.headline.plain_summary}
+                    </p>
+                  ) : null}
                   {p.action_items?.[0]?.title ? (
                     <p className="text-xs">
                       <span className="merchant-text-muted">Next: </span>

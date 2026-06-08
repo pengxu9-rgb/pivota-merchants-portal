@@ -497,7 +497,29 @@ export interface SkuIntelligencePromptRow {
   ownership_state?: SkuOwnershipState | string;
   who_owns?: string | null;
   sources?: Array<{ host?: string } | string>;
+  /** Coarse demand strength for the lane (null = no signal). */
+  demand_label?: 'high' | 'moderate' | 'low' | null;
+  /** Verbatim AI answer excerpt + who it named, so the merchant sees what the
+   * AI actually said on a lane (esp. lanes it loses to a competitor/retailer). */
+  cited_evidence?: {
+    provider?: string | null;
+    excerpt?: string;
+    cited_hosts?: string[];
+    competitors_named?: string[];
+  } | null;
   opportunity_score?: number;
+}
+
+/** Per-SKU "what to do next" — the operational playbook for the hero SKU. */
+export interface SkuNextBestAction {
+  headline?: string | null;
+  why_this_first?: string | null;
+  first_move?: string | null;
+  self_serve?: string[];
+  pivota_assisted?: string[];
+  tracking_metrics?: string[];
+  evidence_summary?: string | null;
+  cta?: { label?: string; trust_note?: string } | null;
 }
 
 export interface SkuIntelligenceLadderLayer {
@@ -524,6 +546,8 @@ export interface SkuIntelligence {
   prompt_matrix: SkuIntelligencePromptRow[];
   demand_state_summary: string | null;
   coverage?: Record<string, unknown>;
+  /** The per-SKU operational playbook (what to do next). */
+  next_best_action?: SkuNextBestAction | null;
   /** True when no open lane stood out (lexicon gap, no demand, or mock upstream). */
   is_empty: boolean;
   /** Set when the per-SKU upstream couldn't be verified (don't fabricate lanes). */
