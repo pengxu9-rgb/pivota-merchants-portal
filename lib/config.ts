@@ -36,6 +36,8 @@ export const API_CONFIG = {
     SHOPIFY_OAUTH_START: '/integrations/shopify/oauth/start',
     SHOPIFY_DISCONNECT: '/integrations/shopify/disconnect',
     WIX_CONNECT: '/integrations/wix/connect',
+    WIX_OAUTH_START: '/integrations/wix/oauth/start',
+    WIX_APP_MARKET: '/integrations/wix/app',
     WIX_DISCONNECT: '/integrations/wix/disconnect',
     WOOCOMMERCE_CONNECT: '/integrations/woocommerce/connect',
     BIGCOMMERCE_CONNECT: '/integrations/bigcommerce/connect',

@@ -29,11 +29,11 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
   const { language } = useMerchantLanguage();
   const copy = getStoreFormCopy(language);
   const guideUiText = getIntegrationGuideUiText(language);
-  // Keep OAuth hidden by default until the product is ready.
+  // Public app OAuth is the default path; env flags can disable it for rollback.
   const SHOPIFY_OAUTH_ENABLED = (
     process.env.NEXT_PUBLIC_FEATURE_SHOPIFY_OAUTH ||
     process.env.NEXT_PUBLIC_ENABLE_SHOPIFY_OAUTH ||
-    'false'
+    'true'
   ).toLowerCase() === 'true';
   const [platform, setPlatform] = useState<string>('');
   const [openGuideKey, setOpenGuideKey] = useState<IntegrationGuideKey | null>(null);
