@@ -264,8 +264,15 @@ function SkuIntelligenceCard({ data }: { data: SkuIntelligence }) {
         ) : null}
 
         {/* What to do next — the per-SKU operational playbook (the prescription,
-            not just the diagnosis). */}
-        {nba ? (
+            not just the diagnosis). Hidden in the honest empty/degraded state
+            (is_empty) and when there's no real content, so we never show a
+            bordered box with just a header. */}
+        {nba &&
+        !data.is_empty &&
+        (nba.headline ||
+          nba.first_move ||
+          nba.self_serve?.length ||
+          nba.pivota_assisted?.length) ? (
           <div className="space-y-2 rounded-lg border border-[color:var(--merchant-line)] px-4 py-3">
             <div className="flex items-center gap-1.5 text-sm font-medium">
               <ArrowRight className="h-4 w-4" /> What to do next
@@ -299,6 +306,16 @@ function SkuIntelligenceCard({ data }: { data: SkuIntelligence }) {
               <p className="text-xs merchant-text-muted">
                 Track: {nba.tracking_metrics.join(' · ')}
               </p>
+            ) : null}
+            {nba.cta?.label ? (
+              <div className="pt-1">
+                <span className="inline-flex items-center gap-1 rounded-md border border-[color:var(--merchant-accent,#6366f1)] px-2.5 py-1 text-xs font-semibold text-[color:var(--merchant-accent,#6366f1)]">
+                  {nba.cta.label}
+                </span>
+                {nba.cta.trust_note ? (
+                  <p className="mt-1 text-[11px] merchant-text-muted">{nba.cta.trust_note}</p>
+                ) : null}
+              </div>
             ) : null}
           </div>
         ) : null}
