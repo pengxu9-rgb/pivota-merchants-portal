@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   MessageSquare,
   Package,
+  Receipt,
   Settings,
   ShoppingBag,
   Sparkles,
@@ -81,18 +82,25 @@ export const primaryNavigation: MerchantNavigationItem[] = [
     descriptionKey: "shell.nav.analyticsDesc",
   },
   {
-    label: "Payments",
-    labelKey: "shell.nav.payments",
-    href: "/dashboard/payouts",
-    icon: Wallet,
-    matchPrefixes: [
-      "/dashboard/payouts",
-      "/dashboard/commission",
-      "/dashboard/billing",
-    ],
-    description: "Payouts and settlement",
-    descriptionKey: "shell.nav.paymentsDesc",
+    label: "Plan & billing",
+    href: "/dashboard/billing",
+    icon: Receipt,
+    matchPrefixes: ["/dashboard/billing"],
+    description: "Plan, usage, and statements",
   },
+  // Agent-incentive program (money you pay agents) — distinct from Billing.
+  // Hidden unless AGENT_COMMISSIONS is enabled.
+  ...(FEATURE_FLAGS.AGENT_COMMISSIONS
+    ? [
+        {
+          label: "Agent commissions",
+          href: "/dashboard/payouts",
+          icon: Wallet,
+          matchPrefixes: ["/dashboard/payouts", "/dashboard/commission"],
+          description: "Payouts and merchant-funded incentives",
+        },
+      ]
+    : []),
   {
     label: "Integrations",
     labelKey: "shell.nav.integrations",
@@ -152,15 +160,20 @@ export const workflowNavigation: MerchantNavigationItem[] = [
     matchPrefixes: ["/dashboard/pdp-status"],
     description: "Shared PDP review",
   },
-  {
-    label: "Commission offers",
-    labelKey: "shell.nav.commissionOffers",
-    href: "/dashboard/commission",
-    icon: CreditCard,
-    matchPrefixes: ["/dashboard/commission"],
-    description: "Merchant incentives",
-    descriptionKey: "shell.nav.commissionOffersDesc",
-  },
+  // Part of the agent-incentive program — hidden unless AGENT_COMMISSIONS is on.
+  ...(FEATURE_FLAGS.AGENT_COMMISSIONS
+    ? [
+        {
+          label: "Commission offers",
+          labelKey: "shell.nav.commissionOffers",
+          href: "/dashboard/commission",
+          icon: CreditCard,
+          matchPrefixes: ["/dashboard/commission"],
+          description: "Merchant incentives",
+          descriptionKey: "shell.nav.commissionOffersDesc",
+        },
+      ]
+    : []),
 ];
 
 export const adminNavigation: MerchantNavigationItem[] = [

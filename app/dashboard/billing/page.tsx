@@ -25,7 +25,6 @@ import {
   StatusBadge,
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
-import { PaymentsNav } from '@/components/ui/payments-nav';
 
 const ACTIVATION_POLL_MS = 3000;
 const ACTIVATION_MAX_ATTEMPTS = 10; // ~30s
@@ -241,8 +240,6 @@ export default function BillingPage() {
         title={t('dashboard.billing.title')}
         description={t('dashboard.billing.description')}
       />
-
-      <PaymentsNav />
 
       {activating && (
         <div className="merchant-panel merchant-panel-muted flex items-start gap-3 px-5 py-4">

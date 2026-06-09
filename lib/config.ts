@@ -80,4 +80,9 @@ export const FEATURE_FLAGS = {
     (process.env.NEXT_PUBLIC_FEATURE_PLATFORM_ORDERS_V1 || 'false').toLowerCase() === 'true',
   PLATFORM_ORDERS_ACP:
     (process.env.NEXT_PUBLIC_FEATURE_PLATFORM_ORDERS_ACP || 'false').toLowerCase() === 'true',
+  // Agent-incentive program (Payouts + Commission offers). Hidden by default —
+  // it's a distinct money flow (merchant → agents) from Billing (merchant →
+  // Pivota) and was confusing merchants. Flip on when the program is live.
+  AGENT_COMMISSIONS:
+    (process.env.NEXT_PUBLIC_FEATURE_AGENT_COMMISSIONS || 'false').toLowerCase() === 'true',
 };

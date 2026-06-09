@@ -1153,7 +1153,7 @@ Object.assign(enMessages, {
     "Delete this commission offer?\n\nThis action will remove the offer from your list.",
   "dashboard.commission.alerts.deleteSuccess": "Offer deleted successfully",
   "dashboard.commission.alerts.deleteFailed": "Failed to delete: {detail}",
-  "dashboard.billing.eyebrow": "Payments",
+  "dashboard.billing.eyebrow": "Plan & billing",
   "dashboard.billing.title": "Billing & subscription",
   "dashboard.billing.description":
     "Track your plan, this period's credit usage, and your statement history.",
