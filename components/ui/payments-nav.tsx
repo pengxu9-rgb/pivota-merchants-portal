@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CreditCard, Receipt, Wallet } from "lucide-react";
+import { CreditCard, Wallet } from "lucide-react";
 import { cx } from "@/lib/cx";
 
 const items = [
@@ -20,13 +20,6 @@ const items = [
     matchPrefixes: ["/dashboard/commission"],
     description: "Merchant-funded incentives",
   },
-  {
-    label: "Billing",
-    href: "/dashboard/billing",
-    icon: Receipt,
-    matchPrefixes: ["/dashboard/billing"],
-    description: "Plan, usage, and statements",
-  },
 ];
 
 export function PaymentsNav() {
@@ -34,7 +27,7 @@ export function PaymentsNav() {
 
   return (
     <div className="merchant-panel merchant-panel-muted p-2">
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-2">
         {items.map((item) => {
           const isActive = item.matchPrefixes.some((prefix) => pathname.startsWith(prefix));
           return (
