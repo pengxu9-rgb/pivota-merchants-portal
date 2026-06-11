@@ -693,6 +693,29 @@ export interface SkuGroundingEvidence {
   evidence_excerpt: string;
 }
 
+// Merchant-safe primary gap. `label`/`why` are display copy from the backend
+// _GAP_DISPLAY table; dimension/bucket/gap are internal sort keys (never shown).
+export interface SkuPrimaryGap {
+  label: string;
+  why: string;
+  dimension: string;
+  bucket: string;
+  gap: number;
+}
+
+// Per-model citation for one SKU (citation_by_provider[provider]).
+export interface SkuProviderCitation {
+  score: number | null;
+  prompts: number;
+  status?: string;
+}
+
+// Cross-model signal: cited/mentioned in `cited` of `of` models that ran.
+export interface ModelsCited {
+  cited: number;
+  of: number;
+}
+
 export interface AgentCenterPerSkuReport {
   sku_key: string;
   product_key: string;
@@ -705,7 +728,9 @@ export interface AgentCenterPerSkuReport {
     citation: SkuDimensionScore;
   };
   band: SkuScoreBand;
-  primary_gaps: string[];
+  primary_gaps: SkuPrimaryGap[];
+  models_cited?: ModelsCited;
+  citation_by_provider?: Record<string, SkuProviderCitation>;
   verbatim_grounding_evidence: SkuGroundingEvidence[];
   axis_coverage: Record<string, number>;
 }
@@ -725,6 +750,21 @@ export interface BrandPriorityQueueEntry {
   score: number;
 }
 
+// Brand-level state for the per-SKU audit. blocked_pre_index / insufficient_signal
+// are honest "no citation signal yet" states — NOT a bottom-tier "invisible" verdict.
+export type BrandState = 'scored' | 'blocked_pre_index' | 'insufficient_signal';
+
+// Per-model brand rollup (citation_by_provider[provider]), derived from the
+// per-SKU data. One entry today (Gemini); fills in as providers are enabled.
+export interface BrandProviderCitation {
+  median: number | null;
+  p25: number | null;
+  p75: number | null;
+  skus_scored: number;
+  skus_cited: number;
+  prompts: number;
+}
+
 export interface AgentCenterBrandRollup {
   median: BrandDimensionStats;
   p25: BrandDimensionStats;
@@ -733,6 +773,10 @@ export interface AgentCenterBrandRollup {
   winning_skus_by_band: string[];
   blocked_skus: string[];
   priority_queue: BrandPriorityQueueEntry[];
+  brand_state?: BrandState;
+  brand_verdict_label?: string;
+  brand_verdict_explanation?: string;
+  citation_by_provider?: Record<string, BrandProviderCitation>;
 }
 
 export type AuthorityHostType =
