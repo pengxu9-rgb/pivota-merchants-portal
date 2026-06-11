@@ -678,7 +678,10 @@ export interface SkuScoreBreakdown {
 
 export interface SkuDimensionScore {
   score: number;
-  breakdown: SkuScoreBreakdown;
+  // Internal scoring detail — stripped from the merchant-facing response by the
+  // backend (sanitize_report_for_merchant). Optional here; the UI renders only
+  // `score` + the merchant-safe primary_gaps.
+  breakdown?: SkuScoreBreakdown;
 }
 
 export interface SkuGroundingSource {
