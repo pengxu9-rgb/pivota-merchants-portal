@@ -734,6 +734,7 @@ export interface AgentCenterPerSkuReport {
   primary_gaps: SkuPrimaryGap[];
   models_cited?: ModelsCited;
   citation_by_provider?: Record<string, SkuProviderCitation>;
+  next_best_action?: SkuNextBestAction | null;
   verbatim_grounding_evidence: SkuGroundingEvidence[];
   axis_coverage: Record<string, number>;
 }

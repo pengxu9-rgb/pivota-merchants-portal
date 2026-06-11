@@ -53,6 +53,7 @@ import type {
   SkuProviderCitation,
   ModelsCited,
   BrandProviderCitation,
+  SkuNextBestAction,
 } from '@/lib/types/ai-readiness';
 
 /**
@@ -1984,7 +1985,7 @@ function BrandRollupCover({
           ) : null}
           {rollup.brand_state === 'blocked_pre_index' ? (
             <div className="mt-1.5 text-xs font-medium">
-              First step: get your products indexed — see the actions below.
+              First step: get your products indexed — each SKU below shows its recommended next step.
             </div>
           ) : null}
         </div>
@@ -2223,6 +2224,37 @@ function PerSkuModelStrip({
   );
 }
 
+// The recommended next step for this SKU (from the backend's deterministic
+// next_best_action). Renders only the curated merchant-facing fields —
+// headline / first move / Pivota path / CTA — never the internal evidence.
+function PerSkuNextBestAction({ nba }: { nba?: SkuNextBestAction | null }) {
+  if (!nba || (!nba.headline && !nba.first_move)) return null;
+  return (
+    <div className="mt-3 rounded-md border border-current/15 bg-white/40 px-3 py-2.5">
+      <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
+        Recommended next step
+      </div>
+      {nba.headline ? (
+        <div className="mt-1 text-sm font-semibold">{nba.headline}</div>
+      ) : null}
+      {nba.first_move ? (
+        <div className="mt-1 text-xs opacity-80">{nba.first_move}</div>
+      ) : null}
+      {nba.pivota_assisted && nba.pivota_assisted.length > 0 ? (
+        <div className="mt-1.5 text-xs opacity-70">
+          <span className="font-medium">Pivota can help: </span>
+          {nba.pivota_assisted[0]}
+        </div>
+      ) : null}
+      {nba.cta?.label ? (
+        <div className="mt-2 inline-flex rounded border border-current/20 px-2.5 py-1 text-xs font-medium">
+          {nba.cta.label}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function PerSkuCard({
   report,
   authority,
@@ -2276,6 +2308,7 @@ function PerSkuCard({
             </ul>
           </div>
         ) : null}
+        <PerSkuNextBestAction nba={report.next_best_action} />
         {expanded ? (
           <div className="mt-4 space-y-3 border-t border-current/10 pt-3">
             <GroundingEvidenceList evidence={report.verbatim_grounding_evidence} />
