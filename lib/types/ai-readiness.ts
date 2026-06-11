@@ -854,10 +854,11 @@ export interface AgentCenterPerSkuAuditResponse {
 
 export type CreditPlanTier = 'free' | 'starter' | 'growth' | 'enterprise' | 'custom';
 
+// Single-balance model (backend migration 091 collapsed the 3 wallets into one
+// `credits` pool). The preview's current_balance returns {credits, allowance_credits, plan_tier}.
 export interface MerchantCreditBalance {
-  audit_credits: number;
-  prompt_credits: number;
-  execution_credits: number;
+  credits: number;
+  allowance_credits?: number;
   plan_tier: CreditPlanTier;
 }
 

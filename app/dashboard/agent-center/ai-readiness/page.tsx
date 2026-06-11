@@ -681,6 +681,13 @@ function CostMeterPanel({
 
   const balance = previewData.current_balance;
   const cacheRate = Math.round(previewData.estimated_cache_savings.cache_hit_rate * 100);
+  // Backend collapsed to a single credit balance (migration 091); cost is
+  // still itemized per type but drawn from one pool, so sufficiency compares
+  // the summed requirement against the single `credits` balance.
+  const totalRequiredCredits =
+    (previewData.estimated_audit_credits || 0) +
+    (previewData.estimated_prompt_credits || 0) +
+    (previewData.estimated_execution_credits || 0);
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -692,22 +699,22 @@ function CostMeterPanel({
           value={`${previewData.estimated_cache_savings.prompts_cached} (${cacheRate}%)`}
         />
       </div>
-      <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 text-sm">
         <CreditStat
-          label="Audit credits"
-          required={previewData.estimated_audit_credits}
-          available={balance.audit_credits}
+          label="Credits"
+          required={totalRequiredCredits}
+          available={balance.credits}
         />
-        <CreditStat
-          label="Prompt credits"
-          required={previewData.estimated_prompt_credits}
-          available={balance.prompt_credits}
-        />
-        <CreditStat
-          label="Execution credits"
-          required={previewData.estimated_execution_credits}
-          available={balance.execution_credits}
-        />
+        <div className="rounded border border-slate-200 bg-slate-50/60 px-3 py-2 text-xs text-slate-600">
+          Cost breakdown: {previewData.estimated_audit_credits} audit
+          {previewData.estimated_prompt_credits > 0
+            ? ` + ${previewData.estimated_prompt_credits} prompt`
+            : ''}
+          {previewData.estimated_execution_credits > 0
+            ? ` + ${previewData.estimated_execution_credits} execution`
+            : ''}{' '}
+          credits
+        </div>
       </div>
       <div
         className={`rounded border px-3 py-2 text-sm ${
