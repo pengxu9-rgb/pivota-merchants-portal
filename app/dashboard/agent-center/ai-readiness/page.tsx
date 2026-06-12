@@ -50,6 +50,10 @@ import type {
   AiReadinessAuditResponse,
   SkuScoreBand,
   SkuDimensionScore,
+  SkuProviderCitation,
+  ModelsCited,
+  BrandProviderCitation,
+  SkuNextBestAction,
 } from '@/lib/types/ai-readiness';
 
 /**
@@ -677,6 +681,13 @@ function CostMeterPanel({
 
   const balance = previewData.current_balance;
   const cacheRate = Math.round(previewData.estimated_cache_savings.cache_hit_rate * 100);
+  // Backend collapsed to a single credit balance (migration 091); cost is
+  // still itemized per type but drawn from one pool, so sufficiency compares
+  // the summed requirement against the single `credits` balance.
+  const totalRequiredCredits =
+    (previewData.estimated_audit_credits || 0) +
+    (previewData.estimated_prompt_credits || 0) +
+    (previewData.estimated_execution_credits || 0);
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -688,22 +699,22 @@ function CostMeterPanel({
           value={`${previewData.estimated_cache_savings.prompts_cached} (${cacheRate}%)`}
         />
       </div>
-      <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 text-sm">
         <CreditStat
-          label="Audit credits"
-          required={previewData.estimated_audit_credits}
-          available={balance.audit_credits}
+          label="Credits"
+          required={totalRequiredCredits}
+          available={balance.credits}
         />
-        <CreditStat
-          label="Prompt credits"
-          required={previewData.estimated_prompt_credits}
-          available={balance.prompt_credits}
-        />
-        <CreditStat
-          label="Execution credits"
-          required={previewData.estimated_execution_credits}
-          available={balance.execution_credits}
-        />
+        <div className="rounded border border-slate-200 bg-slate-50/60 px-3 py-2 text-xs text-slate-600">
+          Cost breakdown: {previewData.estimated_audit_credits} audit
+          {previewData.estimated_prompt_credits > 0
+            ? ` + ${previewData.estimated_prompt_credits} prompt`
+            : ''}
+          {previewData.estimated_execution_credits > 0
+            ? ` + ${previewData.estimated_execution_credits} execution`
+            : ''}{' '}
+          credits
+        </div>
       </div>
       <div
         className={`rounded border px-3 py-2 text-sm ${
@@ -1965,17 +1976,34 @@ function BrandRollupCover({
   skuCount: number;
   costSummary: AgentCenterCostSummary;
 }) {
+  const preIndex = rollup.brand_state && rollup.brand_state !== 'scored';
   return (
     <div className="rounded-lg border-2 border-indigo-200 bg-indigo-50/40 p-4">
       <div className="text-xs font-semibold uppercase tracking-wide text-indigo-900/70">
         Brand rollup ({skuCount} SKUs audited)
       </div>
+      {preIndex && rollup.brand_verdict_label ? (
+        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-amber-900">
+          <div className="text-sm font-semibold">{rollup.brand_verdict_label}</div>
+          {rollup.brand_verdict_explanation ? (
+            <div className="mt-1 text-xs opacity-90">
+              {rollup.brand_verdict_explanation}
+            </div>
+          ) : null}
+          {rollup.brand_state === 'blocked_pre_index' ? (
+            <div className="mt-1.5 text-xs font-medium">
+              First step: get your products indexed — each SKU below shows its recommended next step.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <RollupDimensionStat label="Identity" stats={pickStat(rollup, 'identity')} />
         <RollupDimensionStat label="Content" stats={pickStat(rollup, 'content_richness')} />
         <RollupDimensionStat label="Routability" stats={pickStat(rollup, 'routability')} />
         <RollupDimensionStat label="Citation" stats={pickStat(rollup, 'citation')} highlight />
       </div>
+      <BrandModelStrip citationByProvider={rollup.citation_by_provider} />
       <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-indigo-900/80 sm:grid-cols-3">
         <div>
           <strong>{rollup.winning_skus_by_citation.length}</strong> winning by citation
@@ -1986,6 +2014,40 @@ function BrandRollupCover({
         <div>
           <strong>{rollup.blocked_skus.length}</strong> blocked
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Brand-level per-model strip: how each model cited the brand across SKUs.
+// One entry today (Gemini); fills in as more models are enabled.
+function BrandModelStrip({
+  citationByProvider,
+}: {
+  citationByProvider?: Record<string, BrandProviderCitation>;
+}) {
+  const entries = Object.entries(citationByProvider || {});
+  if (entries.length === 0) return null;
+  return (
+    <div className="mt-3">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-900/70">
+        Citation by model
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-2">
+        {entries.map(([provider, stat]) => (
+          <div
+            key={provider}
+            className="rounded border border-indigo-200 bg-white px-3 py-1.5 text-xs text-indigo-900"
+          >
+            <span className="font-semibold">{providerLabel(provider)}</span>
+            <span className="ml-2 opacity-70">
+              {stat.median == null ? '—' : `median ${stat.median}`}
+            </span>
+            <span className="ml-2 opacity-70">
+              cited {stat.skus_cited}/{stat.skus_scored} SKUs
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -2115,6 +2177,91 @@ function PerSkuCardList({
   );
 }
 
+const PROVIDER_LABELS: Record<string, string> = {
+  gemini: 'Gemini',
+  chatgpt: 'ChatGPT',
+  openai: 'ChatGPT',
+  claude: 'Claude',
+  deepseek: 'DeepSeek',
+};
+
+function providerLabel(id: string): string {
+  return PROVIDER_LABELS[id] || id.charAt(0).toUpperCase() + id.slice(1);
+}
+
+// Per-model strip on a SKU card: one chip per model that ran (score), plus a
+// "cited in N/M models" summary. Renders whatever providers ran — one column
+// today (Gemini), filling in as ChatGPT/Claude are enabled.
+function PerSkuModelStrip({
+  citationByProvider,
+  modelsCited,
+}: {
+  citationByProvider?: Record<string, SkuProviderCitation>;
+  modelsCited?: ModelsCited;
+}) {
+  const entries = Object.entries(citationByProvider || {});
+  if (entries.length === 0 && !modelsCited) return null;
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-1.5">
+      <span className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
+        By model
+      </span>
+      {entries.map(([provider, entry]) => {
+        const failed = entry?.status === 'probe_failed';
+        return (
+          <span
+            key={provider}
+            className="inline-flex items-center gap-1 rounded-full border border-current/15 bg-white/40 px-2 py-0.5 text-[11px]"
+            title={failed ? 'This model failed to respond on this run' : undefined}
+          >
+            <span className="font-medium">{providerLabel(provider)}</span>
+            <span className="opacity-70">
+              {failed ? 'no response' : entry?.score == null ? '—' : entry.score}
+            </span>
+          </span>
+        );
+      })}
+      {modelsCited && modelsCited.of > 0 ? (
+        <span className="ml-1 text-[11px] opacity-70">
+          cited in {modelsCited.cited}/{modelsCited.of} model
+          {modelsCited.of === 1 ? '' : 's'}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+// The recommended next step for this SKU (from the backend's deterministic
+// next_best_action). Renders only the curated merchant-facing fields —
+// headline / first move / Pivota path / CTA — never the internal evidence.
+function PerSkuNextBestAction({ nba }: { nba?: SkuNextBestAction | null }) {
+  if (!nba || (!nba.headline && !nba.first_move)) return null;
+  return (
+    <div className="mt-3 rounded-md border border-current/15 bg-white/40 px-3 py-2.5">
+      <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
+        Recommended next step
+      </div>
+      {nba.headline ? (
+        <div className="mt-1 text-sm font-semibold">{nba.headline}</div>
+      ) : null}
+      {nba.first_move ? (
+        <div className="mt-1 text-xs opacity-80">{nba.first_move}</div>
+      ) : null}
+      {nba.pivota_assisted && nba.pivota_assisted.length > 0 ? (
+        <div className="mt-1.5 text-xs opacity-70">
+          <span className="font-medium">Pivota can help: </span>
+          {nba.pivota_assisted[0]}
+        </div>
+      ) : null}
+      {nba.cta?.label ? (
+        <div className="mt-2 inline-flex rounded border border-current/20 px-2.5 py-1 text-xs font-medium">
+          {nba.cta.label}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function PerSkuCard({
   report,
   authority,
@@ -2147,18 +2294,28 @@ function PerSkuCard({
           <DimensionCell label="Routability" score={report.scores.routability} />
           <DimensionCell label="Citation" score={report.scores.citation} highlight />
         </div>
+        <PerSkuModelStrip
+          citationByProvider={report.citation_by_provider}
+          modelsCited={report.models_cited}
+        />
         {report.primary_gaps.length > 0 ? (
           <div className="mt-3">
             <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
               Primary gaps
             </div>
-            <ul className="ml-4 mt-1 list-disc text-xs">
+            <ul className="mt-1 space-y-1.5 text-xs">
               {report.primary_gaps.slice(0, 3).map((gap, idx) => (
-                <li key={`${report.sku_key}-gap-${idx}`}>{gap}</li>
+                <li key={`${report.sku_key}-gap-${idx}`}>
+                  <span className="font-medium">{gap.label}</span>
+                  {gap.why ? (
+                    <span className="block opacity-70">{gap.why}</span>
+                  ) : null}
+                </li>
               ))}
             </ul>
           </div>
         ) : null}
+        <PerSkuNextBestAction nba={report.next_best_action} />
         {expanded ? (
           <div className="mt-4 space-y-3 border-t border-current/10 pt-3">
             <GroundingEvidenceList evidence={report.verbatim_grounding_evidence} />
