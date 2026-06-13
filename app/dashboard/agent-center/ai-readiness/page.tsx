@@ -1917,6 +1917,15 @@ function AllQueriesTable({
 // we render an honest "none cited" surface, not fabricated placeholders.
 // ---------------------------------------------------------------------
 
+// cost_summary.providers is an array of per-provider telemetry objects
+// ({ provider, calls, ... }); render the distinct provider names.
+function costSummaryProviderNames(summary: AgentCenterCostSummary): string {
+  const names = (summary?.providers ?? [])
+    .map((p) => p?.provider)
+    .filter((p): p is string => !!p);
+  return names.length ? Array.from(new Set(names)).join(', ') : '—';
+}
+
 function PerSkuAuditReportRenderer({
   report,
 }: {
@@ -1927,8 +1936,7 @@ function PerSkuAuditReportRenderer({
       <div className="text-xs text-slate-500">
         v3 per-SKU audit complete · run {report.audit_run_id} ·{' '}
         {report.cost_summary.prompts} probes across{' '}
-        {report.cost_summary.providers.join(', ')} ·{' '}
-        {report.cost_summary.audit_credits_debited} audit credits debited
+        {costSummaryProviderNames(report.cost_summary)}
       </div>
       <BrandRollupCover
         rollup={report.brand_rollup}
@@ -2267,11 +2275,11 @@ function PrioritizedQueuePanel({
                   {titleMap.get(entry.sku_key) ?? entry.sku_key}
                   <div className="font-mono text-[10px] text-slate-400">{entry.sku_key}</div>
                 </td>
-                <td className="py-1.5 pr-2 text-right">{entry.impact.toFixed(2)}</td>
-                <td className="py-1.5 pr-2 text-right">{entry.gap}</td>
-                <td className="py-1.5 pr-2 text-right">{entry.fixability.toFixed(2)}</td>
+                <td className="py-1.5 pr-2 text-right">{entry.impact?.toFixed(2) ?? '—'}</td>
+                <td className="py-1.5 pr-2 text-right">{entry.gap ?? '—'}</td>
+                <td className="py-1.5 pr-2 text-right">{entry.fixability?.toFixed(2) ?? '—'}</td>
                 <td className="py-1.5 pr-2 text-right font-semibold">
-                  {entry.score.toFixed(2)}
+                  {entry.priority_score?.toFixed(2) ?? '—'}
                 </td>
               </tr>
             ))}
@@ -2513,24 +2521,29 @@ function GroundingEvidenceList({
         Verbatim grounded evidence
       </div>
       <div className="mt-1 space-y-2">
-        {evidence.slice(0, 5).map((e, idx) => (
-          <blockquote
-            key={`ev-${idx}`}
-            className="border-l-2 border-current/30 bg-white/40 px-3 py-1.5 text-xs italic"
-          >
-            <div className="not-italic font-semibold opacity-70">{e.prompt}</div>
-            {e.evidence_excerpt ? <p className="mt-1">{e.evidence_excerpt}</p> : null}
-            {e.grounded_sources.length > 0 ? (
-              <div className="not-italic mt-1 text-[10px] opacity-60">
-                Cited:{' '}
-                {e.grounded_sources
-                  .slice(0, 5)
-                  .map((s) => s.host || s.title || s.uri)
-                  .join(', ')}
-              </div>
-            ) : null}
-          </blockquote>
-        ))}
+        {evidence.slice(0, 5).map((e, idx) => {
+          // Backend `_grounding_evidence` emits `query` + `grounding_sources`.
+          const promptText = e.prompt ?? e.query;
+          const sources = e.grounded_sources ?? e.grounding_sources ?? [];
+          return (
+            <blockquote
+              key={`ev-${idx}`}
+              className="border-l-2 border-current/30 bg-white/40 px-3 py-1.5 text-xs italic"
+            >
+              <div className="not-italic font-semibold opacity-70">{promptText}</div>
+              {e.evidence_excerpt ? <p className="mt-1">{e.evidence_excerpt}</p> : null}
+              {sources.length > 0 ? (
+                <div className="not-italic mt-1 text-[10px] opacity-60">
+                  Cited:{' '}
+                  {sources
+                    .slice(0, 5)
+                    .map((s) => s.host || s.title || s.uri)
+                    .join(', ')}
+                </div>
+              ) : null}
+            </blockquote>
+          );
+        })}
       </div>
     </div>
   );
@@ -2640,12 +2653,11 @@ function CostSummaryFooter({
 }) {
   return (
     <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-      Probes: {summary.prompts.toLocaleString()} ·{' '}
-      Providers: {summary.providers.join(', ')} ·{' '}
-      Cache hits: {summary.cache_hits} ·{' '}
-      Audit credits debited: {summary.audit_credits_debited} ·{' '}
-      Prompt credits debited: {summary.prompt_credits_debited} ·{' '}
-      Est. cost: ${summary.estimated_cost_usd.toFixed(2)} ·{' '}
+      Probes: {(summary.prompts ?? 0).toLocaleString()} ·{' '}
+      Providers: {costSummaryProviderNames(summary)} ·{' '}
+      LLM calls: {summary.llm_calls ?? summary.prompts ?? 0} ·{' '}
+      Tokens: {(summary.total_input_tokens ?? 0).toLocaleString()} in /{' '}
+      {(summary.total_output_tokens ?? 0).toLocaleString()} out ·{' '}
       Legacy verdict: <span className="font-mono">{legacy}</span>
     </div>
   );

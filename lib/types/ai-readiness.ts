@@ -690,9 +690,13 @@ export interface SkuGroundingSource {
   host: string | null;
 }
 
+// Backend `_grounding_evidence` emits `query` + `grounding_sources`; the older
+// names are kept optional so either shape renders.
 export interface SkuGroundingEvidence {
-  prompt: string;
-  grounded_sources: SkuGroundingSource[];
+  query?: string;
+  prompt?: string;
+  grounding_sources?: SkuGroundingSource[];
+  grounded_sources?: SkuGroundingSource[];
   evidence_excerpt: string;
 }
 
@@ -754,12 +758,20 @@ export interface BrandDimensionStats {
   citation: BrandDimensionStat;
 }
 
+// Backend `build_brand_rollup` priority queue entry. The composite rank is
+// `priority_score` (NOT `score`); `dimension_score` is the weakest dimension's
+// raw score. impact × gap × fixability feed priority_score.
 export interface BrandPriorityQueueEntry {
   sku_key: string;
+  product_key?: string;
   impact: number;
   gap: number;
   fixability: number;
-  score: number;
+  dimension?: string;
+  dimension_score?: number;
+  bucket?: string;
+  reason?: string | null;
+  priority_score: number;
 }
 
 // Brand-level state for the per-SKU audit. blocked_pre_index / insufficient_signal
@@ -837,13 +849,28 @@ export interface AgentCenterAuthorityMap {
   per_sku: Record<string, AuthorityPerSkuEntry>;
 }
 
+// Per-provider call/token telemetry. Backend `cost_summary.providers` is an
+// array of these — NOT a list of provider-name strings.
+export interface CostSummaryProvider {
+  provider: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+}
+
+// Backend `report_jsonb.cost_summary` — LLM call/token telemetry (not credit
+// accounting; the credit debit lives on the run's cost_summary_jsonb column).
 export interface AgentCenterCostSummary {
   prompts: number;
-  providers: string[];
-  audit_credits_debited: number;
-  prompt_credits_debited: number;
-  cache_hits: number;
-  estimated_cost_usd: number;
+  llm_calls?: number;
+  providers: CostSummaryProvider[];
+  total_input_tokens?: number;
+  total_output_tokens?: number;
+  provider_models?: Record<
+    string,
+    { model: string; default_model?: string; model_is_override?: boolean }
+  >;
+  model_is_override?: boolean;
 }
 
 // ── "Your Prompts" — per-lane results for the merchant's custom prompts.
