@@ -1682,8 +1682,12 @@ class ApiClient {
     custom_prompts?: string[];
     providers?: import('./types/ai-readiness').AuditPreviewProvider[];
     idempotency_key: string;
+    onProgress?: (info: { elapsedMs: number; stage: string }) => void;
   }): Promise<import('./types/ai-readiness').AgentCenterPerSkuAuditResponse> {
     try {
+      // 1. Enqueue. POST /api/audits is async — it returns a 202 receipt
+      //    ({ run_id, stage: 'queued' }), NOT the finished report. The worker
+      //    drives the run through probing/scoring on its own ticks.
       const response = await this.client.post(
         '/api/audits',
         {
@@ -1695,11 +1699,73 @@ class ApiClient {
           providers: request.providers ?? ['gemini'],
         },
         {
-          timeout: 600_000, // 10 min; long-running grounded probes
+          timeout: 60_000,
           headers: { 'Idempotency-Key': request.idempotency_key },
         },
       );
-      return response.data?.data || response.data;
+      const created = response.data?.data || response.data;
+      // Defensive: if the backend ever returns the full report inline, use it.
+      if (created?.per_sku_reports) {
+        return created as import('./types/ai-readiness').AgentCenterPerSkuAuditResponse;
+      }
+      if (created?.report_jsonb?.per_sku_reports) {
+        return created.report_jsonb as import('./types/ai-readiness').AgentCenterPerSkuAuditResponse;
+      }
+      const runId = created?.run_id || created?.audit_run_id;
+      if (!runId) throw new Error('Audit did not start. Please try again.');
+
+      // 2. Poll GET /api/audits/{run_id} until the worker finishes. The
+      //    completion signal is `stage === 'completed'` (the detail row's
+      //    top-level `status` is null); the flat per-SKU report we render
+      //    lives in `report_jsonb`.
+      const startedAt = Date.now();
+      const MAX_MS = 9 * 60_000; // worker probes can run several minutes
+      const INTERVAL_MS = 5_000;
+      for (;;) {
+        await new Promise((r) => setTimeout(r, INTERVAL_MS));
+        const elapsedMs = Date.now() - startedAt;
+        let detail: {
+          stage?: string;
+          report_jsonb?: import('./types/ai-readiness').AgentCenterPerSkuAuditResponse;
+          error_jsonb?: { message?: string } | null;
+          error_message?: string | null;
+        };
+        try {
+          const res = await this.client.get(
+            `/api/audits/${encodeURIComponent(runId)}`,
+            { timeout: 20_000 },
+          );
+          detail = res.data?.data || res.data;
+        } catch (e) {
+          // Transient poll failure — keep trying until the budget is spent.
+          if (elapsedMs >= MAX_MS) throw e;
+          request.onProgress?.({ elapsedMs, stage: 'running' });
+          continue;
+        }
+        const stage = detail?.stage ?? 'running';
+        if (stage === 'completed') {
+          const report = detail.report_jsonb;
+          if (!report?.per_sku_reports) {
+            throw new Error(
+              'Audit completed but returned no report. Please re-run.',
+            );
+          }
+          return report;
+        }
+        if (stage === 'failed' || stage === 'cancelled') {
+          throw new Error(
+            detail?.error_jsonb?.message ||
+              detail?.error_message ||
+              'Audit failed. Please re-run.',
+          );
+        }
+        request.onProgress?.({ elapsedMs, stage });
+        if (elapsedMs >= MAX_MS) {
+          throw new Error(
+            'The audit is taking longer than expected — it may still finish. Check back shortly.',
+          );
+        }
+      }
     } catch (err) {
       if (axios.isAxiosError(err) && err.response?.status === 402) {
         const detail = (err.response.data as { detail?: unknown })?.detail;
