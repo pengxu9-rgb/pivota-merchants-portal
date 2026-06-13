@@ -510,16 +510,31 @@ export interface SkuIntelligencePromptRow {
   opportunity_score?: number;
 }
 
+/** Per-SKU CTA action the merchant button executes (request a tracked Pivota
+ * job). Maps to the backend _SKU_CTA_ACTION descriptor. */
+export type SkuCtaAction = 'request_enrichment' | 'request_indexing' | 'none';
+
 /** Per-SKU "what to do next" — the operational playbook for the hero SKU. */
 export interface SkuNextBestAction {
   headline?: string | null;
   why_this_first?: string | null;
   first_move?: string | null;
+  // The numbered "do this yourself" checklist (the backend already emits this;
+  // the old UI dropped it). `self_serve` and `self_serve_actions` are aliases.
   self_serve?: string[];
+  self_serve_actions?: string[];
   pivota_assisted?: string[];
+  pivota_path?: string | null;
   tracking_metrics?: string[];
   evidence_summary?: string | null;
-  cta?: { label?: string; trust_note?: string } | null;
+  // Backend now stamps {action, target_sku_key} so the CTA can POST a real
+  // tracked request instead of rendering a dead label.
+  cta?: {
+    label?: string;
+    trust_note?: string;
+    action?: SkuCtaAction;
+    target_sku_key?: string;
+  } | null;
 }
 
 export interface SkuIntelligenceLadderLayer {
@@ -678,10 +693,26 @@ export interface SkuScoreBreakdown {
 
 export interface SkuDimensionScore {
   score: number;
+  // Merchant-safe display copy from the backend dimension/band copy layer.
+  // band is derived from one centralized threshold (_band_for_score), so the UI
+  // should render `band`/`meaning` rather than re-deriving a color from score.
+  // 'unscored' = not measured (distinct from 'blocked' = measured + failing).
+  band?: SkuScoreBand | 'unscored';
+  band_label?: string;
+  meaning?: string;
+  dimension_label?: string;
+  question?: string;
   // Internal scoring detail — stripped from the merchant-facing response by the
   // backend (sanitize_report_for_merchant). Optional here; the UI renders only
   // `score` + the merchant-safe primary_gaps.
   breakdown?: SkuScoreBreakdown;
+}
+
+// Merchant-safe band label + meaning for a SKU-level (or rollup) band.
+export interface BandDisplay {
+  band: SkuScoreBand | 'unscored';
+  label: string;
+  meaning: string;
 }
 
 export interface SkuGroundingSource {
@@ -749,6 +780,9 @@ export interface AgentCenterPerSkuReport {
     citation: SkuDimensionScore;
   };
   band: SkuScoreBand;
+  // Merchant-safe label + meaning for the SKU-level band so the card never
+  // renders the raw enum.
+  band_display?: BandDisplay;
   primary_gaps: SkuPrimaryGap[];
   models_cited?: ModelsCited;
   citation_by_provider?: Record<string, SkuProviderCitation>;
@@ -763,6 +797,15 @@ export interface BrandDimensionStat {
   median: number | null;
   p25: number | null;
   p75: number | null;
+  // Merchant-safe display for the median (band pill + meaning), plus a plain
+  // "X of Y SKUs at or above the median" framing to replace raw P25/P75 jargon.
+  band?: SkuScoreBand | 'unscored';
+  band_label?: string;
+  meaning?: string;
+  dimension_label?: string;
+  question?: string;
+  above_count?: number;
+  total_count?: number;
 }
 
 export interface BrandDimensionStats {
