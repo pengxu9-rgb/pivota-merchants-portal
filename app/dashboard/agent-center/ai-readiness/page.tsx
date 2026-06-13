@@ -2186,7 +2186,13 @@ function pickStat(
   rollup: AgentCenterBrandRollup,
   dim: 'identity' | 'content_richness' | 'routability' | 'citation',
 ) {
-  return { median: rollup.median[dim], p25: rollup.p25[dim], p75: rollup.p75[dim] };
+  // Backend emits brand_rollup.dimensions[dim] = { median, p25, p75 }.
+  const stat = rollup.dimensions?.[dim];
+  return {
+    median: stat?.median ?? null,
+    p25: stat?.p25 ?? null,
+    p75: stat?.p75 ?? null,
+  };
 }
 
 function RollupDimensionStat({
@@ -2195,7 +2201,7 @@ function RollupDimensionStat({
   highlight,
 }: {
   label: string;
-  stats: { median: number; p25: number; p75: number };
+  stats: { median: number | null; p25: number | null; p75: number | null };
   highlight?: boolean;
 }) {
   return (
@@ -2210,11 +2216,15 @@ function RollupDimensionStat({
         {label}
         {highlight ? ' (output)' : ''}
       </div>
-      <div className={`text-xl font-bold ${dimensionScoreColor(stats.median)}`}>
-        {stats.median}
+      <div
+        className={`text-xl font-bold ${
+          stats.median == null ? 'text-slate-400' : dimensionScoreColor(stats.median)
+        }`}
+      >
+        {stats.median ?? '—'}
       </div>
       <div className="text-[10px] text-slate-500">
-        P25 {stats.p25} · P75 {stats.p75}
+        P25 {stats.p25 ?? '—'} · P75 {stats.p75 ?? '—'}
       </div>
     </div>
   );

@@ -739,11 +739,19 @@ export interface AgentCenterPerSkuReport {
   axis_coverage: Record<string, number>;
 }
 
+// Per-dimension median/p25/p75 across the audited SKUs. Values are null when no
+// SKU produced a score for that dimension (e.g. all blocked / pre-index).
+export interface BrandDimensionStat {
+  median: number | null;
+  p25: number | null;
+  p75: number | null;
+}
+
 export interface BrandDimensionStats {
-  identity: number;
-  content_richness: number;
-  routability: number;
-  citation: number;
+  identity: BrandDimensionStat;
+  content_richness: BrandDimensionStat;
+  routability: BrandDimensionStat;
+  citation: BrandDimensionStat;
 }
 
 export interface BrandPriorityQueueEntry {
@@ -770,9 +778,10 @@ export interface BrandProviderCitation {
 }
 
 export interface AgentCenterBrandRollup {
-  median: BrandDimensionStats;
-  p25: BrandDimensionStats;
-  p75: BrandDimensionStats;
+  // Backend shape: { dimensions: { identity: {median,p25,p75}, ... } }.
+  // (NOT a top-level median/p25/p75 keyed by dimension — that mismatch crashed
+  // the per-SKU dashboard once real reports started flowing.)
+  dimensions: BrandDimensionStats;
   winning_skus_by_citation: string[];
   winning_skus_by_band: string[];
   blocked_skus: string[];
