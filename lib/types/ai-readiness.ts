@@ -837,12 +837,46 @@ export interface AgentCenterCostSummary {
   estimated_cost_usd: number;
 }
 
+// ── "Your Prompts" — per-lane results for the merchant's custom prompts.
+// The merchant's custom prompt slots are probed once (axis="custom") but the
+// per-SKU scorecard only scores the auto-generated queries, so the backend
+// `build_custom_prompt_results` turns them into an open-vs-contested-lane table:
+// per prompt, was the brand cited, who the AI grounded in, who won the lane.
+//
+//   open      — brand cited, low competition (the lane to defend/scale)
+//   contested — brand cited, but crowded with competitors
+//   absent    — AI answered with sources but never the brand (competitors own it)
+//   no_signal — the prompt didn't probe / returned no grounding (thin demand)
+export type CustomPromptLane = 'open' | 'contested' | 'absent' | 'no_signal';
+
+export interface CustomPromptResult {
+  prompt: string;
+  /** Did the brand appear as a grounding source for ≥1 provider run. */
+  cited: boolean;
+  lane: CustomPromptLane;
+  /** How many provider probes ran this prompt. */
+  runs: number;
+  /** Of those, how many cited the brand. */
+  runs_cited: number;
+  /** Grounding source labels where the brand itself appeared. */
+  cited_sources: string[];
+  /** All distinct sources the AI grounded in for this prompt. */
+  grounding_sources: string[];
+  /** Competitor brand/retailer labels the AI named instead, ranked. */
+  competitors: string[];
+  competitors_count: number;
+  evidence_excerpt: string | null;
+}
+
 export interface AgentCenterPerSkuAuditResponse {
   audit_run_id: string;
   merchant_id: string;
   audit_mode: 'per_sku';
   per_sku_reports: AgentCenterPerSkuReport[];
   brand_rollup: AgentCenterBrandRollup;
+  /** Present when the merchant added custom prompts to the audit. Absent on
+   * runs with no custom prompts (or older runs before this surface shipped). */
+  custom_prompts?: CustomPromptResult[];
   authority_map: AgentCenterAuthorityMap;
   legacy_verdict: string;
   cost_summary: AgentCenterCostSummary;

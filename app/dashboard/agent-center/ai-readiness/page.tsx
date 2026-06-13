@@ -54,6 +54,8 @@ import type {
   ModelsCited,
   BrandProviderCitation,
   SkuNextBestAction,
+  CustomPromptResult,
+  CustomPromptLane,
 } from '@/lib/types/ai-readiness';
 
 /**
@@ -1933,6 +1935,7 @@ function PerSkuAuditReportRenderer({
         skuCount={report.per_sku_reports.length}
         costSummary={report.cost_summary}
       />
+      <CustomPromptsPanel prompts={report.custom_prompts} />
       <PrioritizedQueuePanel
         rollup={report.brand_rollup}
         perSku={report.per_sku_reports}
@@ -1942,6 +1945,132 @@ function PerSkuAuditReportRenderer({
         authorityMap={report.authority_map}
       />
       <CostSummaryFooter summary={report.cost_summary} legacy={report.legacy_verdict} />
+    </div>
+  );
+}
+
+// "Your Prompts" — per-lane results for the merchant's custom prompts.
+// Each prompt is a niche query the merchant added to test for cheap traffic;
+// we show whether the brand got cited, who the AI grounded in, and which
+// competitors won the lane — so they can tell open lanes (cited, low
+// competition) from contested ones. Per memory feedback_mock_data_never_to_
+// merchant: empty arrays render as honest "none" copy, never fabricated.
+const CUSTOM_LANE_META: Record<
+  CustomPromptLane,
+  { label: string; chip: string; blurb: string }
+> = {
+  open: {
+    label: 'Open lane',
+    chip: 'border-green-300 bg-green-50 text-green-800',
+    blurb: "You're cited with little competition — defend and scale this.",
+  },
+  contested: {
+    label: 'Contested',
+    chip: 'border-amber-300 bg-amber-50 text-amber-800',
+    blurb: "You're cited, but the lane is crowded with competitors.",
+  },
+  absent: {
+    label: 'Not cited',
+    chip: 'border-red-300 bg-red-50 text-red-800',
+    blurb: 'The AI answered with sources but never named you — competitors own this lane.',
+  },
+  no_signal: {
+    label: 'No signal',
+    chip: 'border-slate-300 bg-slate-50 text-slate-600',
+    blurb: "This prompt didn't return grounded results — thin or no demand for it.",
+  },
+};
+
+function CustomPromptsPanel({
+  prompts,
+}: {
+  prompts: CustomPromptResult[] | undefined;
+}) {
+  if (!prompts || prompts.length === 0) return null;
+  const citedCount = prompts.filter((p) => p.cited).length;
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Your prompts ({prompts.length})
+        </div>
+        <div className="text-xs text-slate-500">
+          cited in <strong>{citedCount}</strong> of {prompts.length}
+        </div>
+      </div>
+      <p className="mt-1 text-xs text-slate-500">
+        The niche prompts you added — for each, whether AI cited you, the sources
+        it grounded in, and which competitors it named.
+      </p>
+      <div className="mt-3 space-y-2.5">
+        {prompts.map((p, i) => {
+          const meta = CUSTOM_LANE_META[p.lane] ?? CUSTOM_LANE_META.no_signal;
+          return (
+            <div
+              key={`${p.prompt}-${i}`}
+              className="rounded-md border border-slate-200 bg-slate-50/50 p-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="text-sm font-medium text-slate-800">
+                  &ldquo;{p.prompt}&rdquo;
+                </div>
+                <span
+                  className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${meta.chip}`}
+                >
+                  {meta.label}
+                </span>
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                {meta.blurb}
+                {p.runs > 0 ? (
+                  <>
+                    {' '}· cited in {p.runs_cited}/{p.runs} model{p.runs === 1 ? '' : 's'}
+                  </>
+                ) : null}
+              </div>
+
+              {p.cited && p.cited_sources.length > 0 ? (
+                <div className="mt-2 text-xs">
+                  <span className="text-slate-500">You were cited via: </span>
+                  <span className="font-medium text-green-800">
+                    {p.cited_sources.join(', ')}
+                  </span>
+                </div>
+              ) : null}
+
+              {p.competitors.length > 0 ? (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-slate-500">
+                    {p.cited ? 'Also named:' : 'Lane owned by:'}
+                  </span>
+                  {p.competitors.map((c) => (
+                    <span
+                      key={c}
+                      className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-700"
+                    >
+                      {c}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+
+              {!p.cited &&
+              p.competitors.length === 0 &&
+              p.grounding_sources.length > 0 ? (
+                <div className="mt-1.5 text-xs text-slate-500">
+                  Grounded in: {p.grounding_sources.join(', ')}
+                </div>
+              ) : null}
+
+              {p.evidence_excerpt ? (
+                <div className="mt-2 border-l-2 border-slate-200 pl-2 text-xs italic text-slate-500">
+                  {p.evidence_excerpt}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
