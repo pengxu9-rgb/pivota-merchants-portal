@@ -723,11 +723,25 @@ export interface ModelsCited {
   of: number;
 }
 
+// Backend resolves a usable, bad-name-tolerant display name in `identity.name`
+// (brand-prefixed, variant-aware); `sku_title` is the raw catalog title. The
+// card/queue render sku_title -> identity.name -> sku_key.
+export interface SkuIdentity {
+  name?: string | null;
+  confidence?: string;
+  source?: string;
+  unresolved?: boolean;
+  anchors?: Record<string, unknown>;
+}
+
 export interface AgentCenterPerSkuReport {
   sku_key: string;
   product_key: string;
   content_key: string | null;
-  title?: string;
+  // Backend emits `sku_title` (the raw catalog title); the old `title` key never
+  // existed in the payload, so the card silently fell back to sku_key.
+  sku_title?: string;
+  identity?: SkuIdentity;
   scores: {
     identity: SkuDimensionScore;
     content_richness: SkuDimensionScore;
