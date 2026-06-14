@@ -2016,6 +2016,7 @@ function WinTargetRow({
   target: NonNullable<AgentCenterBrandRollup['where_you_can_win']>['targets'][number];
 }) {
   const [state, setState] = useState<'idle' | 'adding' | 'added' | 'error'>('idle');
+  const isDefend = t.movement === 'lost';
   async function add() {
     if (state === 'adding' || state === 'added') return;
     setState('adding');
@@ -2025,6 +2026,7 @@ function WinTargetRow({
         sku_key: t.sku_key,
         sku_name: t.sku,
         why_you_fit: t.why_you_fit ?? null,
+        kind: isDefend ? 'defend' : 'content',
       });
       setState('added');
     } catch {
@@ -2077,13 +2079,19 @@ function WinTargetRow({
             type="button"
             onClick={add}
             disabled={state === 'adding'}
-            className="rounded border border-emerald-300 bg-white px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+            className={`rounded border bg-white px-2 py-0.5 text-[11px] font-medium disabled:opacity-50 ${
+              isDefend
+                ? 'border-amber-300 text-amber-700 hover:bg-amber-100'
+                : 'border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+            }`}
           >
             {state === 'adding'
               ? 'Adding…'
               : state === 'error'
                 ? 'Retry'
-                : 'Create the answer →'}
+                : isDefend
+                  ? 'Defend →'
+                  : 'Create the answer →'}
           </button>
         )}
       </div>
@@ -2420,6 +2428,47 @@ function BrandRollupCover({
           <strong>{rollup.blocked_skus.length}</strong> blocked
         </div>
       </div>
+      <OutcomesStrip outcomes={rollup.outcomes} />
+    </div>
+  );
+}
+
+// Phase 4 v2: the moat. Proof the merchant actually sold through agents.
+// transacted_count is always honest to show; refund_rate / GMV only surface
+// once the sample is large enough (min_sample_met) so we never imply precision
+// we don't have.
+function OutcomesStrip({
+  outcomes,
+}: {
+  outcomes?: AgentCenterBrandRollup['outcomes'];
+}) {
+  if (!outcomes || !outcomes.transacted_count) return null;
+  const { transacted_count, min_sample_met, refund_rate, gmv_cents } = outcomes;
+  return (
+    <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50/70 px-3 py-2.5">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800">
+        Agent-driven outcomes
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-sm text-emerald-900">
+        <div>
+          <strong>{transacted_count.toLocaleString()}</strong> transacted via agents
+        </div>
+        {min_sample_met && gmv_cents != null ? (
+          <div>
+            <strong>${(gmv_cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}</strong> GMV
+          </div>
+        ) : null}
+        {min_sample_met && refund_rate != null ? (
+          <div>
+            <strong>{(refund_rate * 100).toFixed(1)}%</strong> refund rate
+          </div>
+        ) : null}
+      </div>
+      {!min_sample_met ? (
+        <div className="mt-1 text-[11px] text-emerald-700/80">
+          GMV and refund rate unlock once you have enough transactions to report them honestly.
+        </div>
+      ) : null}
     </div>
   );
 }
