@@ -1963,12 +1963,69 @@ function PerSkuAuditReportRenderer({
 // brand's verified attributes fit and no one owns the answer) and the
 // flagship/retailer-owned head terms to stop fighting. Surfaces the analysis the
 // per-SKU opportunity already computes as a first-class merchant strategy.
+type DemandProxyChoice = 'probe' | 'recurrence' | 'community';
+
+// Operator picks how winnable niches are ranked: by single-audit probe demand,
+// or by how often the niche recurs across Pivota's cross-brand audit history (a
+// compounding, proprietary signal). 'community' is a future method.
+function DemandProxyToggle({
+  proxies,
+  active,
+  onChange,
+}: {
+  proxies: DemandProxyChoice[];
+  active: DemandProxyChoice;
+  onChange: (p: DemandProxyChoice) => void;
+}) {
+  const labels: Record<DemandProxyChoice, string> = {
+    probe: 'Demand',
+    recurrence: 'Across brands',
+    community: 'Community',
+  };
+  return (
+    <div className="flex items-center gap-1 text-[10px]">
+      <span className="text-slate-400">Rank by:</span>
+      {(['probe', 'recurrence'] as DemandProxyChoice[]).map((p) =>
+        proxies.includes(p) ? (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onChange(p)}
+            className={`rounded px-1.5 py-0.5 font-medium ${
+              active === p ? 'bg-emerald-600 text-white' : 'text-emerald-700 hover:bg-emerald-100'
+            }`}
+          >
+            {labels[p]}
+          </button>
+        ) : null,
+      )}
+      {!proxies.includes('community') ? (
+        <span className="rounded px-1.5 py-0.5 text-slate-300" title="Coming soon">
+          Community (soon)
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function WhereYouCanWinPanel({
   data,
 }: {
   data?: AgentCenterBrandRollup['where_you_can_win'];
 }) {
+  const proxies = (data?.demand_proxies?.length
+    ? data.demand_proxies
+    : ['probe']) as DemandProxyChoice[];
+  const [proxy, setProxy] = useState<DemandProxyChoice>(
+    (data?.demand_proxy_default as DemandProxyChoice) ?? 'probe',
+  );
   if (!data || (!data.targets?.length && !data.skip?.length)) return null;
+  const active: DemandProxyChoice = proxies.includes(proxy) ? proxy : 'probe';
+  const rankedTargets = [...(data.targets ?? [])].sort((a, b) =>
+    active === 'recurrence'
+      ? (b.recurrence?.distinct_merchants ?? 0) - (a.recurrence?.distinct_merchants ?? 0)
+      : (b.opportunity_score ?? 0) - (a.opportunity_score ?? 0),
+  );
   return (
     <SurfaceCard
       title="Where you can win"
@@ -1977,11 +2034,14 @@ function WhereYouCanWinPanel({
       <div className="space-y-4 px-5 py-4">
         {data.targets?.length ? (
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-              Target these — winnable
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                Target these — winnable
+              </div>
+              <DemandProxyToggle proxies={proxies} active={active} onChange={setProxy} />
             </div>
             <ul className="mt-2 space-y-2">
-              {data.targets.map((t, i) => (
+              {rankedTargets.map((t, i) => (
                 <li
                   key={`wycw-tgt-${i}`}
                   className="rounded-md border border-emerald-200 bg-emerald-50/60 px-3 py-2"
@@ -1991,6 +2051,15 @@ function WhereYouCanWinPanel({
                     <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white">
                       no one owns this yet
                     </span>
+                    {t.recurrence ? (
+                      <span
+                        className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800"
+                        title="How many brands this niche recurs across in Pivota's audit history"
+                      >
+                        across {t.recurrence.distinct_merchants} brand
+                        {t.recurrence.distinct_merchants === 1 ? '' : 's'}
+                      </span>
+                    ) : null}
                   </div>
                   {t.why_you_fit ? (
                     <div className="mt-0.5 text-xs text-emerald-900/80">You fit: {t.why_you_fit}</div>
