@@ -47,9 +47,11 @@ function AddToPivotaPageForm({
 }) {
   const [open, setOpen] = useState(false);
   const [rawInci, setRawInci] = useState('');
+  const [brandUrl, setBrandUrl] = useState('');
   const [state, setState] = useState<ContribState>({ kind: 'idle' });
 
-  const canSave = rawInci.trim().length > 0 && state.kind !== 'saving';
+  const canSave =
+    (rawInci.trim().length > 0 || brandUrl.trim().length > 0) && state.kind !== 'saving';
 
   async function handleSave() {
     if (!canSave) return;
@@ -58,13 +60,15 @@ function AddToPivotaPageForm({
       const res = await apiClient.submitProductEvidence({
         platform,
         platformProductId,
-        rawInci: rawInci.trim(),
+        rawInci: rawInci.trim() || undefined,
+        brandUrl: brandUrl.trim() || undefined,
       });
       const status = res?.status;
       const claims: string[] = Array.isArray(res?.substantiated_claims)
         ? res.substantiated_claims
         : [];
-      if (status === 'rejected_not_inci') {
+      if (status === 'rejected_not_inci' || status === 'no_evidence') {
+        // couldn't parse a pasted list, or the crawled page had no ingredients
         setState({ kind: 'not_inci' });
       } else if (claims.length > 0) {
         setState({ kind: 'graded', claims });
@@ -109,7 +113,7 @@ function AddToPivotaPageForm({
         onClick={() => setOpen(true)}
         className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-indigo-300 bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
       >
-        Add your ingredient list to your Pivota page
+        Make this product AI-ready on your Pivota page
       </button>
     );
   }
@@ -117,11 +121,21 @@ function AddToPivotaPageForm({
   return (
     <div className="mt-2.5 rounded-md border border-indigo-200 bg-white px-3 py-3">
       <div className="text-xs text-slate-500">
-        Paste the ingredient list (INCI) for{' '}
-        <span className="font-medium text-slate-700">{productName}</span>. Pivota verifies it and
-        builds the cited, claim-safe record AI shoppers read — you don&apos;t write the copy.
+        Give Pivota the evidence for{' '}
+        <span className="font-medium text-slate-700">{productName}</span> and it builds the cited,
+        claim-safe record AI shoppers read — you don&apos;t write the copy.
       </div>
-      <Field label="Ingredient list (INCI)" hint="copy it straight from the label or your page">
+      <Field label="Product page URL" hint="easiest — we read the ingredients off the page">
+        <input
+          type="url"
+          value={brandUrl}
+          onChange={(e) => setBrandUrl(e.target.value)}
+          className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
+          placeholder="https://yourbrand.com/products/…"
+        />
+      </Field>
+      <div className="my-2 text-center text-[10px] uppercase tracking-wide text-slate-400">or</div>
+      <Field label="Ingredient list (INCI)" hint="paste it straight from the label">
         <textarea
           rows={3}
           value={rawInci}
@@ -132,8 +146,8 @@ function AddToPivotaPageForm({
       </Field>
       {state.kind === 'not_inci' ? (
         <div className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
-          That doesn&apos;t look like an ingredient list — paste the INCI (the comma-separated
-          ingredients from the label), not a description.
+          We couldn&apos;t read an ingredient list from that — paste the INCI (the comma-separated
+          ingredients from the label), or a product page URL that lists them.
         </div>
       ) : null}
       {state.kind === 'error' ? (
