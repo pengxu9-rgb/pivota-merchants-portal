@@ -482,6 +482,21 @@ class ApiClient {
     return response.data;
   }
 
+  /** Supplier-evidence intake: the merchant supplies VERIFIABLE EVIDENCE (an INCI
+   *  list in v1) and Pivota verifies → substantiates → screens → grades it into
+   *  provenance-backed, claim-safe claims on the canonical record + serves them.
+   *  Returns { status, content_key, wrote_evidence, served, substantiated_claims }. */
+  async submitProductEvidence(args: {
+    platform: string;
+    platformProductId: string;
+    rawInci: string;
+  }) {
+    const { platform, platformProductId, rawInci } = args;
+    const url = `/merchant/pdps/product/${encodeURIComponent(platform)}/${encodeURIComponent(platformProductId)}/evidence`;
+    const response = await this.client.post(url, { raw_inci: rawInci });
+    return response.data;
+  }
+
   async getMerchantReadinessOptimization(options?: RequestOptions & {
     queue_mode?: 'full' | 'page' | 'none';
     page?: number;
