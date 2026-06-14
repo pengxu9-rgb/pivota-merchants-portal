@@ -859,6 +859,34 @@ export interface AgentCenterBrandRollup {
   brand_verdict_label?: string;
   brand_verdict_explanation?: string;
   citation_by_provider?: Record<string, BrandProviderCitation>;
+  // Phase 2 niche-targeting: where the brand can win (open lanes) vs the
+  // flagship-owned head terms to stop fighting.
+  where_you_can_win?: WhereYouCanWin;
+}
+
+export interface WhereYouCanWinTarget {
+  query: string;
+  sku: string;
+  sku_key?: string;
+  attribute_fit?: number | null;
+  demand_state?: string | null;
+  opportunity_score?: number;
+  why_you_fit?: string | null;
+  action?: string;
+}
+
+export interface WhereYouCanWinSkip {
+  query: string;
+  owned_by?: string | null;
+  ownership_state?: string;
+  demand_signal?: number;
+  competitors_named?: string[];
+}
+
+export interface WhereYouCanWin {
+  targets: WhereYouCanWinTarget[];
+  skip: WhereYouCanWinSkip[];
+  has_targets: boolean;
 }
 
 export type AuthorityHostType =
