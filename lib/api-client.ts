@@ -1865,6 +1865,21 @@ class ApiClient {
     return response.data;
   }
 
+  /** Phase 3: graduate a winnable-niche 'create the answer' action into a
+   *  tracked distribution task in the merchant queue. Idempotent server-side. */
+  async createNicheContentTask(body: {
+    query: string;
+    sku_key?: string;
+    sku_name?: string;
+    why_you_fit?: string | null;
+  }): Promise<{ status: string; task_id: string; title: string }> {
+    const response = await this.client.post(
+      '/api/merchant-center/audit/tasks/niche-content',
+      body,
+    );
+    return response.data;
+  }
+
   async updateMerchantTask(
     taskId: string,
     body: {
