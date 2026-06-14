@@ -19,9 +19,9 @@ import type {
 type ContribState =
   | { kind: 'idle' }
   | { kind: 'saving' }
-  | { kind: 'live' }
-  | { kind: 'in_review' }
-  | { kind: 'saved_pending_enable' }
+  | { kind: 'graded'; claims: string[] }
+  | { kind: 'no_claims' }
+  | { kind: 'not_inci' }
   | { kind: 'error'; message: string };
 
 /** Audit product_key is `merchant_id|platform|platform_product_id`. We pass the
@@ -36,22 +36,6 @@ function parseProductKey(
   return { platform: parts[1], platformProductId: parts[2] };
 }
 
-function composeCopyDescription(fields: {
-  whatIsIt: string;
-  whoFor: string;
-  howToUse: string;
-  keyFacts: string;
-}): string {
-  return [
-    fields.whatIsIt.trim(),
-    fields.whoFor.trim() ? `Who it's for: ${fields.whoFor.trim()}` : '',
-    fields.howToUse.trim() ? `How to use: ${fields.howToUse.trim()}` : '',
-    fields.keyFacts.trim() ? `Key facts: ${fields.keyFacts.trim()}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-}
-
 function AddToPivotaPageForm({
   productName,
   platform,
@@ -62,69 +46,58 @@ function AddToPivotaPageForm({
   platformProductId: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [whatIsIt, setWhatIsIt] = useState('');
-  const [whoFor, setWhoFor] = useState('');
-  const [howToUse, setHowToUse] = useState('');
-  const [keyFacts, setKeyFacts] = useState('');
+  const [rawInci, setRawInci] = useState('');
   const [state, setState] = useState<ContribState>({ kind: 'idle' });
 
-  const canSave = whatIsIt.trim().length > 0 && state.kind !== 'saving';
+  const canSave = rawInci.trim().length > 0 && state.kind !== 'saving';
 
   async function handleSave() {
     if (!canSave) return;
     setState({ kind: 'saving' });
-    const description = composeCopyDescription({ whatIsIt, whoFor, howToUse, keyFacts });
-    const payload = {
-      description,
-      summary: whatIsIt.trim(),
-      generated_source: 'merchant_contribution',
-    };
     try {
-      await apiClient.submitPivotaPdpContribution({
+      const res = await apiClient.submitProductEvidence({
         platform,
         platformProductId,
-        moduleKey: 'copy',
-        payload,
+        rawInci: rawInci.trim(),
       });
+      const status = res?.status;
+      const claims: string[] = Array.isArray(res?.substantiated_claims)
+        ? res.substantiated_claims
+        : [];
+      if (status === 'rejected_not_inci') {
+        setState({ kind: 'not_inci' });
+      } else if (claims.length > 0) {
+        setState({ kind: 'graded', claims });
+      } else {
+        setState({ kind: 'no_claims' });
+      }
     } catch (err: unknown) {
       setState({ kind: 'error', message: friendlyError(err) });
-      return;
-    }
-    // Approve → GPT-5.5 gate publishes (and makes it agent-readable) when the
-    // serving overlay (SKU_OPT_OVERLAY_V1) is enabled. When it isn't, the
-    // approve route 404s with SKU_OPT_OVERLAY_V1_DISABLED — the content is still
-    // saved to the Pivota page, it just isn't served to agents yet.
-    try {
-      const res = await apiClient.approvePivotaPdpModule({
-        platform,
-        platformProductId,
-        moduleKey: 'copy',
-      });
-      if (res?.published) {
-        setState({ kind: 'live' });
-      } else {
-        setState({ kind: 'in_review' });
-      }
-    } catch (err: unknown) {
-      if (isOverlayDisabled(err)) {
-        setState({ kind: 'saved_pending_enable' });
-      } else {
-        setState({ kind: 'error', message: friendlyError(err) });
-      }
     }
   }
 
-  if (state.kind === 'live' || state.kind === 'in_review' || state.kind === 'saved_pending_enable') {
-    const copy =
-      state.kind === 'live'
-        ? 'Live on your Pivota page now — AI shoppers can read it.'
-        : state.kind === 'in_review'
-          ? 'Saved to your Pivota page — goes live to AI after a quick automated quality check.'
-          : 'Saved to your Pivota page — it goes live to AI shoppers once Pivota enables serving.';
+  if (state.kind === 'graded') {
     return (
-      <div className="mt-2 flex items-start gap-2 rounded-md border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-900">
-        <span aria-hidden className="mt-0.5">✓</span>
-        <span>{copy}</span>
+      <div className="mt-2 rounded-md border border-green-300 bg-green-50 px-3 py-2.5 text-xs text-green-900">
+        <div className="flex items-center gap-1.5 font-medium">
+          <span aria-hidden>✓</span>
+          {state.claims.length} ingredient-backed claim{state.claims.length === 1 ? '' : 's'} now on
+          your Pivota page — AI can cite {state.claims.length === 1 ? 'it' : 'them'}.
+        </div>
+        <ul className="mt-1.5 list-disc space-y-0.5 pl-5 text-[11px] text-green-800">
+          {state.claims.slice(0, 5).map((c, i) => (
+            <li key={`claim-${i}`}>{c}</li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  if (state.kind === 'no_claims') {
+    return (
+      <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        We read your ingredients and saved them, but couldn&apos;t verify a benefit claim from them
+        yet. A clearer ingredient list (or a lab report, coming soon) unlocks cited claims.
       </div>
     );
   }
@@ -136,7 +109,7 @@ function AddToPivotaPageForm({
         onClick={() => setOpen(true)}
         className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-indigo-300 bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
       >
-        Add details to your Pivota page
+        Add your ingredient list to your Pivota page
       </button>
     );
   }
@@ -144,49 +117,25 @@ function AddToPivotaPageForm({
   return (
     <div className="mt-2.5 rounded-md border border-indigo-200 bg-white px-3 py-3">
       <div className="text-xs text-slate-500">
-        These fields are what AI shoppers read on your Pivota page for{' '}
-        <span className="font-medium text-slate-700">{productName}</span>.
+        Paste the ingredient list (INCI) for{' '}
+        <span className="font-medium text-slate-700">{productName}</span>. Pivota verifies it and
+        builds the cited, claim-safe record AI shoppers read — you don&apos;t write the copy.
       </div>
-      <div className="mt-2 space-y-2.5">
-        <Field label="What is it?" hint="one or two plain sentences">
-          <textarea
-            rows={2}
-            value={whatIsIt}
-            onChange={(e) => setWhatIsIt(e.target.value)}
-            className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
-            placeholder="A nighttime low-molecular collagen supplement that supports skin elasticity…"
-          />
-        </Field>
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-          <Field label="Who is it for?">
-            <input
-              type="text"
-              value={whoFor}
-              onChange={(e) => setWhoFor(e.target.value)}
-              className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
-              placeholder="Adults wanting overnight skin support"
-            />
-          </Field>
-          <Field label="How to use">
-            <input
-              type="text"
-              value={howToUse}
-              onChange={(e) => setHowToUse(e.target.value)}
-              className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
-              placeholder="1 stick before bed, daily"
-            />
-          </Field>
+      <Field label="Ingredient list (INCI)" hint="copy it straight from the label or your page">
+        <textarea
+          rows={3}
+          value={rawInci}
+          onChange={(e) => setRawInci(e.target.value)}
+          className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
+          placeholder="Water, Niacinamide, Glycerin, Hydrolyzed Collagen, Adenosine…"
+        />
+      </Field>
+      {state.kind === 'not_inci' ? (
+        <div className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
+          That doesn&apos;t look like an ingredient list — paste the INCI (the comma-separated
+          ingredients from the label), not a description.
         </div>
-        <Field label="Key facts buyers ask about" hint="ingredients, format, claims">
-          <textarea
-            rows={2}
-            value={keyFacts}
-            onChange={(e) => setKeyFacts(e.target.value)}
-            className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
-            placeholder="Low-molecular fish collagen 1,000mg · no added sugar…"
-          />
-        </Field>
-      </div>
+      ) : null}
       {state.kind === 'error' ? (
         <div className="mt-2 rounded border border-red-300 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
           {state.message}
@@ -199,10 +148,10 @@ function AddToPivotaPageForm({
           onClick={handleSave}
           className="rounded-md border border-indigo-300 bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
         >
-          {state.kind === 'saving' ? 'Saving…' : 'Save to my Pivota page'}
+          {state.kind === 'saving' ? 'Verifying…' : 'Verify & add to my Pivota page'}
         </button>
         <span className="text-[11px] text-slate-500">
-          Saved instantly · published to AI shoppers after a quick quality check.
+          Only ingredient-substantiated, claim-safe claims are surfaced to AI.
         </span>
       </div>
     </div>
@@ -318,11 +267,6 @@ export function PerSkuNextStep({ report }: { report: AgentCenterPerSkuReport }) 
 function lowerFirst(s: string): string {
   const t = (s || '').trim();
   return t ? t.charAt(0).toLowerCase() + t.slice(1) : t;
-}
-
-function isOverlayDisabled(err: unknown): boolean {
-  const detail = errDetail(err);
-  return typeof detail === 'string' && detail.includes('SKU_OPT_OVERLAY_V1_DISABLED');
 }
 
 function errDetail(err: unknown): unknown {
