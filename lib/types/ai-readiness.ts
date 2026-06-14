@@ -866,6 +866,7 @@ export interface AgentCenterBrandRollup {
 
 export interface WhereYouCanWinTarget {
   query: string;
+  normalized_query?: string;
   sku: string;
   sku_key?: string;
   attribute_fit?: number | null;
@@ -873,6 +874,9 @@ export interface WhereYouCanWinTarget {
   opportunity_score?: number;
   why_you_fit?: string | null;
   action?: string;
+  // Phase 2 v2: cross-merchant recurrence (how many distinct brands this niche
+  // recurs across) — populated when Pivota's audit history has data.
+  recurrence?: { distinct_merchants: number; total_runs: number };
 }
 
 export interface WhereYouCanWinSkip {
@@ -883,10 +887,17 @@ export interface WhereYouCanWinSkip {
   competitors_named?: string[];
 }
 
+export type DemandProxy = 'probe' | 'recurrence' | 'community';
+
 export interface WhereYouCanWin {
   targets: WhereYouCanWinTarget[];
   skip: WhereYouCanWinSkip[];
   has_targets: boolean;
+  // Which demand-ranking lenses the operator can choose between. 'probe' is
+  // always present; 'recurrence' appears once Pivota's cross-brand history has
+  // data for these niches. 'community' is a future method.
+  demand_proxies?: DemandProxy[];
+  demand_proxy_default?: DemandProxy;
 }
 
 export type AuthorityHostType =
