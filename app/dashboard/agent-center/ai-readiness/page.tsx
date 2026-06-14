@@ -2008,6 +2008,72 @@ function DemandProxyToggle({
   );
 }
 
+// One winnable-niche row. The "create the answer" action graduates the niche
+// into a tracked distribution task in the merchant's queue (Phase 3).
+function WinTargetRow({
+  target: t,
+}: {
+  target: NonNullable<AgentCenterBrandRollup['where_you_can_win']>['targets'][number];
+}) {
+  const [state, setState] = useState<'idle' | 'adding' | 'added' | 'error'>('idle');
+  async function add() {
+    if (state === 'adding' || state === 'added') return;
+    setState('adding');
+    try {
+      await apiClient.createNicheContentTask({
+        query: t.query,
+        sku_key: t.sku_key,
+        sku_name: t.sku,
+        why_you_fit: t.why_you_fit ?? null,
+      });
+      setState('added');
+    } catch {
+      setState('error');
+    }
+  }
+  return (
+    <li className="rounded-md border border-emerald-200 bg-emerald-50/60 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-semibold text-emerald-900">{t.query}</span>
+        <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+          no one owns this yet
+        </span>
+        {t.recurrence ? (
+          <span
+            className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800"
+            title="How many brands this niche recurs across in Pivota's audit history"
+          >
+            across {t.recurrence.distinct_merchants} brand
+            {t.recurrence.distinct_merchants === 1 ? '' : 's'}
+          </span>
+        ) : null}
+      </div>
+      {t.why_you_fit ? (
+        <div className="mt-0.5 text-xs text-emerald-900/80">You fit: {t.why_you_fit}</div>
+      ) : null}
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <span className="text-[11px] text-slate-500">via {t.sku}</span>
+        {state === 'added' ? (
+          <span className="text-[11px] font-medium text-emerald-700">✓ Added to your tasks</span>
+        ) : (
+          <button
+            type="button"
+            onClick={add}
+            disabled={state === 'adding'}
+            className="rounded border border-emerald-300 bg-white px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+          >
+            {state === 'adding'
+              ? 'Adding…'
+              : state === 'error'
+                ? 'Retry'
+                : 'Create the answer →'}
+          </button>
+        )}
+      </div>
+    </li>
+  );
+}
+
 function WhereYouCanWinPanel({
   data,
 }: {
@@ -2042,35 +2108,7 @@ function WhereYouCanWinPanel({
             </div>
             <ul className="mt-2 space-y-2">
               {rankedTargets.map((t, i) => (
-                <li
-                  key={`wycw-tgt-${i}`}
-                  className="rounded-md border border-emerald-200 bg-emerald-50/60 px-3 py-2"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold text-emerald-900">{t.query}</span>
-                    <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white">
-                      no one owns this yet
-                    </span>
-                    {t.recurrence ? (
-                      <span
-                        className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800"
-                        title="How many brands this niche recurs across in Pivota's audit history"
-                      >
-                        across {t.recurrence.distinct_merchants} brand
-                        {t.recurrence.distinct_merchants === 1 ? '' : 's'}
-                      </span>
-                    ) : null}
-                  </div>
-                  {t.why_you_fit ? (
-                    <div className="mt-0.5 text-xs text-emerald-900/80">You fit: {t.why_you_fit}</div>
-                  ) : null}
-                  <div className="mt-1 flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-slate-500">via {t.sku}</span>
-                    <span className="text-[11px] font-medium text-emerald-700">
-                      Next: create the answer AI cites →
-                    </span>
-                  </div>
-                </li>
+                <WinTargetRow key={`wycw-tgt-${i}`} target={t} />
               ))}
             </ul>
           </div>
