@@ -1945,6 +1945,7 @@ function PerSkuAuditReportRenderer({
         skuCount={report.per_sku_reports.length}
         costSummary={report.cost_summary}
       />
+      <WhereYouCanWinPanel data={report.brand_rollup.where_you_can_win} />
       <CustomPromptsPanel prompts={report.custom_prompts} />
       <PrioritizedQueuePanel
         rollup={report.brand_rollup}
@@ -1955,6 +1956,80 @@ function PerSkuAuditReportRenderer({
         authorityMap={report.authority_map}
       />
     </div>
+  );
+}
+
+// Phase 2 niche-targeting: the winnable niches to target (open lanes where the
+// brand's verified attributes fit and no one owns the answer) and the
+// flagship/retailer-owned head terms to stop fighting. Surfaces the analysis the
+// per-SKU opportunity already computes as a first-class merchant strategy.
+function WhereYouCanWinPanel({
+  data,
+}: {
+  data?: AgentCenterBrandRollup['where_you_can_win'];
+}) {
+  if (!data || (!data.targets?.length && !data.skip?.length)) return null;
+  return (
+    <SurfaceCard
+      title="Where you can win"
+      description="Target the niches where you're a match and no one owns the answer yet — and stop fighting the head terms flagships already own."
+    >
+      <div className="space-y-4 px-5 py-4">
+        {data.targets?.length ? (
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+              Target these — winnable
+            </div>
+            <ul className="mt-2 space-y-2">
+              {data.targets.map((t, i) => (
+                <li
+                  key={`wycw-tgt-${i}`}
+                  className="rounded-md border border-emerald-200 bg-emerald-50/60 px-3 py-2"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-emerald-900">{t.query}</span>
+                    <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+                      no one owns this yet
+                    </span>
+                  </div>
+                  {t.why_you_fit ? (
+                    <div className="mt-0.5 text-xs text-emerald-900/80">You fit: {t.why_you_fit}</div>
+                  ) : null}
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-slate-500">via {t.sku}</span>
+                    <span className="text-[11px] font-medium text-emerald-700">
+                      Next: create the answer AI cites →
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {data.skip?.length ? (
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Don&apos;t fight head-on — already owned
+            </div>
+            <ul className="mt-2 space-y-1.5">
+              {data.skip.map((s, i) => (
+                <li key={`wycw-skip-${i}`} className="flex flex-wrap items-baseline gap-x-2 text-xs">
+                  <span className="font-medium text-slate-700 line-through decoration-slate-300">
+                    {s.query}
+                  </span>
+                  <span className="text-slate-500">
+                    owned by {s.owned_by || s.competitors_named?.[0] || 'a retailer/competitor'}
+                    {s.competitors_named?.length
+                      ? ` · AI names ${s.competitors_named.slice(0, 2).join(', ')}`
+                      : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </SurfaceCard>
   );
 }
 
