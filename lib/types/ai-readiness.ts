@@ -862,6 +862,17 @@ export interface AgentCenterBrandRollup {
   // Phase 2 niche-targeting: where the brand can win (open lanes) vs the
   // flagship-owned head terms to stop fighting.
   where_you_can_win?: WhereYouCanWin;
+  // Phase 4 v2: transaction outcomes (the moat) — proof the merchant actually
+  // sold through agents. transacted_count is always shown; refund_rate / gmv
+  // only once the sample is large enough to be honest (min_sample_met).
+  outcomes?: BrandOutcomes;
+}
+
+export interface BrandOutcomes {
+  transacted_count: number;
+  min_sample_met: boolean;
+  refund_rate?: number | null;
+  gmv_cents?: number | null;
 }
 
 export interface WhereYouCanWinTarget {

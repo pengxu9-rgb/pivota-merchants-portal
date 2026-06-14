@@ -1872,6 +1872,9 @@ class ApiClient {
     sku_key?: string;
     sku_name?: string;
     why_you_fit?: string | null;
+    // 'defend' for a contested niche a competitor moved into; defaults to
+    // 'content' (create the answer for an open lane) on the backend.
+    kind?: 'content' | 'defend';
   }): Promise<{ status: string; task_id: string; title: string }> {
     const response = await this.client.post(
       '/api/merchant-center/audit/tasks/niche-content',
