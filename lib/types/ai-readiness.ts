@@ -877,6 +877,8 @@ export interface WhereYouCanWinTarget {
   // Phase 2 v2: cross-merchant recurrence (how many distinct brands this niche
   // recurs across) — populated when Pivota's audit history has data.
   recurrence?: { distinct_merchants: number; total_runs: number };
+  // Phase 4: re-audit movement on this niche (won / holding / lost / still_open).
+  movement?: 'won' | 'holding' | 'lost' | 'still_open' | 'shifted';
 }
 
 export interface WhereYouCanWinSkip {
