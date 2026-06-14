@@ -38,3 +38,29 @@ export class InsufficientCreditsError extends Error {
     this.previewUrl = detail.previewUrl;
   }
 }
+
+/**
+ * Thrown when a free/unentitled account requests a premium audit provider
+ * (ChatGPT/Claude). The tiered audit model gates these behind a paid plan;
+ * the backend returns HTTP 402 `{ code: 'premium_provider_subscription_required' }`
+ * rather than silently downgrading to Gemini, so the UI can surface a paywall
+ * that honors the merchant's explicit model choice. Callers catch this to render
+ * a "subscribe to use premium models" CTA (→ /dashboard/billing).
+ */
+export class PremiumProviderRequiredError extends Error {
+  readonly premiumProvidersRequested: string[];
+  readonly freeAlternativeProvider: string | null;
+  readonly billingUrl: string;
+
+  constructor(detail: {
+    premiumProvidersRequested: string[];
+    freeAlternativeProvider: string | null;
+    message: string;
+  }) {
+    super(detail.message);
+    this.name = 'PremiumProviderRequiredError';
+    this.premiumProvidersRequested = detail.premiumProvidersRequested;
+    this.freeAlternativeProvider = detail.freeAlternativeProvider;
+    this.billingUrl = '/dashboard/billing';
+  }
+}

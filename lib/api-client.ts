@@ -43,8 +43,8 @@ interface RequestOptions {
 // Lives in `./credit-errors.ts` to keep the smoke test runnable under
 // node:test (which can't traverse the extensionless imports the
 // api-client itself triggers).
-export { InsufficientCreditsError } from './credit-errors';
-import { InsufficientCreditsError } from './credit-errors';
+export { InsufficientCreditsError, PremiumProviderRequiredError } from './credit-errors';
+import { InsufficientCreditsError, PremiumProviderRequiredError } from './credit-errors';
 
 function finiteNumberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
@@ -1830,6 +1830,26 @@ class ApiClient {
         const payload = (typeof detail === 'object' && detail !== null
           ? (detail as Record<string, unknown>)
           : (err.response.data as Record<string, unknown> | undefined)) ?? {};
+        // Premium-provider paywall (ChatGPT/Claude on a free plan) also returns
+        // 402, distinguished by `code`. Surface it as its own typed error so the
+        // page shows a subscribe CTA instead of an insufficient-credits banner.
+        if (payload.code === 'premium_provider_subscription_required') {
+          throw new PremiumProviderRequiredError({
+            premiumProvidersRequested: Array.isArray(payload.premium_providers_requested)
+              ? (payload.premium_providers_requested as unknown[]).filter(
+                  (p): p is string => typeof p === 'string',
+                )
+              : [],
+            freeAlternativeProvider:
+              typeof payload.free_alternative_provider === 'string'
+                ? payload.free_alternative_provider
+                : null,
+            message:
+              typeof payload.message === 'string'
+                ? payload.message
+                : 'This audit uses a premium model. Subscribe to a paid plan to run it.',
+          });
+        }
         throw new InsufficientCreditsError({
           kind: (payload.kind as 'audit' | 'prompt' | 'execution') ?? 'audit',
           required: typeof payload.required === 'number' ? payload.required : 0,
