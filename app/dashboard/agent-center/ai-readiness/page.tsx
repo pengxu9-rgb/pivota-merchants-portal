@@ -2035,9 +2035,26 @@ function WinTargetRow({
     <li className="rounded-md border border-emerald-200 bg-emerald-50/60 px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-semibold text-emerald-900">{t.query}</span>
-        <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white">
-          no one owns this yet
-        </span>
+        {t.movement === 'won' ? (
+          <span className="rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+            ✓ won this niche
+          </span>
+        ) : t.movement === 'holding' ? (
+          <span className="rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+            you own this
+          </span>
+        ) : t.movement === 'lost' ? (
+          <span
+            className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-semibold text-white"
+            title="A competitor moved in — defend this niche"
+          >
+            ⚠ contested — defend
+          </span>
+        ) : (
+          <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+            no one owns this yet
+          </span>
+        )}
         {t.recurrence ? (
           <span
             className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800"
