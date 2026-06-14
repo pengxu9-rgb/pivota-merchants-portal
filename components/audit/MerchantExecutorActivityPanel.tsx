@@ -22,6 +22,7 @@ import {
 
 import { apiClient } from '@/lib/api-client';
 import type { MerchantExecutorRun } from '@/lib/types/ai-readiness';
+import { BriefEvidence, briefsOf, humanizeAgentName, summarizeBriefs } from './briefEvidence';
 
 
 export function MerchantExecutorActivityPanel() {
@@ -122,7 +123,7 @@ function RunRow({ run }: { run: MerchantExecutorRun }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-start gap-2 flex-wrap">
             <span className="text-sm font-semibold text-slate-900">
-              {run.agent_name}
+              {humanizeAgentName(run.agent_name)}
             </span>
             <span
               className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${tone.chip}`}
@@ -149,9 +150,13 @@ function RunRow({ run }: { run: MerchantExecutorRun }) {
                 {expanded ? 'Hide evidence' : 'Show evidence'}
               </button>
               {expanded ? (
-                <pre className="mt-1 overflow-x-auto rounded bg-slate-100 p-2 text-[10px] text-slate-700">
-                  {JSON.stringify(evidence, null, 2)}
-                </pre>
+                briefsOf(evidence).length > 0 ? (
+                  <BriefEvidence briefs={briefsOf(evidence)} />
+                ) : (
+                  <pre className="mt-1 overflow-x-auto rounded bg-slate-100 p-2 text-[10px] text-slate-700">
+                    {JSON.stringify(evidence, null, 2)}
+                  </pre>
+                )
               ) : (
                 <EvidenceSnippet evidence={evidence} />
               )}
@@ -185,6 +190,8 @@ function EvidenceSnippet({
 
 
 function summarizeEvidence(ev: Record<string, unknown>): string | null {
+  const briefSummary = summarizeBriefs(ev);
+  if (briefSummary) return briefSummary;
   if ('submitted_count' in ev || 'indexed_count' in ev) {
     const sub = ev['submitted_count'];
     const idx = ev['indexed_count'];

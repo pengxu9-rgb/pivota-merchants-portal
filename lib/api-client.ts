@@ -443,6 +443,45 @@ class ApiClient {
     return response.data;
   }
 
+  // --- Pivota PDP contributions (merchant adds content straight to the
+  // canonical PDP agents read — the "Add to your Pivota page" path). The
+  // backend keys the contribution to the authed merchant_id; we only pass the
+  // platform + platform_product_id (parsed from the audit report's product_key
+  // = merchant_id|platform|platform_product_id). ---
+
+  /** Stage a content contribution onto the merchant's Pivota PDP. */
+  async submitPivotaPdpContribution(args: {
+    platform: string;
+    platformProductId: string;
+    moduleKey?: string;
+    payload: Record<string, unknown>;
+    notes?: string;
+  }) {
+    const { platform, platformProductId, moduleKey = 'copy', payload, notes } = args;
+    const url = `/merchant/pdps/product/${encodeURIComponent(platform)}/${encodeURIComponent(platformProductId)}/contributions`;
+    const response = await this.client.post(url, {
+      module_key: moduleKey,
+      payload,
+      ...(notes ? { notes } : {}),
+    });
+    return response.data;
+  }
+
+  /** Approve a staged module → routes through the GPT-5.5 quality gate, which
+   *  auto-publishes (and makes it agent-readable) when SKU_OPT_OVERLAY_V1 is on.
+   *  Returns { decision, published } — or throws SKU_OPT_OVERLAY_V1_DISABLED
+   *  (404) when the serving overlay isn't enabled yet. */
+  async approvePivotaPdpModule(args: {
+    platform: string;
+    platformProductId: string;
+    moduleKey?: string;
+  }) {
+    const { platform, platformProductId, moduleKey = 'copy' } = args;
+    const url = `/merchant/pdps/product/${encodeURIComponent(platform)}/${encodeURIComponent(platformProductId)}/approve`;
+    const response = await this.client.post(url, { module_key: moduleKey });
+    return response.data;
+  }
+
   async getMerchantReadinessOptimization(options?: RequestOptions & {
     queue_mode?: 'full' | 'page' | 'none';
     page?: number;

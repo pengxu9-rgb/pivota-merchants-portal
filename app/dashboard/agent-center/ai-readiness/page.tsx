@@ -30,6 +30,7 @@ import {
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
 import { MerchantTaskQueuePanel } from '@/components/audit/MerchantTaskQueuePanel';
+import { PerSkuNextStep } from '@/components/audit/PerSkuNextStep';
 import { MerchantExecutorActivityPanel } from '@/components/audit/MerchantExecutorActivityPanel';
 import type {
   AgentCenterBdBrandReport,
@@ -53,7 +54,8 @@ import type {
   SkuProviderCitation,
   ModelsCited,
   BrandProviderCitation,
-  SkuNextBestAction,
+  BrandDimensionStat,
+  BrandPriorityQueueEntry,
   CustomPromptResult,
   CustomPromptLane,
 } from '@/lib/types/ai-readiness';
@@ -2096,11 +2098,79 @@ function bandColorClasses(band: SkuScoreBand): string {
   }
 }
 
-function dimensionScoreColor(score: number): string {
-  if (score >= 85) return 'text-green-700';
-  if (score >= 70) return 'text-emerald-700';
-  if (score >= 40) return 'text-amber-700';
-  return 'text-red-700';
+// Merchant-safe band label, used as a fallback when the backend band_label is
+// absent (older payloads). The backend (band copy layer) is the source of
+// truth; the threshold lives there (_band_for_score), not re-derived here.
+const BAND_LABEL: Record<string, string> = {
+  agent_ready: 'Agent-ready',
+  ready: 'Ready',
+  partial: 'Needs work',
+  blocked: 'Not yet visible',
+  unscored: 'Not measured',
+};
+
+function bandTextClass(band: string): string {
+  switch (band) {
+    case 'agent_ready':
+      return 'text-green-700';
+    case 'ready':
+      return 'text-emerald-700';
+    case 'partial':
+      return 'text-amber-700';
+    case 'unscored':
+      return 'text-slate-400';
+    case 'blocked':
+    default:
+      return 'text-red-700';
+  }
+}
+
+function bandPillClass(band: string): string {
+  switch (band) {
+    case 'agent_ready':
+      return 'bg-green-100 text-green-800';
+    case 'ready':
+      return 'bg-emerald-100 text-emerald-800';
+    case 'partial':
+      return 'bg-amber-100 text-amber-900';
+    case 'unscored':
+      return 'bg-slate-100 text-slate-600';
+    case 'blocked':
+    default:
+      return 'bg-red-100 text-red-800';
+  }
+}
+
+// Fallback band when an (older) payload didn't carry a per-dimension band.
+function bandFromScore(score: number | null | undefined): string {
+  if (score == null) return 'unscored';
+  if (score < 40) return 'blocked';
+  if (score < 70) return 'partial';
+  if (score < 85) return 'ready';
+  return 'agent_ready';
+}
+
+function BandPill({ band, label }: { band: string; label?: string }) {
+  const text = label || BAND_LABEL[band] || band;
+  return (
+    <span
+      className={`inline-flex flex-none items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${bandPillClass(band)}`}
+    >
+      {text}
+    </span>
+  );
+}
+
+// The merchant-facing product name. Prefer the backend's resolved
+// `identity.name` (brand-prefixed, variant-aware display name) over the raw
+// `sku_title`, which is often a bare variant label like "2 Box". Falls back to
+// sku_title, then the opaque sku_key only as a last resort.
+function skuDisplayName(report: AgentCenterPerSkuReport): string {
+  return (
+    report.identity?.name?.trim() ||
+    report.sku_title?.trim() ||
+    report.sku_key
+  );
 }
 
 function BrandRollupCover({
@@ -2192,14 +2262,10 @@ function BrandModelStrip({
 function pickStat(
   rollup: AgentCenterBrandRollup,
   dim: 'identity' | 'content_richness' | 'routability' | 'citation',
-) {
-  // Backend emits brand_rollup.dimensions[dim] = { median, p25, p75 }.
-  const stat = rollup.dimensions?.[dim];
-  return {
-    median: stat?.median ?? null,
-    p25: stat?.p25 ?? null,
-    p75: stat?.p75 ?? null,
-  };
+): BrandDimensionStat {
+  // Backend emits brand_rollup.dimensions[dim] = { median, p25, p75, band,
+  // band_label, meaning, above_count, total_count }.
+  return rollup.dimensions?.[dim] ?? { median: null, p25: null, p75: null };
 }
 
 function RollupDimensionStat({
@@ -2208,9 +2274,11 @@ function RollupDimensionStat({
   highlight,
 }: {
   label: string;
-  stats: { median: number | null; p25: number | null; p75: number | null };
+  stats: BrandDimensionStat;
   highlight?: boolean;
 }) {
+  const band = stats.band ?? (stats.median == null ? 'unscored' : bandFromScore(stats.median));
+  const bandLabel = stats.band_label ?? BAND_LABEL[band];
   return (
     <div
       className={`rounded border px-3 py-2 ${
@@ -2220,18 +2288,25 @@ function RollupDimensionStat({
       }`}
     >
       <div className="text-[11px] uppercase tracking-wide text-slate-500">
-        {label}
-        {highlight ? ' (output)' : ''}
+        {stats.dimension_label ?? label}
+        {highlight ? ' · outcome' : ''}
       </div>
-      <div
-        className={`text-xl font-bold ${
-          stats.median == null ? 'text-slate-400' : dimensionScoreColor(stats.median)
-        }`}
-      >
-        {stats.median ?? '—'}
+      <div className="flex items-baseline gap-1.5">
+        <span
+          className={`text-xl font-bold ${
+            stats.median == null ? 'text-slate-400' : bandTextClass(band)
+          }`}
+        >
+          {stats.median ?? '—'}
+        </span>
+        {stats.median != null && bandLabel ? (
+          <span className={`text-[10px] font-semibold ${bandTextClass(band)}`}>{bandLabel}</span>
+        ) : null}
       </div>
       <div className="text-[10px] text-slate-500">
-        P25 {stats.p25 ?? '—'} · P75 {stats.p75 ?? '—'}
+        {stats.total_count && stats.above_count != null
+          ? `${stats.above_count} of ${stats.total_count} SKUs at or above`
+          : ' '}
       </div>
     </div>
   );
@@ -2248,46 +2323,79 @@ function PrioritizedQueuePanel({
   if (top.length === 0) {
     return null;
   }
-  const titleMap = new Map(
-    perSku.map((r) => [r.sku_key, r.sku_title || r.identity?.name || r.sku_key]),
-  );
+  const reportMap = new Map(perSku.map((r) => [r.sku_key, r]));
   return (
     <SurfaceCard
-      title="Priority queue"
-      description="Top SKUs to fix first, ranked by impact × gap × fixability (spec §C)."
+      title="Fix these first"
+      description="Biggest visibility gain for the least effort."
     >
-      <div className="px-5 py-4">
-        <table className="w-full text-sm">
-          <thead className="text-left text-xs uppercase text-slate-500">
-            <tr>
-              <th className="py-1 pr-2">#</th>
-              <th className="py-1 pr-2">SKU</th>
-              <th className="py-1 pr-2 text-right">Impact</th>
-              <th className="py-1 pr-2 text-right">Gap</th>
-              <th className="py-1 pr-2 text-right">Fixability</th>
-              <th className="py-1 pr-2 text-right">Score</th>
-            </tr>
-          </thead>
-          <tbody>
-            {top.map((entry, idx) => (
-              <tr key={entry.sku_key} className="border-t border-slate-100">
-                <td className="py-1.5 pr-2 text-slate-500">{idx + 1}</td>
-                <td className="py-1.5 pr-2">
-                  {titleMap.get(entry.sku_key) ?? entry.sku_key}
-                  <div className="font-mono text-[10px] text-slate-400">{entry.sku_key}</div>
-                </td>
-                <td className="py-1.5 pr-2 text-right">{entry.impact?.toFixed(2) ?? '—'}</td>
-                <td className="py-1.5 pr-2 text-right">{entry.gap ?? '—'}</td>
-                <td className="py-1.5 pr-2 text-right">{entry.fixability?.toFixed(2) ?? '—'}</td>
-                <td className="py-1.5 pr-2 text-right font-semibold">
-                  {entry.priority_score?.toFixed(2) ?? '—'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="divide-y divide-slate-100 px-2 py-1">
+        {top.map((entry, idx) => (
+          <QueueRow
+            key={entry.sku_key}
+            entry={entry}
+            rank={idx + 1}
+            report={reportMap.get(entry.sku_key)}
+          />
+        ))}
       </div>
     </SurfaceCard>
+  );
+}
+
+function QueueRow({
+  entry,
+  rank,
+  report,
+}: {
+  entry: BrandPriorityQueueEntry;
+  rank: number;
+  report?: AgentCenterPerSkuReport;
+}) {
+  const [showMath, setShowMath] = useState(false);
+  const name = report ? skuDisplayName(report) : entry.sku_key;
+  const band = report?.band_display?.band ?? report?.band ?? 'blocked';
+  const bandLabel = report?.band_display?.label;
+  const topGap = report?.primary_gaps?.[0]?.label;
+  const nba = report?.next_best_action;
+  const nextStep = nba?.headline || nba?.first_move;
+  return (
+    <div className="flex items-start gap-3 px-3 py-2.5">
+      <span className="w-4 flex-none pt-0.5 text-xs text-slate-400">{rank}</span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium">{name}</span>
+          <BandPill band={band} label={bandLabel} />
+        </div>
+        <div className="mt-0.5 text-xs text-slate-600">
+          {topGap ? (
+            <>
+              Biggest gap: <span className="font-medium">{topGap}</span>
+            </>
+          ) : null}
+          {nextStep ? (
+            <>
+              {topGap ? ' · ' : ''}
+              Next: {nextStep}
+            </>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowMath((v) => !v)}
+          className="mt-1 text-[11px] text-slate-400 hover:text-slate-600"
+        >
+          {showMath ? '▾ details' : '▸ details'}
+        </button>
+        {showMath ? (
+          <div className="mt-1 text-[11px] text-slate-500">
+            impact {entry.impact?.toFixed(2) ?? '—'} · gap {entry.gap ?? '—'} ·
+            fixability {entry.fixability?.toFixed(2) ?? '—'} · rank score{' '}
+            {entry.priority_score?.toFixed(2) ?? '—'}
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -2310,18 +2418,44 @@ function PerSkuCardList({
   return (
     <SurfaceCard
       title="Per-SKU scorecards"
-      description="Identity / Content / Routability are inputs Pivota can act on. Citation is the output the merchant cares about. Click a card to expand evidence."
+      description="Identity, Content and Routability are things Pivota can help you fix. Citation is the result — whether AI actually recommends you. Click a card to see the evidence."
     >
-      <div className="space-y-3 px-5 py-4">
-        {reports.map((r) => (
-          <PerSkuCard
-            key={r.sku_key}
-            report={r}
-            authority={authorityMap.per_sku?.[r.sku_key]}
-          />
-        ))}
+      <div className="px-5 py-4">
+        <ScoreLegend />
+        <div className="mt-3 space-y-3">
+          {reports.map((r) => (
+            <PerSkuCard
+              key={r.sku_key}
+              report={r}
+              authority={authorityMap.per_sku?.[r.sku_key]}
+            />
+          ))}
+        </div>
       </div>
     </SurfaceCard>
+  );
+}
+
+// Persistent "how to read a score" legend above the per-SKU cards.
+function ScoreLegend() {
+  const tiers: Array<{ band: string; range: string }> = [
+    { band: 'agent_ready', range: '85+' },
+    { band: 'ready', range: '70–84' },
+    { band: 'partial', range: '40–69' },
+    { band: 'blocked', range: 'under 40' },
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-slate-500">
+      <span className="font-medium uppercase tracking-wide text-slate-400">How to read</span>
+      {tiers.map((t) => (
+        <span key={t.band} className="inline-flex items-center gap-1.5">
+          <span className={`rounded-full px-1.5 py-0.5 font-semibold ${bandPillClass(t.band)}`}>
+            {BAND_LABEL[t.band]}
+          </span>
+          <span>{t.range}</span>
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -2379,37 +2513,6 @@ function PerSkuModelStrip({
   );
 }
 
-// The recommended next step for this SKU (from the backend's deterministic
-// next_best_action). Renders only the curated merchant-facing fields —
-// headline / first move / Pivota path / CTA — never the internal evidence.
-function PerSkuNextBestAction({ nba }: { nba?: SkuNextBestAction | null }) {
-  if (!nba || (!nba.headline && !nba.first_move)) return null;
-  return (
-    <div className="mt-3 rounded-md border border-current/15 bg-white/40 px-3 py-2.5">
-      <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
-        Recommended next step
-      </div>
-      {nba.headline ? (
-        <div className="mt-1 text-sm font-semibold">{nba.headline}</div>
-      ) : null}
-      {nba.first_move ? (
-        <div className="mt-1 text-xs opacity-80">{nba.first_move}</div>
-      ) : null}
-      {nba.pivota_assisted && nba.pivota_assisted.length > 0 ? (
-        <div className="mt-1.5 text-xs opacity-70">
-          <span className="font-medium">Pivota can help: </span>
-          {nba.pivota_assisted[0]}
-        </div>
-      ) : null}
-      {nba.cta?.label ? (
-        <div className="mt-2 inline-flex rounded border border-current/20 px-2.5 py-1 text-xs font-medium">
-          {nba.cta.label}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function PerSkuCard({
   report,
   authority,
@@ -2427,13 +2530,18 @@ function PerSkuCard({
         className="flex w-full items-start justify-between px-4 py-3 text-left"
       >
         <div className="flex-1">
-          <div className="text-sm font-semibold">{report.sku_title || report.identity?.name || report.sku_key}</div>
-          <div className="font-mono text-[10px] opacity-70">
-            sku_key: {report.sku_key} · band: {report.band}
-            {report.content_key ? ` · ${report.content_key}` : ''}
-          </div>
+          <div className="text-sm font-semibold">{skuDisplayName(report)}</div>
+          {report.band_display?.meaning ? (
+            <div className="mt-0.5 text-[11px] opacity-70">{report.band_display.meaning}</div>
+          ) : null}
         </div>
-        <div className="text-xs opacity-70">{expanded ? '−' : '+'}</div>
+        <div className="flex flex-none items-center gap-2">
+          <BandPill
+            band={report.band_display?.band ?? report.band}
+            label={report.band_display?.label}
+          />
+          <span className="text-xs opacity-70">{expanded ? '−' : '+'}</span>
+        </div>
       </button>
       <div className="px-4 pb-4">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -2463,7 +2571,7 @@ function PerSkuCard({
             </ul>
           </div>
         ) : null}
-        <PerSkuNextBestAction nba={report.next_best_action} />
+        <PerSkuNextStep report={report} />
         {expanded ? (
           <div className="mt-4 space-y-3 border-t border-current/10 pt-3">
             <GroundingEvidenceList evidence={report.verbatim_grounding_evidence} />
@@ -2485,6 +2593,10 @@ function DimensionCell({
   score: SkuDimensionScore;
   highlight?: boolean;
 }) {
+  // Prefer the backend's centralized band/meaning; fall back for older payloads.
+  const band = score.band ?? bandFromScore(score.score);
+  const bandLabel = score.band_label ?? BAND_LABEL[band] ?? '';
+  const dimLabel = score.dimension_label ?? label;
   return (
     <div
       className={`rounded border px-2 py-1.5 ${
@@ -2493,13 +2605,24 @@ function DimensionCell({
           : 'border-current/20 bg-white/40'
       }`}
     >
-      <div className="text-[10px] uppercase tracking-wide opacity-60">
-        {label}
-        {highlight ? ' (output)' : ''}
+      <div
+        className="flex items-center gap-1 text-[10px] uppercase tracking-wide opacity-60"
+        title={score.question || undefined}
+      >
+        <span>{dimLabel}{highlight ? ' · outcome' : ''}</span>
+        {score.question ? (
+          <span aria-hidden className="cursor-help opacity-50">ⓘ</span>
+        ) : null}
       </div>
-      <div className={`text-lg font-bold ${dimensionScoreColor(score.score)}`}>
-        {score.score}
+      <div className="flex items-baseline gap-1.5">
+        <span className={`text-lg font-bold ${bandTextClass(band)}`}>{score.score}</span>
+        {bandLabel ? (
+          <span className={`text-[10px] font-semibold ${bandTextClass(band)}`}>{bandLabel}</span>
+        ) : null}
       </div>
+      {score.meaning ? (
+        <div className="mt-0.5 text-[10px] leading-snug opacity-60">{score.meaning}</div>
+      ) : null}
     </div>
   );
 }
