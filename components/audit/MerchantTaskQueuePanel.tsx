@@ -29,6 +29,7 @@ import type {
   MerchantTaskSeverity,
   MerchantTaskStatus,
 } from '@/lib/types/ai-readiness';
+import { BriefEvidence, briefsOf, humanizeAgentName, summarizeBriefs } from './briefEvidence';
 
 
 type StatusFilter = 'open' | 'all' | 'archive';
@@ -188,6 +189,8 @@ function TaskRow({
   const [showDismiss, setShowDismiss] = useState(false);
   // P1.3 dual-key fallback: read evidence from either field.
   const evidence = task.evidence_jsonb ?? task.evidence ?? null;
+  const briefSummary = summarizeBriefs(evidence);
+  const briefs = briefsOf(evidence);
 
   const sevTone = severityTone(task.severity);
   const isTerminal =
@@ -245,7 +248,7 @@ function TaskRow({
             </span>
             {task.assigned_to_agent ? (
               <span className="text-[10px] text-purple-700">
-                from agent: {task.assigned_to_agent}
+                by Pivota · {humanizeAgentName(task.assigned_to_agent)}
               </span>
             ) : null}
           </div>
@@ -253,6 +256,10 @@ function TaskRow({
           <div className="mt-1 text-sm font-semibold text-slate-900">
             {task.title}
           </div>
+
+          {briefSummary ? (
+            <div className="mt-0.5 text-[11px] text-slate-600">{briefSummary}</div>
+          ) : null}
 
           {task.body ? (
             <button
@@ -270,9 +277,13 @@ function TaskRow({
           ) : null}
 
           {expanded && evidence ? (
-            <pre className="mt-1 overflow-x-auto rounded bg-slate-100 p-2 text-[10px] text-slate-700">
-              {JSON.stringify(evidence, null, 2)}
-            </pre>
+            briefs.length > 0 ? (
+              <BriefEvidence briefs={briefs} />
+            ) : (
+              <pre className="mt-1 overflow-x-auto rounded bg-slate-100 p-2 text-[10px] text-slate-700">
+                {JSON.stringify(evidence, null, 2)}
+              </pre>
+            )
           ) : null}
 
           {task.dismissed_reason ? (
