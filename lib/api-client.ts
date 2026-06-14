@@ -489,11 +489,15 @@ class ApiClient {
   async submitProductEvidence(args: {
     platform: string;
     platformProductId: string;
-    rawInci: string;
+    rawInci?: string;
+    brandUrl?: string;
   }) {
-    const { platform, platformProductId, rawInci } = args;
+    const { platform, platformProductId, rawInci, brandUrl } = args;
     const url = `/merchant/pdps/product/${encodeURIComponent(platform)}/${encodeURIComponent(platformProductId)}/evidence`;
-    const response = await this.client.post(url, { raw_inci: rawInci });
+    const response = await this.client.post(url, {
+      ...(rawInci ? { raw_inci: rawInci } : {}),
+      ...(brandUrl ? { brand_url: brandUrl } : {}),
+    });
     return response.data;
   }
 
