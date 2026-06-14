@@ -534,7 +534,7 @@ export default function AiReadinessAuditPage() {
                   className="inline-flex items-center gap-1 rounded bg-indigo-50 px-2 py-1 text-xs text-indigo-900"
                 >
                   <span className="rounded-sm bg-indigo-200 px-1 text-[10px] uppercase tracking-wide text-indigo-900">
-                    merchant_input
+                    your prompt
                   </span>
                   {p}
                 </span>
@@ -1934,9 +1934,9 @@ function PerSkuAuditReportRenderer({
   return (
     <div className="space-y-4">
       <div className="text-xs text-slate-500">
-        v3 per-SKU audit complete · run {report.audit_run_id} ·{' '}
-        {report.cost_summary.prompts} probes across{' '}
-        {costSummaryProviderNames(report.cost_summary)}
+        Audited {report.per_sku_reports.length} product
+        {report.per_sku_reports.length === 1 ? '' : 's'} against{' '}
+        {costSummaryProviderNames(report.cost_summary)}.
       </div>
       <BrandRollupCover
         rollup={report.brand_rollup}
@@ -1952,7 +1952,6 @@ function PerSkuAuditReportRenderer({
         reports={report.per_sku_reports}
         authorityMap={report.authority_map}
       />
-      <CostSummaryFooter summary={report.cost_summary} legacy={report.legacy_verdict} />
     </div>
   );
 }
@@ -2249,7 +2248,9 @@ function PrioritizedQueuePanel({
   if (top.length === 0) {
     return null;
   }
-  const titleMap = new Map(perSku.map((r) => [r.sku_key, r.title || r.sku_key]));
+  const titleMap = new Map(
+    perSku.map((r) => [r.sku_key, r.sku_title || r.identity?.name || r.sku_key]),
+  );
   return (
     <SurfaceCard
       title="Priority queue"
@@ -2426,7 +2427,7 @@ function PerSkuCard({
         className="flex w-full items-start justify-between px-4 py-3 text-left"
       >
         <div className="flex-1">
-          <div className="text-sm font-semibold">{report.title || report.sku_key}</div>
+          <div className="text-sm font-semibold">{report.sku_title || report.identity?.name || report.sku_key}</div>
           <div className="font-mono text-[10px] opacity-70">
             sku_key: {report.sku_key} · band: {report.band}
             {report.content_key ? ` · ${report.content_key}` : ''}
@@ -2644,21 +2645,3 @@ function AxisCoverageBlock({
   );
 }
 
-function CostSummaryFooter({
-  summary,
-  legacy,
-}: {
-  summary: AgentCenterCostSummary;
-  legacy: string;
-}) {
-  return (
-    <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-      Probes: {(summary.prompts ?? 0).toLocaleString()} ·{' '}
-      Providers: {costSummaryProviderNames(summary)} ·{' '}
-      LLM calls: {summary.llm_calls ?? summary.prompts ?? 0} ·{' '}
-      Tokens: {(summary.total_input_tokens ?? 0).toLocaleString()} in /{' '}
-      {(summary.total_output_tokens ?? 0).toLocaleString()} out ·{' '}
-      Legacy verdict: <span className="font-mono">{legacy}</span>
-    </div>
-  );
-}
