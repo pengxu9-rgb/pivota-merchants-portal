@@ -1037,7 +1037,15 @@ export interface AuditPreviewGap {
   short: number;
 }
 
-export type AuditPreviewProvider = 'gemini' | 'deepseek' | 'claude' | 'openai';
+// Backend canonical provider ids. 'chatgpt' is the OpenAI Responses probe
+// (model chat-latest); 'openai' kept as a legacy alias. 'chatgpt'/'claude' are
+// premium (paid plan required); 'gemini' is free; 'deepseek' is verify-only.
+export type AuditPreviewProvider = 'gemini' | 'deepseek' | 'claude' | 'chatgpt' | 'openai';
+
+// Premium (paid-plan-gated) audit providers, mirrored from the backend
+// coverage-profile config. Selecting one on a free plan yields a 402
+// PremiumProviderRequiredError at launch.
+export const PREMIUM_AUDIT_PROVIDERS: readonly AuditPreviewProvider[] = ['chatgpt', 'claude'];
 
 export type AuditPreviewScope =
   | { sku_keys: string[] }

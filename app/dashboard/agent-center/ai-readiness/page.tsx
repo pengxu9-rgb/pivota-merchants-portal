@@ -22,8 +22,13 @@ import {
   AlertTriangle,
   Brain,
   Loader2,
+  Lock,
 } from 'lucide-react';
-import { apiClient, InsufficientCreditsError } from '@/lib/api-client';
+import {
+  apiClient,
+  InsufficientCreditsError,
+  PremiumProviderRequiredError,
+} from '@/lib/api-client';
 import {
   MerchantButton,
   PageHeader,
@@ -41,6 +46,7 @@ import type {
   AgentCenterBdReport,
   AgentCenterBdVerdictLabel,
   AgentCenterAuditPreviewResponse,
+  AuditPreviewProvider,
   AgentCenterPerSkuAuditResponse,
   AgentCenterPerSkuReport,
   AgentCenterBrandRollup,
@@ -59,6 +65,7 @@ import type {
   CustomPromptResult,
   CustomPromptLane,
 } from '@/lib/types/ai-readiness';
+import { PREMIUM_AUDIT_PROVIDERS } from '@/lib/types/ai-readiness';
 
 /**
  * Catalog row shape returned by apiClient.getProducts(). The response
@@ -156,6 +163,15 @@ export default function AiReadinessAuditPage() {
   const [auditError, setAuditError] = useState<string | null>(null);
   const [auditResult, setAuditResult] = useState<LaunchResult | null>(null);
   const [insufficient, setInsufficient] = useState<InsufficientCreditsError | null>(null);
+  // Premium-provider paywall (ChatGPT/Claude on a free plan). Set when launch
+  // returns 402 premium_provider_subscription_required.
+  const [premiumRequired, setPremiumRequired] =
+    useState<PremiumProviderRequiredError | null>(null);
+
+  // Tiered audit model: free tier runs Gemini only; ChatGPT/Claude are premium
+  // (paid plan). Gemini is always on (the free baseline); merchants opt into
+  // premium models, then subscribe at launch if not entitled.
+  const [selectedProviders, setSelectedProviders] = useState<AuditPreviewProvider[]>(['gemini']);
 
   // Custom prompts — reserved slots for marketing-team use-case prompts
   // (hydration / acne / picky-eaters / etc.). Up to 10; trim + dedupe
@@ -312,7 +328,7 @@ export default function AiReadinessAuditPage() {
           scope: { sku_keys: selectedSkuKeys },
           prompts_per_sku: 40,
           custom_prompts: customPromptsParsed,
-          providers: ['gemini'],
+          providers: selectedProviders,
         })
         .then((res) => {
           if (seq !== previewRequestSeqRef.current) return; // stale
@@ -334,7 +350,7 @@ export default function AiReadinessAuditPage() {
     return () => {
       if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
     };
-  }, [selectedSkuKeys, customPromptsParsed, customPromptsError]);
+  }, [selectedSkuKeys, customPromptsParsed, customPromptsError, selectedProviders]);
 
   const previewSufficient = previewData?.sufficient === true;
 
@@ -347,6 +363,7 @@ export default function AiReadinessAuditPage() {
     setRunning(true);
     setAuditError(null);
     setInsufficient(null);
+    setPremiumRequired(null);
     setAuditResult(null);
     const idempotencyKey = `audit_run_${merchantId}_${Date.now()}`;
     try {
@@ -355,12 +372,14 @@ export default function AiReadinessAuditPage() {
         sku_keys: selectedSkuKeys,
         prompts_per_sku: 40,
         custom_prompts: customPromptsParsed,
-        providers: ['gemini'],
+        providers: selectedProviders,
         idempotency_key: idempotencyKey,
       });
       setAuditResult({ mode: 'per_sku', payload: res });
     } catch (err) {
-      if (err instanceof InsufficientCreditsError) {
+      if (err instanceof PremiumProviderRequiredError) {
+        setPremiumRequired(err);
+      } else if (err instanceof InsufficientCreditsError) {
         setInsufficient(err);
       } else {
         // Surface backend-supplied detail for 429 / 422 / 404 (legacy
@@ -562,6 +581,12 @@ export default function AiReadinessAuditPage() {
         </div>
       </SurfaceCard>
 
+      <ProviderSelector
+        selected={selectedProviders}
+        onChange={setSelectedProviders}
+        planTier={previewData?.current_balance?.plan_tier ?? null}
+      />
+
       <div className="flex items-center justify-between rounded border border-indigo-200 bg-indigo-50/50 px-4 py-3">
         <div className="text-sm text-slate-700">
           {previewData?.current_balance?.plan_tier === 'free' ? (
@@ -603,6 +628,10 @@ export default function AiReadinessAuditPage() {
 
       {insufficient ? (
         <InsufficientCreditsBanner error={insufficient} />
+      ) : null}
+
+      {premiumRequired ? (
+        <PremiumProviderRequiredBanner error={premiumRequired} />
       ) : null}
 
       {auditError ? (
@@ -807,6 +836,120 @@ function InsufficientCreditsBanner({ error }: { error: InsufficientCreditsError 
               Preview URL: <code>{error.previewUrl}</code>
             </p>
           ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Tiered audit model: free tier runs Gemini; ChatGPT/Claude are premium.
+// Gemini is the always-on baseline (can't be deselected); premium models are
+// opt-in toggles. Selecting a premium model on a free plan is allowed — the
+// paywall surfaces at launch (PremiumProviderRequiredBanner) per product spec.
+const PROVIDER_OPTIONS: { id: AuditPreviewProvider; label: string; blurb: string }[] = [
+  { id: 'gemini', label: 'Gemini', blurb: 'Google · grounded search' },
+  { id: 'chatgpt', label: 'ChatGPT', blurb: 'OpenAI · web search' },
+  { id: 'claude', label: 'Claude', blurb: 'Anthropic · web search' },
+];
+
+function ProviderSelector({
+  selected,
+  onChange,
+  planTier,
+}: {
+  selected: AuditPreviewProvider[];
+  onChange: (next: AuditPreviewProvider[]) => void;
+  planTier: string | null;
+}) {
+  const isFree = planTier === 'free';
+  const premiumSelected = selected.some((p) => PREMIUM_AUDIT_PROVIDERS.includes(p));
+  const toggle = (id: AuditPreviewProvider) => {
+    if (id === 'gemini') return; // Gemini is the free baseline — always on.
+    onChange(
+      selected.includes(id) ? selected.filter((p) => p !== id) : [...selected, id],
+    );
+  };
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-semibold text-slate-900">Models to run</div>
+        <div className="text-[11px] text-slate-500">
+          Gemini is free · ChatGPT &amp; Claude are premium
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {PROVIDER_OPTIONS.map((opt) => {
+          const checked = selected.includes(opt.id);
+          const premium = PREMIUM_AUDIT_PROVIDERS.includes(opt.id);
+          const base = opt.id === 'gemini';
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => toggle(opt.id)}
+              aria-pressed={checked}
+              disabled={base}
+              title={opt.blurb}
+              className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition ${
+                checked
+                  ? 'border-indigo-400 bg-indigo-50 text-indigo-900'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+              } ${base ? 'cursor-default opacity-90' : ''}`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-sm border ${
+                  checked ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'
+                }`}
+              />
+              <span className="font-medium">{opt.label}</span>
+              {premium ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                  <Lock className="h-2.5 w-2.5" /> Premium
+                </span>
+              ) : (
+                <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
+                  Free
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {isFree && premiumSelected ? (
+        <p className="mt-2 text-xs text-amber-800">
+          Premium models need a paid plan — you&apos;ll be asked to subscribe before this
+          audit runs.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function PremiumProviderRequiredBanner({ error }: { error: PremiumProviderRequiredError }) {
+  const names =
+    error.premiumProvidersRequested.map(providerLabel).join(' & ') || 'Premium models';
+  const singular = error.premiumProvidersRequested.length === 1;
+  return (
+    <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-4">
+      <div className="flex items-start gap-3">
+        <Lock className="h-5 w-5 text-amber-600" />
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-amber-900">
+            {names} {singular ? 'is a premium model' : 'are premium models'} — subscribe to
+            run this audit
+          </div>
+          <p className="mt-1 text-xs text-amber-900/80">
+            {error.message}
+            {error.freeAlternativeProvider
+              ? ' Free accounts can run Gemini audits at no charge.'
+              : ''}
+          </p>
+          <a
+            href={error.billingUrl}
+            className="mt-3 inline-flex items-center gap-2 rounded-md bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-700"
+          >
+            Subscribe to a paid plan →
+          </a>
         </div>
       </div>
     </div>
