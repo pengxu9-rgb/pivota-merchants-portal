@@ -434,6 +434,147 @@ export interface AgentCenterBdBrandReport {
   failed: { pdp_url: string; title: string; error: string }[];
 }
 
+// ---------------------------------------------------------------------
+// Fix 2 + Fix 3 — per-SKU report's merchant_narrative + authority_map.
+// These live on the async per-SKU report_jsonb (NOT the legacy brand
+// report above). Shapes mirror pivota-backend
+// docs/PORTAL_RENDERING_CONTRACT.md. Every field is optional/nullable so
+// the renderer degrades gracefully on a legacy report (no fabrication).
+// ---------------------------------------------------------------------
+
+export type CitationRole =
+  | 'own_domain'
+  | 'marketplace_self_listing'
+  | 'independent_retailer'
+  | 'editorial_review'
+  | 'creator'
+  | 'forum'
+  | 'competitor'
+  | 'unclassified';
+
+/** findability = the product is *findable* (own site + own listing on a
+ * marketplace); endorsement = an independent third party *recommended* it. */
+export const FINDABILITY_ROLES: CitationRole[] = ['own_domain', 'marketplace_self_listing'];
+export const ENDORSEMENT_ROLES: CitationRole[] = [
+  'independent_retailer',
+  'editorial_review',
+  'creator',
+  'forum',
+];
+
+export interface AuthorityHostRow {
+  host: string;
+  citation_role: CitationRole;
+  recommendation_class?: string | null;
+  prompts_cited_count: number;
+  cited_on_category_query: boolean;
+  first_party?: boolean;
+  is_competitor?: boolean;
+}
+
+export interface HostAttributionSummary {
+  distinct_hosts: number;
+  findability_hosts: string[];
+  endorsement_hosts: string[];
+  endorsement_category_hosts: string[];
+  competitor_hosts: string[];
+  has_independent_endorsement: boolean;
+  independently_recommended_for_category: boolean;
+  surfaced_only_via_own_listing: boolean;
+}
+
+export interface AuthorityMap {
+  hosts: AuthorityHostRow[];
+  host_attribution_summary: HostAttributionSummary;
+}
+
+export interface NarrativeEvidenceExcerpt {
+  sku_title: string | null;
+  query: string | null;
+  excerpt: string;
+  source_labels: string[];
+}
+
+export interface WhoAiCitesInsteadHost {
+  host: string;
+  citation_role: CitationRole | null;
+  recommendation_class?: string | null;
+  prompts_cited_count: number;
+  cited_on_category_query: boolean;
+}
+
+export interface WhoAiCitesInstead {
+  available: boolean;
+  cited_hosts: WhoAiCitesInsteadHost[];
+  competitors: { name: string; times_named: number }[];
+  note: string | null;
+}
+
+export interface MerchantNarrativeWhatsWorking {
+  summary: string;
+  findability_hosts: string[];
+  branded_navigational_probes: number;
+  category_discovery_probes: number;
+  evidence_excerpt: NarrativeEvidenceExcerpt | null;
+}
+
+export interface MerchantNarrativeWhereLosing {
+  summary: string;
+  independently_recommended_for_category: boolean;
+  endorsement_hosts: string[];
+  who_ai_cites_instead: WhoAiCitesInstead;
+}
+
+export interface MerchantNarrativeScorecardRow {
+  sku_key: string;
+  sku_title: string | null;
+  band: string | null;
+  status: string | null;
+  what_it_means: string | null;
+  surfaced_only_via_own_listing: boolean;
+  independently_recommended_for_category: boolean;
+}
+
+export interface MerchantNarrativeVerifyPlain {
+  status: string;
+  verified: number;
+  flagged: number;
+  checked: number;
+  candidates: number;
+  text: string;
+}
+
+export interface MerchantNarrativeAction {
+  sku_title: string | null;
+  primary_gap: string | null;
+  headline: string;
+  first_move: string | null;
+  why_this_first: string | null;
+  growth_phase: string;
+  growth_phase_label: string;
+}
+
+export interface MerchantNarrative {
+  headline_story: string;
+  whats_working: MerchantNarrativeWhatsWorking;
+  where_youre_losing: MerchantNarrativeWhereLosing;
+  per_sku_scorecard: MerchantNarrativeScorecardRow[];
+  verify_summary_plain: MerchantNarrativeVerifyPlain;
+  prioritized_actions: MerchantNarrativeAction[];
+  honest_limits: string[];
+  verdict_label: string | null;
+  verdict_explanation: string | null;
+}
+
+/** Subset of the async per-SKU report_jsonb the narrative view renders. */
+export interface PerSkuAuditReport {
+  merchant_name: string;
+  merchant_domain: string | null;
+  timestamp: string;
+  authority_map?: AuthorityMap | null;
+  merchant_narrative?: MerchantNarrative | null;
+}
+
 /** Wrapper returned by the merchant audit endpoint. */
 export interface AiReadinessAuditResponse {
   brand_report: AgentCenterBdBrandReport;
