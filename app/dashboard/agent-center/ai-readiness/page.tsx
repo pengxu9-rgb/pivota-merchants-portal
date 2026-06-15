@@ -243,16 +243,40 @@ export default function AiReadinessAuditPage() {
       setAuditError('Audit is taking longer than expected — check back shortly.');
     } catch (err) {
       const e = err as {
-        response?: { status?: number; data?: { detail?: { message?: string } } };
+        response?: {
+          status?: number;
+          data?: {
+            detail?: {
+              code?: string;
+              error?: string;
+              kind?: string;
+              message?: string;
+              required?: number;
+              available?: number;
+            };
+          };
+        };
         message?: string;
       };
       const status = e.response?.status;
-      const detail = e.response?.data?.detail;
+      const d = e.response?.data?.detail;
       if (status === 402) {
-        setAuditError(
-          detail?.message ||
-            'ChatGPT/Claude audits need a paid plan — free accounts run Gemini audits.',
-        );
+        // Two distinct 402s on POST /api/audits: a premium-provider paywall and
+        // an insufficient-credits gate — they need different merchant copy.
+        if (d?.code === 'premium_provider_subscription_required') {
+          setAuditError(
+            d.message ||
+              'ChatGPT/Claude audits need a paid plan — free accounts run Gemini audits.',
+          );
+        } else if (d?.error === 'insufficient_credits' || d?.kind === 'credits') {
+          const need =
+            typeof d.required === 'number'
+              ? ` (need ${d.required}, have ${d.available ?? 0})`
+              : '';
+          setAuditError(`Not enough audit credits${need}. Top up to run this audit.`);
+        } else {
+          setAuditError(d?.message || 'This audit needs credits or a paid plan.');
+        }
       } else if (status === 429) {
         setAuditError("You've used today's audit budget. Try again later.");
       } else {
