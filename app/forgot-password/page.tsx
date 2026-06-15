@@ -27,7 +27,7 @@ export default function ForgotPasswordPage() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ email })
+        body: JSON.stringify({ email, portal: 'merchant' })
       });
 
       const data = await response.json();
