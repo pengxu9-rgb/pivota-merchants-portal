@@ -877,7 +877,7 @@ function ProviderSelector({
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-slate-900">Models to run</div>
         <div className="text-[11px] text-slate-500">
-          Gemini is free · ChatGPT &amp; Claude are premium
+          Gemini on the free plan · ChatGPT &amp; Claude need a paid plan · all runs use credits
         </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
@@ -911,7 +911,7 @@ function ProviderSelector({
                 </span>
               ) : (
                 <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
-                  Free
+                  Free plan
                 </span>
               )}
             </button>
