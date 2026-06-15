@@ -112,6 +112,13 @@
           "product_visible": true
         }
       ],
+      "indexing_arc": {
+        "phase": "indexing",
+        "days_since_mint": 20,
+        "minted_at": "2026-05-26T15:40:04.067592+00:00",
+        "expected_first_citation_at": "2026-08-24T15:40:04.067592+00:00",
+        "caveat": "This canonical URL was minted 20 days ago \u2014 in the Google indexing window (typically 7-90 days). First grounded citations may appear toward the end of this band. Re-audit on or after 2026-08-24 to check progress."
+      },
       "band": "partial",
       "band_display": {
         "label": "Needs work",
@@ -150,6 +157,35 @@
     "brand_verdict_explanation": "Findable via your listings; not yet independently recommended for the category.",
     "where_you_can_win": {
       "targets": []
+    },
+    "indexing_arc": {
+      "skus_on_canonical_pdp": 1,
+      "phase_counts": {
+        "indexing": 1
+      },
+      "skus_still_indexing": 1,
+      "recheck_on_or_after": "2026-08-24T15:40:04.067592+00:00",
+      "caveat": "1 of 1 audited product is on a freshly-minted Pivota canonical PDP still inside Google's 30-90 day indexing window \u2014 zero category citations there may reflect indexing latency, not a content gap. Re-audit on or after 2026-08-24 to check progress."
+    },
+    "integration": {
+      "gsc_integrated": false,
+      "store_platform_integrated": true,
+      "psp_integrated": true,
+      "fully_integrated": true,
+      "actions": [
+        {
+          "severity": "high",
+          "lever": "gsc_integration",
+          "title": "Grant Pivota access to your Google Search Console",
+          "body": "Pivota canonical PDPs need to land in Google's index before AI agents can ground answers in them. The fastest path is to grant Pivota Search Console access \u2014 we'll auto-submit your canonical URLs + monitor indexing status, so 'submit your sitemap' becomes a one-click step rather than a recurring task you manage.",
+          "concrete_next_step": "Open Search Console authorization",
+          "cta_url": "/onboarding/gsc",
+          "cta_label": "Grant GSC access",
+          "evidence": {
+            "gsc_integrated": false
+          }
+        }
+      ]
     }
   },
   "authority_map": {
@@ -568,7 +604,8 @@
     ],
     "honest_limits": [
       "Provider coverage: grounded on gemini; answer-quality verify on deepseek (coverage profile: pilot_gemini).",
-      "Coverage pending: chatgpt not yet included \u2014 citation/host counts will rise as they are added."
+      "Coverage pending: chatgpt not yet included \u2014 citation/host counts will rise as they are added.",
+      "1 of 1 audited product is on a freshly-minted Pivota canonical PDP still inside Google's 30-90 day indexing window \u2014 zero category citations there may reflect indexing latency, not a content gap. Re-audit on or after 2026-08-24 to check progress."
     ],
     "verdict_label": "Listed, not recommended",
     "verdict_explanation": "Findable via your listings; not yet independently recommended for the category."

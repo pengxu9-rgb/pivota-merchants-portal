@@ -39,6 +39,7 @@ import { PerSkuNextStep } from '@/components/audit/PerSkuNextStep';
 import { MerchantExecutorActivityPanel } from '@/components/audit/MerchantExecutorActivityPanel';
 import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
 import { WinPlanPanel } from '@/components/audit/WinPlanPanel';
+import { IntegrationCtaPanel } from '@/components/audit/IntegrationCtaPanel';
 import type {
   AgentCenterBdBrandReport,
   AgentCenterBdCoOccurrenceVerification,
@@ -2099,6 +2100,10 @@ function PerSkuAuditReportRenderer({
       {/* Fix 4 — how to win the recommendation: per-losing-query targets +
           one-click pitches. Returns null when there's no plan. */}
       <WinPlanPanel winPlan={report.win_plan} />
+      {/* Issue #902 — GSC-connect / onboarding CTA (returns null when fully
+          integrated + GSC connected). The indexing-arc caveat renders inside the
+          narrative's honest limits. */}
+      <IntegrationCtaPanel integration={report.brand_rollup.integration} />
       <WhereYouCanWinPanel data={report.brand_rollup.where_you_can_win} />
       <CustomPromptsPanel prompts={report.custom_prompts} />
       <PrioritizedQueuePanel
