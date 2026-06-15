@@ -94,6 +94,28 @@ ok(wps != null, 'win_plan_summary present');
 ok(wps.losing_category_queries === wp.rollup.losing_category_queries, 'summary losing count matches rollup');
 ok(wps.pitch_ready_hosts.length === wp.rollup.pitch_ready_hosts.length, 'summary pitch_ready matches rollup');
 
+// ── issue #902 — GSC-connect CTA (IntegrationCtaPanel) + indexing arc ────────
+console.log('\n#902 integration CTA + indexing arc:');
+const integration = fixture.brand_rollup?.integration;
+ok(integration != null, 'brand_rollup.integration present');
+ok(Array.isArray(integration.actions) && integration.actions.length > 0, 'integration.actions non-empty');
+const gsc = (integration.actions || []).find((a) => a.lever === 'gsc_integration');
+ok(gsc != null, 'a gsc_integration action is present (not connected)');
+if (gsc) {
+  ok(typeof gsc.title === 'string' && gsc.title.length > 0, 'CTA has a title');
+  ok(typeof gsc.body === 'string' && gsc.body.length > 0, 'CTA has a body');
+  ok(typeof gsc.cta_url === 'string' && gsc.cta_url.length > 0, 'CTA has a cta_url (button link)');
+  ok(typeof gsc.cta_label === 'string' && gsc.cta_label.length > 0, 'CTA has a cta_label');
+}
+const arc = fixture.brand_rollup?.indexing_arc;
+ok(arc != null, 'brand_rollup.indexing_arc present');
+ok(typeof arc.caveat === 'string' && arc.caveat.length > 0, 'indexing_arc.caveat is a string');
+// the arc caveat also surfaces in the narrative honest_limits (renders today)
+ok(
+  (n.honest_limits || []).some((l) => /indexing/i.test(l)),
+  'indexing-arc caveat surfaces in narrative honest_limits',
+);
+
 console.log(
   failures === 0
     ? `\n✅ ALL CONTRACT CHECKS PASSED (${targetsChecked} targets)`

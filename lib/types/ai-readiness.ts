@@ -846,6 +846,31 @@ export interface BrandProviderCitation {
   prompts: number;
 }
 
+// Issue #902 — brand rollup of the per-SKU Google indexing arcs. How many
+// audited SKUs sit on freshly-minted Pivota canonical PDPs still inside Google's
+// 30-90d indexing window, so a merchant reads zero category citations there as
+// indexing latency, not a content gap. (The per-SKU shape is
+// AgentCenterBdIndexingArcState; this is the brand-level rollup.)
+export interface BrandIndexingArcRollup {
+  skus_on_canonical_pdp: number;
+  phase_counts: Record<string, number>;
+  skus_still_indexing: number;
+  recheck_on_or_after: string | null;
+  caveat: string;
+}
+
+// Issue #902 — brand-level integration status + CTAs (the GSC-connect button).
+// `actions` is the legacy merchant_view integration/GSC action ladder: the
+// "Complete Pivota integration" action when store/PSP is incomplete, else the
+// "Grant GSC access" CTA when Search Console isn't connected.
+export interface AgentCenterIntegrationBlock {
+  gsc_integrated: boolean;
+  store_platform_integrated: boolean;
+  psp_integrated: boolean;
+  fully_integrated: boolean;
+  actions: AgentCenterBdActionItem[];
+}
+
 export interface AgentCenterBrandRollup {
   // Backend shape: { dimensions: { identity: {median,p25,p75}, ... } }.
   // (NOT a top-level median/p25/p75 keyed by dimension — that mismatch crashed
@@ -862,6 +887,12 @@ export interface AgentCenterBrandRollup {
   // Phase 2 niche-targeting: where the brand can win (open lanes) vs the
   // flagship-owned head terms to stop fighting.
   where_you_can_win?: WhereYouCanWin;
+  // Issue #902: per-SKU Google indexing-arc rolled up to the brand. Optional +
+  // best-effort on the backend; null when no audited SKU has a canonical-PDP arc.
+  indexing_arc?: BrandIndexingArcRollup | null;
+  // Issue #902: integration status + CTAs (GSC-connect / onboarding). Optional +
+  // best-effort; null when the integration lookup failed.
+  integration?: AgentCenterIntegrationBlock | null;
 }
 
 export interface WhereYouCanWinTarget {
