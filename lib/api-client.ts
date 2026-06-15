@@ -1733,6 +1733,21 @@ class ApiClient {
     return response.data?.data || response.data;
   }
 
+  /** Fetch one audit run's detail row (stage + report_jsonb). Used to recover a
+   *  completed run by id — e.g. when a slow run's live poll hit its budget but
+   *  the backend finished and the report is intact. */
+  async getAuditRunDetail(runId: string): Promise<{
+    stage?: string;
+    report_jsonb?: import('./types/ai-readiness').AgentCenterPerSkuAuditResponse;
+    error_message?: string | null;
+  }> {
+    const res = await this.client.get(
+      `/api/audits/${encodeURIComponent(runId)}`,
+      { timeout: 20_000 },
+    );
+    return res.data?.data || res.data;
+  }
+
   async runPerSkuAudit(request: {
     merchant_id: string;
     sku_keys: string[];
@@ -1777,7 +1792,11 @@ class ApiClient {
       //    top-level `status` is null); the flat per-SKU report we render
       //    lives in `report_jsonb`.
       const startedAt = Date.now();
-      const MAX_MS = 9 * 60_000; // worker probes can run several minutes
+      // Worker probes can run several minutes; a 2-SKU grounded run was observed
+      // at ~11.5 min, so 9 min was too tight (the poll gave up before the backend
+      // finished, stranding a completed report). 15 min covers slow real runs; a
+      // timeout still leaves the run recoverable by id (getAuditRunDetail).
+      const MAX_MS = 15 * 60_000;
       const INTERVAL_MS = 5_000;
       for (;;) {
         await new Promise((r) => setTimeout(r, INTERVAL_MS));
