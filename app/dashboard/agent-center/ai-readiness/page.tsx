@@ -24,6 +24,8 @@ import {
 } from '@/components/ui/merchant-primitives';
 import { MerchantTaskQueuePanel } from '@/components/audit/MerchantTaskQueuePanel';
 import { MerchantExecutorActivityPanel } from '@/components/audit/MerchantExecutorActivityPanel';
+import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
+import type { PerSkuAuditReport } from '@/lib/types/ai-readiness';
 import type {
   AgentCenterBdBrandReport,
   AgentCenterBdCoOccurrenceVerification,
@@ -111,6 +113,15 @@ function pickCurrency(p: CatalogProductRow): string {
 
 const MAX_SELECTED = 5;
 
+// ADR-003 Phase 2: when on, run the audit via the async per-SKU lifecycle
+// (POST /api/audits → poll → render merchant_narrative). Default off; the legacy
+// synchronous path stays the default until this is validated + the GSC/indexing
+// parity follow-up (#902) lands.
+const ASYNC_AUDIT = process.env.NEXT_PUBLIC_AI_READINESS_ASYNC === '1';
+// Free-tier-safe default: Gemini-grounded + DeepSeek verify (no premium 402).
+const ASYNC_COVERAGE_PROFILE = 'pilot_gemini';
+const ASYNC_TERMINAL = new Set(['succeeded', 'completed', 'failed', 'cancelled', 'error']);
+
 export default function AiReadinessAuditPage() {
   const [products, setProducts] = useState<CatalogProductRow[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
@@ -120,6 +131,9 @@ export default function AiReadinessAuditPage() {
   const [running, setRunning] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [auditResult, setAuditResult] = useState<AiReadinessAuditResponse | null>(null);
+  // Async per-SKU lifecycle (ADR-003 Phase 2).
+  const [perSkuReport, setPerSkuReport] = useState<PerSkuAuditReport | null>(null);
+  const [asyncStage, setAsyncStage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -198,8 +212,64 @@ export default function AiReadinessAuditPage() {
     [selected],
   );
 
+  // ADR-003 Phase 2: launch the async per-SKU audit, poll until terminal, then
+  // render merchant_narrative + authority_map (which the legacy sync path never
+  // produces). Per-SKU audits run minutes, so we poll rather than block.
+  const runAsyncAudit = async () => {
+    if (selectedRefs.length < 1 || selectedRefs.length > 5) return;
+    setRunning(true);
+    setAuditError(null);
+    setAuditResult(null);
+    setPerSkuReport(null);
+    setAsyncStage('queued');
+    try {
+      const { run_id } = await apiClient.createAudit(selectedRefs, {
+        coverageProfile: ASYNC_COVERAGE_PROFILE,
+      });
+      for (let i = 0; i < 200; i += 1) {
+        await new Promise((r) => setTimeout(r, 4000));
+        const detail = await apiClient.getAuditRun(run_id);
+        setAsyncStage(detail.stage || detail.status);
+        const st = (detail.status || '').toLowerCase();
+        if (ASYNC_TERMINAL.has(st)) {
+          if ((st === 'succeeded' || st === 'completed') && detail.report_jsonb) {
+            setPerSkuReport(detail.report_jsonb);
+          } else {
+            setAuditError(detail.error_message || `Audit ${st || 'did not complete'}.`);
+          }
+          return;
+        }
+      }
+      setAuditError('Audit is taking longer than expected — check back shortly.');
+    } catch (err) {
+      const e = err as {
+        response?: { status?: number; data?: { detail?: { message?: string } } };
+        message?: string;
+      };
+      const status = e.response?.status;
+      const detail = e.response?.data?.detail;
+      if (status === 402) {
+        setAuditError(
+          detail?.message ||
+            'ChatGPT/Claude audits need a paid plan — free accounts run Gemini audits.',
+        );
+      } else if (status === 429) {
+        setAuditError("You've used today's audit budget. Try again later.");
+      } else {
+        setAuditError(e.message || 'Audit failed. Try again in a few seconds.');
+      }
+    } finally {
+      setRunning(false);
+      setAsyncStage(null);
+    }
+  };
+
   const runAudit = async () => {
     if (selectedRefs.length < 1 || selectedRefs.length > 5) return;
+    if (ASYNC_AUDIT) {
+      void runAsyncAudit();
+      return;
+    }
     setRunning(true);
     setAuditError(null);
     setAuditResult(null);
@@ -376,6 +446,36 @@ export default function AiReadinessAuditPage() {
             <p className="text-sm text-red-900">{auditError}</p>
           </div>
         </div>
+      ) : null}
+
+      {running && asyncStage ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center gap-3 text-sm text-slate-600">
+            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-indigo-500" />
+            Running AI-readiness audit…{' '}
+            <span className="font-medium capitalize">{asyncStage}</span>
+            <span className="text-xs text-slate-400">
+              (this takes a few minutes — you can leave this page and come back)
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      {perSkuReport ? (
+        <>
+          <div className="text-xs text-slate-500">
+            AI Commerce Readiness · {perSkuReport.merchant_name}
+            {perSkuReport.timestamp
+              ? ` · ${new Date(perSkuReport.timestamp).toLocaleString()}`
+              : ''}
+          </div>
+          <MerchantNarrativePanel
+            narrative={perSkuReport.merchant_narrative}
+            authorityMap={perSkuReport.authority_map}
+          />
+          <MerchantTaskQueuePanel />
+          <MerchantExecutorActivityPanel />
+        </>
       ) : null}
 
       {auditResult ? (

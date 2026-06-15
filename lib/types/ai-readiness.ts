@@ -571,8 +571,29 @@ export interface PerSkuAuditReport {
   merchant_name: string;
   merchant_domain: string | null;
   timestamp: string;
+  brand_verdict_label?: string | null;
+  brand_verdict_explanation?: string | null;
   authority_map?: AuthorityMap | null;
   merchant_narrative?: MerchantNarrative | null;
+}
+
+/** POST /api/audits — 202 Accepted (async per-SKU lifecycle, ADR-003). */
+export interface CreateAuditResponse {
+  run_id: string;
+  status: string;
+  stage?: string | null;
+  idempotent_replay?: boolean;
+}
+
+/** GET /api/audits/{run_id} — async run detail (report_jsonb populated when terminal). */
+export interface AuditRunDetail {
+  run_id: string;
+  status: string;
+  stage?: string | null;
+  report_jsonb?: PerSkuAuditReport | null;
+  partial_result_jsonb?: Record<string, unknown> | null;
+  error_message?: string | null;
+  error_jsonb?: Record<string, unknown> | null;
 }
 
 /** Wrapper returned by the merchant audit endpoint. */

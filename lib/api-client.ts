@@ -1243,6 +1243,36 @@ class ApiClient {
     return response.data?.data || response.data;
   }
 
+  // ADR-003: async per-SKU audit lifecycle. POST launches; the worker runs the
+  // per-SKU pipeline (which produces merchant_narrative + authority_map); poll
+  // GET until terminal. `sku_keys` are `platform:source_product_id` composites.
+  async createAudit(
+    products: { platform: string; source_product_id: string }[],
+    opts?: { coverageProfile?: string; promptsPerSku?: number },
+  ): Promise<import('./types/ai-readiness').CreateAuditResponse> {
+    if (products.length < 1 || products.length > 5) {
+      throw new Error('Pick 1–5 SKUs to audit per run.');
+    }
+    const body: Record<string, unknown> = {
+      merchant_id: 'self',
+      subject_type: 'merchant',
+      sku_keys: products.map((p) => `${p.platform}:${p.source_product_id}`),
+    };
+    if (opts?.coverageProfile) body.coverage_profile = opts.coverageProfile;
+    if (opts?.promptsPerSku) body.prompts_per_sku = opts.promptsPerSku;
+    const response = await this.client.post('/api/audits', body);
+    return response.data?.data || response.data;
+  }
+
+  async getAuditRun(
+    runId: string,
+  ): Promise<import('./types/ai-readiness').AuditRunDetail> {
+    const response = await this.client.get(
+      `/api/audits/${encodeURIComponent(runId)}`,
+    );
+    return response.data?.data || response.data;
+  }
+
   // P1.3: list merchant tasks. Backend exposes these at
   // /api/merchant-center/audit/* (the merchant audit router has
   // prefix /api/merchant-center/audit). Merchant portal previously
