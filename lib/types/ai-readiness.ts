@@ -943,8 +943,31 @@ export interface AuthorityPerSkuEntry {
   };
 }
 
+// Fix 2 — brand-level findability-vs-endorsement rollup the backend computes on
+// `authority_map.host_attribution_summary`. Findability = the merchant's own
+// site + its product listed on a marketplace (distribution); endorsement = an
+// independent third party recommending it (the only honest "AI recommends you"
+// signal). Kept apart so "your listing is indexed" never reads as endorsement.
+export interface HostAttributionSummary {
+  distinct_hosts: number;
+  by_role: Record<string, number>;
+  findability_hosts: string[];
+  endorsement_hosts: string[];
+  /** Independent hosts that cited the brand on a category/discovery query —
+   * the only "recommended for the category" evidence. */
+  endorsement_category_hosts: string[];
+  competitor_hosts: string[];
+  has_independent_endorsement: boolean;
+  independently_recommended_for_category: boolean;
+  /** Cited, but only through own/retail listings — never independently
+   * endorsed. Drives the "listed, not recommended" badge. */
+  surfaced_only_via_own_listing: boolean;
+}
+
 export interface AgentCenterAuthorityMap {
   per_sku: Record<string, AuthorityPerSkuEntry>;
+  /** Fix 2 brand rollup. Optional: older runs (pre-Fix-2) omit it. */
+  host_attribution_summary?: HostAttributionSummary;
 }
 
 // Per-provider call/token telemetry. Backend `cost_summary.providers` is an
@@ -1002,6 +1025,175 @@ export interface CustomPromptResult {
   evidence_excerpt: string | null;
 }
 
+// ── Fix 3 — merchant-grade narrative. The decision-grade story assembled from
+// the Fix 1 resolved hosts + Fix 2 findability/endorsement split + verify
+// rollup + the Fix 4 win-plan rollup. Every field is honest-by-construction on
+// the backend: absent data degrades to "not available" strings, never fabricated.
+
+export interface NarrativeEvidenceExcerpt {
+  sku_title: string | null;
+  query: string | null;
+  excerpt: string;
+  source_labels: string[];
+}
+
+export interface NarrativeWhatsWorking {
+  summary: string;
+  findability_hosts: string[];
+  branded_navigational_probes: number;
+  category_discovery_probes: number;
+  evidence_excerpt: NarrativeEvidenceExcerpt | null;
+}
+
+export interface WhoAiCitesInsteadHost {
+  host: string;
+  citation_role: string | null;
+  recommendation_class: string | null;
+  prompts_cited_count: number;
+  cited_on_category_query: boolean;
+}
+
+export interface WhoAiCitesInstead {
+  available: boolean;
+  cited_hosts: WhoAiCitesInsteadHost[];
+  competitors: { name: string; times_named: number }[];
+  note: string | null;
+}
+
+// Fix 4 — brand rollup of the per-SKU win-plan, surfaced inside "where you're
+// losing" so the narrative names the path to winning, not just the loss.
+export interface WinPlanSummary {
+  summary: string;
+  losing_category_queries: number;
+  independent_hosts_to_win: string[];
+  /** Hosts with a one-click pitch actually rendered (email + template). */
+  pitch_ready_hosts: string[];
+}
+
+export interface NarrativeWhereYoureLosing {
+  summary: string;
+  independently_recommended_for_category: boolean;
+  endorsement_hosts: string[];
+  who_ai_cites_instead: WhoAiCitesInstead;
+  win_plan_summary: WinPlanSummary | null;
+}
+
+export interface NarrativeScorecardRow {
+  sku_key: string;
+  sku_title: string | null;
+  band: string | null;
+  status: string | null;
+  what_it_means: string | null;
+  surfaced_only_via_own_listing: boolean;
+  independently_recommended_for_category: boolean;
+}
+
+export interface NarrativeVerifyPlain {
+  status: string;
+  verified: number;
+  flagged: number;
+  checked: number;
+  candidates: number;
+  text: string;
+}
+
+export interface NarrativePrioritizedAction {
+  sku_title: string | null;
+  primary_gap: string | null;
+  headline: string;
+  first_move: string | null;
+  why_this_first: string | null;
+  growth_phase: string;
+  growth_phase_label: string;
+}
+
+export interface AgentCenterMerchantNarrative {
+  headline_story: string;
+  whats_working: NarrativeWhatsWorking;
+  where_youre_losing: NarrativeWhereYoureLosing;
+  per_sku_scorecard: NarrativeScorecardRow[];
+  verify_summary_plain: NarrativeVerifyPlain;
+  prioritized_actions: NarrativePrioritizedAction[];
+  honest_limits: string[];
+  verdict_label: string | null;
+  verdict_explanation: string | null;
+}
+
+// ── Fix 4 — per-SKU win-plan: for each losing category query, the independent
+// hosts AI grounds the answer in (the targets to get cited in), the competitor
+// benchmark, the win condition, and the honest outreach path per target.
+
+export type WinPlanOutreachState = 'draft_ready' | 'submission_only' | 'target_only';
+
+export interface WinPlanPitchDraft {
+  subject: string;
+  body: string;
+  recipient_email: string;
+  recipient_note: string | null;
+}
+
+export interface WinPlanOutreachRecipient {
+  email: string | null;
+  submission_url: string | null;
+  note: string | null;
+}
+
+export interface WinPlanOutreach {
+  state: WinPlanOutreachState;
+  hint: string | null;
+  cycle_weeks: [number, number] | null;
+  recipient: WinPlanOutreachRecipient | null;
+  /** The one-click pitch email — present only for draft_ready targets that also
+   * have a matching playbook template. Never fabricated. */
+  pitch_draft: WinPlanPitchDraft | null;
+}
+
+export interface WinPlanTarget {
+  host: string;
+  role: string | null;
+  tier: number | null;
+  applies_to_merchant_category: boolean | null;
+  outreach: WinPlanOutreach;
+}
+
+export interface WinPlanLosingQuery {
+  query: string;
+  axis: string | null;
+  /** The independent endorsement hosts AI grounds this answer in — the targets.
+   * Empty when no nameable target (then `limit` explains why). */
+  grounds_in: WinPlanTarget[];
+  competitor_benchmark: string[];
+  win_condition: string | null;
+  limit: string | null;
+}
+
+export interface WinPlanSkuCoverage {
+  losing_category_queries: number;
+  queries_with_grounded_target: number;
+  queries_with_draft_ready_target: number;
+}
+
+export interface WinPlanSkuPlan {
+  sku_key: string;
+  sku_title: string | null;
+  losing_queries: WinPlanLosingQuery[];
+  coverage: WinPlanSkuCoverage;
+}
+
+export interface WinPlanRollup {
+  losing_category_queries: number;
+  independent_hosts_to_win: string[];
+  draft_ready_hosts: string[];
+  pitch_ready_hosts: string[];
+}
+
+export interface AgentCenterWinPlan {
+  available: boolean;
+  note: string | null;
+  sku_plans: WinPlanSkuPlan[];
+  rollup: WinPlanRollup;
+}
+
 export interface AgentCenterPerSkuAuditResponse {
   audit_run_id: string;
   merchant_id: string;
@@ -1012,6 +1204,11 @@ export interface AgentCenterPerSkuAuditResponse {
    * runs with no custom prompts (or older runs before this surface shipped). */
   custom_prompts?: CustomPromptResult[];
   authority_map: AgentCenterAuthorityMap;
+  /** Fix 3 narrative + Fix 4 win-plan. Optional + best-effort on the backend:
+   * a malformed report degrades to null rather than sinking the audit, and
+   * pre-Fix-3/4 runs omit them. */
+  merchant_narrative?: AgentCenterMerchantNarrative | null;
+  win_plan?: AgentCenterWinPlan | null;
   legacy_verdict: string;
   cost_summary: AgentCenterCostSummary;
 }

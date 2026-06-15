@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "smoke:merchant": "node scripts/smoke-merchant-contracts.mjs"
+    "smoke:merchant": "node scripts/smoke-merchant-contracts.mjs",
+    "verify:winplan": "node scripts/verify-winplan-render.mjs"
   },
   "dependencies": {
     "@adyen/adyen-web": "^6.32.0",
