@@ -37,6 +37,8 @@ import {
 import { MerchantTaskQueuePanel } from '@/components/audit/MerchantTaskQueuePanel';
 import { PerSkuNextStep } from '@/components/audit/PerSkuNextStep';
 import { MerchantExecutorActivityPanel } from '@/components/audit/MerchantExecutorActivityPanel';
+import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
+import { WinPlanPanel } from '@/components/audit/WinPlanPanel';
 import type {
   AgentCenterBdBrandReport,
   AgentCenterBdCoOccurrenceVerification,
@@ -2088,6 +2090,15 @@ function PerSkuAuditReportRenderer({
         skuCount={report.per_sku_reports.length}
         costSummary={report.cost_summary}
       />
+      {/* Fix 3 — the merchant-grade narrative + Fix 2 findability/endorsement
+          split. Returns null on pre-Fix-3 runs (best-effort backend field). */}
+      <MerchantNarrativePanel
+        narrative={report.merchant_narrative}
+        authorityMap={report.authority_map}
+      />
+      {/* Fix 4 — how to win the recommendation: per-losing-query targets +
+          one-click pitches. Returns null when there's no plan. */}
+      <WinPlanPanel winPlan={report.win_plan} />
       <WhereYouCanWinPanel data={report.brand_rollup.where_you_can_win} />
       <CustomPromptsPanel prompts={report.custom_prompts} />
       <PrioritizedQueuePanel
