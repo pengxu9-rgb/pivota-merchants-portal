@@ -206,10 +206,15 @@ export function PerSkuNextStep({ report }: { report: AgentCenterPerSkuReport }) 
   const selfServe = (nba.self_serve && nba.self_serve.length > 0
     ? nba.self_serve
     : nba.self_serve_actions) ?? [];
-  // The Pivota-page form applies when there's a content/indexing action the
-  // merchant can author into the canonical PDP, and we can resolve the product.
-  const showPivotaForm =
-    (action === 'request_enrichment' || action === 'request_indexing') && !!product;
+  // The Pivota-page form (paste INCI / brand URL → evidence grading) applies
+  // ONLY to request_enrichment: an indexed product whose canonical evidence the
+  // merchant can enrich. It does NOT apply to request_indexing — that gap means
+  // the SKU isn't crawlable/indexed yet, and the evidence-grading flow does
+  // nothing for indexing. For request_indexing the backend already supplies the
+  // deterministic publish/sitemap/crawlable checklist in self_serve /
+  // self_serve_actions (PRIMARY_SKU_GET_INDEXED), which renders below as "Do this
+  // yourself", plus the conditional "Once it's live and crawlable…" Pivota note.
+  const showPivotaForm = action === 'request_enrichment' && !!product;
   const tracking = nba.tracking_metrics ?? [];
 
   return (
