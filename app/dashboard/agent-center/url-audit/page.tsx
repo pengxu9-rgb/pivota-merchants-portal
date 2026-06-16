@@ -14,7 +14,7 @@
  * { product_urls[1-5], website?, brand? }.
  */
 
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeftRight,
@@ -35,6 +35,7 @@ import {
   PageHeader,
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
+import { RecentAuditsPanel } from '@/components/audit/RecentAuditsPanel';
 import type {
   AgentCenterBdReport,
   AgentCenterBdVerdictLabel,
@@ -385,6 +386,12 @@ export default function UrlAuditPage() {
   const [elapsedSec, setElapsedSec] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UrlReadinessAuditResponse | null>(null);
+  // Visibility run history: the run currently shown, an open-in-progress marker,
+  // a key that refreshes the list after a new run, and a scroll target.
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [loadingRunId, setLoadingRunId] = useState<string | null>(null);
+  const [historyReloadKey, setHistoryReloadKey] = useState(0);
+  const resultRef = useRef<HTMLDivElement | null>(null);
 
   // Prefill the brand site + name from the merchant's onboarding profile.
   useEffect(() => {
@@ -434,6 +441,8 @@ export default function UrlAuditPage() {
           setElapsedSec(Math.round(elapsedMs / 1000)),
       });
       setResult(res);
+      setActiveRunId(res.audit_run_id ?? null);
+      setHistoryReloadKey((k) => k + 1); // surface the just-finished check in history
     } catch (e: any) {
       const status = e?.response?.status;
       const detail = e?.response?.data?.detail;
@@ -462,6 +471,28 @@ export default function UrlAuditPage() {
     }
   };
 
+  // Re-open a past visibility check from the history panel: fetch the completed
+  // run's report by id and render it (no re-run, no spent free-audit).
+  const openVisibilityRun = useCallback(async (runId: string) => {
+    setLoadingRunId(runId);
+    try {
+      const detail = await apiClient.getUrlAuditRunDetail(runId);
+      if (detail && 'brand_report' in detail && detail.brand_report) {
+        setResult(detail as UrlReadinessAuditResponse);
+        setActiveRunId(runId);
+        setError(null);
+        setTimeout(
+          () => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+          80,
+        );
+      }
+    } catch {
+      /* best-effort — a missing/incomplete run just doesn't load */
+    } finally {
+      setLoadingRunId(null);
+    }
+  }, []);
+
   const report = result?.brand_report;
   const agg = report?.aggregate;
   const methodology = result?.methodology;
@@ -479,6 +510,18 @@ export default function UrlAuditPage() {
         eyebrow="Free · no sync"
         title="See how AI sees your products"
         description="Give us your top product links and we'll show how AI shopping agents (Gemini grounded search) find them — no catalog sync required. You pick the products; we audit exactly those. Your first 2 audits are free."
+      />
+
+      {/* Re-open a past visibility check (subject_type=merchant_url). Renders
+          null when there's no history yet. */}
+      <RecentAuditsPanel
+        subjectType="merchant_url"
+        title="Past visibility checks"
+        itemNoun="URL"
+        onOpenRun={openVisibilityRun}
+        activeRunId={activeRunId}
+        loadingRunId={loadingRunId}
+        reloadKey={historyReloadKey}
       />
 
       <SurfaceCard title="Audit your products">
@@ -602,7 +645,7 @@ export default function UrlAuditPage() {
       ) : null}
 
       {report && agg ? (
-        <div className="space-y-4">
+        <div ref={resultRef} className="space-y-4">
           <SurfaceCard
             eyebrow="Brand verdict"
             title={report.merchant_name}
