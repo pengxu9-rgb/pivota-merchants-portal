@@ -313,6 +313,32 @@ export default function AiReadinessAuditPage() {
   // change. We use a request-sequence ref to discard stale responses
   // when the user clicks rapidly. Spec §I + memory feedback_llm_call_multipliers
   // — debounce protects the backend from hammering as merchants toggle.
+  // Recovery: load a completed run by ?run_id= — e.g. when a slow audit's live
+  // poll hit its budget (the backend finished and the report is intact in
+  // report_jsonb, but the client gave up). Renders the report without a re-run.
+  useEffect(() => {
+    const runId = new URLSearchParams(window.location.search).get('run_id');
+    if (!runId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const detail = await apiClient.getAuditRunDetail(runId);
+        if (
+          !cancelled &&
+          detail?.stage === 'completed' &&
+          detail.report_jsonb?.per_sku_reports
+        ) {
+          setAuditResult({ mode: 'per_sku', payload: detail.report_jsonb });
+        }
+      } catch {
+        /* ignore — recovery is best-effort */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
     if (selectedSkuKeys.length < 1 || customPromptsError) {
