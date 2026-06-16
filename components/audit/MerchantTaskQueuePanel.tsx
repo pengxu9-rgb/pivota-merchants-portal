@@ -43,9 +43,10 @@ const STATUS_FILTERS: Record<StatusFilter, string | undefined> = {
 };
 
 // Lane grouping (on-your-store vs on-Pivota), derived from the task today — no
-// schema change. Strongest signal first: a Pivota agent owning the task ⇒ Pivota.
-// Else a store/outreach lever ⇒ your store. Everything else (pivota_integration,
-// gsc, indexing, sku_evidence, null lever) defaults to Pivota (where Pivota assists).
+// schema change. Explicit store/outreach levers are checked FIRST (merchant work on
+// their own site, even when an internal routing agent-tag is set); then a Pivota
+// agent ⇒ Pivota; everything else (pivota_integration, gsc, indexing, sku_evidence,
+// null lever) defaults to Pivota (where Pivota assists).
 const STORE_LEVERS = new Set<string>([
   'editorial_outreach',
   'kol_outreach',
@@ -58,9 +59,15 @@ const STORE_LEVERS = new Set<string>([
 ]);
 
 function taskSurface(task: MerchantTask): 'store' | 'pivota' {
-  if (task.assigned_to_agent) return 'pivota';
   const lever = (task.lever ?? '').toLowerCase();
-  return STORE_LEVERS.has(lever) ? 'store' : 'pivota';
+  // Explicit store/outreach levers win FIRST — this is work the merchant does on
+  // their OWN site (e.g. niche_content "create the answer"), even when an internal
+  // routing tag like assigned_to_agent="niche_targeting" is set (that tag is
+  // categorization, not Pivota execution). Checking the agent first mislabeled
+  // these as "On Pivota" and the merchant could wait for Pivota that never acts.
+  if (STORE_LEVERS.has(lever)) return 'store';
+  if (task.assigned_to_agent) return 'pivota';
+  return 'pivota';
 }
 
 // Open work first within each lane (highlight what's left; done sinks to the bottom).
