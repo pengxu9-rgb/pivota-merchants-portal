@@ -1748,6 +1748,20 @@ class ApiClient {
     return res.data?.data || res.data;
   }
 
+  /** List this merchant's recent audit runs (newest first) — trend-friendly
+   *  summary rows only; fetch a run's full report via getAuditRunDetail. Powers
+   *  the run-history view so merchants can re-open past audits. */
+  async listAuditRuns(
+    limit = 20,
+  ): Promise<import('./types/ai-readiness').AuditRunSummary[]> {
+    const res = await this.client.get('/api/audits', {
+      params: { limit },
+      timeout: 20_000,
+    });
+    const data = res.data?.data ?? res.data;
+    return Array.isArray(data) ? data : [];
+  }
+
   async runPerSkuAudit(request: {
     merchant_id: string;
     sku_keys: string[];
