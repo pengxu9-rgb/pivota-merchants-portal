@@ -43,8 +43,16 @@ interface RequestOptions {
 // Lives in `./credit-errors.ts` to keep the smoke test runnable under
 // node:test (which can't traverse the extensionless imports the
 // api-client itself triggers).
-export { InsufficientCreditsError, PremiumProviderRequiredError } from './credit-errors';
-import { InsufficientCreditsError, PremiumProviderRequiredError } from './credit-errors';
+export {
+  InsufficientCreditsError,
+  PremiumProviderRequiredError,
+  MissingVerifiedPaymentMethodError,
+} from './credit-errors';
+import {
+  InsufficientCreditsError,
+  PremiumProviderRequiredError,
+  MissingVerifiedPaymentMethodError,
+} from './credit-errors';
 
 function finiteNumberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
@@ -1731,6 +1739,57 @@ class ApiClient {
       { timeout: 30_000 },
     );
     return response.data?.data || response.data;
+  }
+
+  /**
+   * Buy a pay-as-you-go credit pack (ADR-005). Charges the merchant's verified
+   * Stripe card off-session — there's no card-entry UI in the portal — and the
+   * credits land in the persistent `purchased_credits` bucket once the Stripe
+   * `payment_intent.succeeded` webhook fires (a few seconds later), so the
+   * returned balance does NOT yet reflect the new credits.
+   *
+   * Throws `MissingVerifiedPaymentMethodError` (HTTP 402) when no verified card
+   * is on file — the caller routes the merchant to Billing to add one.
+   */
+  async createCreditTopup(
+    packCredits: number,
+    idempotencyKey?: string,
+  ): Promise<{
+    payment_intent_id: string;
+    status: string;
+    pack_credits: number;
+    amount: { currency: string; total: string };
+  }> {
+    const merchantId = localStorage.getItem('merchant_id') || '';
+    try {
+      const res = await this.client.post(
+        '/api/credits/topup',
+        {
+          merchant_id: merchantId,
+          pack_credits: packCredits,
+          idempotency_key: idempotencyKey,
+        },
+        { timeout: 30_000 },
+      );
+      return res.data?.data ?? res.data;
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 402) {
+        const detail = (err.response.data as { detail?: unknown })?.detail;
+        const payload =
+          typeof detail === 'object' && detail !== null
+            ? (detail as Record<string, unknown>)
+            : {};
+        throw new MissingVerifiedPaymentMethodError({
+          code: typeof payload.error === 'string' ? payload.error : null,
+          reason: typeof payload.reason === 'string' ? payload.reason : null,
+          message:
+            typeof payload.message === 'string'
+              ? payload.message
+              : 'Add a verified card in Billing to buy credits.',
+        });
+      }
+      throw err;
+    }
   }
 
   /** Fetch one audit run's detail row (stage + report_jsonb). Used to recover a
