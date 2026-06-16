@@ -1,10 +1,11 @@
 'use client';
 
 /**
- * Run history for the per-SKU AI Readiness audit. Lists the merchant's recent
- * runs (`GET /api/audits`) so they can re-open any past audit's full report
- * without re-running (and re-paying) — the report is loaded by id via the same
- * getAuditRunDetail path the ?run_id= recovery uses.
+ * Run history for the audit surfaces. Lists the merchant's recent runs
+ * (`GET /api/audits?subject_type=…`) so they can re-open a past run without
+ * re-running (and re-paying). Reused by both AI Readiness (per-SKU,
+ * subject_type="merchant") and AI Visibility (URL wedge, "merchant_url"); the
+ * parent's `onOpenRun` decides how to fetch + render the chosen run.
  *
  * Renders null when there's no history yet, so a first-time merchant sees a
  * clean "run your first audit" page.
@@ -30,16 +31,22 @@ function RunRow({
   run,
   active,
   loading,
+  itemNoun,
   onOpen,
 }: {
   run: AuditRunSummary;
   active: boolean;
   loading: boolean;
+  itemNoun: string;
   onOpen: () => void;
 }) {
   const done = !!run.completed_at;
   const verdict = run.verdict_labels?.[0];
   const n = run.product_keys?.length || 0;
+  const subline =
+    [n > 0 ? `${n} ${itemNoun}${n === 1 ? '' : 's'}` : null, verdict]
+      .filter(Boolean)
+      .join(' · ') || '—';
   return (
     <button
       type="button"
@@ -54,10 +61,7 @@ function RunRow({
     >
       <div className="min-w-0">
         <div className="text-sm font-medium text-slate-800">{formatWhen(run.requested_at)}</div>
-        <div className="truncate text-xs text-slate-500">
-          {n} product{n === 1 ? '' : 's'}
-          {verdict ? <span> · {verdict}</span> : null}
-        </div>
+        <div className="truncate text-xs text-slate-500">{subline}</div>
       </div>
       {!done ? (
         <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
@@ -79,11 +83,18 @@ export function RecentAuditsPanel({
   activeRunId,
   loadingRunId,
   reloadKey,
+  subjectType,
+  title = 'Past audits',
+  itemNoun = 'product',
 }: {
   onOpenRun: (runId: string) => void;
   activeRunId?: string | null;
   loadingRunId?: string | null;
   reloadKey?: number;
+  /** Scope the list to one run kind ("merchant" | "merchant_url"). */
+  subjectType?: string;
+  title?: string;
+  itemNoun?: string;
 }) {
   const [runs, setRuns] = useState<AuditRunSummary[] | null>(null);
   const [error, setError] = useState(false);
@@ -93,7 +104,7 @@ export function RecentAuditsPanel({
     let cancelled = false;
     setError(false);
     apiClient
-      .listAuditRuns(20)
+      .listAuditRuns(20, subjectType)
       .then((rows) => {
         if (!cancelled) setRuns(rows);
       })
@@ -103,7 +114,7 @@ export function RecentAuditsPanel({
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, subjectType]);
 
   // No history yet (and not an error) → render nothing, keep the page clean.
   if (runs !== null && runs.length === 0 && !error) return null;
@@ -117,7 +128,7 @@ export function RecentAuditsPanel({
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-          <History className="h-4 w-4 text-slate-500" /> Past audits
+          <History className="h-4 w-4 text-slate-500" /> {title}
         </div>
         {list.length > 3 ? (
           <button
@@ -143,6 +154,7 @@ export function RecentAuditsPanel({
                 run={run}
                 active={run.run_id === activeRunId}
                 loading={run.run_id === loadingRunId}
+                itemNoun={itemNoun}
                 onOpen={() => onOpenRun(run.run_id as string)}
               />
             ) : null,

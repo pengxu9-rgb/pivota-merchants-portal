@@ -483,6 +483,7 @@ export default function AiReadinessAuditPage() {
         activeRunId={activeRunId}
         loadingRunId={loadingRunId}
         reloadKey={historyReloadKey}
+        subjectType="merchant"
       />
 
       <SurfaceCard

@@ -1750,16 +1750,35 @@ class ApiClient {
 
   /** List this merchant's recent audit runs (newest first) — trend-friendly
    *  summary rows only; fetch a run's full report via getAuditRunDetail. Powers
-   *  the run-history view so merchants can re-open past audits. */
+   *  the run-history view so merchants can re-open past audits.
+   *  `subjectType` scopes to one run kind ("merchant" = per-SKU catalog audits,
+   *  "merchant_url" = the URL-visibility wedge) so each surface lists only the
+   *  runs it can open. */
   async listAuditRuns(
     limit = 20,
+    subjectType?: string,
   ): Promise<import('./types/ai-readiness').AuditRunSummary[]> {
     const res = await this.client.get('/api/audits', {
-      params: { limit },
+      params: subjectType ? { limit, subject_type: subjectType } : { limit },
       timeout: 20_000,
     });
     const data = res.data?.data ?? res.data;
     return Array.isArray(data) ? data : [];
+  }
+
+  /** Fetch a completed URL-visibility (wedge) run by id, to re-open it in the
+   *  AI Visibility history. Returns the full result when the run succeeded, or a
+   *  `{ status }` marker ('running' | 'failed') otherwise. */
+  async getUrlAuditRunDetail(
+    runId: string,
+  ): Promise<
+    import('./types/ai-readiness').UrlReadinessAuditResponse | { status: string }
+  > {
+    const res = await this.client.get(
+      `/api/merchant-center/audit/url-readiness/${encodeURIComponent(runId)}`,
+      { timeout: 20_000 },
+    );
+    return res.data?.data ?? res.data;
   }
 
   async runPerSkuAudit(request: {
