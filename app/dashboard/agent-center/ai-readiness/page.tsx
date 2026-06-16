@@ -65,7 +65,6 @@ import type {
   ModelsCited,
   BrandProviderCitation,
   BrandDimensionStat,
-  BrandPriorityQueueEntry,
   CustomPromptResult,
   CustomPromptLane,
 } from '@/lib/types/ai-readiness';
@@ -708,7 +707,6 @@ export default function AiReadinessAuditPage() {
       {auditResult?.mode === 'per_sku' ? (
         <div ref={reportRef} className="space-y-6">
           <PerSkuAuditReportRenderer report={auditResult.payload} />
-          <MerchantTaskQueuePanel />
           <MerchantExecutorActivityPanel />
         </div>
       ) : null}
@@ -2162,10 +2160,10 @@ function PerSkuAuditReportRenderer({
       <IntegrationCtaPanel integration={report.brand_rollup.integration} />
       <WhereYouCanWinPanel data={report.brand_rollup.where_you_can_win} />
       <CustomPromptsPanel prompts={report.custom_prompts} />
-      <PrioritizedQueuePanel
-        rollup={report.brand_rollup}
-        perSku={report.per_sku_reports}
-      />
+      {/* Action plan — the persisted task queue is the single source of truth for
+          "what to do / what's done" (replaces the old display-only "Fix these
+          first"). Grouped into store/Pivota lanes inside the panel. */}
+      <MerchantTaskQueuePanel />
       <PerSkuCardList
         reports={report.per_sku_reports}
         authorityMap={report.authority_map}
@@ -2721,93 +2719,6 @@ function RollupDimensionStat({
         {stats.total_count && stats.above_count != null
           ? `${stats.above_count} of ${stats.total_count} SKUs at or above`
           : ' '}
-      </div>
-    </div>
-  );
-}
-
-function PrioritizedQueuePanel({
-  rollup,
-  perSku,
-}: {
-  rollup: AgentCenterBrandRollup;
-  perSku: AgentCenterPerSkuReport[];
-}) {
-  const top = rollup.priority_queue.slice(0, 10);
-  if (top.length === 0) {
-    return null;
-  }
-  const reportMap = new Map(perSku.map((r) => [r.sku_key, r]));
-  return (
-    <SurfaceCard
-      title="Fix these first"
-      description="Biggest visibility gain for the least effort."
-    >
-      <div className="divide-y divide-slate-100 px-2 py-1">
-        {top.map((entry, idx) => (
-          <QueueRow
-            key={entry.sku_key}
-            entry={entry}
-            rank={idx + 1}
-            report={reportMap.get(entry.sku_key)}
-          />
-        ))}
-      </div>
-    </SurfaceCard>
-  );
-}
-
-function QueueRow({
-  entry,
-  rank,
-  report,
-}: {
-  entry: BrandPriorityQueueEntry;
-  rank: number;
-  report?: AgentCenterPerSkuReport;
-}) {
-  const [showMath, setShowMath] = useState(false);
-  const name = report ? skuDisplayName(report) : entry.sku_key;
-  const band = report?.band_display?.band ?? report?.band ?? 'blocked';
-  const bandLabel = report?.band_display?.label;
-  const topGap = report?.primary_gaps?.[0]?.label;
-  const nba = report?.next_best_action;
-  const nextStep = nba?.headline || nba?.first_move;
-  return (
-    <div className="flex items-start gap-3 px-3 py-2.5">
-      <span className="w-4 flex-none pt-0.5 text-xs text-slate-400">{rank}</span>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium">{name}</span>
-          <BandPill band={band} label={bandLabel} />
-        </div>
-        <div className="mt-0.5 text-xs text-slate-600">
-          {topGap ? (
-            <>
-              Biggest gap: <span className="font-medium">{topGap}</span>
-            </>
-          ) : null}
-          {nextStep ? (
-            <>
-              {topGap ? ' · ' : ''}
-              Next: {nextStep}
-            </>
-          ) : null}
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowMath((v) => !v)}
-          className="mt-1 text-[11px] text-slate-400 hover:text-slate-600"
-        >
-          {showMath ? '▾ details' : '▸ details'}
-        </button>
-        {showMath ? (
-          <div className="mt-1 text-[11px] text-slate-500">
-            impact {entry.impact?.toFixed(2) ?? '—'} · gap {entry.gap ?? '—'} ·
-            fixability {entry.fixability?.toFixed(2) ?? '—'} · rank score{' '}
-            {entry.priority_score?.toFixed(2) ?? '—'}
-          </div>
-        ) : null}
       </div>
     </div>
   );

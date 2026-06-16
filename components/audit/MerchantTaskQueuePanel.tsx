@@ -21,6 +21,8 @@ import {
   AlertTriangle,
   ListTodo,
   RefreshCw,
+  Store,
+  Sparkles,
 } from 'lucide-react';
 
 import { apiClient } from '@/lib/api-client';
@@ -39,6 +41,40 @@ const STATUS_FILTERS: Record<StatusFilter, string | undefined> = {
   all: 'all',
   archive: 'done,dismissed,failed',
 };
+
+// Lane grouping (on-your-store vs on-Pivota), derived from the task today — no
+// schema change. Strongest signal first: a Pivota agent owning the task ⇒ Pivota.
+// Else a store/outreach lever ⇒ your store. Everything else (pivota_integration,
+// gsc, indexing, sku_evidence, null lever) defaults to Pivota (where Pivota assists).
+const STORE_LEVERS = new Set<string>([
+  'editorial_outreach',
+  'kol_outreach',
+  'creator_partnership',
+  'competitive_response',
+  'content_revision',
+  'content_publishing',
+  'niche_content',
+  'niche_defend',
+]);
+
+function taskSurface(task: MerchantTask): 'store' | 'pivota' {
+  if (task.assigned_to_agent) return 'pivota';
+  const lever = (task.lever ?? '').toLowerCase();
+  return STORE_LEVERS.has(lever) ? 'store' : 'pivota';
+}
+
+// Open work first within each lane (highlight what's left; done sinks to the bottom).
+const STATUS_ORDER: Record<MerchantTaskStatus, number> = {
+  pending: 0,
+  in_progress: 1,
+  failed: 2,
+  done: 3,
+  dismissed: 4,
+};
+
+function sortByOpenFirst(list: MerchantTask[]): MerchantTask[] {
+  return [...list].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+}
 
 
 export function MerchantTaskQueuePanel() {
@@ -82,7 +118,7 @@ export function MerchantTaskQueuePanel() {
       <header className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 text-sm font-semibold text-amber-900 uppercase tracking-wide">
           <ListTodo className="h-4 w-4" />
-          Your action queue
+          Action plan
         </div>
         <div className="flex items-center gap-1.5">
           <FilterButton
@@ -142,11 +178,29 @@ export function MerchantTaskQueuePanel() {
       ) : null}
 
       {tasks.length > 0 ? (
-        <ul className="space-y-2">
-          {tasks.map((task) => (
-            <TaskRow key={task.task_id} task={task} onChanged={load} />
-          ))}
-        </ul>
+        <div className="space-y-3">
+          {(['store', 'pivota'] as const).map((surface) => {
+            const group = sortByOpenFirst(tasks.filter((t) => taskSurface(t) === surface));
+            if (group.length === 0) return null;
+            return (
+              <div key={surface}>
+                <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800">
+                  {surface === 'store' ? (
+                    <Store className="h-3.5 w-3.5" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" />
+                  )}
+                  {surface === 'store' ? 'On your store' : 'On Pivota'}
+                </div>
+                <ul className="space-y-2">
+                  {group.map((task) => (
+                    <TaskRow key={task.task_id} task={task} onChanged={load} />
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
       ) : null}
     </section>
   );
