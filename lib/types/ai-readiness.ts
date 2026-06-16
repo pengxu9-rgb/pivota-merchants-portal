@@ -893,6 +893,32 @@ export interface AgentCenterBrandRollup {
   // Issue #902: integration status + CTAs (GSC-connect / onboarding). Optional +
   // best-effort; null when the integration lookup failed.
   integration?: AgentCenterIntegrationBlock | null;
+  // Step 3: run-over-run performance trend for this per_sku audit. null on the
+  // first audit (no prior per_sku run). Same history shape as merchant_view.tracking.
+  tracking?: {
+    history?: {
+      audits_in_history: number;
+      most_recent_audit?: {
+        run_id?: string | null;
+        requested_at?: string | null;
+        visibility?: number | null;
+        attribution?: number | null;
+        category_visibility?: number | null;
+      } | null;
+      delta_from_most_recent?: {
+        visibility?: number | null;
+        attribution?: number | null;
+        category_visibility?: number | null;
+        days_since_last_audit?: number | null;
+      } | null;
+      series?: {
+        requested_at?: string | null;
+        visibility?: number | null;
+        attribution?: number | null;
+        category_visibility?: number | null;
+      }[];
+    } | null;
+  } | null;
 }
 
 export interface WhereYouCanWinTarget {
