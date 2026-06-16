@@ -119,6 +119,9 @@ export function MerchantTaskQueuePanel() {
         <div className="flex items-center gap-2 text-sm font-semibold text-amber-900 uppercase tracking-wide">
           <ListTodo className="h-4 w-4" />
           Action plan
+          <span className="text-[11px] font-normal normal-case text-amber-900/55">
+            · your live list, across all audits
+          </span>
         </div>
         <div className="flex items-center gap-1.5">
           <FilterButton
@@ -151,9 +154,9 @@ export function MerchantTaskQueuePanel() {
       </header>
 
       <p className="text-xs text-slate-600">
-        Tasks materialized from the audit&apos;s action ladder + from
-        Pivota agents that produced work for your team. Status changes
-        persist server-side and survive re-audit.
+        Your live action plan — every audit&apos;s recommendations plus the work
+        Pivota&apos;s agents did for you, in one place. It spans all audits (not
+        just the one shown above); status changes persist across re-audits.
       </p>
 
       {error ? (
