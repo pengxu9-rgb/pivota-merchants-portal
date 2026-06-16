@@ -215,6 +215,17 @@ export function PerSkuNextStep({ report }: { report: AgentCenterPerSkuReport }) 
   // self_serve_actions (PRIMARY_SKU_GET_INDEXED), which renders below as "Do this
   // yourself", plus the conditional "Once it's live and crawlable…" Pivota note.
   const showPivotaForm = action === 'request_enrichment' && !!product;
+  // request_indexing has no INCI form (the evidence grader does nothing for an
+  // un-indexed SKU), but Pivota DOES submit the canonical page for indexing and
+  // track it (nba.pivota_assisted). Surface that as a proper "Pivota handles this"
+  // lane parallel to the self-serve checklist — so the indexing case gets the same
+  // "Pivota does it for you vs do it yourself" clarity enrichment already has —
+  // instead of burying it as a one-line note. Informational only: the
+  // request_indexing CTA is a no-op and GSC-connect lives in IntegrationCtaPanel.
+  const pivotaAssistedNote =
+    nba.pivota_assisted && nba.pivota_assisted.length > 0 ? nba.pivota_assisted[0] : null;
+  const showPivotaInfoLane = !showPivotaForm && !!pivotaAssistedNote;
+  const hasPivotaLane = showPivotaForm || showPivotaInfoLane;
   const tracking = nba.tracking_metrics ?? [];
 
   return (
@@ -252,10 +263,28 @@ export function PerSkuNextStep({ report }: { report: AgentCenterPerSkuReport }) 
           </div>
         ) : null}
 
+        {showPivotaInfoLane && pivotaAssistedNote ? (
+          <div className="rounded-md border-2 border-indigo-300 bg-indigo-50/60 p-2.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-indigo-900">Pivota handles this</span>
+              <span className="rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                Automatic
+              </span>
+            </div>
+            <div className="mt-1 text-[11px] leading-relaxed text-indigo-900/80">
+              {pivotaAssistedNote}
+            </div>
+          </div>
+        ) : null}
+
         {selfServe.length > 0 ? (
           <div className="rounded-md border border-current/20 bg-white/50 p-2.5">
             <div className="text-xs font-semibold opacity-80">
-              {showPivotaForm ? 'Or update your own website' : 'Do this yourself'}
+              {showPivotaForm
+                ? 'Or update your own website'
+                : hasPivotaLane
+                ? 'Or do it yourself'
+                : 'Do this yourself'}
             </div>
             <ol className="mt-1.5 list-decimal space-y-1 pl-4 text-[11px] leading-relaxed opacity-80">
               {selfServe.slice(0, 3).map((step, idx) => (
@@ -266,17 +295,10 @@ export function PerSkuNextStep({ report }: { report: AgentCenterPerSkuReport }) 
         ) : null}
       </div>
 
-      {!showPivotaForm && nba.pivota_assisted && nba.pivota_assisted.length > 0 ? (
-        <div className="mt-2 text-xs opacity-70">
-          <span className="font-medium">Pivota can help: </span>
-          {nba.pivota_assisted[0]}
-        </div>
-      ) : null}
-
       {tracking.length > 0 ? (
         <div className="mt-2.5 flex items-start gap-1.5 text-[11px] opacity-70">
           <span aria-hidden className="mt-0.5">◎</span>
-          <span>You'll know it worked when {lowerFirst(tracking[0])}.</span>
+          <span>You&apos;ll know it worked when {lowerFirst(tracking[0])}.</span>
         </div>
       ) : null}
     </div>
