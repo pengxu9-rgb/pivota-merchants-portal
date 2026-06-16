@@ -18,7 +18,6 @@ import {
   ShieldCheck,
   ListChecks,
   Info,
-  Megaphone,
   Store,
   Trophy,
 } from 'lucide-react';
@@ -199,18 +198,6 @@ export function MerchantNarrativePanel({
   const showProbeCounts =
     (w.branded_navigational_probes || 0) > 0 || (w.category_discovery_probes || 0) > 0;
 
-  // Group actions by growth phase, preserving order.
-  const phases: { label: string; actions: AgentCenterMerchantNarrative['prioritized_actions'] }[] =
-    [];
-  for (const a of narrative.prioritized_actions) {
-    let group = phases.find((p) => p.label === a.growth_phase_label);
-    if (!group) {
-      group = { label: a.growth_phase_label, actions: [] };
-      phases.push(group);
-    }
-    group.actions.push(a);
-  }
-
   return (
     <div className="space-y-4">
       {/* 1. Headline story */}
@@ -301,37 +288,7 @@ export function MerchantNarrativePanel({
         <p className="text-sm text-slate-700">{narrative.verify_summary_plain.text}</p>
       </Section>
 
-      {/* 6. Prioritized actions, grouped by growth phase */}
-      {phases.length > 0 ? (
-        <Section icon={<Megaphone className="h-4 w-4 text-indigo-600" />} title="What to do next">
-          <div className="space-y-3">
-            {phases.map((p) => (
-              <div key={p.label}>
-                <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700/70">
-                  {p.label}
-                </div>
-                <div className="mt-1 space-y-2">
-                  {p.actions.map((a, i) => (
-                    <div key={`${a.headline}-${i}`} className="rounded border border-slate-100 p-2">
-                      <div className="text-sm font-medium text-slate-800">{a.headline}</div>
-                      {a.first_move ? (
-                        <div className="mt-0.5 text-xs text-slate-600">
-                          <span className="font-medium">First move:</span> {a.first_move}
-                        </div>
-                      ) : null}
-                      {a.why_this_first ? (
-                        <div className="mt-0.5 text-xs text-slate-500">{a.why_this_first}</div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Section>
-      ) : null}
-
-      {/* 7. Honest limits — render verbatim, no fabrication */}
+      {/* 6. Honest limits — render verbatim, no fabrication */}
       {narrative.honest_limits.length > 0 ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
           <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
