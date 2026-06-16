@@ -3,7 +3,7 @@
 /**
  * Tier-1 URL-audit wedge — the low-friction front door to AI Commerce Readiness.
  *
- * Merchant-CURATED: you give us your brand site + up to 5 product URLs (your
+ * Merchant-CURATED: you give us your brand site + up to 3 product URLs (your
  * hero SKUs); we fetch each for clean data and show how AI shopping agents
  * (Gemini grounded search) see exactly those — no catalog sync, no guessing
  * which products to audit. The first 2 audits per merchant are free. The deeper
@@ -11,7 +11,7 @@
  * /dashboard/agent-center/ai-readiness and requires connecting your store.
  *
  * Backend: POST /api/merchant-center/audit/url-readiness — body
- * { product_urls[1-5], website?, brand? }.
+ * { product_urls[1-3], website?, brand? }.
  */
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
@@ -36,6 +36,7 @@ import {
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
 import { RecentAuditsPanel } from '@/components/audit/RecentAuditsPanel';
+import { BuyCreditsCard } from '@/components/billing/BuyCreditsCard';
 import type {
   AgentCenterBdReport,
   AgentCenterBdVerdictLabel,
@@ -43,7 +44,7 @@ import type {
   UrlReadinessAuditResponse,
 } from '@/lib/types/ai-readiness';
 
-const MAX_PRODUCT_URLS = 5;
+const MAX_PRODUCT_URLS = 3;
 
 function verdictTone(label: AgentCenterBdVerdictLabel | null | undefined): string {
   const l = (label || '').toUpperCase();
@@ -565,7 +566,7 @@ export default function UrlAuditPage() {
             />
           </div>
 
-          {/* Product URLs (1–5, merchant-curated). */}
+          {/* Product URLs (1–3, merchant-curated). */}
           <div className="space-y-2">
             <label className="block text-sm font-medium">
               Product URLs{' '}
@@ -773,7 +774,7 @@ export default function UrlAuditPage() {
             title={deeperCta.title}
             description={deeperCta.description}
           >
-            <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row">
+            <div className="flex flex-col gap-3 px-5 py-4 lg:flex-row">
               <a
                 href="/dashboard/agent-center/ai-readiness"
                 className="flex-1 rounded-lg border border-[color:var(--merchant-line)] p-4 transition hover:border-[color:var(--merchant-accent,#6366f1)]"
@@ -785,6 +786,9 @@ export default function UrlAuditPage() {
                   agent checkout.
                 </p>
               </a>
+              {/* Pay-as-you-go: buy credits and run the deeper audit now,
+                  without committing to a subscription (ADR-005). */}
+              <BuyCreditsCard />
               <a
                 href="/dashboard/billing"
                 className="flex-1 rounded-lg border border-[color:var(--merchant-line)] p-4 transition hover:border-[color:var(--merchant-accent,#6366f1)]"

@@ -64,3 +64,29 @@ export class PremiumProviderRequiredError extends Error {
     this.billingUrl = '/dashboard/billing';
   }
 }
+
+/**
+ * Thrown when a credit top-up is attempted but the merchant has no verified
+ * Stripe card on file. Top-ups charge the saved card off-session (no card-entry
+ * UI in the portal), so the merchant must add a payment method first. The
+ * backend returns HTTP 402 `{ error, message, reason }`; callers catch this to
+ * route the merchant to Billing to add a card rather than showing a generic
+ * failure.
+ */
+export class MissingVerifiedPaymentMethodError extends Error {
+  readonly code: string | null;
+  readonly reason: string | null;
+  readonly billingUrl: string;
+
+  constructor(detail: {
+    code: string | null;
+    reason: string | null;
+    message: string;
+  }) {
+    super(detail.message);
+    this.name = 'MissingVerifiedPaymentMethodError';
+    this.code = detail.code;
+    this.reason = detail.reason;
+    this.billingUrl = '/dashboard/billing';
+  }
+}
