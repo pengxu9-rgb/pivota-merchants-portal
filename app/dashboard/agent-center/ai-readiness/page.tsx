@@ -2621,6 +2621,7 @@ function BrandRollupCover({
         <RollupDimensionStat label="Routability" stats={pickStat(rollup, 'routability')} />
         <RollupDimensionStat label="Citation" stats={pickStat(rollup, 'citation')} highlight />
       </div>
+      <BrandTrend tracking={rollup.tracking} />
       <BrandModelStrip citationByProvider={rollup.citation_by_provider} />
       <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-indigo-900/80 sm:grid-cols-3">
         <div>
@@ -2634,6 +2635,67 @@ function BrandRollupCover({
         </div>
       </div>
     </div>
+  );
+}
+
+// Step 3: run-over-run "is it working?" — the overall AI-readiness delta vs the
+// merchant's last per_sku audit + a tiny sparkline. Renders nothing on the first
+// audit (no prior per_sku run) — a trend needs >= 2 runs.
+function BrandTrend({ tracking }: { tracking?: AgentCenterBrandRollup['tracking'] }) {
+  const history = tracking?.history;
+  const delta = history?.delta_from_most_recent;
+  const prior = history?.most_recent_audit?.visibility;
+  if (!history || delta?.visibility == null || prior == null) return null;
+  const current = prior + delta.visibility;
+  const d = Math.round(delta.visibility);
+  const up = d >= 0;
+  const days = delta.days_since_last_audit;
+  const pts = [
+    ...(history.series ?? [])
+      .map((s) => s.visibility)
+      .filter((v): v is number => v != null),
+    current,
+  ];
+  return (
+    <div className="mt-3 flex items-center gap-3 rounded-md border border-indigo-200 bg-white/60 px-3 py-2">
+      <div className="text-xs text-indigo-900/80">
+        <span className="font-semibold uppercase tracking-wide text-indigo-900/60">
+          AI-readiness
+        </span>{' '}
+        {Math.round(prior)} &rarr; {Math.round(current)}{' '}
+        <span className={up ? 'font-semibold text-green-700' : 'font-semibold text-red-700'}>
+          {d === 0 ? 'no change' : `${up ? '+' : ''}${d}`}
+        </span>{' '}
+        <span className="text-indigo-900/50">
+          since your last audit{days ? ` · ${days}d ago` : ''}
+        </span>
+      </div>
+      {pts.length >= 2 ? <Sparkline points={pts} /> : null}
+    </div>
+  );
+}
+
+function Sparkline({ points }: { points: number[] }) {
+  const w = 64;
+  const h = 18;
+  const pad = 2;
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const span = max - min || 1;
+  const step = points.length > 1 ? (w - pad * 2) / (points.length - 1) : 0;
+  const coords = points
+    .map(
+      (p, i) =>
+        `${(pad + i * step).toFixed(1)},${(
+          pad +
+          (h - pad * 2) * (1 - (p - min) / span)
+        ).toFixed(1)}`,
+    )
+    .join(' ');
+  return (
+    <svg width={w} height={h} className="shrink-0 text-indigo-500" aria-hidden="true">
+      <polyline points={coords} fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
   );
 }
 
