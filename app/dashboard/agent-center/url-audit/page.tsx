@@ -51,6 +51,59 @@ function verdictTone(label: AgentCenterBdVerdictLabel | null | undefined): strin
   return 'text-amber-700 bg-amber-50 border-amber-200';
 }
 
+// Tailor the "run deeper" funnel headline to what the free sample found, so the
+// CTA mirrors the merchant's actual problem and frames the full per-SKU audit as
+// the fix. `competitor` is the top brand/host AI cited instead (may be null).
+function buildDeeperCta(
+  verdict: AgentCenterBdVerdictLabel | null,
+  competitor: string | null,
+): { eyebrow: string; title: string; description: string } {
+  const eyebrow = 'Run deeper analysis';
+  const vs = competitor ? `AI is recommending ${competitor} instead. ` : '';
+  switch (verdict) {
+    case 'INVISIBLE':
+      return {
+        eyebrow,
+        title: "AI can't find you for these queries yet",
+        description: `${vs}The full per-SKU audit shows exactly why — and the independent sources to get cited in, with one-click pitches. Connect your catalog to run it.`,
+      };
+    case 'VISIBLE VIA RETAILERS':
+      return {
+        eyebrow,
+        title: "You're findable through retailers — not recommended on your own merits",
+        description:
+          'The full audit splits findability from endorsement per SKU and shows the independent sources to win the category — with the pitch plan to get there. Connect your catalog to run it.',
+      };
+    case 'VISIBLE BUT MISATTRIBUTED':
+      return {
+        eyebrow,
+        title: 'AI surfaces you, but the credit goes elsewhere',
+        description: `${vs}The full per-SKU audit shows where attribution leaks and how to claim it back. Connect your catalog to run it.`,
+      };
+    case 'PARTIAL':
+      return {
+        eyebrow,
+        title: 'Mixed results — you win some queries, lose others',
+        description:
+          'The full per-SKU audit pinpoints which products to fix first and the exact hosts to get cited in. Connect your catalog to run it.',
+      };
+    case 'STRONG':
+      return {
+        eyebrow,
+        title: "You're winning some of these queries — now defend and expand",
+        description:
+          'The full per-SKU audit shows where to defend and where to grow across your whole catalog, with movement tracking over time. Connect your catalog to run it.',
+      };
+    default:
+      return {
+        eyebrow,
+        title: 'Get the full picture, per SKU',
+        description:
+          'This free sample checks a handful of queries. The full audit covers your whole catalog with a per-SKU win-plan — connect your store to become buyable inside AI agents, too.',
+      };
+  }
+}
+
 function scorePill(label: string, value: number | null | undefined) {
   const v = typeof value === 'number' ? value : null;
   return (
@@ -413,6 +466,13 @@ export default function UrlAuditPage() {
   const agg = report?.aggregate;
   const methodology = result?.methodology;
 
+  // The "run deeper" funnel CTA, tailored to what this sample found — turns the
+  // problem (invisible / competitor wins / found-but-not-recommended) into the
+  // promise of the fix (the full per-SKU audit + win-plan, which needs a synced
+  // catalog → the integration driver).
+  const topCompetitor = report?.cross_product_competitors?.[0]?.host ?? null;
+  const deeperCta = buildDeeperCta(agg?.brand_verdict_label ?? null, topCompetitor);
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -663,11 +723,12 @@ export default function UrlAuditPage() {
             </SurfaceCard>
           ) : null}
 
-          {/* Funnel: integrate (sync → buyable) + subscribe (recurring). */}
+          {/* Funnel: integrate (sync → buyable) + subscribe (recurring).
+              Headline tailored to the finding — see buildDeeperCta. */}
           <SurfaceCard
-            eyebrow="Go deeper"
-            title="Get the full picture"
-            description="This free sample checks a handful of queries. Connect your store for a verified, full-catalog audit — and to become buyable inside AI agents."
+            eyebrow={deeperCta.eyebrow}
+            title={deeperCta.title}
+            description={deeperCta.description}
           >
             <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row">
               <a
