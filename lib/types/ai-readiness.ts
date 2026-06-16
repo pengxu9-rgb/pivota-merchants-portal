@@ -1002,6 +1002,84 @@ export interface CustomPromptResult {
   evidence_excerpt: string | null;
 }
 
+// Fix 3 — merchant-grade narrative assembled by the backend from the resolved
+// cited hosts (Fix 1) + the findability-vs-endorsement split (Fix 2) + the
+// DeepSeek verify rollup. Optional: absent on older runs before it shipped.
+
+export interface MerchantNarrativeExcerpt {
+  sku_title?: string | null;
+  query?: string | null;
+  excerpt: string;
+  source_labels: string[];
+}
+
+export interface MerchantNarrativeCitedHost {
+  host: string;
+  citation_role?: string | null;
+  recommendation_class?: string | null;
+  prompts_cited_count?: number;
+  cited_on_category_query?: boolean;
+}
+
+export interface MerchantNarrativeWhoCitesInstead {
+  available: boolean;
+  cited_hosts: MerchantNarrativeCitedHost[];
+  competitors: { name: string; times_named: number }[];
+  note?: string | null;
+}
+
+export interface MerchantNarrativeScorecardRow {
+  sku_key?: string | null;
+  sku_title?: string | null;
+  band?: string | null;
+  status?: string | null;
+  what_it_means?: string | null;
+  surfaced_only_via_own_listing?: boolean;
+  independently_recommended_for_category?: boolean;
+}
+
+export interface MerchantNarrativeAction {
+  sku_title?: string | null;
+  primary_gap?: string | null;
+  headline: string;
+  first_move?: string | null;
+  why_this_first?: string | null;
+  growth_phase?: string | null;
+  growth_phase_label?: string | null;
+}
+
+export interface MerchantNarrativeVerify {
+  status: string;
+  verified: number;
+  flagged: number;
+  checked: number;
+  candidates: number;
+  text: string;
+}
+
+export interface MerchantNarrative {
+  headline_story: string;
+  whats_working: {
+    summary: string;
+    findability_hosts: string[];
+    branded_navigational_probes: number;
+    category_discovery_probes: number;
+    evidence_excerpt?: MerchantNarrativeExcerpt | null;
+  };
+  where_youre_losing: {
+    summary: string;
+    independently_recommended_for_category: boolean;
+    endorsement_hosts: string[];
+    who_ai_cites_instead: MerchantNarrativeWhoCitesInstead;
+  };
+  per_sku_scorecard: MerchantNarrativeScorecardRow[];
+  verify_summary_plain: MerchantNarrativeVerify;
+  prioritized_actions: MerchantNarrativeAction[];
+  honest_limits: string[];
+  verdict_label?: string | null;
+  verdict_explanation?: string | null;
+}
+
 export interface AgentCenterPerSkuAuditResponse {
   audit_run_id: string;
   merchant_id: string;
@@ -1012,6 +1090,8 @@ export interface AgentCenterPerSkuAuditResponse {
    * runs with no custom prompts (or older runs before this surface shipped). */
   custom_prompts?: CustomPromptResult[];
   authority_map: AgentCenterAuthorityMap;
+  /** Fix 3 — merchant-grade narrative. Absent on older runs. */
+  merchant_narrative?: MerchantNarrative;
   legacy_verdict: string;
   cost_summary: AgentCenterCostSummary;
 }

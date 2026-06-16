@@ -30,6 +30,7 @@ import {
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
 import { MerchantTaskQueuePanel } from '@/components/audit/MerchantTaskQueuePanel';
+import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
 import { PerSkuNextStep } from '@/components/audit/PerSkuNextStep';
 import { MerchantExecutorActivityPanel } from '@/components/audit/MerchantExecutorActivityPanel';
 import type {
@@ -46,6 +47,7 @@ import type {
   AgentCenterBrandRollup,
   AgentCenterAuthorityMap,
   AgentCenterCostSummary,
+  MerchantNarrative,
   AuthorityHostEntry,
   AuthorityRedditSubreddit,
   AiReadinessAuditResponse,
@@ -1945,6 +1947,9 @@ function PerSkuAuditReportRenderer({
         skuCount={report.per_sku_reports.length}
         costSummary={report.cost_summary}
       />
+      {report.merchant_narrative ? (
+        <MerchantNarrativePanel narrative={report.merchant_narrative} />
+      ) : null}
       <WhereYouCanWinPanel data={report.brand_rollup.where_you_can_win} />
       <CustomPromptsPanel prompts={report.custom_prompts} />
       <PrioritizedQueuePanel
