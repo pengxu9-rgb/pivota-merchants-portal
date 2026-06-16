@@ -17,7 +17,7 @@
  *   - Free tier keeps the 2-audits-per-24h rate limit alongside credits.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Brain,
@@ -40,6 +40,7 @@ import { MerchantExecutorActivityPanel } from '@/components/audit/MerchantExecut
 import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
 import { WinPlanPanel } from '@/components/audit/WinPlanPanel';
 import { IntegrationCtaPanel } from '@/components/audit/IntegrationCtaPanel';
+import { RecentAuditsPanel } from '@/components/audit/RecentAuditsPanel';
 import type {
   AgentCenterBdBrandReport,
   AgentCenterBdCoOccurrenceVerification,
@@ -165,6 +166,12 @@ export default function AiReadinessAuditPage() {
   const [running, setRunning] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [auditResult, setAuditResult] = useState<LaunchResult | null>(null);
+  // Run history: which past run is being viewed, an open-in-progress marker, and
+  // a key that bumps to refresh the history list after a new run completes.
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [loadingRunId, setLoadingRunId] = useState<string | null>(null);
+  const [historyReloadKey, setHistoryReloadKey] = useState(0);
+  const reportRef = useRef<HTMLDivElement | null>(null);
   const [insufficient, setInsufficient] = useState<InsufficientCreditsError | null>(null);
   // Premium-provider paywall (ChatGPT/Claude on a free plan). Set when launch
   // returns 402 premium_provider_subscription_required.
@@ -313,31 +320,46 @@ export default function AiReadinessAuditPage() {
   // change. We use a request-sequence ref to discard stale responses
   // when the user clicks rapidly. Spec §I + memory feedback_llm_call_multipliers
   // — debounce protects the backend from hammering as merchants toggle.
-  // Recovery: load a completed run by ?run_id= — e.g. when a slow audit's live
-  // poll hit its budget (the backend finished and the report is intact in
-  // report_jsonb, but the client gave up). Renders the report without a re-run.
+  // Load a completed run by id into the report view. Shared by the ?run_id=
+  // deep-link recovery and the run-history panel. Best-effort; returns whether
+  // it rendered. Stable (useState setters are stable) so it's effect-safe.
+  const loadRunById = useCallback(async (runId: string): Promise<boolean> => {
+    setLoadingRunId(runId);
+    try {
+      const detail = await apiClient.getAuditRunDetail(runId);
+      if (detail?.stage === 'completed' && detail.report_jsonb?.per_sku_reports) {
+        setAuditResult({ mode: 'per_sku', payload: detail.report_jsonb });
+        setActiveRunId(runId);
+        return true;
+      }
+    } catch {
+      /* best-effort — a missing/incomplete run just doesn't load */
+    } finally {
+      setLoadingRunId(null);
+    }
+    return false;
+  }, []);
+
+  // Recovery deep-link: ?run_id= renders a completed run without a re-run (e.g.
+  // when a slow audit's live poll hit its budget but the backend finished).
   useEffect(() => {
     const runId = new URLSearchParams(window.location.search).get('run_id');
-    if (!runId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const detail = await apiClient.getAuditRunDetail(runId);
-        if (
-          !cancelled &&
-          detail?.stage === 'completed' &&
-          detail.report_jsonb?.per_sku_reports
-        ) {
-          setAuditResult({ mode: 'per_sku', payload: detail.report_jsonb });
-        }
-      } catch {
-        /* ignore — recovery is best-effort */
+    if (runId) void loadRunById(runId);
+  }, [loadRunById]);
+
+  // Open a past run from the history panel, then scroll the report into view.
+  const openRunFromHistory = useCallback(
+    async (runId: string) => {
+      const ok = await loadRunById(runId);
+      if (ok) {
+        setTimeout(
+          () => reportRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+          80,
+        );
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    },
+    [loadRunById],
+  );
 
   useEffect(() => {
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
@@ -405,6 +427,8 @@ export default function AiReadinessAuditPage() {
         idempotency_key: idempotencyKey,
       });
       setAuditResult({ mode: 'per_sku', payload: res });
+      setActiveRunId(res.audit_run_id);
+      setHistoryReloadKey((k) => k + 1); // surface the just-finished run in history
     } catch (err) {
       if (err instanceof PremiumProviderRequiredError) {
         setPremiumRequired(err);
@@ -450,6 +474,15 @@ export default function AiReadinessAuditPage() {
         eyebrow="v3"
         title="AI Commerce Readiness Audit"
         description="Audit up to 50 of your SKUs against AI shopping agents (Gemini grounded search; DeepSeek verification). Per-SKU scorecards: Identity / Content / Routability / Citation. Coverage is credit-driven — preview the cost before launch."
+      />
+
+      {/* Run history — re-open any past audit without re-running. Renders null
+          when there's no history yet. */}
+      <RecentAuditsPanel
+        onOpenRun={openRunFromHistory}
+        activeRunId={activeRunId}
+        loadingRunId={loadingRunId}
+        reloadKey={historyReloadKey}
       />
 
       <SurfaceCard
@@ -673,11 +706,11 @@ export default function AiReadinessAuditPage() {
       ) : null}
 
       {auditResult?.mode === 'per_sku' ? (
-        <>
+        <div ref={reportRef} className="space-y-6">
           <PerSkuAuditReportRenderer report={auditResult.payload} />
           <MerchantTaskQueuePanel />
           <MerchantExecutorActivityPanel />
-        </>
+        </div>
       ) : null}
 
       {auditResult?.mode === 'legacy' ? (

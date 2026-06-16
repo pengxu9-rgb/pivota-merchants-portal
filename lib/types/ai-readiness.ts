@@ -1225,6 +1225,23 @@ export interface AgentCenterWinPlan {
   rollup: WinPlanRollup;
 }
 
+// A trend-friendly summary row from `GET /api/audits` (the run-history list).
+// No full report — fetch that per run via getAuditRunDetail(run_id).
+export interface AuditRunSummary {
+  run_id: string | null;
+  requested_at: string | null;
+  completed_at: string | null;
+  /** Top-level status column; per-SKU runs signal completion via `completed_at`
+   * (this can be null mid-run). */
+  status: string | null;
+  product_keys: string[];
+  verdict_labels: string[];
+  visibility_score_avg: number | null;
+  attribution_score_avg: number | null;
+  category_visibility_score_avg: number | null;
+  audited_via_pivota_canonical_count: number;
+}
+
 export interface AgentCenterPerSkuAuditResponse {
   audit_run_id: string;
   merchant_id: string;
