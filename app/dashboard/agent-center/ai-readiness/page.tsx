@@ -647,7 +647,6 @@ export default function AiReadinessAuditPage() {
       <ProviderSelector
         selected={selectedProviders}
         onChange={setSelectedProviders}
-        planTier={previewData?.current_balance?.plan_tier ?? null}
       />
 
       <div className="flex items-center justify-between rounded border border-indigo-200 bg-indigo-50/50 px-4 py-3">
@@ -905,10 +904,10 @@ function InsufficientCreditsBanner({ error }: { error: InsufficientCreditsError 
   );
 }
 
-// Tiered audit model: free tier runs Gemini; ChatGPT/Claude are premium.
-// Gemini is the always-on baseline (can't be deselected); premium models are
-// opt-in toggles. Selecting a premium model on a free plan is allowed — the
-// paywall surfaces at launch (PremiumProviderRequiredBanner) per product spec.
+// ADR-005: providers are gated by credit BALANCE, not plan. Gemini is the
+// always-on baseline (cheapest, can't be deselected); ChatGPT/Claude are opt-in
+// and cost more credits per run. Any plan can run them with enough credits — no
+// subscription paywall (the cost shows in the preview below).
 const PROVIDER_OPTIONS: { id: AuditPreviewProvider; label: string; blurb: string }[] = [
   { id: 'gemini', label: 'Gemini', blurb: 'Google · grounded search' },
   { id: 'chatgpt', label: 'ChatGPT', blurb: 'OpenAI · web search' },
@@ -918,13 +917,10 @@ const PROVIDER_OPTIONS: { id: AuditPreviewProvider; label: string; blurb: string
 function ProviderSelector({
   selected,
   onChange,
-  planTier,
 }: {
   selected: AuditPreviewProvider[];
   onChange: (next: AuditPreviewProvider[]) => void;
-  planTier: string | null;
 }) {
-  const isFree = planTier === 'free';
   const premiumSelected = selected.some((p) => PREMIUM_AUDIT_PROVIDERS.includes(p));
   const toggle = (id: AuditPreviewProvider) => {
     if (id === 'gemini') return; // Gemini is the free baseline — always on.
@@ -937,7 +933,7 @@ function ProviderSelector({
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-slate-900">Models to run</div>
         <div className="text-[11px] text-slate-500">
-          Gemini on the free plan · ChatGPT &amp; Claude need a paid plan · all runs use credits
+          Gemini is the lower-cost baseline · ChatGPT &amp; Claude cost more credits · all runs use credits
         </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
@@ -966,22 +962,22 @@ function ProviderSelector({
               />
               <span className="font-medium">{opt.label}</span>
               {premium ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-                  <Lock className="h-2.5 w-2.5" /> Premium
+                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                  More credits
                 </span>
               ) : (
                 <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
-                  Free plan
+                  Lower cost
                 </span>
               )}
             </button>
           );
         })}
       </div>
-      {isFree && premiumSelected ? (
-        <p className="mt-2 text-xs text-amber-800">
-          Premium models need a paid plan — you&apos;ll be asked to subscribe before this
-          audit runs.
+      {premiumSelected ? (
+        <p className="mt-2 text-xs text-slate-500">
+          ChatGPT &amp; Claude cost more credits per run than Gemini — see the
+          estimated cost below.
         </p>
       ) : null}
     </div>
