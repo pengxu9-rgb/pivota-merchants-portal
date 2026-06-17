@@ -884,6 +884,12 @@ export interface AgentCenterBrandRollup {
   brand_verdict_label?: string;
   brand_verdict_explanation?: string;
   citation_by_provider?: Record<string, BrandProviderCitation>;
+  // Step 2: citation rate by fine intent axis (head/problem/constraint/trust/nav) —
+  // WHERE the brand is cited by question TYPE. Snapshot-only; absent on pre-Step-2 runs.
+  citation_by_intent?: Record<
+    string,
+    { cited: number; total: number; rate: number; skus?: number }
+  >;
   // Phase 2 niche-targeting: where the brand can win (open lanes) vs the
   // flagship-owned head terms to stop fighting.
   where_you_can_win?: WhereYouCanWin;
