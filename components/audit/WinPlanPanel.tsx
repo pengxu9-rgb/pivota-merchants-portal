@@ -205,11 +205,26 @@ function LosingQueryCard({ q }: { q: WinPlanLosingQuery }) {
   );
 }
 
-function SkuPlanBlock({ plan }: { plan: WinPlanSkuPlan }) {
+function SkuPlanBlock({
+  plan,
+  label,
+}: {
+  plan: WinPlanSkuPlan;
+  // Recognizable product label resolved from the audit's per_sku_reports (the
+  // win-plan's own rows only carry the raw sku_title, e.g. "2 Box").
+  label?: { name: string; variant?: string };
+}) {
   if (plan.losing_queries.length === 0) return null;
   return (
     <div className="space-y-2">
-      <div className="text-sm font-semibold text-slate-800">{plan.sku_title || plan.sku_key}</div>
+      <div className="text-sm font-semibold text-slate-800">
+        {label?.name || plan.sku_title || plan.sku_key}
+        {label?.variant ? (
+          <span className="ml-1.5 inline-block rounded bg-white px-1.5 py-0.5 align-middle text-[10px] font-medium uppercase tracking-wide text-indigo-500">
+            {label.variant}
+          </span>
+        ) : null}
+      </div>
       <div className="space-y-2">
         {plan.losing_queries.map((q, i) => (
           <LosingQueryCard key={`${q.query}-${i}`} q={q} />
@@ -219,7 +234,13 @@ function SkuPlanBlock({ plan }: { plan: WinPlanSkuPlan }) {
   );
 }
 
-export function WinPlanPanel({ winPlan }: { winPlan?: AgentCenterWinPlan | null }) {
+export function WinPlanPanel({
+  winPlan,
+  skuLabels,
+}: {
+  winPlan?: AgentCenterWinPlan | null;
+  skuLabels?: Record<string, { name: string; variant?: string }>;
+}) {
   // No fabrication: render nothing when there's no plan at all.
   if (!winPlan || !winPlan.available) return null;
 
@@ -260,7 +281,7 @@ export function WinPlanPanel({ winPlan }: { winPlan?: AgentCenterWinPlan | null 
 
       <div className="mt-3 space-y-4">
         {winPlan.sku_plans.map((plan) => (
-          <SkuPlanBlock key={plan.sku_key} plan={plan} />
+          <SkuPlanBlock key={plan.sku_key} plan={plan} label={skuLabels?.[plan.sku_key]} />
         ))}
       </div>
     </div>
