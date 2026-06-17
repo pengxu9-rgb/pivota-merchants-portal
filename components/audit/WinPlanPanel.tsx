@@ -177,12 +177,16 @@ function LosingQueryCard({ q }: { q: WinPlanLosingQuery }) {
           <Swords className="h-3.5 w-3.5 text-rose-500" />
           <span>Winning today:</span>
           {q.competitor_benchmark.map((c) => (
-            <span
+            <a
               key={c}
-              className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] text-rose-800"
+              href={`https://www.google.com/search?q=${encodeURIComponent(c)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`Look up "${c}" — see how it wins this query`}
+              className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] text-rose-800 underline-offset-2 hover:underline"
             >
-              {c}
-            </span>
+              {c} ↗
+            </a>
           ))}
         </div>
       ) : null}

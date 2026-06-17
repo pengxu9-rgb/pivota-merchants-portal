@@ -50,9 +50,13 @@ function Section({
 function HostChip({
   host,
   tone,
+  href,
 }: {
   host: string;
   tone: 'findability' | 'endorsement' | 'competitor';
+  // When set, the chip becomes a link (new tab) so operators can inspect the
+  // host page or look up the competitor — "how they win over us".
+  href?: string;
 }) {
   const cls =
     tone === 'endorsement'
@@ -60,9 +64,28 @@ function HostChip({
       : tone === 'competitor'
       ? 'border-rose-200 bg-rose-50 text-rose-800'
       : 'border-slate-200 bg-slate-50 text-slate-700';
-  return (
-    <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs ${cls}`}>{host}</span>
-  );
+  const base = `inline-block rounded-full border px-2.5 py-0.5 text-xs ${cls}`;
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`${base} underline-offset-2 hover:underline`}
+      >
+        {host} ↗
+      </a>
+    );
+  }
+  return <span className={base}>{host}</span>;
+}
+
+// A competitor/host name we don't have a first-party URL for → let the operator
+// look it up. A host string gets its own site; a free-text name gets a search.
+function lookupHref(value: string): string {
+  const v = value.trim();
+  if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(v)) return `https://${v}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(v)}`;
 }
 
 // The Fix-2 split, computed from the narrative (always present) and sharpened by
@@ -146,10 +169,14 @@ function WhoAiCitesInsteadBlock({ block }: { block: WhoAiCitesInstead }) {
     <div className="mt-2 space-y-2">
       {block.competitors.length > 0 ? (
         <div>
-          <div className="text-xs font-medium text-slate-600">Competitors AI named</div>
+          <div className="text-xs font-medium text-slate-600">What AI names instead</div>
+          <div className="text-[11px] text-slate-400">
+            Products, brands, and ingredient types AI mentions for these queries — not all
+            are competing brands. Tap any to look it up.
+          </div>
           <div className="mt-1 flex flex-wrap gap-1.5">
             {block.competitors.map((c) => (
-              <HostChip key={c.name} host={c.name} tone="competitor" />
+              <HostChip key={c.name} host={c.name} tone="competitor" href={lookupHref(c.name)} />
             ))}
           </div>
         </div>
@@ -159,7 +186,7 @@ function WhoAiCitesInsteadBlock({ block }: { block: WhoAiCitesInstead }) {
           <div className="text-xs font-medium text-slate-600">Hosts AI cites</div>
           <div className="mt-1 flex flex-wrap gap-1.5">
             {block.cited_hosts.map((h) => (
-              <HostChip key={h.host} host={h.host} tone="findability" />
+              <HostChip key={h.host} host={h.host} tone="findability" href={lookupHref(h.host)} />
             ))}
           </div>
         </div>
@@ -178,7 +205,12 @@ function WinPlanSummaryCallout({ summary }: { summary: WinPlanSummary }) {
         <Trophy className="h-4 w-4" /> Your path to winning
       </div>
       <p className="mt-1 text-sm text-slate-700">{summary.summary}</p>
-      <p className="mt-1 text-[11px] text-indigo-700/70">See the per-query plan below.</p>
+      <p className="mt-1 text-xs text-slate-700">
+        <span className="font-semibold">Your move:</span> get cited in those independent
+        hosts. The per-query targets and ready-to-send pitches are in{' '}
+        <span className="font-semibold text-indigo-700">How to win the recommendation</span>{' '}
+        below.
+      </p>
     </div>
   );
 }
@@ -248,10 +280,15 @@ export function MerchantNarrativePanel({
           "Your products" section (PerSkuCardList) with a worse label (bare variant
           like "2 Box"). One scorecard, one source of truth. */}
 
-      {/* 5. Verify summary (plain) */}
-      <Section icon={<ShieldCheck className="h-4 w-4 text-slate-500" />} title="Answer-quality check">
-        <p className="text-sm text-slate-700">{narrative.verify_summary_plain.text}</p>
-      </Section>
+      {/* 5. Answer-quality check — show ONLY when DeepSeek verification actually ran
+          (checked > 0). When it was skipped, a standalone "did not run" section reads
+          as low-quality; the honest caveat still appears in "What we didn't measure"
+          below, so we stay truthful without headlining a non-result. */}
+      {narrative.verify_summary_plain.checked > 0 ? (
+        <Section icon={<ShieldCheck className="h-4 w-4 text-slate-500" />} title="Answer-quality check">
+          <p className="text-sm text-slate-700">{narrative.verify_summary_plain.text}</p>
+        </Section>
+      ) : null}
 
       {/* 6. Honest limits — render verbatim, no fabrication */}
       {narrative.honest_limits.length > 0 ? (
