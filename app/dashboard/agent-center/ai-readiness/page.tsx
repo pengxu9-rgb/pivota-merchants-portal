@@ -2128,7 +2128,9 @@ function costSummaryProviderNames(summary: AgentCenterCostSummary): string {
   return names.length ? Array.from(new Set(names)).join(', ') : '—';
 }
 
-function PerSkuAuditReportRenderer({
+// Exported so the dev-only fixture preview (app/dev/ai-readiness-preview) can render
+// the real report without auth/backend. No behavioral change to this page.
+export function PerSkuAuditReportRenderer({
   report,
 }: {
   report: AgentCenterPerSkuAuditResponse;

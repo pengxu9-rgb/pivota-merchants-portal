@@ -1,0 +1,801 @@
+{
+  "audit_run_id": "fixture-winplan-aruen",
+  "merchant_id": "merch_fixture",
+  "audit_mode": "per_sku",
+  "per_sku_reports": [
+    {
+      "sku_key": "sku-collagen",
+      "sku_title": "Tofu Collagen Jelly Cream",
+      "failing_prompts": [
+        {
+          "query": "best collagen cream",
+          "axis": "category",
+          "reason": "no first-party or correct-SKU grounded citation",
+          "evidence_run_id": "pr_category",
+          "grounding_sources": [
+            {
+              "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/fb1",
+              "title": "forbes.com"
+            },
+            {
+              "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/by1",
+              "title": "byrdie.com"
+            },
+            {
+              "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/gh1",
+              "title": "goodhousekeeping.com"
+            }
+          ],
+          "competitors_named": [
+            "Vital Proteins",
+            "Ancient Nutrition"
+          ]
+        },
+        {
+          "query": "best collagen for sleep",
+          "axis": "category",
+          "reason": "no first-party or correct-SKU grounded citation",
+          "evidence_run_id": "pr_category",
+          "grounding_sources": [
+            {
+              "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ar1",
+              "title": "aruen.us"
+            },
+            {
+              "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/eb1",
+              "title": "ebay.com"
+            }
+          ],
+          "competitors_named": []
+        }
+      ],
+      "query_class_coverage": {
+        "branded_navigational": 1,
+        "category_discovery": 2
+      },
+      "verbatim_grounding_evidence": [
+        {
+          "probe_run_id": "pr_category",
+          "query": "best collagen cream",
+          "axis_metadata": {
+            "axis": "category"
+          },
+          "grounding_sources": [
+            {
+              "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/fb1",
+              "title": "forbes.com"
+            },
+            {
+              "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/by1",
+              "title": "byrdie.com"
+            },
+            {
+              "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/gh1",
+              "title": "goodhousekeeping.com"
+            }
+          ],
+          "evidence_excerpt": null,
+          "product_visible": false
+        },
+        {
+          "probe_run_id": "pr_category",
+          "query": "best collagen for sleep",
+          "axis_metadata": {
+            "axis": "category"
+          },
+          "grounding_sources": [
+            {
+              "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ar1",
+              "title": "aruen.us"
+            },
+            {
+              "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/eb1",
+              "title": "ebay.com"
+            }
+          ],
+          "evidence_excerpt": null,
+          "product_visible": false
+        },
+        {
+          "probe_run_id": "pr_intent",
+          "query": "Aruen tofu collagen jelly cream",
+          "axis_metadata": {
+            "axis": "intent"
+          },
+          "grounding_sources": [
+            {
+              "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ar2",
+              "title": "aruen.us"
+            }
+          ],
+          "evidence_excerpt": "Aruen's tofu collagen jelly cream is a Korean-beauty hydrating gel.",
+          "product_visible": true
+        }
+      ],
+      "indexing_arc": {
+        "phase": "indexing",
+        "days_since_mint": 20,
+        "minted_at": "2026-05-26T15:40:04.067592+00:00",
+        "expected_first_citation_at": "2026-08-24T15:40:04.067592+00:00",
+        "caveat": "This canonical URL was minted 20 days ago — in the Google indexing window (typically 7-90 days). First grounded citations may appear toward the end of this band. Re-audit on or after 2026-08-24 to check progress."
+      },
+      "band": "partial",
+      "band_display": {
+        "label": "Needs work",
+        "meaning": "AI can sometimes use this."
+      },
+      "primary_gaps": [
+        {
+          "dimension": "citation",
+          "meaning": "No independent endorsement on category queries."
+        }
+      ],
+      "next_best_action": {
+        "headline": "Earn an independent category review",
+        "primary_gap": "citation",
+        "first_move": "Pitch Forbes Vetted for the collagen roundup.",
+        "why_this_first": "AI grounds the category answer in independent editorial you're absent from.",
+        "cta": {
+          "action": "request_indexing",
+          "label": "Get this product indexed"
+        },
+        "pivota_assisted": [
+          "Pivota submits this product’s canonical page for indexing and tracks it until it’s live."
+        ]
+      },
+      "scores": {
+        "identity": {
+          "score": 72
+        },
+        "content_richness": {
+          "score": 55
+        },
+        "routability": {
+          "score": 48
+        },
+        "citation": {
+          "score": 35
+        }
+      },
+      "verify_summary": {
+        "status": "completed",
+        "verified": 4,
+        "flagged": 1,
+        "citation_positive_candidates": 6
+      }
+    }
+  ],
+  "brand_rollup": {
+    "brand_verdict_label": "Listed, not recommended",
+    "brand_verdict_explanation": "Findable via your listings; not yet independently recommended for the category.",
+    "where_you_can_win": {
+      "targets": []
+    },
+    "indexing_arc": {
+      "skus_on_canonical_pdp": 1,
+      "phase_counts": {
+        "indexing": 1
+      },
+      "skus_still_indexing": 1,
+      "recheck_on_or_after": "2026-08-24T15:40:04.067592+00:00",
+      "caveat": "1 of 1 audited product is on a freshly-minted Pivota canonical PDP still inside Google's 30-90 day indexing window — zero category citations there may reflect indexing latency, not a content gap. Re-audit on or after 2026-08-24 to check progress."
+    },
+    "integration": {
+      "gsc_integrated": false,
+      "store_platform_integrated": true,
+      "psp_integrated": true,
+      "fully_integrated": true,
+      "actions": [
+        {
+          "severity": "high",
+          "lever": "gsc_integration",
+          "title": "Grant Pivota access to your Google Search Console",
+          "body": "Pivota canonical PDPs need to land in Google's index before AI agents can ground answers in them. The fastest path is to grant Pivota Search Console access — we'll auto-submit your canonical URLs + monitor indexing status, so 'submit your sitemap' becomes a one-click step rather than a recurring task you manage.",
+          "concrete_next_step": "Open Search Console authorization",
+          "cta_url": "/onboarding/gsc",
+          "cta_label": "Grant GSC access",
+          "evidence": {
+            "gsc_integrated": false
+          }
+        }
+      ]
+    },
+    "dimensions": {
+      "identity": {
+        "median": 72,
+        "p25": 72,
+        "p75": 72
+      },
+      "content_richness": {
+        "median": 55,
+        "p25": 55,
+        "p75": 55
+      },
+      "routability": {
+        "median": 48,
+        "p25": 48,
+        "p75": 48
+      },
+      "citation": {
+        "median": 35,
+        "p25": 35,
+        "p75": 35
+      }
+    },
+    "winning_skus_by_citation": [
+      {
+        "sku_key": "sku-collagen"
+      }
+    ],
+    "winning_skus_by_band": [
+      {
+        "sku_key": "sku-collagen"
+      }
+    ],
+    "blocked_skus": [],
+    "citation_by_provider": {},
+    "tracking": {
+      "history": {
+        "audits_in_history": 3,
+        "most_recent_audit": {
+          "visibility": 42
+        },
+        "delta_from_most_recent": {
+          "visibility": 9,
+          "days_since_last_audit": 12
+        },
+        "series": [
+          {
+            "visibility": 33
+          },
+          {
+            "visibility": 38
+          },
+          {
+            "visibility": 42
+          }
+        ]
+      }
+    }
+  },
+  "authority_map": {
+    "skus": [
+      {
+        "sku_key": "sku-collagen",
+        "product_key": null,
+        "content_key": null,
+        "authority_hosts": [
+          {
+            "host": "aruen.us",
+            "host_type": "unclassified",
+            "first_party": true,
+            "is_competitor": false,
+            "citation_role": "own_domain",
+            "recommendation_class": "unknown",
+            "cites_exact_sku": true,
+            "cites_near_variant": false,
+            "cites_category_not_sku": true,
+            "cited_on_category_query": true,
+            "cited_on_branded_query": true,
+            "prompts_cited_count": 2,
+            "providers": [
+              "gemini"
+            ],
+            "provider_counts": {
+              "gemini": 2
+            },
+            "evidence_urls": [
+              "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ar1",
+              "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ar2"
+            ],
+            "evidence_excerpt": "Aruen's tofu collagen jelly cream is a Korean-beauty hydrating gel.",
+            "competitors_named": []
+          },
+          {
+            "host": "forbes.com",
+            "host_type": "editorial",
+            "first_party": false,
+            "is_competitor": false,
+            "citation_role": "editorial_review",
+            "recommendation_class": "recommends",
+            "cites_exact_sku": false,
+            "cites_near_variant": false,
+            "cites_category_not_sku": true,
+            "cited_on_category_query": true,
+            "cited_on_branded_query": false,
+            "prompts_cited_count": 1,
+            "providers": [
+              "gemini"
+            ],
+            "provider_counts": {
+              "gemini": 1
+            },
+            "evidence_urls": [
+              "https://vertexaisearch.cloud.google.com/grounding-api-redirect/fb1"
+            ],
+            "evidence_excerpt": null,
+            "competitors_named": [
+              "Vital Proteins",
+              "Ancient Nutrition"
+            ]
+          },
+          {
+            "host": "byrdie.com",
+            "host_type": "editorial",
+            "first_party": false,
+            "is_competitor": false,
+            "citation_role": "editorial_review",
+            "recommendation_class": "recommends",
+            "cites_exact_sku": false,
+            "cites_near_variant": false,
+            "cites_category_not_sku": true,
+            "cited_on_category_query": true,
+            "cited_on_branded_query": false,
+            "prompts_cited_count": 1,
+            "providers": [
+              "gemini"
+            ],
+            "provider_counts": {
+              "gemini": 1
+            },
+            "evidence_urls": [
+              "https://vertexaisearch.cloud.google.com/grounding-api-redirect/by1"
+            ],
+            "evidence_excerpt": null,
+            "competitors_named": [
+              "Vital Proteins",
+              "Ancient Nutrition"
+            ]
+          },
+          {
+            "host": "goodhousekeeping.com",
+            "host_type": "editorial",
+            "first_party": false,
+            "is_competitor": false,
+            "citation_role": "editorial_review",
+            "recommendation_class": "recommends",
+            "cites_exact_sku": false,
+            "cites_near_variant": false,
+            "cites_category_not_sku": true,
+            "cited_on_category_query": true,
+            "cited_on_branded_query": false,
+            "prompts_cited_count": 1,
+            "providers": [
+              "gemini"
+            ],
+            "provider_counts": {
+              "gemini": 1
+            },
+            "evidence_urls": [
+              "https://vertexaisearch.cloud.google.com/grounding-api-redirect/gh1"
+            ],
+            "evidence_excerpt": null,
+            "competitors_named": [
+              "Vital Proteins",
+              "Ancient Nutrition"
+            ]
+          },
+          {
+            "host": "ebay.com",
+            "host_type": "retailer",
+            "first_party": false,
+            "is_competitor": false,
+            "citation_role": "marketplace_self_listing",
+            "recommendation_class": "lists",
+            "cites_exact_sku": false,
+            "cites_near_variant": false,
+            "cites_category_not_sku": true,
+            "cited_on_category_query": true,
+            "cited_on_branded_query": false,
+            "prompts_cited_count": 1,
+            "providers": [
+              "gemini"
+            ],
+            "provider_counts": {
+              "gemini": 1
+            },
+            "evidence_urls": [
+              "https://vertexaisearch.cloud.google.com/grounding-api-redirect/eb1"
+            ],
+            "evidence_excerpt": null,
+            "competitors_named": []
+          }
+        ],
+        "citation_signals": {
+          "by_role": {
+            "own_domain": 1,
+            "editorial_review": 3,
+            "marketplace_self_listing": 1
+          },
+          "findability_hosts": [
+            "aruen.us",
+            "ebay.com"
+          ],
+          "endorsement_hosts": [
+            "forbes.com",
+            "byrdie.com",
+            "goodhousekeeping.com"
+          ],
+          "endorsement_category_hosts": [
+            "forbes.com",
+            "byrdie.com",
+            "goodhousekeeping.com"
+          ],
+          "competitor_hosts": [],
+          "has_independent_endorsement": true,
+          "independently_recommended_for_category": true,
+          "surfaced_only_via_own_listing": false
+        },
+        "reddit": {
+          "subreddits": []
+        }
+      }
+    ],
+    "hosts": [
+      {
+        "host": "aruen.us",
+        "host_type": "unclassified",
+        "first_party": true,
+        "is_competitor": false,
+        "citation_role": "own_domain",
+        "recommendation_class": "unknown",
+        "cited_on_category_query": true,
+        "cited_on_branded_query": true,
+        "skus": [
+          "sku-collagen"
+        ],
+        "prompts_cited_count": 2,
+        "providers": [
+          "gemini"
+        ],
+        "provider_counts": {
+          "gemini": 2
+        }
+      },
+      {
+        "host": "forbes.com",
+        "host_type": "editorial",
+        "first_party": false,
+        "is_competitor": false,
+        "citation_role": "editorial_review",
+        "recommendation_class": "recommends",
+        "cited_on_category_query": true,
+        "cited_on_branded_query": false,
+        "skus": [
+          "sku-collagen"
+        ],
+        "prompts_cited_count": 1,
+        "providers": [
+          "gemini"
+        ],
+        "provider_counts": {
+          "gemini": 1
+        }
+      },
+      {
+        "host": "byrdie.com",
+        "host_type": "editorial",
+        "first_party": false,
+        "is_competitor": false,
+        "citation_role": "editorial_review",
+        "recommendation_class": "recommends",
+        "cited_on_category_query": true,
+        "cited_on_branded_query": false,
+        "skus": [
+          "sku-collagen"
+        ],
+        "prompts_cited_count": 1,
+        "providers": [
+          "gemini"
+        ],
+        "provider_counts": {
+          "gemini": 1
+        }
+      },
+      {
+        "host": "goodhousekeeping.com",
+        "host_type": "editorial",
+        "first_party": false,
+        "is_competitor": false,
+        "citation_role": "editorial_review",
+        "recommendation_class": "recommends",
+        "cited_on_category_query": true,
+        "cited_on_branded_query": false,
+        "skus": [
+          "sku-collagen"
+        ],
+        "prompts_cited_count": 1,
+        "providers": [
+          "gemini"
+        ],
+        "provider_counts": {
+          "gemini": 1
+        }
+      },
+      {
+        "host": "ebay.com",
+        "host_type": "retailer",
+        "first_party": false,
+        "is_competitor": false,
+        "citation_role": "marketplace_self_listing",
+        "recommendation_class": "lists",
+        "cited_on_category_query": true,
+        "cited_on_branded_query": false,
+        "skus": [
+          "sku-collagen"
+        ],
+        "prompts_cited_count": 1,
+        "providers": [
+          "gemini"
+        ],
+        "provider_counts": {
+          "gemini": 1
+        }
+      }
+    ],
+    "host_attribution_summary": {
+      "distinct_hosts": 5,
+      "by_role": {
+        "own_domain": 1,
+        "editorial_review": 3,
+        "marketplace_self_listing": 1
+      },
+      "findability_hosts": [
+        "aruen.us",
+        "ebay.com"
+      ],
+      "endorsement_hosts": [
+        "forbes.com",
+        "byrdie.com",
+        "goodhousekeeping.com"
+      ],
+      "endorsement_category_hosts": [
+        "forbes.com",
+        "byrdie.com",
+        "goodhousekeeping.com"
+      ],
+      "competitor_hosts": [],
+      "independent_hosts": [
+        "forbes.com",
+        "byrdie.com",
+        "goodhousekeeping.com"
+      ],
+      "has_independent_endorsement": true,
+      "independently_recommended_for_category": true,
+      "surfaced_only_via_own_listing": false
+    }
+  },
+  "merchant_narrative": {
+    "headline_story": "Aruen is independently recommended for the category, not just found through your own listings — the channel is working for you.",
+    "whats_working": {
+      "summary": "Aruen is findable where shoppers who already know it look: listed across aruen.us, ebay.com.",
+      "findability_hosts": [
+        "aruen.us",
+        "ebay.com"
+      ],
+      "branded_navigational_probes": 1,
+      "category_discovery_probes": 2,
+      "evidence_excerpt": {
+        "sku_title": "Tofu Collagen Jelly Cream",
+        "query": "Aruen tofu collagen jelly cream",
+        "excerpt": "Aruen's tofu collagen jelly cream is a Korean-beauty hydrating gel.",
+        "source_labels": [
+          "aruen.us"
+        ]
+      }
+    },
+    "where_youre_losing": {
+      "summary": "Aruen earns independent category recommendation from forbes.com, byrdie.com, goodhousekeeping.com.",
+      "independently_recommended_for_category": true,
+      "endorsement_hosts": [
+        "forbes.com",
+        "byrdie.com",
+        "goodhousekeeping.com"
+      ],
+      "who_ai_cites_instead": {
+        "available": true,
+        "cited_hosts": [
+          {
+            "host": "byrdie.com",
+            "citation_role": "editorial_review",
+            "recommendation_class": "recommends",
+            "prompts_cited_count": 1,
+            "cited_on_category_query": true
+          },
+          {
+            "host": "forbes.com",
+            "citation_role": "editorial_review",
+            "recommendation_class": "recommends",
+            "prompts_cited_count": 1,
+            "cited_on_category_query": true
+          },
+          {
+            "host": "goodhousekeeping.com",
+            "citation_role": "editorial_review",
+            "recommendation_class": "recommends",
+            "prompts_cited_count": 1,
+            "cited_on_category_query": true
+          }
+        ],
+        "competitors": [
+          {
+            "name": "Ancient Nutrition",
+            "times_named": 1
+          },
+          {
+            "name": "Vital Proteins",
+            "times_named": 1
+          }
+        ],
+        "note": null
+      },
+      "win_plan_summary": {
+        "summary": "You're losing 2 category queries; AI grounds them in 3 independent hosts you're not cited in — 1 with a ready-to-send pitch.",
+        "losing_category_queries": 2,
+        "independent_hosts_to_win": [
+          "byrdie.com",
+          "forbes.com",
+          "goodhousekeeping.com"
+        ],
+        "pitch_ready_hosts": [
+          "forbes.com"
+        ]
+      }
+    },
+    "per_sku_scorecard": [
+      {
+        "sku_key": "sku-collagen",
+        "sku_title": "Tofu Collagen Jelly Cream",
+        "band": "partial",
+        "status": "Needs work",
+        "what_it_means": "AI can sometimes use this.",
+        "surfaced_only_via_own_listing": false,
+        "independently_recommended_for_category": true
+      }
+    ],
+    "verify_summary_plain": {
+      "status": "completed",
+      "verified": 4,
+      "flagged": 1,
+      "checked": 4,
+      "candidates": 6,
+      "text": "DeepSeek answer-quality verify checked 4 of 6 cited answers: 3 held up, 1 flagged for accuracy — reach is real, accuracy is the watch item."
+    },
+    "prioritized_actions": [
+      {
+        "sku_title": "Tofu Collagen Jelly Cream",
+        "primary_gap": "citation",
+        "headline": "Earn an independent category review",
+        "first_move": "Pitch Forbes Vetted for the collagen roundup.",
+        "why_this_first": "AI grounds the category answer in independent editorial you're absent from.",
+        "growth_phase": "create_and_distribute",
+        "growth_phase_label": "Create & distribute"
+      }
+    ],
+    "honest_limits": [
+      "Provider coverage: grounded on gemini; answer-quality verify on deepseek (coverage profile: pilot_gemini).",
+      "Coverage pending: chatgpt not yet included — citation/host counts will rise as they are added.",
+      "1 of 1 audited product is on a freshly-minted Pivota canonical PDP still inside Google's 30-90 day indexing window — zero category citations there may reflect indexing latency, not a content gap. Re-audit on or after 2026-08-24 to check progress."
+    ],
+    "verdict_label": "Listed, not recommended",
+    "verdict_explanation": "Findable via your listings; not yet independently recommended for the category."
+  },
+  "win_plan": {
+    "available": true,
+    "note": null,
+    "sku_plans": [
+      {
+        "sku_key": "sku-collagen",
+        "sku_title": "Tofu Collagen Jelly Cream",
+        "losing_queries": [
+          {
+            "query": "best collagen cream",
+            "axis": "category",
+            "grounds_in": [
+              {
+                "host": "byrdie.com",
+                "role": "editorial_review",
+                "tier": 1,
+                "applies_to_merchant_category": null,
+                "outreach": {
+                  "state": "target_only",
+                  "hint": "Editorial pitch — beauty editors, sample-based.",
+                  "cycle_weeks": null,
+                  "recipient": null,
+                  "pitch_draft": null
+                }
+              },
+              {
+                "host": "forbes.com",
+                "role": "editorial_review",
+                "tier": 1,
+                "applies_to_merchant_category": null,
+                "outreach": {
+                  "state": "draft_ready",
+                  "hint": "Forbes Vetted editorial pitch via their submission process.",
+                  "cycle_weeks": [
+                    4,
+                    8
+                  ],
+                  "recipient": {
+                    "email": "vetted@forbes.com",
+                    "submission_url": null,
+                    "note": "Forbes Vetted accepts product pitches at vetted@forbes.com. Subject line should specify the category vertical (sleepwear, beauty, home, etc.)."
+                  },
+                  "pitch_draft": {
+                    "subject": "Aruen for an upcoming forbes.com category roundup",
+                    "body": "Hi forbes.com editorial team,\n\nI'm reaching out from Aruen, a category brand. I noticed your team has covered Vital Proteins and Ancient Nutrition in recent category roundups (e.g. for \"best collagen cream\").\n\nAruen belongs alongside them — here's why:\n\n> Customize before sending: 2-3 sentences on your differentiator — a unique ingredient or formulation story, a price-point gap competitors miss, or a specific use-case they don't address.\n\nI'd love to send 3 product samples for your team to review. Can you share the best shipping address?\n\nThanks for considering,\nAruen",
+                    "recipient_email": "vetted@forbes.com",
+                    "recipient_note": "Forbes Vetted accepts product pitches at vetted@forbes.com. Subject line should specify the category vertical (sleepwear, beauty, home, etc.)."
+                  }
+                }
+              },
+              {
+                "host": "goodhousekeeping.com",
+                "role": "editorial_review",
+                "tier": 3,
+                "applies_to_merchant_category": null,
+                "outreach": {
+                  "state": "submission_only",
+                  "hint": "GH Institute submission — formal product testing process.",
+                  "cycle_weeks": null,
+                  "recipient": {
+                    "email": null,
+                    "submission_url": "https://www.goodhousekeeping.com/institute/about-the-institute/a31905906/contact-us/",
+                    "note": "GH Institute requires a formal product-testing submission, not an email pitch. Multi-month testing cycle."
+                  },
+                  "pitch_draft": null
+                }
+              }
+            ],
+            "competitor_benchmark": [
+              "Vital Proteins",
+              "Ancient Nutrition"
+            ],
+            "win_condition": "Get cited in byrdie.com / forbes.com / goodhousekeeping.com for \"best collagen cream\".",
+            "limit": null
+          },
+          {
+            "query": "best collagen for sleep",
+            "axis": "category",
+            "grounds_in": [],
+            "competitor_benchmark": [],
+            "win_condition": null,
+            "limit": "AI grounds this answer in aruen.us, ebay.com (your own / retail listings); none is an independent publisher to pitch — the play is to earn this category's first independent review."
+          }
+        ],
+        "coverage": {
+          "losing_category_queries": 2,
+          "queries_with_grounded_target": 1,
+          "queries_with_draft_ready_target": 1
+        }
+      }
+    ],
+    "rollup": {
+      "losing_category_queries": 2,
+      "independent_hosts_to_win": [
+        "byrdie.com",
+        "forbes.com",
+        "goodhousekeeping.com"
+      ],
+      "draft_ready_hosts": [
+        "forbes.com"
+      ],
+      "pitch_ready_hosts": [
+        "forbes.com"
+      ]
+    }
+  },
+  "legacy_verdict": "Listed, not recommended",
+  "cost_summary": {
+    "prompts": 3,
+    "providers": [
+      {
+        "provider": "gemini",
+        "calls": 3,
+        "input_tokens": 0,
+        "output_tokens": 0
+      }
+    ]
+  }
+}
