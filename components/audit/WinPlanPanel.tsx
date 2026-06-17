@@ -216,11 +216,15 @@ function SkuPlanBlock({
 }) {
   if (plan.losing_queries.length === 0) return null;
   return (
-    <div className="space-y-2">
-      <div className="text-sm font-semibold text-slate-800">
-        {label?.name || plan.sku_title || plan.sku_key}
+    <div className="space-y-2 rounded-lg border border-indigo-200 bg-white/70 p-3">
+      {/* Product banner — anchors this group of losing queries to one product so
+          multi-product win-plans read as distinct sections at a glance. */}
+      <div className="flex items-center gap-2 rounded-md bg-indigo-100/70 px-3 py-1.5">
+        <span className="text-sm font-bold text-indigo-900">
+          {label?.name || plan.sku_title || plan.sku_key}
+        </span>
         {label?.variant ? (
-          <span className="ml-1.5 inline-block rounded bg-white px-1.5 py-0.5 align-middle text-[10px] font-medium uppercase tracking-wide text-indigo-500">
+          <span className="inline-block rounded bg-white px-1.5 py-0.5 align-middle text-[10px] font-medium uppercase tracking-wide text-indigo-600">
             {label.variant}
           </span>
         ) : null}
