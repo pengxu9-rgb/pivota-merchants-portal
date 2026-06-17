@@ -2196,6 +2196,12 @@ export function PerSkuAuditReportRenderer({
   // did"); the dev fixture preview omits it (no backend). Rendered inside Zone 3.
   whatsBeenDone?: React.ReactNode;
 }) {
+  // sku_key -> recognizable product label, built once from per_sku_reports (the
+  // only structure carrying identity.name). Threaded into sections whose own data
+  // only has the raw sku_title (win-plan) so they stop showing bare "2 Box".
+  const skuLabels: Record<string, SkuLabelParts> = Object.fromEntries(
+    report.per_sku_reports.map((r) => [r.sku_key, skuLabelParts(r)]),
+  );
   return (
     <div className="space-y-8">
       <div className="text-xs text-slate-500">
@@ -2231,7 +2237,7 @@ export function PerSkuAuditReportRenderer({
       >
         {/* Fix 4 — how to win the recommendation: per-losing-query targets +
             one-click pitches. Returns null when there's no plan. */}
-        <WinPlanPanel winPlan={report.win_plan} />
+        <WinPlanPanel winPlan={report.win_plan} skuLabels={skuLabels} />
         {/* Issue #902 — GSC-connect / onboarding CTA (returns null when fully
             integrated + GSC connected). */}
         <IntegrationCtaPanel integration={report.brand_rollup.integration} />
@@ -2680,6 +2686,28 @@ function skuDisplayName(report: AgentCenterPerSkuReport): string {
   );
 }
 
+// Split a per-SKU report into the product name the merchant recognizes
+// (identity.name — brand-prefixed, variant-aware) and the bare variant tag (raw
+// sku_title, e.g. "2 Box"), so every section renders "Good Night Collagen · 2 Box"
+// instead of a meaningless "2 Box". Variant drops out when absent or == name.
+type SkuLabelParts = { name: string; variant?: string };
+function skuLabelParts(report: AgentCenterPerSkuReport): SkuLabelParts {
+  const name = report.identity?.name?.trim() || report.sku_title?.trim() || report.sku_key;
+  const variant = report.sku_title?.trim();
+  return { name, variant: variant && variant !== name ? variant : undefined };
+}
+
+// The "2 Box"-style chip rendered next to a product name. Shared shape with the
+// win-plan group header so SKU labels read identically everywhere.
+function SkuVariantTag({ variant }: { variant?: string }) {
+  if (!variant) return null;
+  return (
+    <span className="ml-1.5 inline-block rounded bg-slate-100 px-1.5 py-0.5 align-middle text-[10px] font-medium uppercase tracking-wide text-slate-500">
+      {variant}
+    </span>
+  );
+}
+
 function BrandRollupCover({
   rollup,
   skuCount,
@@ -2889,7 +2917,7 @@ function PerSkuCardList({
 }) {
   if (reports.length === 0) {
     return (
-      <SurfaceCard title="Per-SKU scorecards">
+      <SurfaceCard title="Your products">
         <div className="px-5 py-4 text-sm text-slate-500">
           No SKU reports returned — likely all SKUs were blocked at preflight.
         </div>
@@ -2898,7 +2926,7 @@ function PerSkuCardList({
   }
   return (
     <SurfaceCard
-      title="Per-SKU scorecards"
+      title="Your products"
       description="Identity, Content and Routability are things Pivota can help you fix. Citation is the result — whether AI actually recommends you. Click a card to see the evidence."
     >
       <div className="px-5 py-4">
@@ -3011,7 +3039,10 @@ function PerSkuCard({
         className="flex w-full items-start justify-between px-4 py-3 text-left"
       >
         <div className="flex-1">
-          <div className="text-sm font-semibold">{skuDisplayName(report)}</div>
+          <div className="text-sm font-semibold">
+            {skuDisplayName(report)}
+            <SkuVariantTag variant={skuLabelParts(report).variant} />
+          </div>
           {report.band_display?.meaning ? (
             <div className="mt-0.5 text-[11px] opacity-70">{report.band_display.meaning}</div>
           ) : null}

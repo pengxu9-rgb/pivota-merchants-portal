@@ -16,7 +16,6 @@ import {
   CheckCircle2,
   Sprout,
   ShieldCheck,
-  ListChecks,
   Info,
   Store,
   Trophy,
@@ -245,43 +244,9 @@ export function MerchantNarrativePanel({
         ) : null}
       </Section>
 
-      {/* 4. Per-SKU scorecard */}
-      {narrative.per_sku_scorecard.length > 0 ? (
-        <Section
-          icon={<ListChecks className="h-4 w-4 text-slate-500" />}
-          title="Per-product scorecard"
-        >
-          <div className="space-y-2">
-            {narrative.per_sku_scorecard.map((row) => (
-              <div
-                key={row.sku_key}
-                className="flex items-start justify-between gap-3 rounded border border-slate-100 bg-slate-50/50 p-2"
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-slate-800">
-                    {row.sku_title || row.sku_key}
-                  </div>
-                  {row.what_it_means ? (
-                    <div className="text-xs text-slate-500">{row.what_it_means}</div>
-                  ) : null}
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-1">
-                  {row.status ? (
-                    <span className="rounded bg-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-                      {row.status}
-                    </span>
-                  ) : null}
-                  {row.surfaced_only_via_own_listing ? (
-                    <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] text-amber-800">
-                      listed, not recommended
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Section>
-      ) : null}
+      {/* 4. Per-product scorecard removed — it duplicated the richer, product-named
+          "Your products" section (PerSkuCardList) with a worse label (bare variant
+          like "2 Box"). One scorecard, one source of truth. */}
 
       {/* 5. Verify summary (plain) */}
       <Section icon={<ShieldCheck className="h-4 w-4 text-slate-500" />} title="Answer-quality check">
