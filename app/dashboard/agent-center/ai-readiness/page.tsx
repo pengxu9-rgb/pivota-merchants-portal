@@ -2187,6 +2187,60 @@ function PerformanceZone({
   );
 }
 
+// Step 2 — "where AI cites you, by question type." Reads brand_rollup.citation_by_intent
+// (snapshot per-intent citation rate). Returns null on pre-Step-2 runs / no data.
+const INTENT_AXIS_LABELS: Record<string, { label: string; hint: string }> = {
+  problem_jtbd: { label: 'Problem / need questions', hint: '“best X for sleep” — how most AI shopping happens' },
+  category_head: { label: 'Category head terms', hint: '“best X” — usually retailer-owned' },
+  constraint: { label: 'Specific-attribute searches', hint: '“vegan X”, “fragrance-free X”' },
+  trust: { label: 'Trust / reviews', hint: '“is X legit”, “X reviews”' },
+  navigational: { label: 'Branded / “where to buy”', hint: 'shoppers who already know you' },
+  custom: { label: 'Your custom prompts', hint: 'prompts you added' },
+};
+const INTENT_AXIS_ORDER = ['problem_jtbd', 'category_head', 'constraint', 'trust', 'navigational', 'custom'];
+
+function CitationByIntentPanel({ rollup }: { rollup: AgentCenterBrandRollup }) {
+  const data = rollup.citation_by_intent;
+  if (!data) return null;
+  const rows = INTENT_AXIS_ORDER.filter((k) => data[k] && data[k].total > 0).map((k) => ({
+    key: k,
+    ...data[k],
+    ...(INTENT_AXIS_LABELS[k] || { label: k, hint: '' }),
+  }));
+  if (rows.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Where AI cites you — by question type
+      </div>
+      <p className="mt-1 text-xs text-slate-500">
+        How often AI names you, split by the way shoppers ask. Problem/need questions are how
+        most AI shopping happens — that&apos;s where the room to grow usually is.
+      </p>
+      <div className="mt-3 space-y-2">
+        {rows.map((r) => {
+          const pct = Math.round((r.rate || 0) * 100);
+          const tone = pct >= 50 ? 'bg-green-500' : pct > 0 ? 'bg-amber-500' : 'bg-slate-300';
+          return (
+            <div key={r.key} className="flex items-center gap-3">
+              <div className="w-44 shrink-0">
+                <div className="text-xs font-medium text-slate-700">{r.label}</div>
+                <div className="text-[10px] text-slate-400">{r.hint}</div>
+              </div>
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                <div className={`h-full rounded-full ${tone}`} style={{ width: `${pct}%` }} />
+              </div>
+              <div className="w-16 shrink-0 text-right text-xs text-slate-600">
+                {r.cited}/{r.total} <span className="text-slate-400">({pct}%)</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function PerSkuAuditReportRenderer({
   report,
   whatsBeenDone,
@@ -2221,6 +2275,8 @@ export function PerSkuAuditReportRenderer({
           skuCount={report.per_sku_reports.length}
           costSummary={report.cost_summary}
         />
+        {/* Step 2 — citation rate by question TYPE. Returns null on pre-Step-2 runs. */}
+        <CitationByIntentPanel rollup={report.brand_rollup} />
         {/* Fix 3 — the merchant-grade narrative + Fix 2 findability/endorsement
             split. Returns null on pre-Fix-3 runs (best-effort backend field). */}
         <MerchantNarrativePanel
