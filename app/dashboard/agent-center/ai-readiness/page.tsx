@@ -706,8 +706,10 @@ export default function AiReadinessAuditPage() {
 
       {auditResult?.mode === 'per_sku' ? (
         <div ref={reportRef} className="space-y-6">
-          <PerSkuAuditReportRenderer report={auditResult.payload} />
-          <MerchantExecutorActivityPanel />
+          <PerSkuAuditReportRenderer
+            report={auditResult.payload}
+            whatsBeenDone={<MerchantExecutorActivityPanel />}
+          />
         </div>
       ) : null}
 
@@ -2130,46 +2132,137 @@ function costSummaryProviderNames(summary: AgentCenterCostSummary): string {
 
 // Exported so the dev-only fixture preview (app/dev/ai-readiness-preview) can render
 // the real report without auth/backend. No behavioral change to this page.
-export function PerSkuAuditReportRenderer({
-  report,
+// The four-question spine (north-star): Am I winning? → How can I improve? →
+// What do I do? → Is it working? Each zone wraps the existing panels with a
+// numbered, positive-tone header so the report reads as one guided narrative
+// instead of a flat stack of cards.
+function Zone({
+  n,
+  question,
+  subtitle,
+  children,
 }: {
-  report: AgentCenterPerSkuAuditResponse;
+  n: number;
+  question: string;
+  subtitle?: string;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-4">
+    <section className="space-y-4">
+      <div className="flex items-baseline gap-3 border-b-2 border-indigo-100 pb-2">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">
+          {n}
+        </span>
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">{question}</h2>
+          {subtitle ? <p className="text-xs text-slate-500">{subtitle}</p> : null}
+        </div>
+      </div>
+      <div className="space-y-4">{children}</div>
+    </section>
+  );
+}
+
+// Zone 4 content — the run-over-run trend when there are >= 2 comparable runs,
+// else an honest "baseline captured" placeholder telling the merchant exactly
+// why the trend is empty and how to populate it (re-audit after acting). This
+// replaces the silently-missing trend that read as "nothing happened".
+function PerformanceZone({
+  tracking,
+}: {
+  tracking?: AgentCenterBrandRollup['tracking'];
+}) {
+  const history = tracking?.history;
+  const hasTrend =
+    !!history &&
+    history.delta_from_most_recent?.visibility != null &&
+    history.most_recent_audit?.visibility != null;
+  if (hasTrend) return <BrandTrend tracking={tracking} />;
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4 text-sm text-slate-600">
+      <span className="font-medium text-slate-700">Baseline captured.</span> This is
+      your first comparable audit — run another after you act on the plan above and
+      your run-over-run AI-readiness lift shows up here.
+    </div>
+  );
+}
+
+export function PerSkuAuditReportRenderer({
+  report,
+  whatsBeenDone,
+}: {
+  report: AgentCenterPerSkuAuditResponse;
+  // Production passes <MerchantExecutorActivityPanel/> (self-fetching "what Pivota
+  // did"); the dev fixture preview omits it (no backend). Rendered inside Zone 3.
+  whatsBeenDone?: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-8">
       <div className="text-xs text-slate-500">
         Audited {report.per_sku_reports.length} product
         {report.per_sku_reports.length === 1 ? '' : 's'} against{' '}
         {costSummaryProviderNames(report.cost_summary)}.
       </div>
-      <BrandRollupCover
-        rollup={report.brand_rollup}
-        skuCount={report.per_sku_reports.length}
-        costSummary={report.cost_summary}
-      />
-      {/* Fix 3 — the merchant-grade narrative + Fix 2 findability/endorsement
-          split. Returns null on pre-Fix-3 runs (best-effort backend field). */}
-      <MerchantNarrativePanel
-        narrative={report.merchant_narrative}
-        authorityMap={report.authority_map}
-      />
-      {/* Fix 4 — how to win the recommendation: per-losing-query targets +
-          one-click pitches. Returns null when there's no plan. */}
-      <WinPlanPanel winPlan={report.win_plan} />
-      {/* Issue #902 — GSC-connect / onboarding CTA (returns null when fully
-          integrated + GSC connected). The indexing-arc caveat renders inside the
-          narrative's honest limits. */}
-      <IntegrationCtaPanel integration={report.brand_rollup.integration} />
-      <WhereYouCanWinPanel data={report.brand_rollup.where_you_can_win} />
-      <CustomPromptsPanel prompts={report.custom_prompts} />
-      {/* Action plan — the persisted task queue is the single source of truth for
-          "what to do / what's done" (replaces the old display-only "Fix these
-          first"). Grouped into store/Pivota lanes inside the panel. */}
-      <MerchantTaskQueuePanel />
-      <PerSkuCardList
-        reports={report.per_sku_reports}
-        authorityMap={report.authority_map}
-      />
+
+      {/* ZONE 1 — Am I winning? */}
+      <Zone
+        n={1}
+        question="Am I winning?"
+        subtitle="Where you stand with AI shopping agents right now."
+      >
+        <BrandRollupCover
+          rollup={report.brand_rollup}
+          skuCount={report.per_sku_reports.length}
+          costSummary={report.cost_summary}
+        />
+        {/* Fix 3 — the merchant-grade narrative + Fix 2 findability/endorsement
+            split. Returns null on pre-Fix-3 runs (best-effort backend field). */}
+        <MerchantNarrativePanel
+          narrative={report.merchant_narrative}
+          authorityMap={report.authority_map}
+        />
+      </Zone>
+
+      {/* ZONE 2 — How can I improve? */}
+      <Zone
+        n={2}
+        question="How can I improve?"
+        subtitle="The highest-leverage places to grow your AI visibility."
+      >
+        {/* Fix 4 — how to win the recommendation: per-losing-query targets +
+            one-click pitches. Returns null when there's no plan. */}
+        <WinPlanPanel winPlan={report.win_plan} />
+        {/* Issue #902 — GSC-connect / onboarding CTA (returns null when fully
+            integrated + GSC connected). */}
+        <IntegrationCtaPanel integration={report.brand_rollup.integration} />
+        <WhereYouCanWinPanel data={report.brand_rollup.where_you_can_win} />
+        <CustomPromptsPanel prompts={report.custom_prompts} />
+      </Zone>
+
+      {/* ZONE 3 — What do I do next? (and what's already been done) */}
+      <Zone
+        n={3}
+        question="What do I do next?"
+        subtitle="Your live action plan — plus the work Pivota's agents already did for you."
+      >
+        {/* Action plan — the persisted task queue is the single source of truth
+            for "what to do / what's done". Grouped store/Pivota inside the panel. */}
+        <MerchantTaskQueuePanel />
+        {whatsBeenDone}
+        <PerSkuCardList
+          reports={report.per_sku_reports}
+          authorityMap={report.authority_map}
+        />
+      </Zone>
+
+      {/* ZONE 4 — Is it working? */}
+      <Zone
+        n={4}
+        question="Is it working?"
+        subtitle="Your AI-readiness over time — the proof your changes moved the needle."
+      >
+        <PerformanceZone tracking={report.brand_rollup.tracking} />
+      </Zone>
     </div>
   );
 }
@@ -2623,7 +2716,6 @@ function BrandRollupCover({
         <RollupDimensionStat label="Routability" stats={pickStat(rollup, 'routability')} />
         <RollupDimensionStat label="Citation" stats={pickStat(rollup, 'citation')} highlight />
       </div>
-      <BrandTrend tracking={rollup.tracking} />
       <BrandModelStrip citationByProvider={rollup.citation_by_provider} />
       <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-indigo-900/80 sm:grid-cols-3">
         <div>

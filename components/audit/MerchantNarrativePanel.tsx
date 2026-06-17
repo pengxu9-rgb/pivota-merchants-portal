@@ -14,7 +14,7 @@
 
 import {
   CheckCircle2,
-  TrendingDown,
+  Sprout,
   ShieldCheck,
   ListChecks,
   Info,
@@ -233,10 +233,10 @@ export function MerchantNarrativePanel({
       {/* findability vs endorsement split (Fix 2 core) */}
       <FindabilityEndorsementSplit narrative={narrative} authorityMap={authorityMap} />
 
-      {/* 3. Where you're losing + who AI cites instead + path to winning */}
+      {/* 3. Where you can grow + who AI cites instead + path to winning */}
       <Section
-        icon={<TrendingDown className="h-4 w-4 text-orange-600" />}
-        title="Where you're losing"
+        icon={<Sprout className="h-4 w-4 text-indigo-600" />}
+        title="Where you can grow"
       >
         <p className="text-sm text-slate-700">{narrative.where_youre_losing.summary}</p>
         <WhoAiCitesInsteadBlock block={narrative.where_youre_losing.who_ai_cites_instead} />
