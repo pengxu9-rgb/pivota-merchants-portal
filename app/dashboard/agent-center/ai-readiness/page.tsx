@@ -2931,12 +2931,14 @@ function PerSkuCardList({
     >
       <div className="px-5 py-4">
         <ScoreLegend />
-        <div className="mt-3 space-y-3">
-          {reports.map((r) => (
+        <div className="mt-3 space-y-4">
+          {reports.map((r, i) => (
             <PerSkuCard
               key={r.sku_key}
               report={r}
               authority={authorityMap.per_sku?.[r.sku_key]}
+              index={i}
+              total={reports.length}
             />
           ))}
         </div>
@@ -3025,9 +3027,15 @@ function PerSkuModelStrip({
 function PerSkuCard({
   report,
   authority,
+  index,
+  total,
 }: {
   report: AgentCenterPerSkuReport;
   authority: AgentCenterAuthorityMap['per_sku'][string] | undefined;
+  // Position within the audit (for the "Product N of M" anchor) — so stacked
+  // products read as distinct sections at a glance, not one undifferentiated list.
+  index?: number;
+  total?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
   const bandCls = bandColorClasses(report.band);
@@ -3036,16 +3044,28 @@ function PerSkuCard({
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-start justify-between px-4 py-3 text-left"
+        className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left"
       >
-        <div className="flex-1">
-          <div className="text-sm font-semibold">
-            {skuDisplayName(report)}
-            <SkuVariantTag variant={skuLabelParts(report).variant} />
-          </div>
-          {report.band_display?.meaning ? (
-            <div className="mt-0.5 text-[11px] opacity-70">{report.band_display.meaning}</div>
+        <div className="flex min-w-0 flex-1 items-start gap-2.5">
+          {index != null ? (
+            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">
+              {index + 1}
+            </span>
           ) : null}
+          <div className="min-w-0 flex-1">
+            {index != null && total != null && total > 1 ? (
+              <div className="text-[10px] font-semibold uppercase tracking-wide opacity-60">
+                Product {index + 1} of {total}
+              </div>
+            ) : null}
+            <div className="text-base font-bold leading-snug">
+              {skuDisplayName(report)}
+              <SkuVariantTag variant={skuLabelParts(report).variant} />
+            </div>
+            {report.band_display?.meaning ? (
+              <div className="mt-0.5 text-[11px] opacity-70">{report.band_display.meaning}</div>
+            ) : null}
+          </div>
         </div>
         <div className="flex flex-none items-center gap-2">
           <BandPill
