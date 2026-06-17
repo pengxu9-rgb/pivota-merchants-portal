@@ -1,0 +1,60 @@
+[
+  {
+    "task_id": "t1",
+    "merchant_id": "aruen",
+    "parent_audit_run_id": null,
+    "lever": "niche_content",
+    "severity": "medium",
+    "title": "Create the answer AI cites for: vegan collagen for sleep",
+    "body": "Write a focused page section + FAQ on your own product page.",
+    "status": "pending",
+    "assigned_to_agent": "niche_targeting",
+    "evidence_jsonb": null,
+    "completed_at": null,
+    "created_at": "2026-06-15T00:00:00Z"
+  },
+  {
+    "task_id": "t2",
+    "merchant_id": "aruen",
+    "parent_audit_run_id": null,
+    "lever": "editorial_outreach",
+    "severity": "low",
+    "title": "Pitch a review to a K-beauty editorial site",
+    "body": null,
+    "status": "in_progress",
+    "assigned_to_agent": null,
+    "evidence_jsonb": null,
+    "completed_at": null,
+    "created_at": "2026-06-15T00:00:00Z"
+  },
+  {
+    "task_id": "t3",
+    "merchant_id": "aruen",
+    "parent_audit_run_id": "run1",
+    "lever": "pivota_integration",
+    "severity": "high",
+    "title": "Connect Google Search Console so Pivota can submit your pages",
+    "body": null,
+    "status": "pending",
+    "assigned_to_agent": "gsc_url_submission",
+    "evidence_jsonb": null,
+    "completed_at": null,
+    "created_at": "2026-06-16T00:00:00Z"
+  },
+  {
+    "task_id": "t4",
+    "merchant_id": "aruen",
+    "parent_audit_run_id": null,
+    "lever": "sku_evidence",
+    "severity": "medium",
+    "title": "Add Pivota-page evidence for: collagen-jelly",
+    "body": "Submitted ingredient evidence → 6 cited claims now on your Pivota page.",
+    "status": "done",
+    "assigned_to_agent": "supplier_evidence",
+    "evidence_jsonb": {
+      "kind": "sku_evidence"
+    },
+    "completed_at": "2026-06-16T00:00:00Z",
+    "created_at": "2026-06-16T00:00:00Z"
+  }
+]
