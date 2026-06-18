@@ -50,7 +50,7 @@ const SUPPORTED_CONNECT_PROVIDERS = ['Stripe', 'Adyen', 'Checkout.com'];
 const SHOPIFY_OAUTH_ENABLED = (
   process.env.NEXT_PUBLIC_FEATURE_SHOPIFY_OAUTH ||
   process.env.NEXT_PUBLIC_ENABLE_SHOPIFY_OAUTH ||
-  'false'
+  'true'
 ).toLowerCase() === 'true';
 
 const isFiniteMetric = (value: unknown): value is number =>
