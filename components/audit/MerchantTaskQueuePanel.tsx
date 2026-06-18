@@ -58,16 +58,47 @@ const STORE_LEVERS = new Set<string>([
   'niche_defend',
 ]);
 
+// Pivota-execution levers: work Pivota's own agents / integrations carry out
+// (vs work the merchant does on their store). Anything NOT in here and NOT
+// agent-assigned defaults to STORE — so a strategic brand task is never
+// mislabeled "On Pivota", leaving the merchant waiting for an agent that never
+// runs.
+const PIVOTA_LEVERS = new Set<string>([
+  'pivota_integration',
+  'gsc_integration',
+  'content_creation',
+  'content_brief',
+  'sitemap_freshness',
+]);
+
 function taskSurface(task: MerchantTask): 'store' | 'pivota' {
   const lever = (task.lever ?? '').toLowerCase();
-  // Explicit store/outreach levers win FIRST — this is work the merchant does on
-  // their OWN site (e.g. niche_content "create the answer"), even when an internal
-  // routing tag like assigned_to_agent="niche_targeting" is set (that tag is
-  // categorization, not Pivota execution). Checking the agent first mislabeled
-  // these as "On Pivota" and the merchant could wait for Pivota that never acts.
+  // Explicit store/outreach levers win FIRST — work the merchant does on their
+  // OWN site (e.g. niche_content "create the answer"), even when an internal
+  // routing tag like assigned_to_agent="niche_targeting" is set (categorization,
+  // not Pivota execution).
   if (STORE_LEVERS.has(lever)) return 'store';
+  // Pivota acts only when an agent is genuinely assigned OR it's a Pivota-run
+  // lever (integration / GSC / content drafting / sitemap).
   if (task.assigned_to_agent) return 'pivota';
-  return 'pivota';
+  if (PIVOTA_LEVERS.has(lever)) return 'pivota';
+  // Default = the merchant's own action. (Was 'pivota', which mislabeled the
+  // bulk of strategic brand tasks and read as "Pivota will handle it.")
+  return 'store';
+}
+
+// The concrete "what to do" — the first line/sentence of the task body, surfaced
+// inline so the merchant sees the action without expanding. Full body stays
+// behind "Show details".
+function firstInstructionLine(body: string | null | undefined): string | null {
+  if (!body) return null;
+  const line = body
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  if (!line) return null;
+  const sentence = line.split(/(?<=[.!?])\s/)[0] || line;
+  return sentence.length > 160 ? `${sentence.slice(0, 157)}…` : sentence;
 }
 
 // Open work first within each lane (highlight what's left; done sinks to the bottom).
@@ -277,6 +308,7 @@ function TaskRow({
   const evidence = task.evidence_jsonb ?? task.evidence ?? null;
   const briefSummary = summarizeBriefs(evidence);
   const briefs = briefsOf(evidence);
+  const instruction = firstInstructionLine(task.body);
 
   const sevTone = severityTone(task.severity);
   const isTerminal =
@@ -342,6 +374,13 @@ function TaskRow({
           <div className="mt-1 text-sm font-semibold text-slate-900">
             {task.title}
           </div>
+
+          {/* The concrete next step, inline — was hidden behind "Show details",
+              so most rows read as a bare title. Surfacing the first line makes
+              the action visible at a glance. */}
+          {instruction ? (
+            <div className="mt-0.5 text-xs text-slate-700">{instruction}</div>
+          ) : null}
 
           {/* Outcome contract + executable CTA — expected_outcome/kpi_to_track + a
               real cta_url were stored in evidence and never rendered. Only http(s)
