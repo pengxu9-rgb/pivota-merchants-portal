@@ -893,6 +893,10 @@ export interface AgentCenterBrandRollup {
   // Phase 2 niche-targeting: where the brand can win (open lanes) vs the
   // flagship-owned head terms to stop fighting.
   where_you_can_win?: WhereYouCanWin;
+  // Win-the-specific-long-tail (Step 2): the engine's computed-but-unprobed
+  // winnable niches, surfaced as prompts the merchant can 1-click add to test.
+  // Absent on pre-Step-2 runs; has_prompts=false when nothing un-probed remains.
+  suggested_prompts?: SuggestedPrompts;
   // Issue #902: per-SKU Google indexing-arc rolled up to the brand. Optional +
   // best-effort on the backend; null when no audited SKU has a canonical-PDP arc.
   indexing_arc?: BrandIndexingArcRollup | null;
@@ -980,6 +984,26 @@ export interface WhereYouCanWin {
   // data for these niches. 'community' is a future method.
   demand_proxies?: DemandProxy[];
   demand_proxy_default?: DemandProxy;
+}
+
+// Win-the-specific-long-tail (Step 2/3): the specific, attribute-stacked prompts
+// the engine BUILT from a SKU's evidenced attributes but did NOT probe this audit
+// — the winnable niches the merchant can 1-click add to test next. Disjoint from
+// WhereYouCanWin.targets (those are probed open lanes; these are un-probed).
+export interface SuggestedPrompt {
+  query: string;
+  normalized_query?: string;
+  sku?: string | null;
+  sku_key?: string | null;
+  attribute_basis?: string[];
+  intent_weight?: number;
+  source?: string;
+}
+
+export interface SuggestedPrompts {
+  prompts: SuggestedPrompt[];
+  has_prompts: boolean;
+  rationale?: string;
 }
 
 export type AuthorityHostType =
