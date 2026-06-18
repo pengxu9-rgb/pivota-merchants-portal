@@ -79,8 +79,30 @@ const STATUS_ORDER: Record<MerchantTaskStatus, number> = {
   dismissed: 4,
 };
 
+// Backend ranking signal: action items carry `priority_order` in evidence_jsonb
+// (lower = more important). It was stored but never read — the queue sorted by
+// status-then-created_at, so a low task could sit above a critical one. Sort:
+// status → priority_order → severity.
+const SEVERITY_RANK: Record<MerchantTaskSeverity, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
+function taskPriorityOrder(t: MerchantTask): number {
+  const ev = (t.evidence_jsonb ?? t.evidence) as Record<string, unknown> | null;
+  const p = ev?.priority_order;
+  return typeof p === 'number' ? p : 999;
+}
+
 function sortByOpenFirst(list: MerchantTask[]): MerchantTask[] {
-  return [...list].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+  return [...list].sort(
+    (a, b) =>
+      STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
+      taskPriorityOrder(a) - taskPriorityOrder(b) ||
+      SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity],
+  );
 }
 
 
