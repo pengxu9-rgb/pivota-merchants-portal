@@ -343,6 +343,37 @@ function TaskRow({
             {task.title}
           </div>
 
+          {/* Outcome contract + executable CTA — expected_outcome/kpi_to_track + a
+              real cta_url were stored in evidence and never rendered. Only http(s)
+              URLs render (skips the known no-op CTAs). */}
+          {(() => {
+            const ev = (evidence ?? {}) as Record<string, unknown>;
+            const outcome = typeof ev.expected_outcome === 'string' ? ev.expected_outcome : null;
+            const kpi = typeof ev.kpi_to_track === 'string' ? ev.kpi_to_track : null;
+            const ctaUrl = typeof ev.cta_url === 'string' ? ev.cta_url : null;
+            const ctaLabel = typeof ev.cta_label === 'string' ? ev.cta_label : null;
+            const realCta = ctaUrl && /^https?:\/\//.test(ctaUrl);
+            if (!outcome && !kpi && !realCta) return null;
+            return (
+              <div className="mt-1 space-y-0.5">
+                {outcome ? (
+                  <div className="text-[11px] text-emerald-700">Expected: {outcome}</div>
+                ) : null}
+                {kpi ? <div className="text-[11px] text-slate-500">Track: {kpi}</div> : null}
+                {realCta ? (
+                  <a
+                    href={ctaUrl as string}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block rounded border border-indigo-300 bg-white px-2 py-0.5 text-[11px] font-medium text-indigo-700 hover:bg-indigo-50"
+                  >
+                    {ctaLabel || 'Open'} ↗
+                  </a>
+                ) : null}
+              </div>
+            );
+          })()}
+
           {briefSummary ? (
             <div className="mt-0.5 text-[11px] text-slate-600">{briefSummary}</div>
           ) : null}

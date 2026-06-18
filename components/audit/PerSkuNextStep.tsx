@@ -200,7 +200,14 @@ export function PerSkuNextStep({ report }: { report: AgentCenterPerSkuReport }) 
   const productName =
     report.identity?.name?.trim() || report.sku_title?.trim() || report.sku_key;
 
-  if (!nba || (!nba.headline && !nba.first_move && !nba.why_this_first)) return null;
+  if (!nba || (!nba.headline && !nba.first_move && !nba.why_this_first)) {
+    return (
+      <div className="rounded-md border border-slate-200 bg-slate-50/60 p-2.5 text-[11px] text-slate-500">
+        No specific next step for {productName} yet — it&apos;s either in good shape or needs
+        more audit data. Re-run after enriching its details to get a recommendation.
+      </div>
+    );
+  }
 
   const action = nba.cta?.action ?? 'none';
   const selfServe = (nba.self_serve && nba.self_serve.length > 0

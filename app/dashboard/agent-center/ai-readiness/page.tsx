@@ -2408,6 +2408,14 @@ function WinTargetRow({
     <li className="rounded-md border border-emerald-200 bg-emerald-50/60 px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-semibold text-emerald-900">{t.query}</span>
+        {typeof t.opportunity_score === 'number' ? (
+          <span
+            className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white"
+            title="Winnability score (0–100) — fit × demand × low competition × intent"
+          >
+            Winnable {Math.round(t.opportunity_score)}
+          </span>
+        ) : null}
         {t.movement === 'won' ? (
           <span className="rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-semibold text-white">
             ✓ won this niche
@@ -2440,6 +2448,25 @@ function WinTargetRow({
       </div>
       {t.why_you_fit ? (
         <div className="mt-0.5 text-xs text-emerald-900/80">You fit: {t.why_you_fit}</div>
+      ) : null}
+      {t.opportunity_factors ? (
+        <div className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px] text-emerald-800/70">
+          {(
+            [
+              ['Fit', 'attribute_fit'],
+              ['Demand', 'demand'],
+              ['Low competition', 'low_competition'],
+              ['Intent', 'intent'],
+            ] as const
+          ).map(([label, key]) => {
+            const v = t.opportunity_factors?.[key];
+            return typeof v === 'number' ? (
+              <span key={key}>
+                {label} <span className="font-semibold">{Math.round(v * 100)}%</span>
+              </span>
+            ) : null;
+          })}
+        </div>
       ) : null}
       {t.evidence?.excerpt ? (
         <blockquote className="mt-1 border-l-2 border-emerald-200 pl-2 text-[11px] italic text-slate-600">
@@ -2483,7 +2510,17 @@ function WhereYouCanWinPanel({
   const [proxy, setProxy] = useState<DemandProxyChoice>(
     (data?.demand_proxy_default as DemandProxyChoice) ?? 'probe',
   );
-  if (!data || (!data.targets?.length && !data.skip?.length)) return null;
+  if (!data || (!data.targets?.length && !data.skip?.length)) {
+    return (
+      <SurfaceCard title="Where you can win">
+        <div className="px-5 py-4 text-sm text-slate-600">
+          We probed your SKUs but haven&apos;t surfaced a clearly-winnable open lane yet — that&apos;s
+          usually a coverage gap on our side. Audit more SKUs, enrich their attributes, or add custom
+          prompts, and we&apos;ll surface the niches you can own.
+        </div>
+      </SurfaceCard>
+    );
+  }
   const active: DemandProxyChoice = proxies.includes(proxy) ? proxy : 'probe';
   const rankedTargets = [...(data.targets ?? [])].sort((a, b) =>
     active === 'recurrence'

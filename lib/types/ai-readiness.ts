@@ -945,6 +945,13 @@ export interface WhereYouCanWinTarget {
   opportunity_score?: number;
   why_you_fit?: string | null;
   evidence?: WhereYouCanWinEvidence | null;
+  // The "why winnable" decomposition (each 0-1) behind opportunity_score.
+  opportunity_factors?: {
+    attribute_fit?: number | null;
+    demand?: number | null;
+    low_competition?: number | null;
+    intent?: number | null;
+  } | null;
   action?: string;
   // Phase 2 v2: cross-merchant recurrence (how many distinct brands this niche
   // recurs across) — populated when Pivota's audit history has data.
