@@ -35,6 +35,7 @@ import {
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
 import { MerchantTaskQueuePanel } from '@/components/audit/MerchantTaskQueuePanel';
+import { MerchantOutreachPanel } from '@/components/audit/MerchantOutreachPanel';
 import { PerSkuNextStep } from '@/components/audit/PerSkuNextStep';
 import { MerchantExecutorActivityPanel } from '@/components/audit/MerchantExecutorActivityPanel';
 import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
@@ -2323,6 +2324,8 @@ export function PerSkuAuditReportRenderer({
         question="Is it working?"
         subtitle="Your AI-readiness over time — the proof your changes moved the needle."
       >
+        {/* Outreach proof-of-lift: which pitched hosts now cite you (the closed loop). */}
+        <MerchantOutreachPanel />
         <PerformanceZone tracking={report.brand_rollup.tracking} />
       </Zone>
     </div>
