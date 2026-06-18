@@ -21,8 +21,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Brain,
+  Check,
   Loader2,
   Lock,
+  Plus,
 } from 'lucide-react';
 import {
   apiClient,
@@ -172,6 +174,10 @@ export default function AiReadinessAuditPage() {
   const [loadingRunId, setLoadingRunId] = useState<string | null>(null);
   const [historyReloadKey, setHistoryReloadKey] = useState(0);
   const reportRef = useRef<HTMLDivElement | null>(null);
+  // Step 3 (win-the-specific-long-tail): the prompts box, so a 1-click "add to my
+  // prompts" from the report's suggested-niches panel can scroll the merchant back
+  // to it and show the slots fill.
+  const customPromptsRef = useRef<HTMLDivElement | null>(null);
   const [insufficient, setInsufficient] = useState<InsufficientCreditsError | null>(null);
   // Premium-provider paywall (ChatGPT/Claude on a free plan). Set when launch
   // returns 402 premium_provider_subscription_required.
@@ -308,6 +314,44 @@ export default function AiReadinessAuditPage() {
     }
     return out;
   }, [customPromptsText]);
+
+  // Step 3 (win-the-specific-long-tail): add the engine's suggested winnable
+  // niches to the prompts box on click. Respects the MAX slot cap + dedupes
+  // (case-insensitive) against what's already there. Returns the normalized
+  // queries actually added so the suggestions panel can mark them + report a
+  // "list full" when the cap is hit. Synchronous (reads the parsed list, not the
+  // async state) so the caller gets an accurate result.
+  const addSuggestedPrompts = useCallback(
+    (queries: string[]): string[] => {
+      const existing = customPromptsParsed;
+      const seen = new Set(existing.map((l) => l.toLowerCase()));
+      const next = [...existing];
+      const added: string[] = [];
+      for (const raw of queries) {
+        const q = (raw || '').trim();
+        if (!q) continue;
+        const key = q.toLowerCase();
+        if (seen.has(key)) continue;
+        if (next.length >= MAX_CUSTOM_PROMPTS) break;
+        next.push(q);
+        seen.add(key);
+        added.push(key);
+      }
+      if (added.length) {
+        setCustomPromptsText(next.join('\n'));
+        window.setTimeout(
+          () =>
+            customPromptsRef.current?.scrollIntoView({
+              behavior: 'smooth',
+              block: 'center',
+            }),
+          50,
+        );
+      }
+      return added;
+    },
+    [customPromptsParsed],
+  );
 
   const customPromptsError = useMemo(() => {
     if (customPromptsParsed.length > MAX_CUSTOM_PROMPTS) {
@@ -586,6 +630,7 @@ export default function AiReadinessAuditPage() {
         </div>
       </SurfaceCard>
 
+      <div ref={customPromptsRef}>
       <SurfaceCard
         title="2. Custom prompts (optional)"
         description={`Marketing team's use-case prompts — hydration, acne, picky eaters, AG1-alternative, etc. ${customPromptsParsed.length} / ${MAX_CUSTOM_PROMPTS} reserved slots used.`}
@@ -627,6 +672,7 @@ export default function AiReadinessAuditPage() {
           ) : null}
         </div>
       </SurfaceCard>
+      </div>
 
       <SurfaceCard
         title="3. Preview audit cost"
@@ -710,6 +756,8 @@ export default function AiReadinessAuditPage() {
           <PerSkuAuditReportRenderer
             report={auditResult.payload}
             whatsBeenDone={<MerchantExecutorActivityPanel />}
+            onAddPrompts={addSuggestedPrompts}
+            customPromptCount={customPromptsParsed.length}
           />
         </div>
       ) : null}
@@ -2245,11 +2293,17 @@ function CitationByIntentPanel({ rollup }: { rollup: AgentCenterBrandRollup }) {
 export function PerSkuAuditReportRenderer({
   report,
   whatsBeenDone,
+  onAddPrompts,
+  customPromptCount = 0,
 }: {
   report: AgentCenterPerSkuAuditResponse;
   // Production passes <MerchantExecutorActivityPanel/> (self-fetching "what Pivota
   // did"); the dev fixture preview omits it (no backend). Rendered inside Zone 3.
   whatsBeenDone?: React.ReactNode;
+  // Step 3 (win-the-specific-long-tail): 1-click "add to my prompts" from the
+  // suggested-niches panel. Omitted by the dev fixture preview (no prompts box).
+  onAddPrompts?: (queries: string[]) => string[];
+  customPromptCount?: number;
 }) {
   // sku_key -> recognizable product label, built once from per_sku_reports (the
   // only structure carrying identity.name). Threaded into sections whose own data
@@ -2299,6 +2353,14 @@ export function PerSkuAuditReportRenderer({
             integrated + GSC connected). */}
         <IntegrationCtaPanel integration={report.brand_rollup.integration} />
         <WhereYouCanWinPanel data={report.brand_rollup.where_you_can_win} />
+        {/* Win-the-specific-long-tail (Step 3): the engine's computed-but-unprobed
+            winnable niches, 1-click addable to the prompts box for the next audit.
+            Returns null on pre-Step-2 runs / when nothing un-probed remains. */}
+        <SuggestedPromptsPanel
+          data={report.brand_rollup.suggested_prompts}
+          onAddPrompts={onAddPrompts}
+          customPromptCount={customPromptCount}
+        />
         <CustomPromptsPanel prompts={report.custom_prompts} />
       </Zone>
 
@@ -2496,6 +2558,127 @@ function WinTargetRow({
         )}
       </div>
     </li>
+  );
+}
+
+// Win-the-specific-long-tail (Step 3): the guided custom-prompt surface. The
+// engine BUILDS specific, attribute-stacked prompts from each SKU's verified
+// attributes but the probe budget can only test a subset; build_suggested_prompts
+// rolls up the computed-but-unprobed winnable niches. Here the merchant 1-clicks
+// them into the prompts box for the next audit — turning a passive empty box into
+// "test the niches you can own." Honest: renders NOTHING when there's nothing
+// un-probed to suggest (thin catalog / everything already tested) — no empty box.
+function SuggestedPromptsPanel({
+  data,
+  onAddPrompts,
+  customPromptCount = 0,
+}: {
+  data?: AgentCenterBrandRollup['suggested_prompts'];
+  onAddPrompts?: (queries: string[]) => string[];
+  customPromptCount?: number;
+}) {
+  const [added, setAdded] = useState<Set<string>>(new Set());
+  const [hitCap, setHitCap] = useState(false);
+  const prompts = data?.prompts ?? [];
+  if (!data?.has_prompts || !prompts.length || !onAddPrompts) return null;
+
+  const slotsLeft = Math.max(0, MAX_CUSTOM_PROMPTS - customPromptCount);
+  const full = slotsLeft <= 0;
+
+  function addOne(q: string) {
+    const got = onAddPrompts?.([q]) ?? [];
+    if (got.length) {
+      setAdded((prev) => new Set(prev).add(q.toLowerCase()));
+      setHitCap(false);
+    } else {
+      setHitCap(true);
+    }
+  }
+  function addAll() {
+    const queue = prompts
+      .map((p) => p.query)
+      .filter((q) => !added.has((q || '').toLowerCase()));
+    const got = onAddPrompts?.(queue) ?? [];
+    if (got.length) {
+      setAdded((prev) => {
+        const n = new Set(prev);
+        got.forEach((k) => n.add(k));
+        return n;
+      });
+    }
+    if (got.length < queue.length) setHitCap(true);
+  }
+
+  return (
+    <SurfaceCard
+      title="Niches you can own — test these next"
+      description={
+        data.rationale ||
+        "Specific, attribute-backed prompts we built from your product's verified facts but didn't test this audit. Add them to your prompts and the next audit measures where you can win."
+      }
+    >
+      <div className="space-y-3 px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+            {prompts.length} suggested · {slotsLeft} / {MAX_CUSTOM_PROMPTS} prompt slots free
+          </span>
+          <button
+            type="button"
+            onClick={addAll}
+            disabled={full}
+            className="inline-flex items-center gap-1 rounded border border-indigo-300 bg-white px-2 py-0.5 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+          >
+            <Plus className="h-3 w-3" /> Add all that fit
+          </button>
+        </div>
+        <ul className="space-y-2">
+          {prompts.map((p, i) => {
+            const isAdded = added.has((p.query || '').toLowerCase());
+            return (
+              <li
+                key={`sugg-${i}`}
+                className="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50/60 px-3 py-2"
+              >
+                <span className="text-sm font-medium text-slate-800">{p.query}</span>
+                {(p.attribute_basis ?? []).slice(0, 4).map((a, j) => (
+                  <span
+                    key={`sb-${i}-${j}`}
+                    className="rounded-sm bg-indigo-100 px-1.5 py-0.5 text-[10px] text-indigo-800"
+                  >
+                    {a}
+                  </span>
+                ))}
+                {p.sku ? (
+                  <span className="text-[11px] text-slate-500">via {p.sku}</span>
+                ) : null}
+                <span className="ml-auto">
+                  {isAdded ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">
+                      <Check className="h-3 w-3" /> Added
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => addOne(p.query)}
+                      disabled={full}
+                      className="inline-flex items-center gap-1 rounded border border-indigo-300 bg-white px-2 py-0.5 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                    >
+                      <Plus className="h-3 w-3" /> Add to my prompts
+                    </button>
+                  )}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+        {hitCap || full ? (
+          <p className="flex items-center gap-1.5 text-[11px] text-amber-700">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Prompt slots are full ({MAX_CUSTOM_PROMPTS} max). Remove one above to add more.
+          </p>
+        ) : null}
+      </div>
+    </SurfaceCard>
   );
 }
 
