@@ -2011,6 +2011,26 @@ class ApiClient {
     return response.data;
   }
 
+  // Outreach lifecycle Step 1: mark a win-plan pitch sent to an independent host.
+  // Persists a tracked outreach record so the next audit can re-verify citation.
+  async markPitchSent(body: {
+    host: string;
+    query: string;
+    state: 'draft_ready' | 'submission_only';
+    tier?: number | null;
+    recipient_email?: string | null;
+    submission_url?: string | null;
+    sku_key?: string;
+    sku_title?: string | null;
+    audit_run_id?: string;
+  }): Promise<{ status: string; task_id: string; title: string }> {
+    const response = await this.client.post(
+      '/api/merchant-center/audit/tasks/outreach-pitch',
+      body,
+    );
+    return response.data;
+  }
+
   async updateMerchantTask(
     taskId: string,
     body: {

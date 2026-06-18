@@ -28,6 +28,7 @@ import type {
   WinPlanSkuPlan,
   WinPlanTarget,
 } from '@/lib/types/ai-readiness';
+import { apiClient } from '@/lib/api-client';
 
 function mailtoHref(email: string, subject: string, body: string): string {
   return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -84,11 +85,73 @@ function cycleText(cycle: [number, number] | null): string | null {
   return lo === hi ? `~${lo} wks` : `${lo}–${hi} wks`;
 }
 
-function TargetRow({ target }: { target: WinPlanTarget }) {
+function TargetRow({
+  target,
+  query,
+  skuKey,
+  skuTitle,
+}: {
+  target: WinPlanTarget;
+  query: string;
+  skuKey?: string;
+  skuTitle?: string | null;
+}) {
   const [open, setOpen] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [saving, setSaving] = useState(false);
   const o = target.outreach;
   const cycle = cycleText(o.cycle_weeks);
   const draft = o.pitch_draft;
+  // Only the actionable targets (a real email draft, or a submission form) can be
+  // "sent" — target_only (recipient pending) shows no button.
+  const actionable =
+    !!draft || (o.state === 'submission_only' && !!o.recipient?.submission_url);
+
+  const markSent = async () => {
+    if (sent || saving) return;
+    setSaving(true);
+    try {
+      await apiClient.markPitchSent({
+        host: target.host,
+        query,
+        state: o.state === 'submission_only' ? 'submission_only' : 'draft_ready',
+        tier: target.tier ?? null,
+        recipient_email: draft?.recipient_email ?? o.recipient?.email ?? null,
+        submission_url: o.recipient?.submission_url ?? null,
+        sku_key: skuKey,
+        sku_title: skuTitle ?? null,
+      });
+      setSent(true);
+    } catch {
+      // best-effort; leave the button actionable so the merchant can retry
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const markSentButton = (
+    <button
+      type="button"
+      onClick={markSent}
+      disabled={sent || saving}
+      title="Tell Pivota you sent this — we'll re-check on your next audit whether this host now cites you"
+      className={`inline-flex items-center gap-1 rounded border px-2.5 py-1 text-[11px] font-medium ${
+        sent
+          ? 'border-green-300 bg-green-50 text-green-700'
+          : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+      }`}
+    >
+      {sent ? (
+        <>
+          <Check className="h-3 w-3" /> Sent — we&apos;ll re-check next audit
+        </>
+      ) : saving ? (
+        'Saving…'
+      ) : (
+        'Mark as sent'
+      )}
+    </button>
+  );
 
   return (
     <li className="rounded-md border border-slate-200 bg-white p-2.5">
@@ -136,6 +199,7 @@ function TargetRow({ target }: { target: WinPlanTarget }) {
             No published pitch contact yet — strongest target, recipient pending.
           </span>
         )}
+        {actionable ? markSentButton : null}
       </div>
 
       {draft && open ? (
@@ -159,7 +223,15 @@ function TargetRow({ target }: { target: WinPlanTarget }) {
   );
 }
 
-function LosingQueryCard({ q }: { q: WinPlanLosingQuery }) {
+function LosingQueryCard({
+  q,
+  skuKey,
+  skuTitle,
+}: {
+  q: WinPlanLosingQuery;
+  skuKey?: string;
+  skuTitle?: string | null;
+}) {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50/40 p-3">
       <div className="flex items-start gap-2">
@@ -198,7 +270,13 @@ function LosingQueryCard({ q }: { q: WinPlanLosingQuery }) {
           </div>
           <ul className="mt-1 space-y-1.5">
             {q.grounds_in.map((t) => (
-              <TargetRow key={t.host} target={t} />
+              <TargetRow
+                key={t.host}
+                target={t}
+                query={q.query}
+                skuKey={skuKey}
+                skuTitle={skuTitle}
+              />
             ))}
           </ul>
         </div>
@@ -235,7 +313,12 @@ function SkuPlanBlock({
       </div>
       <div className="space-y-2">
         {plan.losing_queries.map((q, i) => (
-          <LosingQueryCard key={`${q.query}-${i}`} q={q} />
+          <LosingQueryCard
+            key={`${q.query}-${i}`}
+            q={q}
+            skuKey={plan.sku_key}
+            skuTitle={plan.sku_title}
+          />
         ))}
       </div>
     </div>
