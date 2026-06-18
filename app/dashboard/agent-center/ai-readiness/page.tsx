@@ -2441,6 +2441,14 @@ function WinTargetRow({
       {t.why_you_fit ? (
         <div className="mt-0.5 text-xs text-emerald-900/80">You fit: {t.why_you_fit}</div>
       ) : null}
+      {t.evidence?.excerpt ? (
+        <blockquote className="mt-1 border-l-2 border-emerald-200 pl-2 text-[11px] italic text-slate-600">
+          AI today: &ldquo;{t.evidence.excerpt}&rdquo;
+          {t.evidence.cited_hosts?.length ? (
+            <span className="not-italic text-slate-400"> — cites {t.evidence.cited_hosts.slice(0, 3).join(', ')}</span>
+          ) : null}
+        </blockquote>
+      ) : null}
       <div className="mt-1 flex items-center justify-between gap-2">
         <span className="text-[11px] text-slate-500">via {t.sku}</span>
         {state === 'added' ? (
@@ -2520,6 +2528,11 @@ function WhereYouCanWinPanel({
                       ? ` · AI names ${s.competitors_named.slice(0, 2).join(', ')}`
                       : ''}
                   </span>
+                  {s.evidence?.excerpt ? (
+                    <blockquote className="mt-0.5 w-full border-l-2 border-slate-200 pl-2 text-[11px] not-italic text-slate-500">
+                      AI routed the buyer here: &ldquo;{s.evidence.excerpt}&rdquo;
+                    </blockquote>
+                  ) : null}
                 </li>
               ))}
             </ul>

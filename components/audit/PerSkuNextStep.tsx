@@ -239,6 +239,13 @@ export function PerSkuNextStep({ report }: { report: AgentCenterPerSkuReport }) 
       {nba.why_this_first ? (
         <div className="mt-1 text-xs opacity-80">{nba.why_this_first}</div>
       ) : null}
+      {/* The single most actionable one-liner — was computed but only used to gate
+          visibility. Surface it as the lead action. */}
+      {nba.first_move ? (
+        <div className="mt-2 rounded-md border border-indigo-200 bg-indigo-50/60 px-2.5 py-1.5 text-sm font-medium text-indigo-900">
+          <span className="font-semibold">Do this first:</span> {nba.first_move}
+        </div>
+      ) : null}
 
       <div className="mt-3 grid grid-cols-1 gap-2.5 md:grid-cols-2">
         {showPivotaForm && product ? (

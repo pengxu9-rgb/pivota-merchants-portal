@@ -927,6 +927,14 @@ export interface AgentCenterBrandRollup {
   } | null;
 }
 
+// The verbatim AI answer behind a query (the proof) — forwarded from per_prompt
+// cited_evidence by build_where_you_can_win.
+export interface WhereYouCanWinEvidence {
+  excerpt: string;
+  cited_hosts?: string[];
+  provider?: string | null;
+}
+
 export interface WhereYouCanWinTarget {
   query: string;
   normalized_query?: string;
@@ -936,6 +944,7 @@ export interface WhereYouCanWinTarget {
   demand_state?: string | null;
   opportunity_score?: number;
   why_you_fit?: string | null;
+  evidence?: WhereYouCanWinEvidence | null;
   action?: string;
   // Phase 2 v2: cross-merchant recurrence (how many distinct brands this niche
   // recurs across) — populated when Pivota's audit history has data.
@@ -950,6 +959,7 @@ export interface WhereYouCanWinSkip {
   ownership_state?: string;
   demand_signal?: number;
   competitors_named?: string[];
+  evidence?: WhereYouCanWinEvidence | null;
 }
 
 export type DemandProxy = 'probe' | 'recurrence' | 'community';
