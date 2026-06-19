@@ -2272,11 +2272,13 @@ function CitationByIntentPanel({ rollup }: { rollup: AgentCenterBrandRollup }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Where AI cites you — by question type
+        How often AI named your products — by question type
       </div>
       <p className="mt-1 text-xs text-slate-500">
-        How often AI names you, split by the way shoppers ask. Problem/need questions are how
-        most AI shopping happens — that&apos;s where the room to grow usually is.
+        Of the questions we tested in each style, how often AI&apos;s answer <strong>named your
+        product or brand</strong> (not just a retailer that carries it). Problem/need questions
+        are how most AI shopping happens — usually the biggest room to grow.{' '}
+        <span className="text-slate-400">Green = named in ≥50% · amber = some · grey = none.</span>
       </p>
       <div className="mt-3 space-y-2">
         {rows.map((r) => {
@@ -3209,7 +3211,7 @@ function BrandRollupCover({
           detail; this is just the brand-level at-a-glance. */}
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-md bg-white/70 px-3 py-2">
         <span className="text-[11px] font-medium uppercase tracking-wide text-indigo-900/60">
-          Median across {skuCount} product{skuCount === 1 ? '' : 's'}
+          Median across {skuCount} product{skuCount === 1 ? '' : 's'} · scored 0–100
         </span>
         {([
           ['Identity', 'identity'],
@@ -3225,11 +3227,44 @@ function BrandRollupCover({
               <span className={`font-bold ${st.median == null ? 'text-slate-400' : bandTextClass(band)}`}>
                 {st.median ?? '—'}
               </span>
+              {st.median != null ? (
+                <span className={`text-[10px] font-medium ${bandTextClass(band)}`}>
+                  {BAND_LABEL[band] ?? ''}
+                </span>
+              ) : null}
             </span>
           );
         })}
         <span className="text-[11px] text-indigo-900/45">· full per-product scores below</span>
       </div>
+      {/* P1a comprehension: define the numbers, the scale, and the load-bearing words
+          (cited / findable / recommended) right where the first numbers appear — the
+          merchant could not tell what any of these meant. */}
+      <details className="mt-2 text-[11px] text-slate-600">
+        <summary className="cursor-pointer font-medium text-indigo-700 hover:underline">
+          How to read these scores
+        </summary>
+        <div className="mt-2 space-y-2 rounded-md border border-slate-200 bg-white/80 p-3">
+          <div>
+            <span className="font-semibold">The 0–100 scale:</span> Agent-ready 85+ · Ready
+            70–84 · Needs work 40–69 · Not yet visible under 40. Higher is better.
+          </div>
+          <ul className="space-y-1">
+            <li><span className="font-semibold">Identity</span> — can AI tell exactly which product this is?</li>
+            <li><span className="font-semibold">Content</span> — does your listing answer the questions buyers ask?</li>
+            <li><span className="font-semibold">Routability</span> — can AI route a shopper to actually buy it?</li>
+            <li><span className="font-semibold">Citation · outcome</span> — does AI actually name/recommend you in its answer? This is the <em>result</em> the other three drive.</li>
+          </ul>
+          <div className="border-t border-slate-200 pt-2">
+            <span className="font-semibold">Words we use:</span>
+            <ul className="mt-1 space-y-1">
+              <li><span className="font-medium">Cited / named</span> — AI named your product or brand in its written answer. This is the goal.</li>
+              <li><span className="font-medium">Findable</span> — your own page or a retail listing of your product can be found. Distribution, <em>not</em> a recommendation.</li>
+              <li><span className="font-medium">Recommended</span> — an independent source (editorial / creator / forum) named you on its own merit.</li>
+            </ul>
+          </div>
+        </div>
+      </details>
       <BrandModelStrip citationByProvider={rollup.citation_by_provider} />
       <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-indigo-900/80 sm:grid-cols-3">
         <div>
