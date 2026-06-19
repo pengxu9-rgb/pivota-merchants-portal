@@ -2319,7 +2319,7 @@ export function PerSkuAuditReportRenderer({
       <Zone
         n={1}
         question="Am I winning?"
-        subtitle="Where you stand with AI shopping agents right now."
+        subtitle="Where you stand with AI shopping agents — the brand summary, then each product."
       >
         <BrandRollupCover
           rollup={report.brand_rollup}
@@ -2332,6 +2332,14 @@ export function PerSkuAuditReportRenderer({
             split. Returns null on pre-Fix-3 runs (best-effort backend field). */}
         <MerchantNarrativePanel
           narrative={report.merchant_narrative}
+          authorityMap={report.authority_map}
+        />
+        {/* Per-product drill-down — the scores BEHIND the brand summary above.
+            Moved up from the bottom of the report (it used to sit under the action
+            plan in Zone 3, far from the brand analysis it details, reading as a
+            duplicate scorecard). Each card carries the per-SKU 'what to do next'. */}
+        <PerSkuCardList
+          reports={report.per_sku_reports}
           authorityMap={report.authority_map}
         />
       </Zone>
@@ -2372,10 +2380,6 @@ export function PerSkuAuditReportRenderer({
             showed unscoped, stale internal agent runs ("34d ago") that confused
             more than they helped; Pivota's work now lives here as tagged tasks. */}
         <MerchantTaskQueuePanel />
-        <PerSkuCardList
-          reports={report.per_sku_reports}
-          authorityMap={report.authority_map}
-        />
       </Zone>
 
       {/* ZONE 4 — Is it working? */}
@@ -3028,11 +3032,31 @@ function BrandRollupCover({
           ) : null}
         </div>
       ) : null}
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <RollupDimensionStat label="Identity" stats={pickStat(rollup, 'identity')} />
-        <RollupDimensionStat label="Content" stats={pickStat(rollup, 'content_richness')} />
-        <RollupDimensionStat label="Routability" stats={pickStat(rollup, 'routability')} />
-        <RollupDimensionStat label="Citation" stats={pickStat(rollup, 'citation')} highlight />
+      {/* Compact median SUMMARY (was a full 4-tile scorecard that duplicated the
+          per-product cards). The per-SKU cards below carry the full per-dimension
+          detail; this is just the brand-level at-a-glance. */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-md bg-white/70 px-3 py-2">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-indigo-900/60">
+          Median across {skuCount} product{skuCount === 1 ? '' : 's'}
+        </span>
+        {([
+          ['Identity', 'identity'],
+          ['Content', 'content_richness'],
+          ['Routability', 'routability'],
+          ['Citation · outcome', 'citation'],
+        ] as const).map(([lbl, key]) => {
+          const st = pickStat(rollup, key);
+          const band = st.band ?? (st.median == null ? 'unscored' : bandFromScore(st.median));
+          return (
+            <span key={key} className="inline-flex items-baseline gap-1 text-sm">
+              <span className="text-[11px] text-slate-500">{lbl}</span>
+              <span className={`font-bold ${st.median == null ? 'text-slate-400' : bandTextClass(band)}`}>
+                {st.median ?? '—'}
+              </span>
+            </span>
+          );
+        })}
+        <span className="text-[11px] text-indigo-900/45">· full per-product scores below</span>
       </div>
       <BrandModelStrip citationByProvider={rollup.citation_by_provider} />
       <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-indigo-900/80 sm:grid-cols-3">
@@ -3216,8 +3240,8 @@ function PerSkuCardList({
   }
   return (
     <SurfaceCard
-      title="Your products"
-      description="Identity, Content and Routability are things Pivota can help you fix. Citation is the result — whether AI actually recommends you. Click a card to see the evidence."
+      title="Your products — the detail behind the summary"
+      description="The per-product scores behind the brand median above. Identity, Content and Routability are things Pivota can help you fix; Citation is the result — whether AI actually recommends you. Each card shows that product's next step; click to see the evidence."
     >
       <div className="px-5 py-4">
         <ScoreLegend />
