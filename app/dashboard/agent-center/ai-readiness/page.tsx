@@ -2431,6 +2431,14 @@ export function PerSkuAuditReportRenderer({
         {/* Outreach proof-of-lift: which pitched hosts now cite you (the closed loop). */}
         <MerchantOutreachPanel />
         <PerformanceZone tracking={report.brand_rollup.tracking} />
+        {/* Step 5 (re-test loop v1): the on-demand "did my fix work?" — re-test the
+            queries you're losing via the custom-prompt path. Returns null when
+            there's nothing losing / no prompts box. */}
+        <RetestPanel
+          winPlan={report.win_plan}
+          onAddPrompts={onAddPrompts}
+          customPromptCount={customPromptCount}
+        />
       </Zone>
     </div>
   );
@@ -2706,6 +2714,130 @@ function SuggestedPromptsPanel({
                       className="inline-flex items-center gap-1 rounded border border-indigo-300 bg-white px-2 py-0.5 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
                     >
                       <Plus className="h-3 w-3" /> Add to my prompts
+                    </button>
+                  )}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+        {hitCap || full ? (
+          <p className="flex items-center gap-1.5 text-[11px] text-amber-700">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Prompt slots are full ({MAX_CUSTOM_PROMPTS} max). Remove one above to add more.
+          </p>
+        ) : null}
+      </div>
+    </SurfaceCard>
+  );
+}
+
+// Step 5 (re-test loop, v1): the "did my fix work?" loop, reusing the custom-prompt
+// path. The win-plan's losing buyer-intent queries are exactly "what you're losing"
+// (your URL isn't cited). After a fix, 1-click adds them to the prompts box and the
+// next run re-probes them — CustomPromptsPanel then shows which now cite you (before:
+// not cited, by definition of "losing"). No new probe machinery; honest re-probe.
+function RetestPanel({
+  winPlan,
+  onAddPrompts,
+  customPromptCount = 0,
+}: {
+  winPlan?: AgentCenterPerSkuAuditResponse['win_plan'];
+  onAddPrompts?: (queries: string[]) => string[];
+  customPromptCount?: number;
+}) {
+  const [added, setAdded] = useState<Set<string>>(new Set());
+  const [hitCap, setHitCap] = useState(false);
+  const losing = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Array<{ query: string; sku: string | null }> = [];
+    for (const sp of winPlan?.sku_plans ?? []) {
+      for (const lq of sp.losing_queries ?? []) {
+        const q = (lq.query || '').trim();
+        const key = q.toLowerCase();
+        if (!q || seen.has(key)) continue;
+        seen.add(key);
+        out.push({ query: q, sku: sp.sku_title ?? null });
+      }
+    }
+    return out;
+  }, [winPlan]);
+
+  if (!losing.length || !onAddPrompts) return null;
+  const slotsLeft = Math.max(0, MAX_CUSTOM_PROMPTS - customPromptCount);
+  const full = slotsLeft <= 0;
+
+  function addOne(q: string) {
+    const got = onAddPrompts?.([q]) ?? [];
+    if (got.length) {
+      setAdded((prev) => new Set(prev).add(q.toLowerCase()));
+      setHitCap(false);
+    } else {
+      setHitCap(true);
+    }
+  }
+  function addAll() {
+    const queue = losing
+      .map((l) => l.query)
+      .filter((q) => !added.has(q.toLowerCase()));
+    const got = onAddPrompts?.(queue) ?? [];
+    if (got.length) {
+      setAdded((prev) => {
+        const n = new Set(prev);
+        got.forEach((k) => n.add(k));
+        return n;
+      });
+    }
+    if (got.length < queue.length) setHitCap(true);
+  }
+
+  return (
+    <SurfaceCard
+      title="Did your fixes work? Re-test what you're losing"
+      description="The buyer-intent queries this audit found you losing — your URL isn't cited on these yet. Made a change (enriched a page, landed a citation)? Add them to your prompts and re-run; the next audit re-probes them and shows which now cite you."
+    >
+      <div className="space-y-3 px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+            {losing.length} losing quer{losing.length === 1 ? 'y' : 'ies'} · {slotsLeft} / {MAX_CUSTOM_PROMPTS} prompt slots free
+          </span>
+          <button
+            type="button"
+            onClick={addAll}
+            disabled={full}
+            className="inline-flex items-center gap-1 rounded border border-emerald-300 bg-white px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+          >
+            <Plus className="h-3 w-3" /> Re-test all that fit
+          </button>
+        </div>
+        <ul className="space-y-2">
+          {losing.map((l, i) => {
+            const isAdded = added.has(l.query.toLowerCase());
+            return (
+              <li
+                key={`retest-${i}`}
+                className="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50/60 px-3 py-2"
+              >
+                <span className="text-sm font-medium text-slate-800">{l.query}</span>
+                <span className="rounded-sm bg-rose-100 px-1.5 py-0.5 text-[10px] text-rose-700">
+                  not cited yet
+                </span>
+                {l.sku ? (
+                  <span className="text-[11px] text-slate-500">via {l.sku}</span>
+                ) : null}
+                <span className="ml-auto">
+                  {isAdded ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">
+                      <Check className="h-3 w-3" /> Added to re-test
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => addOne(l.query)}
+                      disabled={full}
+                      className="inline-flex items-center gap-1 rounded border border-emerald-300 bg-white px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                    >
+                      <Plus className="h-3 w-3" /> Re-test this
                     </button>
                   )}
                 </span>
