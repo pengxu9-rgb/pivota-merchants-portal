@@ -39,7 +39,6 @@ import {
 import { MerchantTaskQueuePanel } from '@/components/audit/MerchantTaskQueuePanel';
 import { MerchantOutreachPanel } from '@/components/audit/MerchantOutreachPanel';
 import { PerSkuNextStep } from '@/components/audit/PerSkuNextStep';
-import { MerchantExecutorActivityPanel } from '@/components/audit/MerchantExecutorActivityPanel';
 import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
 import { WinPlanPanel } from '@/components/audit/WinPlanPanel';
 import { IntegrationCtaPanel } from '@/components/audit/IntegrationCtaPanel';
@@ -754,7 +753,6 @@ export default function AiReadinessAuditPage() {
         <div ref={reportRef} className="space-y-6">
           <PerSkuAuditReportRenderer
             report={auditResult.payload}
-            whatsBeenDone={<MerchantExecutorActivityPanel />}
             onAddPrompts={addSuggestedPrompts}
             customPromptCount={customPromptsParsed.length}
           />
@@ -769,7 +767,6 @@ export default function AiReadinessAuditPage() {
             pivotaCanonicalKeys={auditResult.payload.audited_via_pivota_canonical}
           />
           <MerchantTaskQueuePanel />
-          <MerchantExecutorActivityPanel />
         </>
       ) : null}
     </div>
@@ -2295,14 +2292,10 @@ function CitationByIntentPanel({ rollup }: { rollup: AgentCenterBrandRollup }) {
 
 export function PerSkuAuditReportRenderer({
   report,
-  whatsBeenDone,
   onAddPrompts,
   customPromptCount = 0,
 }: {
   report: AgentCenterPerSkuAuditResponse;
-  // Production passes <MerchantExecutorActivityPanel/> (self-fetching "what Pivota
-  // did"); the dev fixture preview omits it (no backend). Rendered inside Zone 3.
-  whatsBeenDone?: React.ReactNode;
   // Step 3 (win-the-specific-long-tail): 1-click "add to my prompts" from the
   // suggested-niches panel. Omitted by the dev fixture preview (no prompts box).
   onAddPrompts?: (queries: string[]) => string[];
@@ -2371,12 +2364,14 @@ export function PerSkuAuditReportRenderer({
       <Zone
         n={3}
         question="What do I do next?"
-        subtitle="Your live action plan — plus the work Pivota's agents already did for you."
+        subtitle="Your live action plan — what's on you, and what Pivota is handling."
       >
         {/* Action plan — the persisted task queue is the single source of truth
-            for "what to do / what's done". Grouped store/Pivota inside the panel. */}
+            for "what to do / what's done", incl. Pivota-handled work (the "On
+            Pivota" lane). The standalone executor-activity feed was removed: it
+            showed unscoped, stale internal agent runs ("34d ago") that confused
+            more than they helped; Pivota's work now lives here as tagged tasks. */}
         <MerchantTaskQueuePanel />
-        {whatsBeenDone}
         <PerSkuCardList
           reports={report.per_sku_reports}
           authorityMap={report.authority_map}
