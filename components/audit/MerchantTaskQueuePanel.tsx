@@ -247,15 +247,20 @@ export function MerchantTaskQueuePanel() {
             if (group.length === 0) return null;
             return (
               <div key={surface}>
-                <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800">
+                <div className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800">
                   {surface === 'store' ? (
                     <Store className="h-3.5 w-3.5" />
                   ) : (
                     <Sparkles className="h-3.5 w-3.5" />
                   )}
                   {surface === 'store' ? 'On your store' : 'On Pivota'}
+                  <span className="text-[10px] font-normal normal-case text-amber-900/55">
+                    {surface === 'store'
+                      ? '· you act (your site / outreach)'
+                      : '· Pivota’s agents handle these for you'}
+                  </span>
                 </div>
-                <ul className="space-y-2">
+                <ul className="mt-1 space-y-2">
                   {group.map((task) => (
                     <TaskRow key={task.task_id} task={task} onChanged={load} />
                   ))}
