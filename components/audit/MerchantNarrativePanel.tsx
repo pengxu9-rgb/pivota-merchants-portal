@@ -169,15 +169,30 @@ function WhoAiCitesInsteadBlock({ block }: { block: WhoAiCitesInstead }) {
     <div className="mt-2 space-y-2">
       {block.competitors.length > 0 ? (
         <div>
-          <div className="text-xs font-medium text-slate-600">What AI names instead</div>
+          <div className="text-xs font-medium text-slate-600">What AI names instead of you</div>
           <div className="text-[11px] text-slate-400">
-            Products, brands, and ingredient types AI mentions for these queries — not all
-            are competing brands. Tap any to look it up.
+            Products, brands, and ingredient types AI mentions for these queries instead of
+            naming you — not all are competing brands. Tap any to look it up.
           </div>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            {block.competitors.map((c) => (
-              <HostChip key={c.name} host={c.name} tone="competitor" href={lookupHref(c.name)} />
-            ))}
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+            {[...block.competitors]
+              .sort((a, b) => (b.times_named || 0) - (a.times_named || 0))
+              .map((c) => (
+                <span key={c.name} className="inline-flex items-center gap-1">
+                  <HostChip host={c.name} tone="competitor" href={lookupHref(c.name)} />
+                  {c.times_named > 0 ? (
+                    <span className="text-[10px] text-slate-400">named {c.times_named}×</span>
+                  ) : null}
+                </span>
+              ))}
+          </div>
+          {/* Co-locate the action with the names (was only in a separate conditional
+              callout) — answers "how do I improve then?". */}
+          <div className="mt-1.5 text-[11px] text-slate-600">
+            <span className="font-medium">To win these:</span> get named in the independent
+            hosts AI trusts for the category — the per-query targets + ready-to-send pitches
+            are in <span className="font-medium text-indigo-700">How to win the
+            recommendation</span> below.
           </div>
         </div>
       ) : null}
