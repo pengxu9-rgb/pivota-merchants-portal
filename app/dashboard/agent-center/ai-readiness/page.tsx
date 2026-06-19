@@ -169,6 +169,11 @@ export default function AiReadinessAuditPage() {
   // Run history: which past run is being viewed, an open-in-progress marker, and
   // a key that bumps to refresh the history list after a new run completes.
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  // When the merchant OPENS a past run (history panel / ?run_id=), the report body
+  // is that run's immutable snapshot — but the action plan + outreach below are the
+  // live cross-audit workspace (by design, Step 1), NOT from that run. Hold the
+  // viewed run's timestamp so the report can say so; null on a fresh just-run audit.
+  const [savedRunViewedAt, setSavedRunViewedAt] = useState<string | null>(null);
   const [loadingRunId, setLoadingRunId] = useState<string | null>(null);
   const [historyReloadKey, setHistoryReloadKey] = useState(0);
   const reportRef = useRef<HTMLDivElement | null>(null);
@@ -372,6 +377,11 @@ export default function AiReadinessAuditPage() {
       if (detail?.stage === 'completed' && detail.report_jsonb?.per_sku_reports) {
         setAuditResult({ mode: 'per_sku', payload: detail.report_jsonb });
         setActiveRunId(runId);
+        // Viewing a saved run — flag it (+ its date) so the report shows the
+        // "this is a past snapshot" banner. Empty string when no timestamp.
+        setSavedRunViewedAt(
+          (detail.report_jsonb as { timestamp?: string })?.timestamp ?? '',
+        );
         return true;
       }
     } catch {
@@ -470,6 +480,7 @@ export default function AiReadinessAuditPage() {
       });
       setAuditResult({ mode: 'per_sku', payload: res });
       setActiveRunId(res.audit_run_id);
+      setSavedRunViewedAt(null); // fresh run — this IS the current audit, no banner
       setHistoryReloadKey((k) => k + 1); // surface the just-finished run in history
     } catch (err) {
       if (err instanceof PremiumProviderRequiredError) {
@@ -755,6 +766,7 @@ export default function AiReadinessAuditPage() {
             report={auditResult.payload}
             onAddPrompts={addSuggestedPrompts}
             customPromptCount={customPromptsParsed.length}
+            savedRunViewedAt={savedRunViewedAt}
           />
         </div>
       ) : null}
@@ -2294,12 +2306,17 @@ export function PerSkuAuditReportRenderer({
   report,
   onAddPrompts,
   customPromptCount = 0,
+  savedRunViewedAt = null,
 }: {
   report: AgentCenterPerSkuAuditResponse;
   // Step 3 (win-the-specific-long-tail): 1-click "add to my prompts" from the
   // suggested-niches panel. Omitted by the dev fixture preview (no prompts box).
   onAddPrompts?: (queries: string[]) => string[];
   customPromptCount?: number;
+  // Step 4: non-null when the merchant OPENED a past run (history / ?run_id=) — its
+  // timestamp ('' if unknown). Drives the "this is a past snapshot" banner so a
+  // historical report's live action plan + outreach below aren't mistaken for it.
+  savedRunViewedAt?: string | null;
 }) {
   // sku_key -> recognizable product label, built once from per_sku_reports (the
   // only structure carrying identity.name). Threaded into sections whose own data
@@ -2307,8 +2324,31 @@ export function PerSkuAuditReportRenderer({
   const skuLabels: Record<string, SkuLabelParts> = Object.fromEntries(
     report.per_sku_reports.map((r) => [r.sku_key, skuLabelParts(r)]),
   );
+  // Step 4: a past run is an immutable snapshot, but the Action plan + Outreach
+  // panels below self-fetch the merchant's CURRENT live state (the persistent
+  // cross-audit workspace, by design). Make that explicit so a historical report
+  // doesn't read as if its action plan came from that run.
+  const viewingSaved = savedRunViewedAt != null;
+  const savedRunDate = (() => {
+    if (!savedRunViewedAt) return null;
+    const d = new Date(savedRunViewedAt);
+    return Number.isNaN(d.getTime())
+      ? null
+      : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  })();
   return (
     <div className="space-y-8">
+      {viewingSaved ? (
+        <div className="flex items-start gap-2 rounded-lg border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <span aria-hidden className="mt-0.5">🕓</span>
+          <span>
+            You&apos;re viewing a <strong>past audit{savedRunDate ? ` from ${savedRunDate}` : ''}</strong>.
+            The findings here are a snapshot from that run. Your <strong>Action plan</strong> and{' '}
+            <strong>Outreach</strong> below are your <strong>current live list</strong> across all
+            audits — not from this run. Re-run an audit to refresh the findings.
+          </span>
+        </div>
+      ) : null}
       <div className="text-xs text-slate-500">
         Audited {report.per_sku_reports.length} product
         {report.per_sku_reports.length === 1 ? '' : 's'} against{' '}
