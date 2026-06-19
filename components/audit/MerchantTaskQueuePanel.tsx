@@ -367,7 +367,9 @@ function TaskRow({
             <span
               className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${statusChip(task.status)}`}
             >
-              {task.status}
+              {/* "Started" (not "IN PROGRESS") — it's a manual ownership flag, not
+                  an actively-running job. */}
+              {task.status === 'in_progress' ? 'Started' : task.status}
             </span>
             {task.assigned_to_agent ? (
               <span className="text-[10px] text-purple-700">
@@ -533,7 +535,9 @@ function StatusIcon({ status }: { status: MerchantTaskStatus }) {
   if (status === 'done')
     return <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />;
   if (status === 'in_progress')
-    return <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-blue-600" />;
+    // Static (not a spinner): in_progress is a manual "someone took this on" flag,
+    // NOT a running process — a spinner falsely implied Pivota was executing it.
+    return <Circle className="mt-0.5 h-4 w-4 shrink-0 fill-blue-500 text-blue-500" />;
   if (status === 'failed')
     return <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />;
   if (status === 'dismissed')
