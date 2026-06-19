@@ -71,7 +71,6 @@ import type {
   CustomPromptResult,
   CustomPromptLane,
 } from '@/lib/types/ai-readiness';
-import { PREMIUM_AUDIT_PROVIDERS } from '@/lib/types/ai-readiness';
 
 /**
  * Catalog row shape returned by apiClient.getProducts(). The response
@@ -953,15 +952,21 @@ function InsufficientCreditsBanner({ error }: { error: InsufficientCreditsError 
   );
 }
 
-// ADR-005: providers are gated by credit BALANCE, not plan. Gemini is the
-// always-on baseline (cheapest, can't be deselected); ChatGPT/Claude are opt-in
-// and cost more credits per run. Any plan can run them with enough credits — no
-// subscription paywall (the cost shows in the preview below).
+// Pick models by where your buyers actually shop — not by a cost tier. The real
+// credit cost for the chosen set is shown in the estimate below (recomputes per
+// selection), so we don't editorialize "cheaper/pricier" on the chips. Gemini is
+// the default-on model so every run has at least one engine.
 const PROVIDER_OPTIONS: { id: AuditPreviewProvider; label: string; blurb: string }[] = [
   { id: 'gemini', label: 'Gemini', blurb: 'Google · grounded search' },
   { id: 'chatgpt', label: 'ChatGPT', blurb: 'OpenAI · web search' },
   { id: 'claude', label: 'Claude', blurb: 'Anthropic · web search' },
 ];
+
+// Which audit models are actually connected (have an API key) right now. Claude
+// isn't wired yet, so it renders greyed/disabled — add 'claude' here when its key
+// ships. (Kept client-side + explicit so it's a one-line flip; if a backend
+// "available providers" signal lands later, drive this from it.)
+const CONNECTED_AUDIT_PROVIDERS: readonly AuditPreviewProvider[] = ['gemini', 'chatgpt'];
 
 function ProviderSelector({
   selected,
@@ -970,9 +975,9 @@ function ProviderSelector({
   selected: AuditPreviewProvider[];
   onChange: (next: AuditPreviewProvider[]) => void;
 }) {
-  const premiumSelected = selected.some((p) => PREMIUM_AUDIT_PROVIDERS.includes(p));
   const toggle = (id: AuditPreviewProvider) => {
-    if (id === 'gemini') return; // Gemini is the free baseline — always on.
+    if (id === 'gemini') return; // Gemini is the default-on model — always included.
+    if (!CONNECTED_AUDIT_PROVIDERS.includes(id)) return; // not connected yet
     onChange(
       selected.includes(id) ? selected.filter((p) => p !== id) : [...selected, id],
     );
@@ -982,53 +987,51 @@ function ProviderSelector({
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-slate-900">Models to run</div>
         <div className="text-[11px] text-slate-500">
-          Gemini is the lower-cost baseline · ChatGPT &amp; Claude cost more credits · all runs use credits
+          Choose the models to test against — by where your buyers shop. Your selection&apos;s
+          credit cost appears in the estimate below.
         </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         {PROVIDER_OPTIONS.map((opt) => {
           const checked = selected.includes(opt.id);
-          const premium = PREMIUM_AUDIT_PROVIDERS.includes(opt.id);
           const base = opt.id === 'gemini';
+          const connected = CONNECTED_AUDIT_PROVIDERS.includes(opt.id);
           return (
             <button
               key={opt.id}
               type="button"
               onClick={() => toggle(opt.id)}
               aria-pressed={checked}
-              disabled={base}
-              title={opt.blurb}
+              disabled={base || !connected}
+              title={connected ? opt.blurb : `${opt.label} isn't connected yet`}
               className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition ${
-                checked
-                  ? 'border-indigo-400 bg-indigo-50 text-indigo-900'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                !connected
+                  ? 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed'
+                  : checked
+                    ? 'border-indigo-400 bg-indigo-50 text-indigo-900'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
               } ${base ? 'cursor-default opacity-90' : ''}`}
             >
               <span
                 className={`inline-block h-3.5 w-3.5 rounded-sm border ${
-                  checked ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'
+                  !connected
+                    ? 'border-slate-300 bg-slate-100'
+                    : checked ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'
                 }`}
               />
               <span className="font-medium">{opt.label}</span>
-              {premium ? (
-                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-                  More credits
+              <span className={`text-[10px] ${!connected ? 'text-slate-400' : 'text-slate-400'}`}>
+                {opt.blurb}
+              </span>
+              {!connected ? (
+                <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  Coming soon
                 </span>
-              ) : (
-                <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
-                  Lower cost
-                </span>
-              )}
+              ) : null}
             </button>
           );
         })}
       </div>
-      {premiumSelected ? (
-        <p className="mt-2 text-xs text-slate-500">
-          ChatGPT &amp; Claude cost more credits per run than Gemini — see the
-          estimated cost below.
-        </p>
-      ) : null}
     </div>
   );
 }
