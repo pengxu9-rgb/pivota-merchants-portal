@@ -892,6 +892,13 @@ export interface AgentCenterBrandRollup {
     total: number;
     routed_to_instead: { host: string; role?: string | null; times_cited?: number }[];
   };
+  // C3: for a reseller, the winning competitor products AI names that the merchant
+  // does NOT carry — a stocking/sourcing signal. Absent on non-reseller / pre-C3 runs.
+  winning_products_not_carried?: {
+    name: string;
+    times_named: number;
+    example_queries: string[];
+  }[];
   brand_state?: BrandState;
   brand_verdict_label?: string;
   brand_verdict_explanation?: string;
