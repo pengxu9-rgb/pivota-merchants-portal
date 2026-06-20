@@ -2268,6 +2268,15 @@ function BuyDestinationPanel({ rollup }: { rollup: AgentCenterBrandRollup }) {
   const d = rollup.store_as_destination;
   if (!d || rollup.merchant_type !== 'reseller' || d.total === 0) return null;
   const pct = Math.round((d.rate || 0) * 100);
+  // R3c — wire the action to the live Google indexing-arc state of the store's
+  // Pivota canonical PDPs (close the win loop): show whether the buy-path pages
+  // are still indexing (with the concrete re-check date) or past the window (now
+  // a content/SEO gap). Falls back to the step-1 "get indexed" framing when no
+  // canonical page is minted yet — nothing is in the pipeline to report on.
+  const arc = rollup.indexing_arc;
+  const recheck = arc?.recheck_on_or_after ? arc.recheck_on_or_after.slice(0, 10) : null;
+  const inPipeline = !!arc && arc.skus_on_canonical_pdp > 0 && arc.skus_still_indexing > 0;
+  const pastWindow = !!arc && arc.skus_on_canonical_pdp > 0 && arc.skus_still_indexing === 0;
   return (
     <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50/40 p-4">
       <div className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
@@ -2299,8 +2308,32 @@ function BuyDestinationPanel({ rollup }: { rollup: AgentCenterBrandRollup }) {
         </div>
       ) : null}
       <p className="mt-2 text-[11px] text-slate-600">
-        <span className="font-medium">To win the destination:</span> get your Pivota canonical
-        product pages indexed + cited so AI routes the buy to you — see the action plan below.
+        {inPipeline ? (
+          <>
+            <span className="font-medium">You&apos;re already in the pipeline:</span>{' '}
+            {arc?.skus_still_indexing} of {arc?.skus_on_canonical_pdp} of your products sit on
+            freshly-minted Pivota canonical pages still inside Google&apos;s 30-90 day indexing
+            window — AI can&apos;t route buyers to a page it hasn&apos;t indexed yet.
+            {recheck ? (
+              <>
+                {' '}
+                Re-audit on or after <strong>{recheck}</strong> to check progress.
+              </>
+            ) : null}
+          </>
+        ) : pastWindow ? (
+          <>
+            <span className="font-medium">Past the indexing window:</span> all{' '}
+            {arc?.skus_on_canonical_pdp} of your products on Pivota canonical pages are past
+            Google&apos;s 90-day window and should be indexed. Still not the buy destination — so
+            this is now a content/SEO gap, not a wait. See the action plan below.
+          </>
+        ) : (
+          <>
+            <span className="font-medium">To win the destination:</span> get your Pivota canonical
+            product pages indexed + cited so AI routes the buy to you — see the action plan below.
+          </>
+        )}
       </p>
     </div>
   );
