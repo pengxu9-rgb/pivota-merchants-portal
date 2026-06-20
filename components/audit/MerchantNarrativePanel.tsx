@@ -110,9 +110,16 @@ function FindabilityEndorsementSplit({
   const surfacedOnlyViaOwnListing =
     summary?.surfaced_only_via_own_listing ??
     (findabilityHosts.length > 0 && endorsementHosts.length === 0);
+  // C1 — the competitor channels AI routes buyers to instead of you, ranked, each
+  // with a role label + how-to-compete action. Turns "who AI cites instead" into
+  // an actionable competitive surface (shown for brands AND retailers).
+  const channels = [...(summary?.channels_ai_cites_instead ?? [])]
+    .sort((a, b) => (b.times_cited ?? 0) - (a.times_cited ?? 0))
+    .slice(0, 8);
 
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
           <Store className="h-4 w-4" /> Findability — your listings are indexed
@@ -157,6 +164,49 @@ function FindabilityEndorsementSplit({
           </p>
         ) : null}
       </div>
+      </div>
+
+      {channels.length > 0 ? (
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <Store className="h-4 w-4" /> Channels AI sends buyers to instead — and how to compete
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            When shoppers ask AI about these products, it routes them to these sources
+            instead of you. Each is a competitor to watch — here&apos;s how to win it.
+          </p>
+          <ul className="mt-2 space-y-2">
+            {channels.map((c) => (
+              <li
+                key={c.host}
+                className="rounded border border-slate-100 bg-slate-50/60 p-2"
+              >
+                <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                  <a
+                    href={`https://${c.host}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium text-slate-700 hover:underline"
+                  >
+                    {c.host}
+                  </a>
+                  {c.role_label ? (
+                    <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                      {c.role_label}
+                    </span>
+                  ) : null}
+                  {c.times_cited ? (
+                    <span className="text-[10px] text-slate-400">· {c.times_cited}×</span>
+                  ) : null}
+                </div>
+                {c.how_to_compete ? (
+                  <p className="mt-1 text-[11px] text-slate-600">{c.how_to_compete}</p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
