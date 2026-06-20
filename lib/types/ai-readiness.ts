@@ -880,6 +880,10 @@ export interface AgentCenterBrandRollup {
   winning_skus_by_band: string[];
   blocked_skus: string[];
   priority_queue: BrandPriorityQueueEntry[];
+  // Retailer-aware model (R0): derived from the catalog. 'reseller' = the merchant
+  // sells other brands' products (the audit measures the STORE, not those brands);
+  // 'brand' = a D2C brand auditing its own products. Absent on pre-R0 runs.
+  merchant_type?: 'reseller' | 'brand' | string;
   brand_state?: BrandState;
   brand_verdict_label?: string;
   brand_verdict_explanation?: string;
