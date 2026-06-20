@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { CSSProperties } from "react";
 
 export const metadata: Metadata = {
   title: "Privacy Policy — Pivota",
@@ -6,17 +7,17 @@ export const metadata: Metadata = {
     "Privacy Policy for the Pivota app (Carvanaut Limited): what data the read-only Shopify app accesses, how it is used, and your rights.",
 };
 
-const wrap: React.CSSProperties = {
+const wrap: CSSProperties = {
   maxWidth: 760,
   margin: "0 auto",
   padding: "48px 20px 80px",
   color: "#1b1d24",
   font: "16px/1.7 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
 };
-const h1: React.CSSProperties = { fontSize: 32, fontWeight: 700, margin: "0 0 4px" };
-const h2: React.CSSProperties = { fontSize: 20, fontWeight: 700, margin: "32px 0 8px" };
-const muted: React.CSSProperties = { color: "#6b7280", fontSize: 14, margin: "0 0 24px" };
-const p: React.CSSProperties = { margin: "0 0 12px" };
+const h1: CSSProperties = { fontSize: 32, fontWeight: 700, margin: "0 0 4px" };
+const h2: CSSProperties = { fontSize: 20, fontWeight: 700, margin: "32px 0 8px" };
+const muted: CSSProperties = { color: "#6b7280", fontSize: 14, margin: "0 0 24px" };
+const p: CSSProperties = { margin: "0 0 12px" };
 
 export default function PrivacyPolicyPage() {
   return (
