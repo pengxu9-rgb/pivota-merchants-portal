@@ -372,6 +372,37 @@ export function MerchantNarrativePanel({
       {narrative.verify_summary_plain.checked > 0 ? (
         <Section icon={<ShieldCheck className="h-4 w-4 text-slate-500" />} title="Answer-quality check">
           <p className="text-sm text-slate-700">{narrative.verify_summary_plain.text}</p>
+          {narrative.verify_summary_plain.flagged_examples &&
+          narrative.verify_summary_plain.flagged_examples.length > 0 ? (
+            <div className="mt-3 space-y-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                What DeepSeek flagged
+              </div>
+              <ul className="space-y-2">
+                {narrative.verify_summary_plain.flagged_examples.map((ex, i) => (
+                  <li
+                    key={i}
+                    className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm"
+                  >
+                    <div className="font-medium text-slate-800">&ldquo;{ex.query}&rdquo;</div>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {ex.misstates_facts ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                          misstates a fact
+                        </span>
+                      ) : null}
+                      {ex.unsupported_recommendation ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                          doesn&apos;t recommend you
+                        </span>
+                      ) : null}
+                    </div>
+                    {ex.note ? <p className="mt-1 text-xs text-slate-600">{ex.note}</p> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </Section>
       ) : null}
 

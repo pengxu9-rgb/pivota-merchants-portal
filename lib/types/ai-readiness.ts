@@ -1226,6 +1226,17 @@ export interface NarrativeScorecardRow {
   independently_recommended_for_category: boolean;
 }
 
+export interface NarrativeFlaggedExample {
+  /** The shopper query whose AI answer DeepSeek flagged. */
+  query: string;
+  /** AI misstated a fact about the product. */
+  misstates_facts: boolean;
+  /** The AI answer didn't actually support recommending this merchant. */
+  unsupported_recommendation: boolean;
+  /** DeepSeek's short explanation of the accuracy issue. */
+  note: string;
+}
+
 export interface NarrativeVerifyPlain {
   status: string;
   verified: number;
@@ -1233,6 +1244,9 @@ export interface NarrativeVerifyPlain {
   checked: number;
   candidates: number;
   text: string;
+  /** The specific flagged citations behind `flagged` — which query + why.
+   *  Optional: older reports (pre-surfacing) won't carry it. */
+  flagged_examples?: NarrativeFlaggedExample[];
 }
 
 export interface NarrativePrioritizedAction {
