@@ -233,19 +233,39 @@ function WinPlanSummaryCallout({ summary }: { summary: WinPlanSummary }) {
 export function MerchantNarrativePanel({
   narrative,
   authorityMap,
+  merchantType,
 }: {
   narrative?: AgentCenterMerchantNarrative | null;
   authorityMap?: AgentCenterAuthorityMap | null;
+  // Retailer-aware model (R2): when 'reseller', frame the sections as the STORE's
+  // standing (not the resold brands').
+  merchantType?: string;
 }) {
   // No fabrication: nothing to render without a narrative.
   if (!narrative) return null;
 
+  const isReseller = merchantType === 'reseller';
   const w = narrative.whats_working;
   const showProbeCounts =
     (w.branded_navigational_probes || 0) > 0 || (w.category_discovery_probes || 0) > 0;
 
   return (
     <div className="space-y-4">
+      {/* R2 — reseller context: the audit measures whether AI sends shoppers to
+          THIS STORE, not whether the brands it carries are recommended. Without
+          this, a retailer reads "findable / recommended" as being about them when
+          it's really about the products' brands. */}
+      {isReseller ? (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          <span className="font-semibold">You&apos;re a retailer.</span> This audit measures
+          whether AI sends shoppers to <strong>your store</strong> for the products you carry —
+          not whether the product brands themselves are recommended. So: <strong>Findable</strong>
+          {' '}= your store can be found as a place to buy; <strong>Recommended</strong> = an
+          independent source points buyers to you; <strong>&ldquo;what AI names instead&rdquo;</strong>
+          {' '}= the brands/products AI mentions for these queries. The brands you sell appearing
+          in AI answers is a separate thing from your store being the place to buy them.
+        </div>
+      ) : null}
       {/* 1. Headline story */}
       <div className="rounded-lg border-2 border-slate-200 bg-white p-4">
         <p className="text-lg font-semibold text-slate-900">{narrative.headline_story}</p>

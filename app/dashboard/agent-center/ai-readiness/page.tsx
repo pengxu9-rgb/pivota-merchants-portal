@@ -2375,6 +2375,7 @@ export function PerSkuAuditReportRenderer({
         <MerchantNarrativePanel
           narrative={report.merchant_narrative}
           authorityMap={report.authority_map}
+          merchantType={report.brand_rollup.merchant_type}
         />
         {/* Per-product drill-down — the scores BEHIND the brand summary above.
             Moved up from the bottom of the report (it used to sit under the action
