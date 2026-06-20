@@ -884,6 +884,14 @@ export interface AgentCenterBrandRollup {
   // sells other brands' products (the audit measures the STORE, not those brands);
   // 'brand' = a D2C brand auditing its own products. Absent on pre-R0 runs.
   merchant_type?: 'reseller' | 'brand' | string;
+  // R3: the retailer win — for buy-intent queries, is the STORE the AI-routed buy
+  // path, and who does AI route to instead. Absent on pre-R3 runs.
+  store_as_destination?: {
+    rate: number;
+    cited: number;
+    total: number;
+    routed_to_instead: { host: string; role?: string | null; times_cited?: number }[];
+  };
   brand_state?: BrandState;
   brand_verdict_label?: string;
   brand_verdict_explanation?: string;
