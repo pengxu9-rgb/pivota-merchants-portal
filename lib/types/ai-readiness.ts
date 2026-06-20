@@ -1064,6 +1064,16 @@ export interface AuthorityPerSkuEntry {
 // site + its product listed on a marketplace (distribution); endorsement = an
 // independent third party recommending it (the only honest "AI recommends you"
 // signal). Kept apart so "your listing is indexed" never reads as endorsement.
+/** C1 — a competitor channel AI cites instead of the merchant, with a display
+ * label + how-to-compete advice keyed on the host's merchant-relative role. */
+export interface ChannelToCompete {
+  host: string;
+  role?: string;
+  role_label?: string;
+  how_to_compete?: string;
+  times_cited?: number;
+}
+
 export interface HostAttributionSummary {
   distinct_hosts: number;
   by_role: Record<string, number>;
@@ -1078,6 +1088,11 @@ export interface HostAttributionSummary {
   /** Cited, but only through own/retail listings — never independently
    * endorsed. Drives the "listed, not recommended" badge. */
   surfaced_only_via_own_listing: boolean;
+  /** Cited as a grounding source but did NOT name the merchant. */
+  cited_not_naming_hosts?: string[];
+  /** C1 — the same "cited instead" hosts, enriched with a role label + a
+   * per-channel how-to-compete action. Each is a competitor channel to watch. */
+  channels_ai_cites_instead?: ChannelToCompete[];
 }
 
 export interface AgentCenterAuthorityMap {
