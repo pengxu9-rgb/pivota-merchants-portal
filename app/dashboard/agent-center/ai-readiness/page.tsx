@@ -2262,6 +2262,38 @@ const INTENT_AXIS_ORDER = ['problem_jtbd', 'category_head', 'constraint', 'trust
 
 // R3 — the retailer's real win: when shoppers ask AI where to BUY the products you
 // carry, does AI route them to YOUR store (vs Amazon / the brand's site / another
+// C2 — two-axis framing. The SAME competitive data, framed toward the merchant's
+// actual lever (R0's merchant_type): a brand competes on its PRODUCT; a retailer
+// competes on being the buy DESTINATION + on coverage (which winners to stock).
+// Sets the lens at the top of Zone 2 before the (brand-oriented) win-plan + the
+// channel surfaces below; the "stocking signals" line teases C3.
+function CompetitiveLensBanner({ merchantType }: { merchantType?: string }) {
+  const reseller = merchantType === 'reseller';
+  return (
+    <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
+      <div className="text-xs font-semibold uppercase tracking-wide text-indigo-800">
+        {reseller ? 'Your lever as a retailer' : 'Your lever as a brand'}
+      </div>
+      <p className="mt-1 text-sm text-slate-700">
+        {reseller ? (
+          <>
+            You compete on <strong>the buy destination</strong> — not on whether the brands you
+            carry are recommended. Win by getting your Pivota canonical pages cited + indexed for
+            the products you carry; treat the winning products below as{' '}
+            <strong>stocking signals</strong> (which to add or push).
+          </>
+        ) : (
+          <>
+            You compete on <strong>your product</strong>. Win by improving what AI can read +
+            verify about it (claims, ingredients, use-cases) and by earning citations in the
+            independent sources AI trusts for your category — the targets below.
+          </>
+        )}
+      </p>
+    </div>
+  );
+}
+
 // retailer)? Reseller headline; a D2C brand's own findability already covers this, so
 // it renders only for resellers.
 function BuyDestinationPanel({ rollup }: { rollup: AgentCenterBrandRollup }) {
@@ -2475,6 +2507,10 @@ export function PerSkuAuditReportRenderer({
         question="How can I improve?"
         subtitle="The highest-leverage places to grow your AI visibility."
       >
+        {/* C2 — two-axis framing: set the competitive lens by merchant_type
+            (brand → compete on product; retailer → win the buy destination +
+            stocking signals) before the win-plan + channel surfaces below. */}
+        <CompetitiveLensBanner merchantType={report.brand_rollup.merchant_type} />
         {/* Fix 4 — how to win the recommendation: per-losing-query targets +
             one-click pitches. Returns null when there's no plan. */}
         <WinPlanPanel winPlan={report.win_plan} skuLabels={skuLabels} />
