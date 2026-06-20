@@ -2518,6 +2518,9 @@ export function PerSkuAuditReportRenderer({
             integrated + GSC connected). */}
         <IntegrationCtaPanel integration={report.brand_rollup.integration} />
         <WhereYouCanWinPanel data={report.brand_rollup.where_you_can_win} />
+        {/* C3 — reseller sourcing signal: winning products AI routes buyers to
+            that the merchant doesn't carry. Returns null for non-resellers. */}
+        <WinningProductsNotCarriedPanel rollup={report.brand_rollup} />
         {/* Win-the-specific-long-tail (Step 3): the engine's computed-but-unprobed
             winnable niches, 1-click addable to the prompts box for the next audit.
             Returns null on pre-Step-2 runs / when nothing un-probed remains. */}
@@ -2974,6 +2977,51 @@ function RetestPanel({
         ) : null}
       </div>
     </SurfaceCard>
+  );
+}
+
+// C3 — for a reseller, the winning competitor products AI names that the merchant
+// does NOT carry: a stocking/sourcing signal (expand into the demand AI is already
+// routing). Reseller-gated; renders only when the catalog-overlap found gaps.
+function WinningProductsNotCarriedPanel({ rollup }: { rollup: AgentCenterBrandRollup }) {
+  if (rollup.merchant_type !== 'reseller') return null;
+  const items = rollup.winning_products_not_carried ?? [];
+  if (items.length === 0) return null;
+  return (
+    <div className="rounded-lg border-2 border-amber-200 bg-amber-50/40 p-4">
+      <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+        Winning products you don&apos;t carry
+      </div>
+      <p className="mt-1 text-sm text-slate-700">
+        AI sends buyers to these products for queries you&apos;re losing — and you don&apos;t
+        stock them. Each is a <strong>sourcing signal</strong>: stocking the winners is how a
+        retailer expands into demand AI is already routing.
+      </p>
+      <ul className="mt-2 space-y-2">
+        {items.map((p) => (
+          <li key={p.name} className="rounded border border-amber-100 bg-white p-2">
+            <div className="flex flex-wrap items-center gap-2 text-[13px]">
+              <a
+                href={`https://www.google.com/search?q=${encodeURIComponent(p.name)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-slate-700 hover:underline"
+              >
+                {p.name}
+              </a>
+              {p.times_named ? (
+                <span className="text-[10px] text-slate-400">named {p.times_named}×</span>
+              ) : null}
+            </div>
+            {p.example_queries.length > 0 ? (
+              <p className="mt-1 text-[11px] text-slate-500">
+                Wins: {p.example_queries.map((q) => `"${q}"`).join(', ')}
+              </p>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
