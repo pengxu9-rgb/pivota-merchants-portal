@@ -2260,6 +2260,52 @@ const INTENT_AXIS_LABELS: Record<string, { label: string; hint: string }> = {
 };
 const INTENT_AXIS_ORDER = ['problem_jtbd', 'category_head', 'constraint', 'trust', 'navigational', 'custom'];
 
+// R3 — the retailer's real win: when shoppers ask AI where to BUY the products you
+// carry, does AI route them to YOUR store (vs Amazon / the brand's site / another
+// retailer)? Reseller headline; a D2C brand's own findability already covers this, so
+// it renders only for resellers.
+function BuyDestinationPanel({ rollup }: { rollup: AgentCenterBrandRollup }) {
+  const d = rollup.store_as_destination;
+  if (!d || rollup.merchant_type !== 'reseller' || d.total === 0) return null;
+  const pct = Math.round((d.rate || 0) * 100);
+  return (
+    <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50/40 p-4">
+      <div className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
+        Are you the buy destination?
+      </div>
+      <p className="mt-1 text-sm text-slate-700">
+        When shoppers ask AI where to buy the products you carry, it sends them to{' '}
+        <strong>
+          your store on {d.cited} of {d.total} buy-intent quer{d.total === 1 ? 'y' : 'ies'} ({pct}%)
+        </strong>
+        . This — not whether the brands are recommended — is your win as a retailer.
+      </p>
+      {d.routed_to_instead.length > 0 ? (
+        <div className="mt-2">
+          <div className="text-[11px] font-medium text-slate-600">
+            AI routes buyers here instead:
+          </div>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {d.routed_to_instead.map((r) => (
+              <span
+                key={r.host}
+                className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-700"
+              >
+                {r.host}
+                {r.times_cited ? <span className="text-slate-400">· {r.times_cited}×</span> : null}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <p className="mt-2 text-[11px] text-slate-600">
+        <span className="font-medium">To win the destination:</span> get your Pivota canonical
+        product pages indexed + cited so AI routes the buy to you — see the action plan below.
+      </p>
+    </div>
+  );
+}
+
 function CitationByIntentPanel({ rollup }: { rollup: AgentCenterBrandRollup }) {
   const data = rollup.citation_by_intent;
   if (!data) return null;
@@ -2368,6 +2414,9 @@ export function PerSkuAuditReportRenderer({
           skuCount={report.per_sku_reports.length}
           costSummary={report.cost_summary}
         />
+        {/* R3 — the retailer headline: is the STORE the AI-routed buy destination?
+            Renders only for resellers (a D2C brand's findability already covers it). */}
+        <BuyDestinationPanel rollup={report.brand_rollup} />
         {/* Step 2 — citation rate by question TYPE. Returns null on pre-Step-2 runs. */}
         <CitationByIntentPanel rollup={report.brand_rollup} />
         {/* Fix 3 — the merchant-grade narrative + Fix 2 findability/endorsement
