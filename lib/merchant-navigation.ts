@@ -30,6 +30,10 @@ export type MerchantNavigationItem = {
   // Short lane signal rendered as a pill in the sidebar (e.g. "Free",
   // "Needs sync") so a merchant can see cost/setup without clicking in.
   badge?: string;
+  // Gated on a synced catalog. When the merchant has no catalog yet the shell
+  // shows a lock + keeps the "Needs sync" badge; once synced the badge clears.
+  // The item stays clickable (the page itself routes to Integrations).
+  requiresSync?: boolean;
 };
 
 export const primaryNavigation: MerchantNavigationItem[] = [
@@ -140,6 +144,7 @@ export const aiReadinessNavigation: MerchantNavigationItem[] = [
     matchPrefixes: ["/dashboard/agent-center/ai-readiness"],
     description: "Per-SKU win-plan for your synced catalog",
     badge: "Needs sync",
+    requiresSync: true,
   },
 ];
 

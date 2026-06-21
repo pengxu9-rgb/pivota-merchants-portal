@@ -6,6 +6,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ChevronDown,
+  Lock,
   LogOut,
   Menu,
   X,
@@ -32,6 +33,8 @@ type MerchantAppShellProps = {
     email?: string;
     merchant_id?: string;
   } | null;
+  // Drives the sync gate on requiresSync nav items. null = unknown (no lock).
+  catalogSynced?: boolean | null;
 };
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = "merchant_sidebar_collapsed";
@@ -43,6 +46,7 @@ function NavigationGroup({
   onNavigate,
   collapsible = false,
   collapsed = false,
+  catalogSynced = null,
 }: {
   label: string;
   items: MerchantNavigationItem[];
@@ -50,6 +54,9 @@ function NavigationGroup({
   onNavigate: () => void;
   collapsible?: boolean;
   collapsed?: boolean;
+  // null = unknown (fail open: no lock). Drives the sync gate on items
+  // flagged requiresSync.
+  catalogSynced?: boolean | null;
 }) {
   const { t } = useMerchantLanguage();
   const hasActiveItem = items.some((item) => isNavigationItemActive(pathname, item));
@@ -88,6 +95,11 @@ function NavigationGroup({
         {items.map((item) => {
           const isActive = isNavigationItemActive(pathname, item);
           const translatedLabel = item.labelKey ? t(item.labelKey) : item.label;
+          // Sync gate: lock + keep the badge while there's no catalog; once
+          // synced the badge clears (gate passed). Unknown (null) → no lock.
+          const gated = item.requiresSync === true && catalogSynced === false;
+          const cleared = item.requiresSync === true && catalogSynced === true;
+          const effectiveBadge = cleared ? undefined : item.badge;
           return (
           <Link
               key={item.href}
@@ -110,14 +122,23 @@ function NavigationGroup({
               >
                 {translatedLabel}
               </div>
-              {item.badge ? (
+              {gated ? (
+                <Lock
+                  aria-hidden
+                  className={cx(
+                    "h-3 w-3 flex-shrink-0 text-[color:var(--merchant-muted)]",
+                    collapsed && "lg:hidden"
+                  )}
+                />
+              ) : null}
+              {effectiveBadge ? (
                 <span
                   className={cx(
                     "flex-shrink-0 rounded-full border border-[color:var(--merchant-line)] px-1.5 py-0.5 text-[11px] font-medium leading-none text-[color:var(--merchant-muted)]",
                     collapsed && "lg:hidden"
                   )}
                 >
-                  {item.badge}
+                  {effectiveBadge}
                 </span>
               ) : null}
             </Link>
@@ -135,6 +156,7 @@ export function MerchantAppShell({
   setSidebarOpen,
   onLogout,
   user,
+  catalogSynced = null,
 }: MerchantAppShellProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { t } = useMerchantLanguage();
@@ -246,6 +268,7 @@ export function MerchantAppShell({
             pathname={pathname}
             onNavigate={() => setSidebarOpen(false)}
             collapsed={sidebarCollapsed}
+            catalogSynced={catalogSynced}
           />
           <NavigationGroup
             label={t("shell.workflows")}

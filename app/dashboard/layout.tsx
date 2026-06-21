@@ -32,6 +32,9 @@ export default function DashboardLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [routeAllowed, setRouteAllowed] = useState(true);
+  // Sync-gate signal for the sidebar ("Readiness audit" locks until a catalog
+  // exists). null = unknown → nav fails open (no false lock). Fetched once.
+  const [catalogSynced, setCatalogSynced] = useState<boolean | null>(null);
   const { setLanguage, t } = useMerchantLanguage();
 
   useEffect(() => {
@@ -88,6 +91,27 @@ export default function DashboardLayout({
     };
   }, [pathname, router, setLanguage]);
 
+  // Sync status for the sidebar gate — fetched once, independent of route
+  // changes. Reuses the audit readiness probe (cheap counts). Soft-fails to
+  // unknown so a blip never falsely locks the nav.
+  useEffect(() => {
+    let cancelled = false;
+    if (!localStorage.getItem("merchant_token")) return;
+    (async () => {
+      try {
+        const r = await apiClient.getAuditReadiness();
+        if (!cancelled) {
+          setCatalogSynced((r?.counts?.catalog_products ?? 0) > 0);
+        }
+      } catch {
+        // Leave null — fail open (no lock) on an unavailable readiness probe.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleLogout = () => {
     apiClient.logout();
   };
@@ -119,6 +143,7 @@ export default function DashboardLayout({
       setSidebarOpen={setSidebarOpen}
       onLogout={handleLogout}
       user={user}
+      catalogSynced={catalogSynced}
     >
       {children}
     </MerchantAppShell>
