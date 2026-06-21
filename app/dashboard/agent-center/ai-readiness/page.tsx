@@ -41,6 +41,7 @@ import {
 import { MerchantTaskQueuePanel } from '@/components/audit/MerchantTaskQueuePanel';
 import { MerchantOutreachPanel } from '@/components/audit/MerchantOutreachPanel';
 import { PerSkuNextStep } from '@/components/audit/PerSkuNextStep';
+import { PerSkuCopyToStore } from '@/components/audit/PerSkuCopyToStore';
 import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
 import { WinPlanPanel } from '@/components/audit/WinPlanPanel';
 import { IntegrationCtaPanel } from '@/components/audit/IntegrationCtaPanel';
@@ -3912,6 +3913,7 @@ function PerSkuCard({
           </div>
         ) : null}
         <PerSkuNextStep report={report} />
+        <PerSkuCopyToStore report={report} />
         {expanded ? (
           <div className="mt-4 space-y-3 border-t border-current/10 pt-3">
             <GroundingEvidenceList evidence={report.verbatim_grounding_evidence} />
