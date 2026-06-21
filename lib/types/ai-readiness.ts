@@ -608,6 +608,22 @@ export interface AuditReadiness {
   blocking_gaps: string[];
   enhancement_gaps: string[];
   recommendation: string;
+  /**
+   * Active quality-backfill timing, when a job is in flight — lets the
+   * "Preparing your catalog" state show a grounded count + countdown instead of
+   * a flat "a few minutes". Optional/nullable: absent on older backends and
+   * null when no job is running. `eta_seconds` is best-effort (null while the
+   * job is still queued).
+   */
+  backfill?: {
+    status: string;
+    requested_at: string | null;
+    started_at: string | null;
+    total_candidates: number;
+    processed: number;
+    progress_pct: number | null;
+    eta_seconds: number | null;
+  } | null;
 }
 
 /** Wrapper returned by the merchant audit endpoint. */
