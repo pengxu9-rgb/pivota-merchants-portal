@@ -43,7 +43,9 @@ import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePane
 import { WinPlanPanel } from '@/components/audit/WinPlanPanel';
 import { IntegrationCtaPanel } from '@/components/audit/IntegrationCtaPanel';
 import { RecentAuditsPanel } from '@/components/audit/RecentAuditsPanel';
+import { AuditReadinessBanner } from '@/components/audit/AuditReadinessBanner';
 import type {
+  AuditReadiness,
   AgentCenterBdBrandReport,
   AgentCenterBdCoOccurrenceVerification,
   AgentCenterBdMatchedCreator,
@@ -163,6 +165,14 @@ export default function AiReadinessAuditPage() {
   const [productsError, setProductsError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set()); // key = "platform:source_id"
 
+  // Pre-launch readiness (GET /api/audits/readiness) — surfaced as a banner so
+  // the merchant sees "catalog ready" vs "still preparing" before clicking Run,
+  // not as a post-click 409. Soft-fails to null so a transient error never
+  // strands the page (the launch POST still enforces the same gate).
+  const [readiness, setReadiness] = useState<AuditReadiness | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(true);
+  const [readinessRefreshing, setReadinessRefreshing] = useState(false);
+
   const [running, setRunning] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [auditResult, setAuditResult] = useState<LaunchResult | null>(null);
@@ -233,6 +243,39 @@ export default function AiReadinessAuditPage() {
       cancelled = true;
     };
   }, []);
+
+  // Pre-launch readiness probe. `refresh` flips the small spinner on the
+  // banner's "Check again" button; the initial load uses the quiet state.
+  const loadReadiness = useCallback(async (opts?: { refresh?: boolean }) => {
+    if (opts?.refresh) setReadinessRefreshing(true);
+    try {
+      const verdict = await apiClient.getAuditReadiness();
+      setReadiness(verdict);
+    } catch {
+      setReadiness(null); // soft-fail: don't block; launch POST still gates.
+    } finally {
+      setReadinessLoading(false);
+      setReadinessRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadReadiness();
+  }, [loadReadiness]);
+
+  // While the catalog is synced but the quality backfill is still running, poll
+  // so the banner flips to "ready" on its own when the backfill completes.
+  useEffect(() => {
+    if (!readiness) return;
+    const preparing =
+      readiness.counts.catalog_products > 0 &&
+      readiness.counts.product_quality_snapshot === 0;
+    if (!preparing) return;
+    const timer = setInterval(() => {
+      void loadReadiness();
+    }, 20_000);
+    return () => clearInterval(timer);
+  }, [readiness, loadReadiness]);
 
   // Build a stable composite key for selection state. Some rows arrive
   // without platform_product_id under `standard.product_id` instead;
@@ -539,6 +582,13 @@ export default function AiReadinessAuditPage() {
         subjectType="merchant"
       />
 
+      <AuditReadinessBanner
+        readiness={readiness}
+        loading={readinessLoading}
+        refreshing={readinessRefreshing}
+        onRefresh={() => void loadReadiness({ refresh: true })}
+      />
+
       <SurfaceCard
         title="1. Pick 1–50 SKUs to audit"
         description={`${selected.size} of ${MAX_SELECTED} selected · ~40 prompts per SKU · ~${selected.size * 40} grounded probes`}
@@ -726,7 +776,8 @@ export default function AiReadinessAuditPage() {
             selected.size > MAX_SELECTED ||
             !!customPromptsError ||
             !!previewError ||
-            (previewData !== null && !previewSufficient)
+            (previewData !== null && !previewSufficient) ||
+            (readiness !== null && !readiness.ready)
           }
         >
           {running ? (
