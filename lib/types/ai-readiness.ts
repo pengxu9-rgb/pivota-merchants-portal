@@ -585,6 +585,31 @@ export interface UrlReadinessAuditResponse {
   free_audits_remaining: number;
 }
 
+/**
+ * Pre-launch readiness verdict — GET /api/audits/readiness. Lets the portal
+ * show "ready" vs "still syncing" upfront instead of letting the merchant run
+ * an audit that comes back all-blocked (the launch POST enforces the same gate
+ * with a 409). `ready` is true only when the BLOCKING deps are present:
+ * a synced catalog (catalog_products) + completed quality backfill
+ * (product_quality_snapshot.content_quality_score). Enhancement gaps lower the
+ * ceiling but don't block.
+ */
+export interface AuditReadiness {
+  merchant_id: string;
+  platform: string;
+  ready: boolean;
+  counts: {
+    catalog_products: number;
+    products_cache: number;
+    product_quality_snapshot: number;
+    product_enrichment: number;
+    product_enrichment_with_content: number;
+  };
+  blocking_gaps: string[];
+  enhancement_gaps: string[];
+  recommendation: string;
+}
+
 /** Wrapper returned by the merchant audit endpoint. */
 export interface AiReadinessAuditResponse {
   brand_report: AgentCenterBdBrandReport;

@@ -1742,6 +1742,22 @@ class ApiClient {
   }
 
   /**
+   * Pre-launch readiness for the per-SKU audit (GET /api/audits/readiness).
+   * The audit page calls this on load to show "catalog ready" vs "still
+   * preparing" upfront, instead of surfacing the same gate only as a 409 after
+   * the merchant clicks Run. Read-only; the backend resolves the merchant from
+   * the session.
+   */
+  async getAuditReadiness(): Promise<
+    import('./types/ai-readiness').AuditReadiness
+  > {
+    const response = await this.client.get('/api/audits/readiness', {
+      timeout: 15_000,
+    });
+    return response.data?.data || response.data;
+  }
+
+  /**
    * Buy a pay-as-you-go credit pack (ADR-005). Charges the merchant's verified
    * Stripe card off-session — there's no card-entry UI in the portal — and the
    * credits land in the persistent `purchased_credits` bucket once the Stripe
