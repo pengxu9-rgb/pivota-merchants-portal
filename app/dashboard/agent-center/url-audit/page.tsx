@@ -30,6 +30,7 @@ import {
   X,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { stashVisibilityHandoff } from '@/lib/visibility-handoff';
 import {
   MerchantButton,
   PageHeader,
@@ -444,6 +445,13 @@ export default function UrlAuditPage() {
       setResult(res);
       setActiveRunId(res.audit_run_id ?? null);
       setHistoryReloadKey((k) => k + 1); // surface the just-finished check in history
+      // Hand off the audited URLs so the readiness audit can pre-select these
+      // exact products once the merchant connects + syncs their catalog.
+      stashVisibilityHandoff({
+        urls: cleanedUrls,
+        brand: brand.trim() || undefined,
+        website: website.trim() || undefined,
+      });
     } catch (e: any) {
       const status = e?.response?.status;
       const detail = e?.response?.data?.detail;

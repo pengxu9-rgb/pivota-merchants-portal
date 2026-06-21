@@ -25,6 +25,8 @@ import {
   Loader2,
   Lock,
   Plus,
+  Sparkles,
+  X,
 } from 'lucide-react';
 import {
   apiClient,
@@ -44,6 +46,11 @@ import { WinPlanPanel } from '@/components/audit/WinPlanPanel';
 import { IntegrationCtaPanel } from '@/components/audit/IntegrationCtaPanel';
 import { RecentAuditsPanel } from '@/components/audit/RecentAuditsPanel';
 import { AuditReadinessBanner } from '@/components/audit/AuditReadinessBanner';
+import {
+  readVisibilityHandoff,
+  clearVisibilityHandoff,
+  matchHandoffSelections,
+} from '@/lib/visibility-handoff';
 import type {
   AuditReadiness,
   AgentCenterBdBrandReport,
@@ -91,6 +98,10 @@ interface CatalogProductRow {
   name?: string;
   price?: number | { value?: number; currency?: string };
   currency?: string;
+  // Storefront URL slug + full URL (products-v2 backend) — used to match the
+  // product URLs a merchant pasted in the AI visibility check back to this row.
+  handle?: string;
+  online_store_url?: string;
   standard?: {
     title?: string;
     main_image_url?: string;
@@ -172,6 +183,12 @@ export default function AiReadinessAuditPage() {
   const [readiness, setReadiness] = useState<AuditReadiness | null>(null);
   const [readinessLoading, setReadinessLoading] = useState(true);
   const [readinessRefreshing, setReadinessRefreshing] = useState(false);
+
+  // Visibility→audit hand-off: how many SKUs were pre-selected from the
+  // merchant's last AI visibility check (drives a dismissible hint). Applied
+  // once after the catalog loads; null = no hint.
+  const [handoffCount, setHandoffCount] = useState<number | null>(null);
+  const handoffAppliedRef = useRef(false);
 
   const [running, setRunning] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
@@ -300,6 +317,37 @@ export default function AiReadinessAuditPage() {
       ),
     [usableProducts],
   );
+
+  // One-shot visibility→audit hand-off: if the merchant just ran an AI
+  // visibility check, pre-select the SKUs matching the product URLs they
+  // audited. Credit-safe — only unambiguous (unique) matches are selected, and
+  // the merchant still reviews + sees cost before launching. Runs once after
+  // the catalog loads, then consumes the stash so it doesn't repeat.
+  useEffect(() => {
+    if (handoffAppliedRef.current) return;
+    if (productsLoading || usableProducts.length === 0) return;
+    handoffAppliedRef.current = true;
+    const handoff = readVisibilityHandoff();
+    if (!handoff) return;
+    const rows = usableProducts.map((p) => ({
+      key: productKey(p),
+      handle: p.handle,
+      online_store_url: p.online_store_url,
+    }));
+    const { keys, matchedUrlCount } = matchHandoffSelections(handoff.urls, rows);
+    clearVisibilityHandoff(); // one-shot, regardless of whether anything matched
+    if (keys.length === 0) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const k of keys) {
+        if (next.size >= MAX_SELECTED) break;
+        next.add(k);
+      }
+      return next;
+    });
+    setHandoffCount(matchedUrlCount);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productsLoading, usableProducts]);
 
   const toggle = (p: CatalogProductRow) => {
     setSelected((prev) => {
@@ -588,6 +636,27 @@ export default function AiReadinessAuditPage() {
         refreshing={readinessRefreshing}
         onRefresh={() => void loadReadiness({ refresh: true })}
       />
+
+      {handoffCount && handoffCount > 0 ? (
+        <div className="flex items-start justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          <div className="flex items-start gap-2">
+            <Sparkles className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <span>
+              Pre-selected {handoffCount} product
+              {handoffCount === 1 ? '' : 's'} from your AI visibility check —
+              review the selection below before you run.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setHandoffCount(null)}
+            className="flex-shrink-0 rounded p-0.5 text-emerald-700 hover:bg-emerald-100"
+            aria-label="Dismiss"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ) : null}
 
       <SurfaceCard
         title="1. Pick 1–50 SKUs to audit"
