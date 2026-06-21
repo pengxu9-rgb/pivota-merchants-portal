@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cx } from "@/lib/cx";
 import {
+  aiReadinessNavigation,
   isNavigationItemActive,
   type MerchantNavigationItem,
   primaryNavigation,
@@ -109,6 +110,16 @@ function NavigationGroup({
               >
                 {translatedLabel}
               </div>
+              {item.badge ? (
+                <span
+                  className={cx(
+                    "flex-shrink-0 rounded-full border border-[color:var(--merchant-line)] px-1.5 py-0.5 text-[11px] font-medium leading-none text-[color:var(--merchant-muted)]",
+                    collapsed && "lg:hidden"
+                  )}
+                >
+                  {item.badge}
+                </span>
+              ) : null}
             </Link>
           );
         })}
@@ -225,6 +236,13 @@ export function MerchantAppShell({
           <NavigationGroup
             label={t("shell.navigate")}
             items={primaryNavigation}
+            pathname={pathname}
+            onNavigate={() => setSidebarOpen(false)}
+            collapsed={sidebarCollapsed}
+          />
+          <NavigationGroup
+            label="AI readiness"
+            items={aiReadinessNavigation}
             pathname={pathname}
             onNavigate={() => setSidebarOpen(false)}
             collapsed={sidebarCollapsed}

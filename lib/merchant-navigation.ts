@@ -1,13 +1,14 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
-  Brain,
   ClipboardCheck,
   CreditCard,
   LayoutDashboard,
+  ListChecks,
   MessageSquare,
   Package,
   Receipt,
+  ScanEye,
   Settings,
   ShoppingBag,
   Sparkles,
@@ -26,6 +27,9 @@ export type MerchantNavigationItem = {
   description?: string;
   labelKey?: string;
   descriptionKey?: string;
+  // Short lane signal rendered as a pill in the sidebar (e.g. "Free",
+  // "Needs sync") so a merchant can see cost/setup without clicking in.
+  badge?: string;
 };
 
 export const primaryNavigation: MerchantNavigationItem[] = [
@@ -46,13 +50,6 @@ export const primaryNavigation: MerchantNavigationItem[] = [
     matchPrefixes: ["/dashboard/products", "/dashboard/product-optimization"],
     description: "Products and content",
     descriptionKey: "shell.nav.catalogDesc",
-  },
-  {
-    label: "AI visibility",
-    href: "/dashboard/agent-center/url-audit",
-    icon: Brain,
-    matchPrefixes: ["/dashboard/agent-center"],
-    description: "How AI agents see your store",
   },
   {
     label: "Orders",
@@ -122,6 +119,30 @@ export const settingsNavigationItem: MerchantNavigationItem = {
   descriptionKey: "shell.nav.settingsDesc",
 };
 
+// The AI-readiness journey, as two explicit steps in one place so merchants
+// read them as a sequence — not two look-alike "AI" tools.
+//   Step 1 (visibility): paste links → no setup, first 2 runs free (then credits).
+//   Step 2 (audit): sync your catalog → per-SKU win-plan, credit-based.
+// The badge telegraphs the lane (cost/setup) before the merchant clicks in.
+export const aiReadinessNavigation: MerchantNavigationItem[] = [
+  {
+    label: "AI visibility",
+    href: "/dashboard/agent-center/url-audit",
+    icon: ScanEye,
+    matchPrefixes: ["/dashboard/agent-center/url-audit"],
+    description: "How AI sees you — no setup",
+    badge: "First 2 free",
+  },
+  {
+    label: "Readiness audit",
+    href: "/dashboard/agent-center/ai-readiness",
+    icon: ListChecks,
+    matchPrefixes: ["/dashboard/agent-center/ai-readiness"],
+    description: "Per-SKU win-plan for your synced catalog",
+    badge: "Needs sync",
+  },
+];
+
 export const workflowNavigation: MerchantNavigationItem[] = [
   {
     label: "Agent chat",
@@ -138,13 +159,6 @@ export const workflowNavigation: MerchantNavigationItem[] = [
     matchPrefixes: ["/dashboard/product-optimization"],
     description: "Readiness actions",
     descriptionKey: "shell.nav.catalogHealthDesc",
-  },
-  {
-    label: "AI Readiness Audit",
-    href: "/dashboard/agent-center/ai-readiness",
-    icon: Brain,
-    matchPrefixes: ["/dashboard/agent-center/ai-readiness"],
-    description: "Audit up to 5 SKUs against AI shopping agents",
   },
   {
     label: "Conversion funnel",
@@ -228,6 +242,14 @@ export function getPrimaryNavigationLabel(pathname: string) {
 
   if (activePrimary) {
     return activePrimary.label;
+  }
+
+  const activeAiReadiness = aiReadinessNavigation.find((item) =>
+    isNavigationItemActive(pathname, item)
+  );
+
+  if (activeAiReadiness) {
+    return activeAiReadiness.label;
   }
 
   const activeWorkflow = workflowNavigation.find((item) =>

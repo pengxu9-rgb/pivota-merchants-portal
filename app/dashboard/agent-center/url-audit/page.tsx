@@ -508,9 +508,9 @@ export default function UrlAuditPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Free · no sync"
+        eyebrow="Step 1 · first 2 free · no sync"
         title="See how AI sees your products"
-        description="Give us your top product links and we'll show how AI shopping agents (Gemini grounded search) find them — no catalog sync required. You pick the products; we audit exactly those. Your first 2 audits are free."
+        description="Paste your top product links and we'll show how AI shopping agents (Gemini grounded search) find them — no catalog sync required. You pick the products; we audit exactly those. Your first 2 audits are free. Step 2 — the full per-SKU audit — unlocks once you connect your store."
       />
 
       {/* Re-open a past visibility check (subject_type=merchant_url). Renders
