@@ -24,6 +24,13 @@ import {
 import type { AuditReadiness } from '@/lib/types/ai-readiness';
 import { MerchantButton } from '@/components/ui/merchant-primitives';
 
+// Backend eta_seconds → a short human phrase for the "Preparing" countdown.
+function etaPhrase(seconds: number): string {
+  if (seconds < 60) return 'under a minute left';
+  const mins = Math.round(seconds / 60);
+  return `about ${mins} minute${mins === 1 ? '' : 's'} left`;
+}
+
 export function AuditReadinessBanner({
   readiness,
   loading,
@@ -65,6 +72,9 @@ export function AuditReadinessBanner({
   const noCatalog = readiness.counts.catalog_products === 0;
   const backfilling =
     !noCatalog && readiness.counts.product_quality_snapshot === 0;
+  // Grounded timing for the "Preparing" copy (GET /api/audits/readiness).
+  // Absent on older backends → falls back to the generic "a few minutes" line.
+  const bf = readiness.backfill;
 
   const title = noCatalog
     ? 'Connect your store to run the audit'
@@ -85,11 +95,21 @@ export function AuditReadinessBanner({
                 store and sync your catalog first, then come back to run it.
               </>
             ) : backfilling ? (
-              <>
-                Your products are synced. We’re running quality checks on them —
-                this usually takes a few minutes. The audit unlocks
-                automatically once they finish.
-              </>
+              bf && bf.total_candidates > 0 ? (
+                <>
+                  Your products are synced. We’re running quality checks on{' '}
+                  {bf.total_candidates} product
+                  {bf.total_candidates === 1 ? '' : 's'}
+                  {bf.eta_seconds != null ? <> — {etaPhrase(bf.eta_seconds)}</> : null}.
+                  The audit unlocks automatically once they finish.
+                </>
+              ) : (
+                <>
+                  Your products are synced. We’re running quality checks on them —
+                  this usually takes a few minutes. The audit unlocks
+                  automatically once they finish.
+                </>
+              )
             ) : (
               <>
                 A required step hasn’t finished yet. Check again in a moment, or
