@@ -157,11 +157,17 @@ export function ProductEvidencePanel({
     setError(null);
     setNotice(null);
     try {
-      await apiClient.addMerchantProductEvidence(platform, platformProductId, [
+      const res = await apiClient.addMerchantProductEvidence(platform, platformProductId, [
         labCandidateToClaim(candidate, artifactId),
       ]);
       setAddedClaims((prev) => new Set(prev).add(candidate.claim_text));
-      setNotice('Added as a cited claim — agents can now ground recommendations on it.');
+      setNotice(
+        res.substantiated > 0
+          ? res.served_refresh
+            ? 'Added — now cited to agents and live on its agent PDP.'
+            : 'Added — now cited to agents (goes live on the next refresh).'
+          : 'Added to this product’s evidence.'
+      );
       await loadEvidence();
     } catch (err: any) {
       setError(err?.message || 'Could not add that claim.');
@@ -222,6 +228,23 @@ export function ProductEvidencePanel({
             </div>
           ) : (
             <>
+              {/* Proof: the real, immediate outcome of adding evidence — how many
+                  claims agents can now cite on this product. Reflects the live
+                  served count (grows when a lab claim is confirmed); no score is
+                  implied because evidence doesn't feed the score (yet). */}
+              {served.length > 0 && (
+                <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    {served.length} claim{served.length === 1 ? '' : 's'} cited to agents
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-emerald-700">
+                    Agents can ground recommendations on this product with these grounded,
+                    attributable claims — they appear on its agent-facing PDP.
+                  </p>
+                </div>
+              )}
+
               {/* Current evidence */}
               {claims.length > 0 ? (
                 <div className="space-y-3">
