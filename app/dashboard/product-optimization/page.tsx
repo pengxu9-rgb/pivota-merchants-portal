@@ -1091,7 +1091,6 @@ export default function ProductOptimizationPage() {
     (action) => action.fix_surface === 'pivota_managed'
   );
 
-  const triageConfig = SOURCE_DATA_REASON_CONFIG[triageReason];
   const activeSourceDataTriage =
     sourceDataTriageReason === triageReason ? sourceDataTriage : null;
   const triageSummaryByCode = new Map(
@@ -1156,7 +1155,6 @@ export default function ProductOptimizationPage() {
       return a.product_title.localeCompare(b.product_title);
     });
   })();
-  const triageRows = allTriageRows.filter((row) => row.reason_code === triageReason);
   const triageGroups = allTriageGroups.filter(
     (group) => group.reason_code === triageReason
   );
@@ -1576,20 +1574,6 @@ export default function ProductOptimizationPage() {
     }
   };
 
-  const handleInspectTriageRow = async (row: SourceDataTriageRow) => {
-    handleOpenTriageLane(row.reason_code);
-    await handleSelect(row.platform, row.platform_product_id, {
-      focusDetail: true,
-    });
-  };
-
-  const handleInspectTriageGroup = async (group: SourceDataProductGroup) => {
-    handleOpenTriageLane(group.reason_code);
-    await handleSelect(group.platform, group.platform_product_id, {
-      focusDetail: true,
-    });
-  };
-
   const handleExportTriageLane = async (reasonCode: SourceDataReasonCode) => {
     if (!optimizationPlan?.plan_id) return;
     setTriageExporting(true);
@@ -1698,15 +1682,10 @@ export default function ProductOptimizationPage() {
           lastLaneDelta={lastLaneDelta}
           lastLaneDeltaReason={lastLaneDeltaReason}
           triageLaneWorklists={triageLaneWorklists}
-          triageConfig={triageConfig}
-          triageRows={triageRows}
-          triageGroups={triageGroups}
           readinessLoading={readinessLoading}
           loadOptimizationData={loadOptimizationData}
           handleOpenTriageLane={handleOpenTriageLane}
           handleExportTriageLane={handleExportTriageLane}
-          handleInspectTriageGroup={handleInspectTriageGroup}
-          handleInspectTriageRow={handleInspectTriageRow}
         />
       )}
 

@@ -8,10 +8,7 @@ import {
   type SourceDataLaneWorklist,
   type SourceDataProductGroup,
   type SourceDataReasonCode,
-  type SourceDataTriageRow,
   SOURCE_DATA_REASON_CONFIG,
-  formatAgentPushReason,
-  formatReadinessCode,
   getLaneQueueShortcuts,
   getLaneSavedCtaLabel,
   getLaneUnresolvedDecisionCount,
@@ -43,9 +40,6 @@ interface SourceDataTriageProps {
   lastLaneDelta: ReadinessLaneDelta | null;
   lastLaneDeltaReason: SourceDataReasonCode | null;
   triageLaneWorklists: SourceDataLaneWorklist[];
-  triageConfig: (typeof SOURCE_DATA_REASON_CONFIG)[SourceDataReasonCode];
-  triageRows: SourceDataTriageRow[];
-  triageGroups: SourceDataProductGroup[];
   readinessLoading: boolean;
   loadOptimizationData: (options?: {
     refresh?: boolean;
@@ -56,8 +50,6 @@ interface SourceDataTriageProps {
   }) => Promise<ReadinessOptimizationPayload | null>;
   handleOpenTriageLane: (reasonCode: SourceDataReasonCode) => void;
   handleExportTriageLane: (reasonCode: SourceDataReasonCode) => Promise<void>;
-  handleInspectTriageGroup: (group: SourceDataProductGroup) => Promise<void>;
-  handleInspectTriageRow: (row: SourceDataTriageRow) => Promise<void>;
 }
 
 export function SourceDataTriage({
@@ -77,15 +69,10 @@ export function SourceDataTriage({
   lastLaneDelta,
   lastLaneDeltaReason,
   triageLaneWorklists,
-  triageConfig,
-  triageRows,
-  triageGroups,
   readinessLoading,
   loadOptimizationData,
   handleOpenTriageLane,
   handleExportTriageLane,
-  handleInspectTriageGroup,
-  handleInspectTriageRow,
 }: SourceDataTriageProps) {
   return (
         <div className="rounded-xl border bg-white p-5 shadow">
@@ -420,254 +407,6 @@ export function SourceDataTriage({
             </div>
           )}
 
-          <div className="mt-4 rounded-xl border border-slate-200">
-            <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="text-sm font-semibold text-slate-900">
-                  {triageConfig.label} lane
-                </div>
-                <div className="mt-1 text-xs text-slate-600">
-                  {triageRows.length} rows in view · Queue is automatically scoped to{' '}
-                  {triageConfig.label.toLowerCase()} for faster review.
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 text-[11px]">
-                {lastLaneDelta && lastLaneDeltaReason === triageReason ? (
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700">
-                    Resolved {lastLaneDelta.resolved_products} products / {lastLaneDelta.resolved_variants} variants after refresh
-                  </span>
-                ) : null}
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
-                  Issue {triageConfig.issueFilter.replaceAll('_', ' ')}
-                </span>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
-                  Push {triageConfig.pushFilter}
-                </span>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
-                  {triageConfig.blockedOnly ? 'Blocked only' : 'Includes exclusions'}
-                </span>
-              </div>
-            </div>
-            <div className="border-b border-slate-200 px-4 py-4">
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">
-                    Products to review next
-                  </div>
-                  <div className="mt-1 text-xs text-slate-600">
-                    Work this lane product-by-product. Open a product batch in Catalog to review every affected variant under the same blocker.
-                  </div>
-                </div>
-                <div className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700">
-                  {triageGroups.length} product batches
-                </div>
-              </div>
-              {triageGroups.length > 0 ? (
-                <div className="mt-3 grid gap-2 lg:grid-cols-2">
-                  {triageGroups.slice(0, 8).map((group) => (
-                    <div
-                      key={`${group.reason_code}|${group.platform}|${group.platform_product_id}`}
-                      className="rounded-lg border border-slate-200 bg-white p-3"
-                    >
-                      <div className="text-sm font-medium text-slate-900">
-                        {group.product_title}
-                      </div>
-                      <div className="mt-1 text-[11px] text-slate-500">
-                        {group.platform.toUpperCase()} · {group.platform_product_id}
-                        {group.sample_skus.length > 0
-                          ? ` · SKU ${group.sample_skus.slice(0, 3).join(', ')}`
-                          : ''}
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
-                          {group.affected_variants} affected variants
-                        </span>
-                        <span className="rounded-full bg-rose-100 px-2 py-0.5 font-medium text-rose-700">
-                          {group.blocked_variant_count} blocked
-                        </span>
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800">
-                          {group.excluded_variant_count} excluded
-                        </span>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void handleInspectTriageGroup(group)}
-                          className="inline-flex items-center rounded-md border border-slate-200 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          Inspect batch
-                        </button>
-                        <a
-                          href={buildCatalogReviewHref({
-                            platform: group.platform,
-                            platformProductId: group.platform_product_id,
-                            reasonCode: group.reason_code,
-                          })}
-                          className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100"
-                        >
-                          Review batch in catalog
-                        </a>
-                        {group.platform_admin_url ? (
-                          <a
-                            href={group.platform_admin_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100"
-                          >
-                            {getStoreAdminLabel(group.platform)}
-                          </a>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {triageGroups.length > 8 ? (
-                <div className="mt-3 text-xs text-slate-500">
-                  Showing the first 8 product batches here. Use the detailed table below for the full variant-level evidence.
-                </div>
-              ) : null}
-            </div>
-            <div className="overflow-x-auto">
-              {sourceDataTriageLoading ? (
-                <div className="px-4 py-5 text-sm text-slate-600">
-                  Loading current triage lane…
-                </div>
-              ) : triageRows.length > 0 ? (
-                <table className="min-w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-slate-500">
-                    <tr>
-                      <th className="px-4 py-2 font-medium">Catalog item</th>
-                      <th className="px-4 py-2 font-medium">Store data</th>
-                      <th className="px-4 py-2 font-medium">Readiness / push</th>
-                      <th className="px-4 py-2 font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {triageRows.map((row) => (
-                      <tr
-                        key={[
-                          row.reason_code,
-                          row.platform,
-                          row.platform_product_id,
-                          row.variant_id || 'product',
-                        ].join('|')}
-                        className="border-t border-slate-100 align-top"
-                      >
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-slate-900">
-                            {row.product_title}
-                          </div>
-                          <div className="mt-1 text-[11px] text-slate-500">
-                            {row.scope === 'variant'
-                              ? `${row.variant_title || 'Variant'} · SKU ${row.sku || 'N/A'} · ID ${row.variant_id || 'N/A'}`
-                              : `Product ${row.platform.toUpperCase()} · ${row.platform_product_id}`}
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
-                              {row.reason_label}
-                            </span>
-                            <span className="rounded-full bg-rose-100 px-2 py-0.5 font-medium text-rose-700">
-                              {row.blocked_variant_count} blocked
-                            </span>
-                            <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800">
-                              {row.excluded_variant_count} excluded
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">
-                          <div>
-                            {typeof row.price_value === 'number'
-                              ? `${row.price_value} ${row.price_currency || ''}`.trim()
-                              : row.scope === 'variant'
-                                ? 'No price'
-                                : 'Review at product level'}
-                          </div>
-                          <div className="mt-1 text-[11px] text-slate-500">
-                            {row.scope === 'variant'
-                              ? `Stock ${
-                                  typeof row.inventory_quantity === 'number'
-                                    ? row.inventory_quantity
-                                    : '—'
-                                }`
-                              : `${row.platform.toUpperCase()} · ${row.platform_product_id}`}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-1">
-                            {row.readiness_blocker_codes.length > 0 ? (
-                              row.readiness_blocker_codes.map((code) => (
-                                <span
-                                  key={`${row.platform_product_id}-${row.variant_id || 'product'}-readiness-${code}`}
-                                  className="rounded-full bg-rose-100 px-2 py-0.5 font-medium text-rose-700"
-                                >
-                                  {formatReadinessCode(code)}
-                                </span>
-                              ))
-                            ) : (
-                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700">
-                                Ready
-                              </span>
-                            )}
-                            {row.agent_push_reason_codes.length > 0
-                              ? row.agent_push_reason_codes.map((code) => (
-                                  <span
-                                    key={`${row.platform_product_id}-${row.variant_id || 'product'}-push-${code}`}
-                                    className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800"
-                                  >
-                                    Push: {formatAgentPushReason(code)}
-                                  </span>
-                                ))
-                              : (
-                                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700">
-                                    Push-ready
-                                  </span>
-                                )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => void handleInspectTriageRow(row)}
-                              className="inline-flex items-center rounded-md border border-slate-200 px-2.5 py-1.5 font-medium text-slate-700 hover:bg-slate-50"
-                            >
-                              Inspect here
-                            </button>
-                            <a
-                              href={buildCatalogReviewHref({
-                                platform: row.platform,
-                                platformProductId: row.platform_product_id,
-                                variantId: row.variant_id || null,
-                                reasonCode: row.reason_code,
-                              })}
-                              className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 font-medium text-blue-700 hover:bg-blue-100"
-                            >
-                              Review in catalog
-                            </a>
-                            {row.platform_admin_url ? (
-                              <a
-                                href={row.platform_admin_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 font-medium text-emerald-700 hover:bg-emerald-100"
-                              >
-                                {getStoreAdminLabel(row.platform)}
-                              </a>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="px-4 py-5 text-sm text-slate-600">
-                  No rows are currently active in the {triageConfig.label.toLowerCase()} lane.
-                </div>
-              )}
-            </div>
-          </div>
         </div>
   );
 }
