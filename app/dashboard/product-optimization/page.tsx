@@ -12,6 +12,7 @@ import {
   type MerchantProductDetail,
   type MerchantProductListItem,
   type ProductBlockerDetail,
+  type QueueSegment,
   type ReadinessActionPreview,
   type ReadinessActionRunResult,
   type ReadinessLaneDelta,
@@ -108,6 +109,7 @@ export default function ProductOptimizationPage() {
   const [pushFilter, setPushFilter] = useState<'all' | 'eligible' | 'excluded'>(
     'all'
   );
+  const [segmentFilter, setSegmentFilter] = useState<QueueSegment>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [bulkOptimizing, setBulkOptimizing] = useState(false);
   const detailPaneRef = useRef<HTMLDivElement | null>(null);
@@ -133,7 +135,7 @@ export default function ProductOptimizationPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, sortBy, showBlockedOnly, showOnlyLowQuality, issueFilter, pushFilter]);
+  }, [search, sortBy, showBlockedOnly, showOnlyLowQuality, issueFilter, pushFilter, segmentFilter]);
 
   const loadOptimizationData = async (options?: {
     refresh?: boolean;
@@ -154,6 +156,7 @@ export default function ProductOptimizationPage() {
         blocked_only: showBlockedOnly,
         low_quality_only: showOnlyLowQuality,
         sort_by: sortBy,
+        segment: segmentFilter,
       };
       const response = options?.refresh
         ? await apiClient.refreshMerchantReadinessOptimizationDetailed({
@@ -188,7 +191,7 @@ export default function ProductOptimizationPage() {
 
   useEffect(() => {
     void loadOptimizationData({ page: currentPage });
-  }, [currentPage, search, sortBy, showBlockedOnly, showOnlyLowQuality, issueFilter, pushFilter]);
+  }, [currentPage, search, sortBy, showBlockedOnly, showOnlyLowQuality, issueFilter, pushFilter, segmentFilter]);
 
   const upsertCachedProduct = (nextItem: MerchantProductListItem) => {
     setProducts((prev) => {
@@ -473,6 +476,7 @@ export default function ProductOptimizationPage() {
   const merchantActions = optimizationData?.merchant_actions || [];
   const productQueue = optimizationData?.product_queue || [];
   const productQueuePage = optimizationData?.product_queue_page || null;
+  const queueSegmentCounts = optimizationData?.queue_segment_counts || null;
   const contentOpportunityCount = optimizationData?.content_opportunity_count || 0;
   const sourceDataLaneSummaries = optimizationData?.source_data_lanes || [];
 
@@ -1709,6 +1713,9 @@ export default function ProductOptimizationPage() {
         issueBuckets={issueBuckets}
         pushFilter={pushFilter}
         setPushFilter={setPushFilter}
+        segmentFilter={segmentFilter}
+        setSegmentFilter={setSegmentFilter}
+        queueSegmentCounts={queueSegmentCounts}
         showBlockedOnly={showBlockedOnly}
         setShowBlockedOnly={setShowBlockedOnly}
         showOnlyLowQuality={showOnlyLowQuality}

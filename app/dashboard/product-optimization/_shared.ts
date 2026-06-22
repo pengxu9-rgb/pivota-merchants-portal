@@ -187,6 +187,15 @@ export type ProductQueueItem = {
   recommended_action_type?: string | null;
 };
 
+export type QueueSegment = 'all' | 'fix_here' | 'in_store' | 'other';
+
+export type QueueSegmentCounts = {
+  all: number;
+  fix_here: number;
+  in_store: number;
+  other: number;
+};
+
 export type ReadinessOptimizationPayload = {
   plan: OptimizationPlan;
   score_bundle: ScoreBundle;
@@ -208,8 +217,10 @@ export type ReadinessOptimizationPayload = {
       blocked_only?: boolean;
       low_quality_only?: boolean;
       sort_by?: string | null;
+      segment?: string | null;
     };
   };
+  queue_segment_counts?: QueueSegmentCounts;
   content_opportunity_count?: number;
   source_data_lanes?: SourceDataLaneSummary[];
   agent_push_summary?: AgentPushSummary;

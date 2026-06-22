@@ -5,6 +5,8 @@ import { ArrowRight, Loader2, Package, Search, Wand2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import {
   type AgentPushSummary,
+  type QueueSegment,
+  type QueueSegmentCounts,
   type ReadinessIssueBucket,
   type ReadinessOptimizationPayload,
   type WorkspaceProductItem,
@@ -38,6 +40,9 @@ interface BlockerQueueProps {
   issueBuckets: ReadinessIssueBucket[];
   pushFilter: 'all' | 'eligible' | 'excluded';
   setPushFilter: Dispatch<SetStateAction<'all' | 'eligible' | 'excluded'>>;
+  segmentFilter: QueueSegment;
+  setSegmentFilter: Dispatch<SetStateAction<QueueSegment>>;
+  queueSegmentCounts: QueueSegmentCounts | null;
   showBlockedOnly: boolean;
   setShowBlockedOnly: Dispatch<SetStateAction<boolean>>;
   showOnlyLowQuality: boolean;
@@ -71,6 +76,9 @@ export function BlockerQueue({
   issueBuckets,
   pushFilter,
   setPushFilter,
+  segmentFilter,
+  setSegmentFilter,
+  queueSegmentCounts,
   showBlockedOnly,
   setShowBlockedOnly,
   showOnlyLowQuality,
@@ -81,6 +89,12 @@ export function BlockerQueue({
   selected,
   handleSelect,
 }: BlockerQueueProps) {
+  const segmentOptions: { key: QueueSegment; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'fix_here', label: 'Fix here' },
+    { key: 'in_store', label: 'In your store' },
+    { key: 'other', label: 'Other' },
+  ];
   return (
       <div className="space-y-4">
         <div className="space-y-3">
@@ -155,6 +169,40 @@ export function BlockerQueue({
 
         <div className="overflow-hidden rounded-lg border bg-white shadow">
           <div className="space-y-2 border-b p-3">
+            <div className="space-y-1">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                Where to fix
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {segmentOptions.map((opt) => {
+                  const count =
+                    opt.key === 'all'
+                      ? queueSegmentCounts?.all
+                      : queueSegmentCounts?.[opt.key];
+                  const isActive = segmentFilter === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setSegmentFilter(opt.key)}
+                      aria-pressed={isActive}
+                      className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-medium ring-1 transition-colors ${
+                        isActive
+                          ? 'bg-blue-600 text-white ring-blue-600'
+                          : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                      {typeof count === 'number' ? (
+                        <span className={isActive ? 'text-blue-100' : 'text-slate-400'}>
+                          {count}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
