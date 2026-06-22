@@ -83,7 +83,10 @@ export function ProductEvidencePanel({
   const [artifactId, setArtifactId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<LabCandidateClaim[] | null>(null);
   const [confirmingIdx, setConfirmingIdx] = useState<number | null>(null);
-  const [addedClaims, setAddedClaims] = useState<Set<string>>(new Set());
+  // Per-candidate outcome (keyed by index so duplicate texts don't collide):
+  // 'served' = backend graded it substantiated (cited to agents); 'added' = saved
+  // but NOT served (e.g. backend flagged it). Drives an honest row label.
+  const [confirmedByIdx, setConfirmedByIdx] = useState<Record<number, 'served' | 'added'>>({});
 
   async function loadEvidence() {
     setLoading(true);
@@ -139,7 +142,7 @@ export function ProductEvidencePanel({
       });
       setArtifactId(res.artifact_id);
       setCandidates(res.candidate_claims || []);
-      setAddedClaims(new Set());
+      setConfirmedByIdx({});
       if (!res.candidate_claims?.length) {
         setNotice('No verifiable claims were found in that report.');
       }
@@ -160,9 +163,10 @@ export function ProductEvidencePanel({
       const res = await apiClient.addMerchantProductEvidence(platform, platformProductId, [
         labCandidateToClaim(candidate, artifactId),
       ]);
-      setAddedClaims((prev) => new Set(prev).add(candidate.claim_text));
+      const served = res.substantiated > 0;
+      setConfirmedByIdx((prev) => ({ ...prev, [idx]: served ? 'served' : 'added' }));
       setNotice(
-        res.substantiated > 0
+        served
           ? res.served_refresh
             ? 'Added — now cited to agents and live on its agent PDP.'
             : 'Added — now cited to agents (goes live on the next refresh).'
@@ -359,7 +363,7 @@ export function ProductEvidencePanel({
                     </div>
                     <ul className="space-y-1.5">
                       {candidates.map((cand, idx) => {
-                        const added = addedClaims.has(cand.claim_text);
+                        const outcome = confirmedByIdx[idx];
                         return (
                           <li
                             key={idx}
@@ -372,9 +376,13 @@ export function ProductEvidencePanel({
                               </span>
                             )}
                             <div>
-                              {added ? (
+                              {outcome === 'served' ? (
                                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">
                                   <CheckCircle2 className="h-3 w-3" /> Added — cited to agents
+                                </span>
+                              ) : outcome === 'added' ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600">
+                                  <CheckCircle2 className="h-3 w-3" /> Added to evidence
                                 </span>
                               ) : (
                                 <MerchantButton
