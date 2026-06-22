@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { getDescriptionText } from '@/lib/html-text';
+import { ProductEvidencePanel } from '@/components/evidence/ProductEvidencePanel';
 
 type AgentPushStatus = 'eligible_for_agent_push' | 'excluded_from_agent_push';
 
@@ -4529,6 +4530,15 @@ export default function ProductOptimizationPage() {
             </div>
           )}
         </div>
+
+        {/* Optional evidence intake (Phase 2b) — strengthen claims so agents cite
+            this product. Suggestion, never a gate; only renders with a product. */}
+        {detail?.platform && detail?.platform_product_id && (
+          <ProductEvidencePanel
+            platform={detail.platform}
+            platformProductId={detail.platform_product_id}
+          />
+        )}
         </div>
       </div>
     </div>
