@@ -667,6 +667,19 @@ class ApiClient {
     return response.data;
   }
 
+  /** Publish the previewed E1 enrichment to the merchant's OWN store PDP as an
+   *  app-owned Shopify metafield (pivota/ai_pdp) — never body_html. GATED +
+   *  default-OFF server-side; returns a {status} envelope (written | blocked |
+   *  needs_write_products | no_copy | error). Fires ONLY from an explicit
+   *  merchant click; the server derives the merchant + copy. */
+  async publishStorePdp(platform: string, platformProductId: string) {
+    const encodedId = encodeURIComponent(platformProductId);
+    const response = await this.client.post(
+      `/merchant/products/${platform}/${encodedId}/store_pdp/publish`
+    );
+    return response.data;
+  }
+
   async getMerchantPdpStatus(platform: string, platformProductId: string, market = 'US') {
     const encodedId = encodeURIComponent(platformProductId);
     const response = await this.client.get(
