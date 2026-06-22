@@ -7,6 +7,11 @@ import type {
   BillingPlansResponse,
   BillingStatementsResponse,
 } from './types/billing';
+import type {
+  EvidenceClaimInput,
+  LabExtractionResult,
+  ProductEvidence,
+} from './evidence';
 
 export type CommerceFunnelGroupBy =
   | 'product'
@@ -979,6 +984,71 @@ class ApiClient {
     const encodedId = encodeURIComponent(platformProductId);
     const response = await this.client.post(
       `/merchant/products/${platform}/${encodedId}/enrichment/run`
+    );
+    return response.data;
+  }
+
+  /**
+   * Phase 2b merchant evidence intake (OPTIONAL — a suggestion, never required).
+   * Read a product's stored provenance-graded claims.
+   *   GET /merchant/products/{platform}/{platform_product_id}/evidence
+   */
+  async getMerchantProductEvidence(
+    platform: string,
+    platformProductId: string
+  ): Promise<ProductEvidence> {
+    const encodedId = encodeURIComponent(platformProductId);
+    const response = await this.client.get(
+      `/merchant/products/${platform}/${encodedId}/evidence`
+    );
+    return response.data;
+  }
+
+  /**
+   * Write graded claims for a product. Positioning is stored `unverified`
+   * (improves copy); a lab/cert/third-party source_type WITH a source_ref grades
+   * it `substantiated` (cited to agents). The serve gate is single-sourced in the
+   * backend — this just posts the merchant's intent.
+   *   POST /merchant/products/{platform}/{platform_product_id}/evidence
+   */
+  async addMerchantProductEvidence(
+    platform: string,
+    platformProductId: string,
+    claims: EvidenceClaimInput[],
+    reviewState: string = 'observed'
+  ): Promise<{
+    product_key: string;
+    claims_written: number;
+    substantiated: number;
+    served_refresh: boolean;
+  }> {
+    const encodedId = encodeURIComponent(platformProductId);
+    const response = await this.client.post(
+      `/merchant/products/${platform}/${encodedId}/evidence`,
+      { claims, review_state: reviewState }
+    );
+    return response.data;
+  }
+
+  /**
+   * Upload a lab / third-party test report (PDF) or paste its text → CANDIDATE
+   * claims an LLM extracted, for the merchant to review. Nothing is published:
+   * confirm a candidate via addMerchantProductEvidence with
+   * source_type='merchant_lab_report' and source_ref=<artifact_id> to grade it.
+   *   POST /merchant/products/{platform}/{platform_product_id}/evidence/lab-report
+   */
+  async extractMerchantLabReport(
+    platform: string,
+    platformProductId: string,
+    input: { file?: File | null; labText?: string | null }
+  ): Promise<LabExtractionResult> {
+    const encodedId = encodeURIComponent(platformProductId);
+    const formData = new FormData();
+    if (input.file) formData.append('file', input.file);
+    if (input.labText) formData.append('lab_text', input.labText);
+    const response = await this.client.post(
+      `/merchant/products/${platform}/${encodedId}/evidence/lab-report`,
+      formData
     );
     return response.data;
   }
