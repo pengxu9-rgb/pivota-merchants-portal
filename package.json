@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "smoke:merchant": "node scripts/smoke-merchant-contracts.mjs",
-    "verify:winplan": "node scripts/verify-winplan-render.mjs"
+    "verify:winplan": "node scripts/verify-winplan-render.mjs",
+    "verify:copyback": "node scripts/verify-copyback-render.mjs",
+    "verify:publish": "node scripts/verify-publish-lane.mjs"
   },
   "dependencies": {
     "@adyen/adyen-web": "^6.32.0",

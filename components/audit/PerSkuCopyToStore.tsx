@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Check, Copy, ExternalLink, Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import type { AgentCenterPerSkuReport } from '@/lib/types/ai-readiness';
+import { PublishToStoreLane } from '@/components/audit/PublishToStoreLane';
 
 // Copy-back rung (Option B, lowest-risk middle path): surface the finished,
 // factually-gated E1 copy so the merchant can PASTE it into their OWN store PDP,
@@ -217,6 +218,7 @@ export function PerSkuCopyToStore({ report }: { report: AgentCenterPerSkuReport 
               </a>
             ) : null}
           </div>
+          <PublishToStoreLane platform={platform} platformProductId={platformProductId} />
         </div>
       ) : null}
     </div>
