@@ -4,7 +4,6 @@ import {
   type AgentPushSummary,
   type MerchantReadinessAction,
   type OptimizationPlan,
-  type ReadinessIssueBucket,
   type ReadinessOptimizationPayload,
   type ReadinessSummary,
   type ScoreBundle,
@@ -29,10 +28,6 @@ interface CatalogHealthHeaderProps {
     page?: number;
   }) => Promise<ReadinessOptimizationPayload | null>;
   storeSetupActions: MerchantReadinessAction[];
-  issueBuckets: ReadinessIssueBucket[];
-  summaryTopIssues: Array<{ code: string; label: string; count: number }>;
-  productActions: MerchantReadinessAction[];
-  merchantActions: MerchantReadinessAction[];
   pivotaManagedActions: MerchantReadinessAction[];
 }
 
@@ -47,12 +42,10 @@ export function CatalogHealthHeader({
   readinessLoading,
   loadOptimizationData,
   storeSetupActions,
-  issueBuckets,
-  summaryTopIssues,
-  productActions,
-  merchantActions,
   pivotaManagedActions,
 }: CatalogHealthHeaderProps) {
+  const hasSetupBanner =
+    storeSetupActions.length > 0 || pivotaManagedActions.length > 0;
   return (
         <div className={`rounded-xl border p-5 ${getReadinessTone(readinessSummary.tier).card}`}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -78,58 +71,62 @@ export function CatalogHealthHeader({
                 <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
                   {readinessSummary.action_text || readinessSummary.next_action || 'Start with the highest-priority issues first'}
                 </span>
-                {agentPushSummary && (
-                  <>
-                    <span className="rounded-full bg-white px-3 py-1 font-medium text-emerald-700 ring-1 ring-emerald-200">
-                      {agentPushSummary.eligible_products} push-ready products
-                    </span>
-                    <span className="rounded-full bg-white px-3 py-1 font-medium text-amber-700 ring-1 ring-amber-200">
-                      {agentPushSummary.excluded_products} auto-excluded products
-                    </span>
-                  </>
-                )}
               </div>
-              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-                {optimizationData?.last_generated_at && (
-                  <span>
-                    Last checked {new Date(optimizationData.last_generated_at).toLocaleString()}
-                  </span>
-                )}
-                {optimizationPlan?.last_successful_rescore_at && (
-                  <span>
-                    Last rescore {new Date(optimizationPlan.last_successful_rescore_at).toLocaleString()}
-                  </span>
-                )}
-                {optimizationPlan?.plan_id && (
-                  <span>Plan {optimizationPlan.plan_id.slice(-8)}</span>
-                )}
-                {contentOpportunityCount > 0 && (
-                  <span>{contentOpportunityCount} content opportunities hidden from the blocker queue</span>
-                )}
-              </div>
-              {scoreBundle && (
-                <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                  <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
-                    Eligibility {scoreBundle.readiness_score ?? '—'}
-                  </span>
-                  <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
-                    Exposure {scoreBundle.exposure_score ?? '—'}
-                  </span>
-                  <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
-                    Conversion {scoreBundle.conversion_score ?? '—'}
-                  </span>
+
+              <details className="mt-3 text-xs">
+                <summary className="cursor-pointer select-none font-medium text-slate-500 hover:text-slate-700">
+                  Score details
+                </summary>
+                <div className="mt-2 space-y-2">
+                  {scoreBundle && (
+                    <div className="flex flex-wrap gap-2">
+                      <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                        Eligibility {scoreBundle.readiness_score ?? '—'}
+                      </span>
+                      <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                        Exposure {scoreBundle.exposure_score ?? '—'}
+                      </span>
+                      <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                        Conversion {scoreBundle.conversion_score ?? '—'}
+                      </span>
+                    </div>
+                  )}
                   {agentPushSummary && (
-                    <>
+                    <div className="flex flex-wrap gap-2">
                       <span className="rounded-full bg-white px-3 py-1 font-medium text-emerald-700 ring-1 ring-emerald-200">
-                        {agentPushSummary.eligible_variants} eligible for agent push
+                        {agentPushSummary.eligible_products} push-ready products
                       </span>
                       <span className="rounded-full bg-white px-3 py-1 font-medium text-amber-700 ring-1 ring-amber-200">
-                        {agentPushSummary.excluded_variants} excluded from agent push
+                        {agentPushSummary.excluded_products} auto-excluded products
                       </span>
-                    </>
+                      <span className="rounded-full bg-white px-3 py-1 font-medium text-emerald-700 ring-1 ring-emerald-200">
+                        {agentPushSummary.eligible_variants} variants eligible for agent push
+                      </span>
+                      <span className="rounded-full bg-white px-3 py-1 font-medium text-amber-700 ring-1 ring-amber-200">
+                        {agentPushSummary.excluded_variants} variants excluded from agent push
+                      </span>
+                    </div>
                   )}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-slate-500">
+                    {optimizationData?.last_generated_at && (
+                      <span>
+                        Last checked {new Date(optimizationData.last_generated_at).toLocaleString()}
+                      </span>
+                    )}
+                    {optimizationPlan?.last_successful_rescore_at && (
+                      <span>
+                        Last rescore {new Date(optimizationPlan.last_successful_rescore_at).toLocaleString()}
+                      </span>
+                    )}
+                    {optimizationPlan?.plan_id && (
+                      <span>Plan {optimizationPlan.plan_id.slice(-8)}</span>
+                    )}
+                    {contentOpportunityCount > 0 && (
+                      <span>{contentOpportunityCount} content opportunities hidden from the blocker queue</span>
+                    )}
+                  </div>
                 </div>
-              )}
+              </details>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
@@ -146,106 +143,46 @@ export function CatalogHealthHeader({
               >
                 {readinessLoading ? 'Refreshing…' : 'Refresh all readiness'}
               </button>
-              {storeSetupActions.length > 0 && (
+            </div>
+          </div>
+
+          {hasSetupBanner && (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-medium text-amber-900">
+                  Store setup to review
+                </div>
                 <a
                   href="/dashboard/integrations"
-                  className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-900 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
+                  className="inline-flex items-center justify-center rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-slate-900 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
                 >
                   Review integrations
                 </a>
-              )}
-            </div>
-            </div>
-
-          <div className="mt-4 grid gap-3 xl:grid-cols-3">
-            <div className="rounded-lg bg-white/80 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Issue overview
               </div>
-              <div className="mt-3 space-y-2">
-                {issueBuckets.length > 0 ? (
-                  issueBuckets.slice(0, 6).map((bucket) => (
-                    <div key={bucket.code} className="rounded-lg bg-white px-3 py-2 ring-1 ring-slate-200">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm font-medium text-slate-900">{bucket.label}</span>
-                        <span className="text-xs font-semibold text-slate-500">
-                          {bucket.affected_count}
-                        </span>
+              <div className="mt-2 space-y-1">
+                {storeSetupActions.length > 0
+                  ? storeSetupActions.map((action) => (
+                      <a
+                        key={`${action.label}-${action.target_url}`}
+                        href={action.target_url}
+                        className="block rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-amber-100 hover:bg-amber-50"
+                      >
+                        <div className="font-medium text-slate-900">{action.label}</div>
+                        <div className="mt-1 text-xs text-slate-600">{action.description}</div>
+                      </a>
+                    ))
+                  : pivotaManagedActions.map((action) => (
+                      <div
+                        key={`${action.label}-${action.description}`}
+                        className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-amber-100"
+                      >
+                        <div className="font-medium text-slate-900">{action.label}</div>
+                        <div className="mt-1 text-xs text-slate-600">{action.description}</div>
                       </div>
-                      <div className="mt-1 truncate text-xs text-slate-600">
-                        {bucket.scope === 'merchant' ? 'Store setup' : 'Product fix'} ·{' '}
-                        {bucket.impact === 'full_agent_commerce'
-                          ? 'Blocks agent commerce'
-                          : bucket.impact === 'checkout'
-                            ? 'Blocks checkout'
-                            : 'Blocks discovery'}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
-                    {summaryTopIssues.length > 0
-                      ? `${summaryTopIssues[0].label} is the main issue right now.`
-                      : 'No blocking issues are active right now.'}
-                  </div>
-                )}
+                    ))}
               </div>
             </div>
-
-            <div className="rounded-lg bg-white/80 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Recommended actions
-              </div>
-              <div className="mt-3 space-y-2">
-                {(productActions.length > 0 ? productActions : merchantActions).length > 0 ? (
-                  (productActions.length > 0 ? productActions : merchantActions).slice(0, 4).map((action) => (
-                    <div key={`${action.label}-${action.target_url}`} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200">
-                      <div className="font-medium text-slate-900">{action.label}</div>
-                      <div className="mt-1 text-xs text-slate-600">{action.description}</div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
-                    Optimize any low-quality products and rerun readiness when you make catalog changes.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-white/80 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Store setup to review
-              </div>
-              <div className="mt-3 space-y-2">
-                {storeSetupActions.length > 0 ? (
-                  storeSetupActions.map((action) => (
-                    <a
-                      key={`${action.label}-${action.target_url}`}
-                      href={action.target_url}
-                      className="block rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50"
-                    >
-                      <div className="font-medium text-slate-900">{action.label}</div>
-                      <div className="mt-1 text-xs text-slate-600">{action.description}</div>
-                    </a>
-                  ))
-                ) : pivotaManagedActions.length > 0 ? (
-                  pivotaManagedActions.map((action) => (
-                    <div
-                      key={`${action.label}-${action.description}`}
-                      className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-200"
-                    >
-                      <div className="font-medium text-slate-900">{action.label}</div>
-                      <div className="mt-1 text-xs text-slate-600">{action.description}</div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
-                    No merchant-level setup blockers are active right now.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          )}
         </div>
   );
 }

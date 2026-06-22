@@ -31,7 +31,6 @@ import {
   buildSourceDataLaneGroupKey,
   buildSourceDataProductKey,
   emptyForm,
-  formatReadinessCode,
   getInitialTriageReason,
   getIssueBucketCodeForReason,
   getLaneStatusBadgeClassName,
@@ -1078,20 +1077,8 @@ export default function ProductOptimizationPage() {
     return Date.now() - ts < 30_000;
   })();
 
-  const summaryTopIssues =
-    readinessSummary?.blocker_breakdown && readinessSummary.blocker_breakdown.length > 0
-      ? readinessSummary.blocker_breakdown
-      : (readinessSummary?.top_blockers || []).slice(0, 3).map((code) => ({
-          code,
-          label: formatReadinessCode(code),
-          count: 0,
-        }));
-
   const storeSetupActions = merchantActions.filter((action) =>
     ['integrations', 'policy'].includes(action.fix_surface)
-  );
-  const productActions = merchantActions.filter((action) =>
-    ['product_content', 'catalog_data'].includes(action.fix_surface)
   );
   const pivotaManagedActions = merchantActions.filter(
     (action) => action.fix_surface === 'pivota_managed'
@@ -1662,10 +1649,6 @@ export default function ProductOptimizationPage() {
           readinessLoading={readinessLoading}
           loadOptimizationData={loadOptimizationData}
           storeSetupActions={storeSetupActions}
-          issueBuckets={issueBuckets}
-          summaryTopIssues={summaryTopIssues}
-          productActions={productActions}
-          merchantActions={merchantActions}
           pivotaManagedActions={pivotaManagedActions}
         />
       )}
