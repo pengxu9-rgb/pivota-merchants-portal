@@ -25,6 +25,7 @@ import {
   type SourceDataTriageRow,
   type VerificationResult,
   type WorkspaceProductItem,
+  type WorkspaceTab,
   SOURCE_DATA_REASON_CONFIG,
   SOURCE_DATA_REASON_ORDER,
   buildSourceDataLaneGroupKey,
@@ -110,6 +111,7 @@ export default function ProductOptimizationPage() {
     'all'
   );
   const [segmentFilter, setSegmentFilter] = useState<QueueSegment>('all');
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>('overview');
   const [currentPage, setCurrentPage] = useState(1);
   const [bulkOptimizing, setBulkOptimizing] = useState(false);
   const detailPaneRef = useRef<HTMLDivElement | null>(null);
@@ -1730,6 +1732,8 @@ export default function ProductOptimizationPage() {
       {/* Right: detail & enrichment editor */}
       <ProductWorkspace
         detailPaneRef={detailPaneRef}
+        workspaceTab={workspaceTab}
+        setWorkspaceTab={setWorkspaceTab}
         selectedQueueItem={selectedQueueItem}
         handleRefreshSelectedStatus={handleRefreshSelectedStatus}
         readinessLoading={readinessLoading}

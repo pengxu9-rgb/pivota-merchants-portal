@@ -189,6 +189,8 @@ export type ProductQueueItem = {
 
 export type QueueSegment = 'all' | 'fix_here' | 'in_store' | 'other';
 
+export type WorkspaceTab = 'overview' | 'edit' | 'quality' | 'evidence';
+
 export type QueueSegmentCounts = {
   all: number;
   fix_here: number;

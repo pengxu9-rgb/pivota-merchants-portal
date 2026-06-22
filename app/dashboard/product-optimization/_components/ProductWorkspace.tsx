@@ -1,6 +1,6 @@
 'use client';
 
-import type { MutableRefObject } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { CheckCircle2, Loader2, Package, RefreshCw, Wand2 } from 'lucide-react';
 import { getDescriptionText } from '@/lib/html-text';
 import { ProductEvidencePanel } from '@/components/evidence/ProductEvidencePanel';
@@ -12,6 +12,7 @@ import {
   type ProductQueueItem,
   type ReadinessActionPreview,
   type VerificationResult,
+  type WorkspaceTab,
   formatAgentPushReason,
   formatDelta,
   formatFieldLabel,
@@ -26,6 +27,8 @@ import {
 
 interface ProductWorkspaceProps {
   detailPaneRef: MutableRefObject<HTMLDivElement | null>;
+  workspaceTab: WorkspaceTab;
+  setWorkspaceTab: Dispatch<SetStateAction<WorkspaceTab>>;
   selectedQueueItem: ProductQueueItem | null;
   handleRefreshSelectedStatus: () => Promise<void>;
   readinessLoading: boolean;
@@ -65,6 +68,8 @@ interface ProductWorkspaceProps {
 
 export function ProductWorkspace({
   detailPaneRef,
+  workspaceTab,
+  setWorkspaceTab,
   selectedQueueItem,
   handleRefreshSelectedStatus,
   readinessLoading,
@@ -198,6 +203,32 @@ export function ProductWorkspace({
               </div>
             )}
 
+            <div className="mt-4 flex flex-wrap gap-1 border-b border-slate-200">
+              {(
+                [
+                  ['overview', 'Overview'],
+                  ['edit', 'Edit content'],
+                  ['quality', 'Quality'],
+                  ['evidence', 'Evidence'],
+                ] as [WorkspaceTab, string][]
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setWorkspaceTab(key)}
+                  aria-pressed={workspaceTab === key}
+                  className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+                    workspaceTab === key
+                      ? 'border-blue-600 text-blue-700'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {workspaceTab === 'overview' && (
             <div className="mt-4 grid gap-3 xl:grid-cols-2">
               <div className="rounded-lg bg-slate-50 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -504,16 +535,25 @@ export function ProductWorkspace({
                 </div>
               </div>
             </div>
+            )}
           </div>
         )}
 
-        {!detail ? (
+        {!selectedQueueItem && (
           <div className="h-full flex items-center justify-center border rounded-lg bg-white shadow">
               <p className="text-gray-500 text-sm">
                 Select a product on the left to start optimizing.
               </p>
           </div>
-        ) : (
+        )}
+
+        {selectedQueueItem && workspaceTab === 'edit' && !detail && (
+          <div className="flex items-center justify-center border rounded-lg bg-white shadow p-8">
+            <p className="text-gray-500 text-sm">Loading product…</p>
+          </div>
+        )}
+
+        {selectedQueueItem && workspaceTab === 'edit' && detail && (
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
             {/* Standard view */}
             <div className="bg-white rounded-lg shadow border p-4 space-y-3">
@@ -828,6 +868,7 @@ export function ProductWorkspace({
         )}
 
         {/* Quality panel */}
+        {selectedQueueItem && workspaceTab === 'quality' && (
         <div className="bg-white rounded-lg shadow border p-4 space-y-2">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-800">
@@ -885,10 +926,11 @@ export function ProductWorkspace({
             </div>
           )}
         </div>
+        )}
 
         {/* Optional evidence intake (Phase 2b) — strengthen claims so agents cite
             this product. Suggestion, never a gate; only renders with a product. */}
-        {detail?.platform && detail?.platform_product_id && (
+        {selectedQueueItem && workspaceTab === 'evidence' && detail?.platform && detail?.platform_product_id && (
           <ProductEvidencePanel
             platform={detail.platform}
             platformProductId={detail.platform_product_id}
