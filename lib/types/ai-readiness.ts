@@ -441,6 +441,10 @@ export interface AgentCenterBdBrandReport {
 export interface UrlReadinessAuditedProduct {
   title: string;
   pdp_url: string;
+  raw_title?: string | null;
+  vendor?: string | null;
+  /** Synthetic per-product key, used to match the product to its per_sku report. */
+  sku_key?: string;
 }
 
 /** Upfront, honest disclosure of what the free wedge measured and what it
@@ -448,7 +452,7 @@ export interface UrlReadinessAuditedProduct {
  * definitive "invisible". The verification limitation lives here (once),
  * not buried inside every verdict line. */
 export interface UrlReadinessMethodology {
-  model: 'merchant_curated';
+  model: 'merchant_curated' | 'merchant_curated_per_sku' | string;
   products_audited: number;
   products_requested: number;
   queries_per_product: number;
@@ -570,8 +574,27 @@ export interface SkuIntelligence {
 }
 
 export interface UrlReadinessAuditResponse {
-  brand_report: AgentCenterBdBrandReport;
-  /** Per-SKU hero intelligence (sidewalk money-shot). Absent on older runs. */
+  status?: string;
+  run_id?: string | null;
+  /**
+   * Per-product reports — one per pasted URL — produced by the durable per-SKU
+   * pipeline. This is the primary payload for the rich per-product UI.
+   */
+  per_sku_reports?: AgentCenterPerSkuReport[];
+  /** Brand-level rollup across the audited products (priority queue, medians). */
+  brand_rollup?: AgentCenterBrandRollup | null;
+  /** Per-SKU authority hosts (who's cited instead of you, incl. communities). */
+  authority_map?: Record<string, unknown> | null;
+  where_you_can_win?: Record<string, unknown> | null;
+  /**
+   * False for URL audits: catalog-only dimensions (identity/content/routability)
+   * can't be measured without a synced store, so the UI renders them as
+   * "connect store to measure" rather than a misleading low score.
+   */
+  catalog_dimensions_available?: boolean;
+  /** Full per_sku brand report (kept for back-compat / debugging). */
+  brand_report?: AgentCenterBdBrandReport;
+  /** Per-SKU hero intelligence (legacy wedge shape). Absent on per_sku runs. */
   sku_intelligence?: SkuIntelligence | null;
   audit_run_id: string | null;
   /** The brand site we used for context (= request website / store_url). */

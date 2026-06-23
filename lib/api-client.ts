@@ -1817,9 +1817,12 @@ class ApiClient {
     const runId = kicked?.run_id || kicked?.audit_run_id;
     if (!runId) throw new Error('Audit did not start. Please try again.');
 
-    // 2. Poll until the background audit finishes.
+    // 2. Poll until the background audit finishes. Per-product runs go through
+    //    the durable per-SKU worker and can take several minutes for 5 URLs, so
+    //    the budget matches the per-SKU page (~15 min); the run continues
+    //    server-side regardless and can be re-opened from history.
     const startedAt = Date.now();
-    const MAX_MS = 6 * 60_000; // give up after ~6 min of polling
+    const MAX_MS = 15 * 60_000;
     const INTERVAL_MS = 5_000;
     for (;;) {
       await new Promise((r) => setTimeout(r, INTERVAL_MS));

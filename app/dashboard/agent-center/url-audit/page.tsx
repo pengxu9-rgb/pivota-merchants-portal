@@ -3,15 +3,17 @@
 /**
  * Tier-1 URL-audit wedge — the low-friction front door to AI Commerce Readiness.
  *
- * Merchant-CURATED: you give us your brand site + up to 3 product URLs (your
- * hero SKUs); we fetch each for clean data and show how AI shopping agents
- * (Gemini grounded search) see exactly those — no catalog sync, no guessing
- * which products to audit. The first 2 audits per merchant are free. The deeper
- * per-SKU audit (which unlocks serving + checkout) lives at
- * /dashboard/agent-center/ai-readiness and requires connecting your store.
+ * Merchant-CURATED: you give us your brand site + up to 5 product URLs (your
+ * hero SKUs); we fetch each for clean data and audit each as ITS OWN per-product
+ * report — how AI shopping agents (Gemini grounded search) cite it, which
+ * competitors are cited instead, and the action plan to win. No catalog sync.
+ * Catalog-only dimensions (identity/content/routability) need a connected store
+ * and render as "connect store to measure". The deeper full-catalog audit lives
+ * at /dashboard/agent-center/ai-readiness.
  *
  * Backend: POST /api/merchant-center/audit/url-readiness — body
- * { product_urls[1-3], website?, brand? }.
+ * { product_urls[1-5], website?, brand? } → enqueues the durable per-SKU
+ * pipeline; GET returns per_sku_reports + brand_rollup + authority_map.
  */
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
@@ -38,6 +40,7 @@ import {
 } from '@/components/ui/merchant-primitives';
 import { RecentAuditsPanel } from '@/components/audit/RecentAuditsPanel';
 import { BuyCreditsCard } from '@/components/billing/BuyCreditsCard';
+import { PerSkuReportCard } from '@/components/audit/PerSkuReportCard';
 import type {
   AgentCenterBdReport,
   AgentCenterBdVerdictLabel,
@@ -45,7 +48,7 @@ import type {
   UrlReadinessAuditResponse,
 } from '@/lib/types/ai-readiness';
 
-const MAX_PRODUCT_URLS = 3;
+const MAX_PRODUCT_URLS = 5;
 
 function verdictTone(label: AgentCenterBdVerdictLabel | null | undefined): string {
   const l = (label || '').toUpperCase();
@@ -486,7 +489,13 @@ export default function UrlAuditPage() {
     setLoadingRunId(runId);
     try {
       const detail = await apiClient.getUrlAuditRunDetail(runId);
-      if (detail && 'brand_report' in detail && detail.brand_report) {
+      const hasContent =
+        !!detail &&
+        (('per_sku_reports' in detail &&
+          Array.isArray((detail as UrlReadinessAuditResponse).per_sku_reports) &&
+          (detail as UrlReadinessAuditResponse).per_sku_reports!.length > 0) ||
+          ('brand_report' in detail && !!detail.brand_report));
+      if (hasContent) {
         setResult(detail as UrlReadinessAuditResponse);
         setActiveRunId(runId);
         setError(null);
@@ -505,6 +514,15 @@ export default function UrlAuditPage() {
   const report = result?.brand_report;
   const agg = report?.aggregate;
   const methodology = result?.methodology;
+
+  // New per-product shape (durable per_sku pipeline). Falls back to the legacy
+  // brand-verdict render for old history runs that predate it.
+  const perSku = result?.per_sku_reports ?? [];
+  const catalogAvail = result?.catalog_dimensions_available ?? false;
+  const citedCount = perSku.filter(
+    (r) =>
+      (r.scores?.citation?.score ?? 0) > 0 || (r.models_cited?.cited ?? 0) > 0,
+  ).length;
 
   // The "run deeper" funnel CTA, tailored to what this sample found — turns the
   // problem (invisible / competitor wins / found-but-not-recommended) into the
@@ -653,8 +671,68 @@ export default function UrlAuditPage() {
         </SurfaceCard>
       ) : null}
 
-      {report && agg ? (
+      {result ? (
         <div ref={resultRef} className="space-y-4">
+          {perSku.length > 0 ? (
+            <>
+              <SurfaceCard
+                eyebrow="AI visibility · per product"
+                title="How AI sees each of your products"
+                description={result.audited_url || undefined}
+              >
+                <div className="space-y-2 px-5 py-4">
+                  <p className="text-sm">
+                    <span className="font-semibold">{citedCount}</span> of{' '}
+                    <span className="font-semibold">{perSku.length}</span> product
+                    {perSku.length === 1 ? '' : 's'}{' '}
+                    {citedCount === 1 ? 'is' : 'are'} cited by AI shopping agents for
+                    the buyer-intent prompts we tested.
+                  </p>
+                  {methodology ? (
+                    <p className="merchant-text-muted text-xs">
+                      {methodology.products_audited} product
+                      {methodology.products_audited === 1 ? '' : 's'} ×{' '}
+                      {methodology.queries_per_product} buyer-intent queries (Gemini
+                      grounded search).
+                    </p>
+                  ) : null}
+                  {typeof result.free_audits_remaining === 'number' ? (
+                    <p className="merchant-text-muted text-xs">
+                      {result.free_audits_remaining} free audit
+                      {result.free_audits_remaining === 1 ? '' : 's'} left.
+                    </p>
+                  ) : null}
+                  {!catalogAvail ? (
+                    <div className="flex items-start gap-2 rounded-md border border-[color:var(--merchant-line)] bg-white/40 px-3 py-2 text-xs">
+                      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-60" />
+                      <span className="merchant-text-muted">
+                        Catalog signals (identity, content depth, structured routing)
+                        need a connected store — connect to unlock the full per-SKU
+                        score and one-click execution.
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              </SurfaceCard>
+
+              {/* One card per pasted product — its own analysis + action plan. */}
+              <div className="space-y-3">
+                {perSku.map((r, i) => (
+                  <PerSkuReportCard
+                    key={r.sku_key || i}
+                    report={r}
+                    index={i}
+                    catalogDimensionsAvailable={catalogAvail}
+                    pdpUrl={
+                      result.audited_products?.find((p) => p.sku_key === r.sku_key)
+                        ?.pdp_url ?? null
+                    }
+                  />
+                ))}
+              </div>
+            </>
+          ) : report && agg ? (
+            <>
           <SurfaceCard
             eyebrow="Brand verdict"
             title={report.merchant_name}
@@ -742,6 +820,8 @@ export default function UrlAuditPage() {
               ))}
             </div>
           </SurfaceCard>
+            </>
+          ) : null}
 
           {/* Honest, upfront disclosure of what this free sample did + didn't do. */}
           {methodology ? (
