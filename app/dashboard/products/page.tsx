@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   AlertCircle,
   ArrowRight,
@@ -760,6 +760,7 @@ function readinessVariantMatchesReason(
 export default function ProductsPage() {
   const { t } = useMerchantLanguage();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -784,6 +785,12 @@ export default function ProductsPage() {
   const [sourceDataLaneError, setSourceDataLaneError] = useState<string | null>(null);
   const [laneActionFeedback, setLaneActionFeedback] = useState<string | null>(null);
   const [decisionSaving, setDecisionSaving] = useState(false);
+  const [hasStore, setHasStore] = useState<boolean | null>(null);
+  const storelessEnabled =
+    process.env.NEXT_PUBLIC_ENABLE_STORELESS_BRAND_CATALOG === 'true';
+  // Store-less = the feature is on AND this merchant has no connected store.
+  // Fail closed: while unknown (null) or on error we do NOT show manual add.
+  const showAddProduct = storelessEnabled && hasStore === false;
   const deepLinkResolvedRef = useRef<string | null>(null);
   const deepLinkQueueResolvedRef = useRef<string | null>(null);
   const catalogReviewPlanRequestRef = useRef<Promise<CatalogReviewPlan | null> | null>(null);
@@ -798,6 +805,27 @@ export default function ProductsPage() {
       cancelled = true;
     };
   }, []);
+
+  // Store-less detection (only when the feature flag is on, so the default
+  // path adds no network calls). Tells us whether to offer manual "Add product".
+  useEffect(() => {
+    if (!storelessEnabled) return;
+    let cancelled = false;
+    const merchantId =
+      typeof window !== 'undefined' ? localStorage.getItem('merchant_id') || '' : '';
+    if (!merchantId) return;
+    void apiClient
+      .getConnectedStores(merchantId)
+      .then((stores) => {
+        if (!cancelled) setHasStore(Array.isArray(stores) && stores.length > 0);
+      })
+      .catch(() => {
+        // unknown → leave null (fail closed: do not show manual add)
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [storelessEnabled]);
 
   const loadProducts = async (isCancelled?: () => boolean) => {
     const shouldCancel = () => isCancelled?.() === true;
@@ -1423,6 +1451,12 @@ export default function ProductsPage() {
   ]);
 
   const handleAddProduct = () => {
+    // Store-less brands (feature on, no connected store) get the real manual
+    // intake; everyone else keeps the sync-your-store guidance.
+    if (showAddProduct) {
+      router.push('/dashboard/products/new');
+      return;
+    }
     alert(
       'Add catalog item is not wired yet. Use your connected sales channel to sync products into Pivota.'
     );
@@ -3582,9 +3616,20 @@ export default function ProductsPage() {
             title={t('dashboard.products.catalogView.emptyTitle')}
             description={t('dashboard.products.catalogView.emptyDescription')}
             action={
-              <MerchantLinkButton href="/dashboard/integrations" variant="secondary" icon={ArrowRight}>
-                {t('dashboard.products.catalogView.openSalesChannels')}
-              </MerchantLinkButton>
+              showAddProduct ? (
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <MerchantLinkButton href="/dashboard/products/new" variant="primary" icon={Plus}>
+                    Add a product
+                  </MerchantLinkButton>
+                  <MerchantLinkButton href="/dashboard/integrations" variant="secondary" icon={ArrowRight}>
+                    {t('dashboard.products.catalogView.openSalesChannels')}
+                  </MerchantLinkButton>
+                </div>
+              ) : (
+                <MerchantLinkButton href="/dashboard/integrations" variant="secondary" icon={ArrowRight}>
+                  {t('dashboard.products.catalogView.openSalesChannels')}
+                </MerchantLinkButton>
+              )
             }
           />
         )}

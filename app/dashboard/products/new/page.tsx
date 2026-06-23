@@ -26,7 +26,7 @@ export default function NewBrandProductPage() {
     setError(null);
     try {
       const priceValue = price.trim() ? Number(price) : undefined;
-      const res = await apiClient.createMerchantProduct({
+      await apiClient.createMerchantProduct({
         title: title.trim(),
         brand: brand.trim() || undefined,
         category: category.trim() || undefined,
@@ -39,16 +39,17 @@ export default function NewBrandProductPage() {
         currency: currency.trim() || undefined,
         summary_short: summaryShort.trim() || undefined,
       });
-      const newId = res?.product_id || res?.product?.platform_product_id;
       // Land back on the catalog; the new product flows through the readiness
       // pipeline (un-served until it graduates/claims).
-      router.push(newId ? '/dashboard/products' : '/dashboard/products');
+      router.push('/dashboard/products');
     } catch (err: any) {
-      setError(
-        err?.response?.data?.detail ||
-          err?.message ||
-          'Could not create the product. Please try again.'
-      );
+      const detail = err?.response?.data?.detail;
+      const message = Array.isArray(detail)
+        ? detail[0]?.msg || 'Invalid input'
+        : typeof detail === 'string'
+          ? detail
+          : err?.message || 'Could not create the product. Please try again.';
+      setError(message);
       setSaving(false);
     }
   };
