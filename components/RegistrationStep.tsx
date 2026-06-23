@@ -26,6 +26,10 @@ export default function RegistrationStep({
   onSubmit,
 }: RegistrationStepProps) {
   const { t } = useMerchantLanguage();
+  const storelessEnabled =
+    process.env.NEXT_PUBLIC_ENABLE_STORELESS_BRAND_CATALOG === 'true';
+  const isStoreLess = storelessEnabled && formData.operating_mode === 'store_less';
+  const storeUrlRequired = !isStoreLess;
   const passwordsMismatch =
     Boolean(formData.password) &&
     Boolean(formData.confirm_password) &&
@@ -84,18 +88,62 @@ export default function RegistrationStep({
             </label>
           </div>
 
+          {storelessEnabled ? (
+            <fieldset className="block">
+              <legend className={labelClassName}>{t('auth.registration.operatingModeLabel')}</legend>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {(['storefront', 'store_less'] as const).map((mode) => {
+                  const selected = formData.operating_mode === mode;
+                  return (
+                    <label
+                      key={mode}
+                      className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition ${
+                        selected
+                          ? 'border-[color:var(--merchant-brand)] bg-[rgba(51,75,133,0.06)] ring-2 ring-[rgba(51,75,133,0.18)]'
+                          : 'border-[color:var(--merchant-line-strong)] bg-white hover:border-[color:var(--merchant-brand)]'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="operating_mode"
+                        value={mode}
+                        checked={selected}
+                        onChange={(event) => onChange('operating_mode', event.target.value)}
+                        className="mt-1 h-4 w-4 accent-[color:var(--merchant-brand)]"
+                      />
+                      <span className="block">
+                        <span className="block text-sm font-medium text-[color:var(--merchant-ink)]">
+                          {mode === 'storefront'
+                            ? t('auth.registration.operatingModeStorefrontLabel')
+                            : t('auth.registration.operatingModeStoreLessLabel')}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-[color:var(--merchant-muted)]">
+                          {mode === 'storefront'
+                            ? t('auth.registration.operatingModeStorefrontHelp')
+                            : t('auth.registration.operatingModeStoreLessHelp')}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+          ) : null}
+
           <label className="block">
             <span className={labelClassName}>{t('auth.registration.storeUrlLabel')}</span>
             <input
               type="url"
-              required
+              required={storeUrlRequired}
               value={formData.store_url}
               onChange={(event) => onChange('store_url', event.target.value)}
               className={inputClassName}
               placeholder={t('auth.registration.storeUrlPlaceholder')}
             />
             <span className="mt-1.5 block text-xs text-[color:var(--merchant-muted)]">
-              {t('auth.registration.storeUrlHelp')}
+              {isStoreLess
+                ? t('auth.registration.storeUrlHelpOptional')
+                : t('auth.registration.storeUrlHelp')}
             </span>
           </label>
 

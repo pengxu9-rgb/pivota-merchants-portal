@@ -785,12 +785,12 @@ export default function ProductsPage() {
   const [sourceDataLaneError, setSourceDataLaneError] = useState<string | null>(null);
   const [laneActionFeedback, setLaneActionFeedback] = useState<string | null>(null);
   const [decisionSaving, setDecisionSaving] = useState(false);
-  const [hasStore, setHasStore] = useState<boolean | null>(null);
+  const [operatingMode, setOperatingMode] = useState<string | null>(null);
   const storelessEnabled =
     process.env.NEXT_PUBLIC_ENABLE_STORELESS_BRAND_CATALOG === 'true';
-  // Store-less = the feature is on AND this merchant has no connected store.
-  // Fail closed: while unknown (null) or on error we do NOT show manual add.
-  const showAddProduct = storelessEnabled && hasStore === false;
+  // Store-less = the feature is on AND this merchant declared store_less mode.
+  // Fail closed: unknown/null/error → not store_less → do NOT show manual add.
+  const showAddProduct = storelessEnabled && operatingMode === 'store_less';
   const deepLinkResolvedRef = useRef<string | null>(null);
   const deepLinkQueueResolvedRef = useRef<string | null>(null);
   const catalogReviewPlanRequestRef = useRef<Promise<CatalogReviewPlan | null> | null>(null);
@@ -806,18 +806,16 @@ export default function ProductsPage() {
     };
   }, []);
 
-  // Store-less detection (only when the feature flag is on, so the default
-  // path adds no network calls). Tells us whether to offer manual "Add product".
+  // Declared operating mode (only when the feature flag is on, so the default
+  // path adds no network calls). Reads the merchant's declared mode from the
+  // JWT-scoped profile; store_less merchants get the manual "Add product" path.
   useEffect(() => {
     if (!storelessEnabled) return;
     let cancelled = false;
-    const merchantId =
-      typeof window !== 'undefined' ? localStorage.getItem('merchant_id') || '' : '';
-    if (!merchantId) return;
     void apiClient
-      .getConnectedStores(merchantId)
-      .then((stores) => {
-        if (!cancelled) setHasStore(Array.isArray(stores) && stores.length > 0);
+      .getMerchantProfile()
+      .then((profile) => {
+        if (!cancelled) setOperatingMode(profile?.operating_mode ?? null);
       })
       .catch(() => {
         // unknown → leave null (fail closed: do not show manual add)
