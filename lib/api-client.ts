@@ -352,6 +352,13 @@ class ApiClient {
     };
   }
 
+  // Raw current-merchant profile (JWT-scoped). Returns the unmapped payload so
+  // callers can read fields like `operating_mode` that getProfile() does not expose.
+  async getMerchantProfile() {
+    const response = await this.client.get(API_CONFIG.ENDPOINTS.PROFILE);
+    return response.data?.data || response.data;
+  }
+
   async updateProfile(data: any) {
     const response = await this.client.put(API_CONFIG.ENDPOINTS.UPDATE_PROFILE, data);
     if (typeof window !== 'undefined') {

@@ -254,6 +254,18 @@ export default function MerchantSignup() {
       return;
     }
 
+    const storelessEnabled =
+      process.env.NEXT_PUBLIC_ENABLE_STORELESS_BRAND_CATALOG === 'true';
+    const operatingMode =
+      storelessEnabled && registrationForm.operating_mode === 'store_less'
+        ? 'store_less'
+        : 'storefront';
+    // store_url is only required for storefront merchants.
+    if (operatingMode === 'storefront' && !registrationForm.store_url.trim()) {
+      setError(t('auth.signup.storeUrlRequired'));
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -261,6 +273,10 @@ export default function MerchantSignup() {
       const { confirm_password: _confirmPassword, ...payload } = {
         ...registrationForm,
         contact_email: normalizedEmail,
+        operating_mode: operatingMode,
+        // Store-less merchants may leave the storefront URL blank.
+        store_url:
+          operatingMode === 'store_less' ? '' : registrationForm.store_url,
       };
       const response = await onboardingApi.register(payload);
 

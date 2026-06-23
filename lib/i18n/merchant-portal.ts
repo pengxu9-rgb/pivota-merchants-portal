@@ -97,6 +97,7 @@ const enMessages: MessageCatalog = {
     "Move from onboarding into the merchant portal without switching to a separate registration system.",
   "auth.signup.passwordMismatch": "Passwords do not match.",
   "auth.signup.passwordTooShort": "Password must be at least 8 characters long.",
+  "auth.signup.storeUrlRequired": "Please enter your store URL.",
   "auth.signup.registrationFailed": "Registration failed. Please try again.",
   "auth.signup.merchantMissing": "Your merchant record is missing. Please restart registration.",
   "auth.signup.selectProvider": "Select a payment provider or choose \"Set up later\".",
@@ -131,10 +132,19 @@ const enMessages: MessageCatalog = {
   "auth.registration.regionEU": "European Union",
   "auth.registration.regionAPAC": "Asia Pacific",
   "auth.registration.regionOther": "Other",
+  "auth.registration.operatingModeLabel": "How do you sell?",
+  "auth.registration.operatingModeStorefrontLabel": "I have an online store",
+  "auth.registration.operatingModeStorefrontHelp":
+    "Connect your Shopify, Wix, or WooCommerce storefront.",
+  "auth.registration.operatingModeStoreLessLabel": "I don't have an online store yet",
+  "auth.registration.operatingModeStoreLessHelp":
+    "List your brand and products directly with Pivota — no storefront required.",
   "auth.registration.storeUrlLabel": "Store URL",
   "auth.registration.storeUrlPlaceholder": "https://mystore.myshopify.com",
   "auth.registration.storeUrlHelp":
     "Shopify, Wix, WooCommerce, or another merchant storefront URL.",
+  "auth.registration.storeUrlHelpOptional":
+    "Optional — add a storefront URL later if you have one.",
   "auth.registration.websiteLabel": "Website",
   "auth.registration.websitePlaceholder": "https://brand.com",
   "auth.registration.websiteHelp":

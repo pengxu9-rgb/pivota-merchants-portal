@@ -2,6 +2,8 @@ export type SignupStepId = 'register' | 'psp' | 'documents' | 'complete';
 
 export type PSPType = 'stripe' | 'adyen' | 'paypal' | 'checkout' | 'other' | '';
 
+export type OperatingMode = 'storefront' | 'store_less';
+
 export interface RegistrationFormData {
   business_name: string;
   store_url: string;
@@ -11,6 +13,7 @@ export interface RegistrationFormData {
   contact_phone: string;
   password: string;
   confirm_password: string;
+  operating_mode: OperatingMode;
 }
 
 export type PublicRegistrationDraft = Omit<
@@ -58,6 +61,7 @@ export const emptyRegistrationDraft: RegistrationFormData = {
   contact_phone: '',
   password: '',
   confirm_password: '',
+  operating_mode: 'storefront',
 };
 
 export const emptyPspDraft: PSPFormData = {
