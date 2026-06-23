@@ -1,77 +1,74 @@
-# Spec: verify-to-serve — store-less brand products → discoverable (not transactable)
+# Spec: verify-to-serve — store-less brand products → citable (not transactable)
 
-**Status:** proposal · **Priority:** completes the store-less arc (the "verify" in the founder-chosen "A+verify").
-**Repos:** `pivota-backend` (serving pipeline + the verify hook). Cross-ref: [store-less-brand-catalog.md](store-less-brand-catalog.md).
+**Status:** proposal · **Re-scoped under [ADR-007](https://github.com/pengxu9-rgb/pivota-backend/blob/main/docs/adr/ADR-007-citable-index-vs-commerce-overlay.md)** (citable Knowledge Index vs Commerce overlay). · **Depends on** ADR-007's eligibility split landing first.
+**Repos:** `pivota-backend` (the verify hook). Cross-ref: [store-less-brand-catalog.md](store-less-brand-catalog.md).
 
-> **Goal:** when a store-less brand **domain-verifies** (existing brand-claim flow), its brand-authored products should become **discoverable / citable** to agents — recallable + present in `agent_pdp_view` — and **NOT transactable** (store-less brands have no PSP/checkout). An agent cites/recommends the product and **routes demand to the brand's site** (link-out), consistent with Pivota's demand-router positioning.
+> **Goal:** when a store-less brand **domain-verifies** (existing brand-claim flow), its brand-authored products become **citable** to agents — readable via the citation surface (`get_pdp` / `agent_pdp_view`), recommendable — and **NOT transactable** (no PSP/checkout). An agent cites/recommends the product and routes demand to the brand's site (link-out is *content*, not a commerce offer).
 
----
-
-## 1. Current state — the two gates that block discovery (grounded on `origin/main`)
-
-Brand-authored products land un-served: `pdp_scope='unverified'`, `claim_state='unclaimed'`, `pdp_lifecycle_stage` NULL, **no `catalog_skus`, no `catalog_offers`**. Two commerce-shaped gates keep them out of agent results:
-
-| Gate | Where | Requires | Brand-authored fails because |
-|---|---|---|---|
-| **Recall** | `services/pivot_query_service.py:844` (`JOIN catalog_skus`) + `:~924` (`JOIN catalog_offers o … AND o.suppressed_at IS NULL`) | a **SKU and a non-suppressed offer** (both INNER joins) | has neither |
-| **Serving eligibility** | `services/index_pipeline_state_service.py:279` (`not has_price → blocker 'no_price'`), formula `:307–314` (`… and has_price`) | a real **offer with `list_price > 0`** | has no offer/price |
-
-**The opening:** the agent-READ surface is already permissive — `agent_pdp_view` LEFT-joins SKUs/offers and assembles from `title/description/image_url/content_key` alone. And there's precedent for synthetic rows: the external-seed mirror mints a `<product_key>::canonical` SKU. **The post-verify hook also already exists**: `services/brand_claim_service.py:441 verify_brand_claim` → `services/claim_state.py:47 promote_merchant_skus_to_claimed`.
+> **Approach changed (2026-06-23).** The earlier draft minted a `brand_direct` *referral offer* to slip through the offer-required recall. ADR-007 rejects that: it **binds citation to a commerce artifact**. Verify-to-serve is now the **first consumer of `index_eligible`** — domain-verify sets the product **citable without any offer**. The sections below reflect the ADR-007 approach.
 
 ---
 
-## 2. Key insight — don't invent a "discovery-eligible" flag; mint a *referral offer*
+## 1. Why it's blocked today (grounded on `origin/main`)
 
-The naive design (new `discovery_eligible` column + decouple serving from price + LEFT-join the recall query) is invasive and forks the serving model. Cleaner: because recall needs a SKU **and** an offer, give the verified product exactly that — a **`brand_direct` / `external_referral` referral offer** (link-out, **no PSP**), carrying the brand's own `list_price`. Then:
+Brand-authored products land un-served: `pdp_scope='unverified'`, `claim_state='unclaimed'`, no `catalog_skus`, no `catalog_offers`. Two **commerce-shaped** gates keep them out of agent surfaces — the exact coupling ADR-007 removes:
 
-- It flows through the **existing** recall (SKU + offer joins satisfied) and serving (`has_price` satisfied) gates — **no new eligibility concept**.
-- "Not transactable" is enforced where it belongs: **at checkout**. `external_referral` offers are "retailer / not first-party" (`services/offer_classification.py:9–13`); a store-less brand has no PSP connector → the quote/execution path has no buyable offer → **fail-closed link-out**, not a Pivota checkout.
-- It reuses machinery already on `origin/main`: the external-seed SKU mint, the `brand_direct` offer type + reader (`offer_classification.py`, `pivot_query_service.py:557 _brand_direct_reader_enabled`), the `has_price` serving gate, and the `agent_pdp_view` assembler.
+| Gate | Where | Requires |
+|---|---|---|
+| **Recall** | `pivot_query_service.py:844` + `:924` | a SKU **and** a non-suppressed offer (both INNER joins) |
+| **Serving eligibility** | `index_pipeline_state_service.py:279` / `:307–314` / `:454–459` | a `catalog_offers` row with `list_price > 0` (`has_price`) |
 
-So **discovery = a priced referral offer**; **commerce = a PSP-backed buyable offer**. The split is the *offer*, not a new column.
+`agent_pdp_view` itself already tolerates offer-less rows; the post-verify hook already exists: `services/brand_claim_service.py:441 verify_brand_claim` → `services/claim_state.py:47 promote_merchant_skus_to_claimed`.
 
----
+## 2. Approach (per ADR-007): verify → `index_eligible`, no offer
+
+ADR-007 splits eligibility into `index_eligible` (trust + quality + identity, **offer-free** → citation surface) vs `transact_eligible` (has a buyable offer → shopping/checkout). Verify-to-serve is the special case:
+
+- On domain-verify, mark the brand's `platform='brand_authored'` `catalog_products` rows **`index_eligible`** (subject to a content-quality floor + identity-resolved). **No `catalog_offers` row is created.**
+- They become readable on the **citation surface** (`get_pdp` / `agent_pdp_view`) — which ADR-007 un-gates from `has_price` — and recommendable on inform/recommend-intent queries.
+- An optional **`destination_url`** (the verified brand domain) is **content** for "where to get it" — not a commerce offer.
+- They stay **`transact_eligible = false`** (no buyable offer) → **checkout fail-closed** by construction (no offer to execute). They become transactable only if/when an offer is connected later.
 
 ## 3. State machine
 ```
-brand-authored (created)         pdp_scope=unverified, claim_state=unclaimed, no sku/offer  → INVISIBLE
-        │  (domain-verify via existing brand-claim DNS/email)
+brand-authored (created)     pdp_scope=unverified, no sku/offer, index_eligible=false  → INVISIBLE
+        │  (domain-verify via existing brand-claim DNS/email → promote_merchant_skus_to_claimed)
         ▼
-verified + graduated             + synthetic canonical SKU
-                                 + brand_direct REFERRAL offer (list_price = brand price, NO PSP, link-out)
-                                 + pdp_lifecycle_stage=validated, sync_status=live
-                                 + claim_state=claimed (already done by promote_merchant_skus_to_claimed)
-                                 → RECALLABLE + in agent_pdp_view + CITABLE + link-out
-        │  (later: connect a store / PSP / real offer)
+verified                      claim_state=claimed
+                              + index_eligible=TRUE  (quality floor + identity-resolved)
+                              + optional destination_url = verified brand domain
+                              + assembled into agent_pdp_view
+                              → CITABLE (read/recommend surface) · NOT transactable
+        │  (later: brand or retailer connects a buyable offer/PSP)
         ▼
-commerce-eligible                buyable offer → transactable
++ transact_eligible           buyable → shopping + checkout
 ```
 
-## 4. The build — the verify-to-serve hook
-Attach at `verify_brand_claim` → `promote_merchant_skus_to_claimed` (`claim_state.py:47`). For each of the brand's `platform='brand_authored'` `catalog_products` rows **that has a price**:
-1. **Mint a synthetic canonical SKU** (reuse the external-seed mirror pattern) so the recall SKU-join passes.
-2. **Mint a `brand_direct` referral offer** (`offer_type` per `offer_classification`, `is_first_party` true, **no PSP/connector**, `list_price` = the brand-supplied price, link-out URL = the verified brand domain).
-3. Set `pdp_lifecycle_stage='validated'`, `sync_status='live'`; keep `pdp_scope` **brand-authored** (see hazards — NOT `multi_merchant_canonical`).
-4. `recompute_serving_eligibility(content_key, reason='brand_verified')` — now passes (`has_price` via the referral offer).
-5. Refresh `agent_pdp_view` for the content_key.
+## 4. The build — the verify hook (after ADR-007's split exists)
+Attach at `verify_brand_claim` → `promote_merchant_skus_to_claimed` (`claim_state.py:47`). For each of the brand's `brand_authored` `catalog_products` rows that clears the quality floor:
+1. Set **`index_eligible = TRUE`** (the new ADR-007 status) — offer-independent.
+2. Set `pdp_lifecycle_stage` to the citable stage; keep `pdp_scope` **brand-authored** (NOT `multi_merchant_canonical` — see invariants).
+3. Persist `destination_url` = the verified brand domain (content).
+4. Refresh `agent_pdp_view` for the `content_key`.
+5. Do **not** create `catalog_skus`/`catalog_offers`. `transact_eligible` stays false.
 
 Flag-gated (reuse `ENABLE_STORELESS_BRAND_CATALOG` or a sibling). Idempotent; best-effort (never break verify).
 
-## 5. Invariants & hazards (all live on `origin/main`)
-- **Checkout fail-closed (must prove):** a `brand_direct` referral offer with no PSP must NOT be buyable — the quote/execution path returns no executable offer → link-out only. Add an explicit "no executable offer → reject" assertion + test.
-- **No-GTIN mis-merge:** brand-authored stays isolated — `content_key` includes brand + source_system; never GTIN-auto-merge a no-GTIN brand-authored product onto another entity; route ambiguous to `pdp_identity_review_queue`. Keep `pdp_scope` brand-authored so it can't inherit the canonical-PDP rank boost.
-- **Neutrality:** referral (not-first-party) offers must rank by merit, below real buyable offers in mixed results; no take-rate/commercial boost (the P0.3 neutrality firewall still applies).
-- **Identity gate:** GTIN-or-resolved before any cross-merchant capture (unchanged).
+> **Dependency:** this requires ADR-007's `index_eligible` concept + the offer-free citation read lane. If ADR-007 is staged, verify-to-serve ships as the first slice that *sets* `index_eligible` and proves the read path.
+
+## 5. Invariants (carry over from ADR-007)
+- **Checkout fail-closed:** no offer is ever minted → no executable offer → not buyable. (Stronger than the referral-offer approach, which needed an explicit guard.)
+- **No-GTIN mis-merge:** brand-authored stays isolated — `content_key` includes brand + source_system; never GTIN-auto-merge a no-GTIN brand-authored product; `pdp_scope` stays brand-authored (no canonical-PDP rank boost).
+- **Neutrality:** citable-but-not-buyable products rank by merit; offer presence is a ranking *signal* (favored for shopping intent), never take-rate.
 
 ## 6. Phasing
-- **MVP:** the verify hook mints SKU + referral offer for **priced** brand-authored products → discoverable + cited + link-out; checkout fail-closed proven. Reuses existing gates; minimal new code.
-- **Later:** price-less discovery (if we want brands with no price to be citable — needs the decoupled discovery path the naive design described); substantiation grading → trust; retailer/PSP connect → commerce-eligible.
+- **MVP:** the verify hook sets `index_eligible` + assembles `agent_pdp_view` + destination_url → citable. Reuses the existing verify/claim hook; the only new dependency is ADR-007's eligibility split.
+- **Later:** substantiation grading → higher trust/ranking; brand/retailer connects an offer → `transact_eligible`.
 
 ## 7. Open decisions
-- **Price-less brands:** require a price to be discoverable (MVP, simplest — the Add-product form already collects it), or build a true price-less discovery lane later?
-- **Link-out target:** the verified brand domain (from the claim) — confirm the referral offer carries it and agents surface it as "buy at …".
-- **Quality floor:** serving today also gates on `quality_score >= 65` (`index_pipeline_state_service.py:269`). Should discovery require a content-quality floor too, or a lower bar?
-- **Ranking:** exact position of referral (link-out) offers vs PSP-buyable offers in mixed agent results.
-- **Flag:** reuse `ENABLE_STORELESS_BRAND_CATALOG` or a separate `ENABLE_VERIFY_TO_SERVE` for independent canary.
+- **Quality floor for `index_eligible`** — serving today gates on `quality_score >= 65` (`index_pipeline_state_service.py:269`). What's the citation floor (same, lower, or content-completeness-based)?
+- **`destination_url` semantics** — confirm agents surface it as "learn more / get it at …"; is it required for `index_eligible`, or optional?
+- **Ranking** — exact treatment of citable-not-buyable vs buyable in mixed/ambiguous intent (ties to ADR-007's intent-aware ranking).
+- **Flag** — reuse `ENABLE_STORELESS_BRAND_CATALOG` or a dedicated `ENABLE_VERIFY_TO_SERVE`.
 
-> Cross-ref: `commerce-index-storeless-brand-decision-layer` memory (this is the "verify-to-serve" remaining slice of the founder-chosen **A+verify**), and the brand-claim / `claim_state` machinery (PRs #985/#988/#993).
+> Cross-ref: [ADR-007](https://github.com/pengxu9-rgb/pivota-backend/blob/main/docs/adr/ADR-007-citable-index-vs-commerce-overlay.md) (the parent decision), `commerce-index-storeless-brand-decision-layer` memory, and the brand-claim/`claim_state` machinery (PRs #985/#988/#993).
