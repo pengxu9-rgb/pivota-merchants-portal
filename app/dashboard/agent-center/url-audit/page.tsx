@@ -390,6 +390,9 @@ export default function UrlAuditPage() {
   const [loading, setLoading] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // Non-error info (e.g. "still running — saved to history"): grounded per-SKU
+  // probes can run past the browser poll budget, but the run is durable.
+  const [notice, setNotice] = useState<string | null>(null);
   const [result, setResult] = useState<UrlReadinessAuditResponse | null>(null);
   // Visibility run history: the run currently shown, an open-in-progress marker,
   // a key that refreshes the list after a new run, and a scroll target.
@@ -436,6 +439,7 @@ export default function UrlAuditPage() {
     setLoading(true);
     setElapsedSec(0);
     setError(null);
+    setNotice(null);
     setResult(null);
     try {
       const res = await apiClient.runUrlReadinessAudit({
@@ -458,7 +462,18 @@ export default function UrlAuditPage() {
     } catch (e: any) {
       const status = e?.response?.status;
       const detail = e?.response?.data?.detail;
-      if (status === 402) {
+      if (e?.code === 'poll_timeout') {
+        // Not a failure — the durable run is still going and will appear in
+        // Past visibility checks. Surface it there + as a friendly notice.
+        setNotice(e?.message || 'Still auditing — check Past visibility checks shortly.');
+        if (e?.runId) setActiveRunId(e.runId);
+        setHistoryReloadKey((k) => k + 1);
+        stashVisibilityHandoff({
+          urls: cleanedUrls,
+          brand: brand.trim() || undefined,
+          website: website.trim() || undefined,
+        });
+      } else if (status === 402) {
         setError(
           detail?.message ||
             "You've used your free URL audits. Connect your store for the full per-SKU audit, or upgrade to keep auditing by URL.",
@@ -667,6 +682,15 @@ export default function UrlAuditPage() {
           <div className="flex items-start gap-3 px-5 py-4 text-sm text-red-700">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{error}</span>
+          </div>
+        </SurfaceCard>
+      ) : null}
+
+      {notice ? (
+        <SurfaceCard>
+          <div className="flex items-start gap-3 px-5 py-4 text-sm text-[color:var(--merchant-accent,#6366f1)]">
+            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{notice}</span>
           </div>
         </SurfaceCard>
       ) : null}
