@@ -524,6 +524,7 @@ class ApiClient {
     blocked_only?: boolean;
     low_quality_only?: boolean;
     sort_by?: 'default' | 'cq_desc' | 'mr_desc';
+    segment?: 'all' | 'fix_here' | 'in_store' | 'other';
   }) {
     const response = await this.client.get('/merchant/readiness/optimization', {
       params: {
@@ -536,6 +537,7 @@ class ApiClient {
         blocked_only: options?.blocked_only,
         low_quality_only: options?.low_quality_only,
         sort_by: options?.sort_by,
+        segment: options?.segment,
       },
       timeout: options?.timeoutMs,
     });
@@ -562,6 +564,7 @@ class ApiClient {
     blocked_only?: boolean;
     low_quality_only?: boolean;
     sort_by?: 'default' | 'cq_desc' | 'mr_desc';
+    segment?: 'all' | 'fix_here' | 'in_store' | 'other';
   }) {
     const response = await this.refreshMerchantReadinessOptimizationDetailed(params);
     return response?.data || response;
@@ -580,6 +583,7 @@ class ApiClient {
     blocked_only?: boolean;
     low_quality_only?: boolean;
     sort_by?: 'default' | 'cq_desc' | 'mr_desc';
+    segment?: 'all' | 'fix_here' | 'in_store' | 'other';
   }) {
     const response = await this.client.post(
       '/merchant/readiness/actions/refresh',
@@ -596,6 +600,7 @@ class ApiClient {
         blocked_only: params?.blocked_only,
         low_quality_only: params?.low_quality_only,
         sort_by: params?.sort_by,
+        segment: params?.segment,
       }
     );
     return response.data;
