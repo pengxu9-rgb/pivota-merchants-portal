@@ -1,91 +1,75 @@
-# Spec: store-less (brand-authored) catalog
+# Spec: store-less (brand-authored) catalog — merchant-portal management
 
-**Status:** proposal · **Priority:** foundational — unblocks non-Shopify / pre-launch / wholesale / marketplace-only brands.
-**Origin:** follow-on from the catalog-health redesign — today a brand **must sync a storefront before it can have or manage a catalog**, which contradicts the store-less / neutral-commerce-index positioning.
-**Repos:** `pivota-backend` (source, identity, create path, scoring) · `pivota-merchants-portal` (authoring UI + reuse).
+**Status:** proposal · **Priority:** foundational — let non-Shopify / pre-launch / wholesale / marketplace-only brands *see and manage* a catalog in the portal without syncing a store.
+**Repos:** `pivota-backend` (portal readiness source + manual intake) · `pivota-merchants-portal` (authoring + reuse).
+
+> **Read first — reconciliation with the live commerce-index track.** The index side of "store-less" is **already built** on `origin/main` (the commerce-index P0/P1 work; see the `commerce-index-storeless-brand-decision-layer` memory). Specifically:
+> - **`catalog_products` is the storefront-optional product registry** — it carries `pdp_scope` (default `unverified`), `pdp_lifecycle_stage`, `content_key`, `claim_state` (default `unclaimed`) (`db/catalog.py`). It is **not** the Shopify cache.
+> - **Products already enter store-lessly** via audit-seed (`services/audit_index_intake.py`, `ENABLE_AUDIT_INDEX_INTAKE`) — a URL audit upserts a `catalog_products` row (`platform='url_audit'`).
+> - **Brand claim + attest already exist**: `brand_claims` + `routes/brand_claim_routes.py` (claim/verify), `services/claim_state.py` (lifecycle), and the attest endpoint writes content to **`product_enrichment`** — the agent-read store the `agent_pdp_view` assembler merges from.
+>
+> So this spec is **not** "build a catalog from scratch." It is the **merchant-portal complement** to that track: surface the already-store-less `catalog_products` to the brand, and add the one listed-but-unbuilt P1 item — **(2c) a storefront-optional *manual* intake** (today products only enter via URL-audit, not brand-authored entry).
 
 ---
 
 ## 1. Problem & current state (grounded)
 
-A merchant with no connected store has **no catalog in the system**, so there is nothing to enrich, evidence, or score. The coupling is concentrated in two places — everything else is already store-agnostic.
+There are **two catalog representations**, and the merchant portal is wired to the store-gated one:
 
-| Layer | Where | Store-coupled? |
+| | Merchant-portal catalog (this gap) | Commerce-index catalog (already store-less) |
 |---|---|---|
-| **Source selection** | `readiness/sources/__init__.py:9–24` | **Yes** — `load_merchant_source_dataset` routes `synthetic-demo-merchant` → synthetic, the alpha merchant → `shopify_live`, else **raises `KeyError`**. Only two real paths; both presuppose a store (or a fixture). |
-| **Catalog input** | `readiness/sources/shopify_live.py` (`_load_runtime_cache_rows`, `_map_cache_row_to_standard_product`) | **Yes** — products come from a synced **products cache** (`get_cached_products(..., platform="shopify")`), written by the store sync job. No sync ⇒ no products. |
-| Store linkage | `merchant_onboarding` (basic record) + `merchant_stores` (connections), `services/merchant_store_service.py` | A merchant **can exist with no `merchant_stores` row** — the data model already allows store-less merchants. |
-| Dataset contract | `MerchantSourceDataset` (`readiness/models.py:506–526`) | Neutral — `merchant_connection` defaults to `{}`; `source_of_truth` is a free dict; `products: List[StandardProduct]`. |
-| Product shape | `StandardProduct` (`models/standard_product.py:490–656`) | Neutral — requires only `id, platform, merchant_id, title, price, currency`; everything else optional. `platform` is a free string. |
-| Product identity | `merchant_pdp.py` — `product_key = f"{merchant_id}|{platform}|{platform_product_id}"` | **Neutral** — any `platform` string works; no enum. |
-| **Enrichment** | `db/product_enrichment.py` — PK `(merchant_id, platform, platform_product_id, geo_code)`, `upsert_enrichment(...)` | **Already store-agnostic** ✓ — works for any `platform`, no store required. |
-| **Evidence** | `POST /product/{platform}/{platform_product_id}/evidence` (`routes/merchant_pdp.py:151`) | **Already store-agnostic** ✓ — keyed by product_key, no store linkage. |
+| Backing store | Shopify **products cache** (`get_cached_products(..., platform="shopify")`) | **`catalog_products`** (`pdp_scope`/`claim_state`/`content_key`) |
+| Entry point | Store **sync** only | URL **audit-seed**, brand claim/attest |
+| Read by | `readiness/sources/shopify_live.py` → readiness pipeline → the Catalog-health page | `agent_pdp_view` assembler → agents |
+| Source selection | `load_merchant_source_dataset` (`readiness/sources/__init__.py`) → only `synthetic` / `shopify_live`, else `KeyError` | n/a |
 
-**Takeaway:** identity, enrichment, and evidence are *already* platform-neutral. The only things missing for a store-less brand are **(a) a catalog source that isn't the Shopify cache** and **(b) a way to create products without a store**. There is no existing manual/CSV/brand-authored product path today (closest is the synthetic JSON fixture and an unwired `external_seed` reference in tests).
+So a store-less brand may *already have* `catalog_products` rows (from an audit), yet the **portal shows nothing** — because the portal's readiness pipeline reads the Shopify cache, not `catalog_products`, and there's no way to **author** a product by hand.
 
----
+The good news (unchanged from first draft, and now confirmed): **identity, enrichment, and evidence are platform-neutral** — `product_enrichment` PK is `(merchant_id, platform, platform_product_id, geo_code)`; the evidence route is `/product/{platform}/{id}/evidence`. No store coupling. The attest path *already* writes `product_enrichment`.
 
-## 2. Why this is essential
+## 2. Why it's essential
+The brands that gain most from agent discovery + citation (pre-launch, wholesale-only, marketplace-only, non-Shopify) are exactly the ones the portal locks out today. The index can already represent them; the **merchant-facing management surface** is the missing half.
 
-The brands that gain the most from agent **discovery + citation** — pre-launch, wholesale-only, marketplace-only, or simply not-on-Shopify — are exactly the ones the current architecture **locks out**. For them, checkout isn't the wedge; **content + evidence + citation eligibility** is. Store-less support is what makes "every brand is equal in a neutral index" real instead of aspirational, and it's the concrete form of the missing **claim/content write path**.
-
-## 3. Goal
-
-Let a brand **create and manage a product catalog in Pivota with no store connection**, run **content/discovery readiness + evidence** on it, and become citation-eligible — while commerce signals (inventory, checkout, order-sync) are treated as **N/A**, not blockers. Connecting a store later is an *upgrade*, not a prerequisite.
+## 3. The genuine gaps (narrowed)
+- **(A) Portal pipeline is store-gated** — `readiness/sources` never reads `catalog_products`, so store-less index entries are invisible in the portal.
+- **(B) No manual intake** — the listed P1 "(2c) storefront-optional intake (manual/feed)"; products only arrive via URL-audit-seed.
+- **(C) No store-less management UX** — catalog / catalog-health pages assume a synced store (empty/blocked otherwise).
 
 ---
 
-## 4. Proposed architecture
+## 4. Proposed design (build on what exists)
 
-### 4.1 Data — a brand-authored product store
-A `brand_product` table keyed by `(merchant_id, product_id)` with `platform = "pivota"`, holding the `StandardProduct` core (title, brand/vendor, category, description, images, attributes, optional price). This is the **source of truth** for store-less catalogs — distinct from the Shopify products cache (which is a sync mirror).
+### 4.1 Reuse `catalog_products` as the store-less registry — do **not** add a new table
+Brand-authored products are `catalog_products` rows with a brand-authored provenance (`platform` value TBD — align with the audit-seed convention; `pdp_scope='unverified'`, `claim_state` per lifecycle). This keeps one identity/`content_key` and inherits the existing serving gates (un-served until graduated/claimed).
 
-### 4.2 New readiness source
-`load_brand_authored_merchant_dataset(merchant_id)` returns a `MerchantSourceDataset` with:
-- `products` from `brand_product`; `merchant_connection = {}`;
-- `source_of_truth.catalog = "pivota_brand_catalog.v1"`; `field_sources`/`product_diagnostics` use product `created_at`/`updated_at` (no refresh cycle);
-- a **new mode** (`merchant_alpha_mode = "brand_authored"`, or a `capability_flag`) the scorer reads to know commerce signals are N/A.
+### 4.2 Manual intake — the one new write primitive (P1-2c)
+`POST/PUT/DELETE /merchant/products` (merchant-scoped): create/edit a brand-authored `catalog_products` row + its content via the **existing** `product_enrichment` upsert (`db.product_enrichment.upsert_enrichment`) and the attest/claim_state machinery. MVP = manual single-product; Phase 2 = CSV/feed/URL import. This is the brand-authored sibling of audit-seed.
 
-### 4.3 Source selection
-In `load_merchant_source_dataset`, route a merchant with **no store connection but brand-authored products** to the new loader (instead of `KeyError`). (Hybrid — a merchant with *both* a store and brand-authored products — is an explicit open question; §7.)
+### 4.3 Portal readiness source for store-less merchants
+Add a `readiness/sources` loader backed by `catalog_products` (brand-authored rows for the merchant) returning the existing `MerchantSourceDataset` contract: `merchant_connection={}`, `source_of_truth.catalog="pivota_brand_catalog.v1"`, diagnostics from `created_at/updated_at`. Route store-less merchants (no `merchant_stores` row, have brand-authored products) here instead of `KeyError`.
 
-### 4.4 The create primitive (the actual new write path)
-`POST /merchant/products`, `PUT /merchant/products/{id}`, `DELETE /merchant/products/{id}` — create/edit/remove brand-authored products, merchant-scoped. MVP = manual single-product create; import (CSV / feed / paste-a-PDP-URL) is Phase 2.
+### 4.4 Scoring adaptation (`readiness/scoring.py`)
+Commerce families (price/inventory/checkout_capability/order_status) → **N/A** for brand-authored; content/discovery families + substantiation drive the score. Net: a *content readiness* + citation-eligibility verdict, never a "checkout blocked" nag.
 
-### 4.5 Scoring adaptation (`readiness/scoring.py`)
-For `brand_authored`, the price/inventory/checkout_capability/order_status families resolve to **N/A** (not blockers); readiness focuses on the **content/discovery** families (title, description, images, attributes, completeness) + evidence/substantiation. Net: a store-less brand gets a *content readiness* score and a citation-eligibility verdict, never a "checkout blocked" nag.
-
-### 4.6 Reuse (no rebuild)
-- **Enrichment** and **evidence** already key off `platform|product_id` → work as-is with `platform="pivota"`.
-- **Product queue, quality, the catalog-health page** all render from the readiness payload → they light up for brand-authored products with no UI rework.
-- The hidden store-setup banner stays hidden for these merchants (it's irrelevant until they want checkout) — consistent with the redesign.
+### 4.5 Reuse downstream (no rebuild)
+Enrichment (already the attest target), evidence panel, the product queue, the tabbed workspace, and the Catalog-health page all key off `(platform, product_id)` + the readiness payload → they light up unchanged once the source feeds them.
 
 ---
 
-## 5. Backend work
-1. `brand_product` table + DAL (CRUD).
-2. `load_brand_authored_merchant_dataset` source + register it in `load_merchant_source_dataset` (no-store-with-products branch).
-3. `POST/PUT/DELETE /merchant/products` (create path) + rescore-on-write.
-4. Scoring: `brand_authored` mode → commerce families N/A; content families drive the score.
-5. Product identity: standardize `platform="pivota"` for brand-authored; ensure `make_product_key` + enrichment/evidence accept it (they do).
+## 5. Work
+**Backend:** (1) `readiness/sources` loader over `catalog_products` + register in `load_merchant_source_dataset`; (2) `POST/PUT/DELETE /merchant/products` manual intake writing `catalog_products` + `product_enrichment` (reuse claim_state/attest); (3) `brand_authored` scoring mode (commerce N/A).
+**Frontend:** (1) **"Add product"** authoring surface → the new intake; (2) store-less empty state ("Add your first product" instead of "connect a store"); (3) reuse queue/workspace/enrichment/evidence as-is; (4) un-gate catalog management from store connection in nav/onboarding.
 
-## 6. Frontend work
-1. **"Add product" authoring surface** (the genuinely new UI): a product form (title, brand, category, description, images, attributes) → `POST /merchant/products`; edit/remove.
-2. An empty-state on the Catalog / Catalog-health pages for store-less merchants: "Add your first product" instead of "connect a store."
-3. Everything downstream (queue, workspace tabs, enrichment editor, evidence panel) is reused unchanged.
-4. Nav/onboarding: let a merchant reach catalog management without the "connect a store" gate.
+## 6. Phasing
+- **MVP** — manual create + content/evidence + content-readiness for store-less merchants, reading `catalog_products`.
+- **Phase 2** — CSV/feed/URL import; dedup vs the canonical index on `content_key`.
+- **Phase 3** — "upgrade to checkout" when a store/PSP connects (identity merge brand-authored ↔ synced).
 
----
+## 7. Open decisions
+- **Platform value** for brand-authored rows — reuse `url_audit`-style convention or a new `pivota`/`brand` value (load-bearing in keys/exports; pick once).
+- **One pipeline or two** — does the portal get a *new source* over `catalog_products` (§4.3), or do we converge the portal onto the index read path the assembler uses? (Bigger, but removes the two-representation split.)
+- **Hybrid merchants** (store + brand-authored) — precedence + dedup on `content_key`.
+- **Claim/attest reuse** — is manual intake just the existing attest endpoint with a create step, or a distinct merchant-authored entry? (Avoid a parallel write path to `product_enrichment`.)
+- **Alpha gating** — `load_merchant_source_dataset` is currently gated to one alpha merchant; store-less onboarding implies opening readiness to general merchants.
 
-## 7. Phasing
-- **MVP** — manual single-product create + content/evidence management + content-readiness score for store-less merchants. Proves the decoupling end-to-end with the smallest surface.
-- **Phase 2** — bulk import (CSV / feed / import-from-URL), and dedup against the canonical commerce index.
-- **Phase 3** — "upgrade to checkout": when the brand later connects a store/PSP, reconcile brand-authored products with synced ones (identity merge) and unlock commerce readiness.
-
-## 8. Open decisions
-- **Mode vs flag.** New `merchant_alpha_mode = "brand_authored"` or a separate capability flag the scorer reads? (Affects how many `scoring.py` branches change.)
-- **Hybrid catalogs.** Can one merchant have *both* a synced store and brand-authored products? If yes, the source layer must merge two product sets and define precedence; if no (MVP), keep store-less and store-connected mutually exclusive.
-- **Canonical index tie-in.** Do brand-authored products get a `content_key` and feed the cross-channel citation index immediately (the commerce-index thread), or stay merchant-private until reviewed? This is the highest-leverage coupling to get right.
-- **Identity / dedup.** When a brand-authored product and a synced store product describe the same SKU (Phase 3), what's the merge key and which wins?
-- **Alpha gating.** The live path is currently gated to a single alpha merchant (`readiness/sources/__init__.py`). Store-less onboarding implies opening readiness to general merchants — decide whether this rides the same gate or its own.
-- **Platform string.** `"pivota"` vs `"brand"` vs `"brand_authored"` as the canonical `platform` value (it's load-bearing in keys and exports — pick once, never rename).
+> Cross-ref: `commerce-index-storeless-brand-decision-layer` memory (P1 remaining item **2c**), and the merchant-policy-setup spec (sibling "no surface yet" gap).
