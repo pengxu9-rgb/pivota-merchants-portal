@@ -586,6 +586,8 @@ export interface UrlReadinessAuditResponse {
   /** Per-SKU authority hosts (who's cited instead of you, incl. communities). */
   authority_map?: Record<string, unknown> | null;
   where_you_can_win?: Record<string, unknown> | null;
+  /** The merchant's own test prompts ("Your prompts"), probed once brand-level. */
+  custom_prompts?: CustomPromptResult[];
   /**
    * False for URL audits: catalog-only dimensions (identity/content/routability)
    * can't be measured without a synced store, so the UI renders them as
