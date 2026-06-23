@@ -16,7 +16,7 @@
  * pipeline; GET returns per_sku_reports + brand_rollup + authority_map.
  */
 
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeftRight,
@@ -41,6 +41,7 @@ import {
 import { RecentAuditsPanel } from '@/components/audit/RecentAuditsPanel';
 import { BuyCreditsCard } from '@/components/billing/BuyCreditsCard';
 import { PerSkuReportCard } from '@/components/audit/PerSkuReportCard';
+import { CustomPromptsPanel } from '@/components/audit/CustomPromptsPanel';
 import type {
   AgentCenterBdReport,
   AgentCenterBdVerdictLabel,
@@ -49,6 +50,7 @@ import type {
 } from '@/lib/types/ai-readiness';
 
 const MAX_PRODUCT_URLS = 5;
+const MAX_CUSTOM_PROMPTS = 10;
 
 function verdictTone(label: AgentCenterBdVerdictLabel | null | undefined): string {
   const l = (label || '').toUpperCase();
@@ -387,6 +389,8 @@ export default function UrlAuditPage() {
   const [website, setWebsite] = useState('');
   const [brand, setBrand] = useState('');
   const [productUrls, setProductUrls] = useState<string[]>(['']);
+  // Optional merchant test prompts ("Your prompts"), one per line, probed once.
+  const [customPromptsText, setCustomPromptsText] = useState('');
   const [loading, setLoading] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -429,7 +433,27 @@ export default function UrlAuditPage() {
     );
 
   const cleanedUrls = productUrls.map((u) => u.trim()).filter(Boolean);
-  const canRun = cleanedUrls.length > 0 && !loading;
+
+  // One prompt per line, trimmed + case-insensitive deduped (mirrors readiness).
+  const customPromptsParsed = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const line of customPromptsText.split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t) continue;
+      const key = t.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(t);
+    }
+    return out;
+  }, [customPromptsText]);
+  const customPromptsError =
+    customPromptsParsed.length > MAX_CUSTOM_PROMPTS
+      ? `Too many prompts: ${customPromptsParsed.length} / ${MAX_CUSTOM_PROMPTS} max.`
+      : null;
+
+  const canRun = cleanedUrls.length > 0 && !loading && !customPromptsError;
 
   const run = async () => {
     if (cleanedUrls.length === 0) {
@@ -446,6 +470,7 @@ export default function UrlAuditPage() {
         productUrls: cleanedUrls,
         website: website.trim() || undefined,
         brand: brand.trim() || undefined,
+        customPrompts: customPromptsParsed.length > 0 ? customPromptsParsed : undefined,
         onProgress: ({ elapsedMs }) =>
           setElapsedSec(Math.round(elapsedMs / 1000)),
       });
@@ -653,6 +678,38 @@ export default function UrlAuditPage() {
             ) : null}
           </div>
 
+          {/* Optional: merchant's own test prompts ("Your prompts"). Probed once
+              brand-level and surfaced with cited/competitor/source detail. */}
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium" htmlFor="custom-prompts">
+              Your prompts to test{' '}
+              <span className="merchant-text-muted font-normal">
+                (optional — one per line, up to {MAX_CUSTOM_PROMPTS})
+              </span>
+            </label>
+            <textarea
+              id="custom-prompts"
+              value={customPromptsText}
+              onChange={(e) => setCustomPromptsText(e.target.value)}
+              disabled={loading}
+              rows={3}
+              placeholder={
+                'best collagen jelly for glowing skin\n' +
+                'vitamin c gummies for travel\n' +
+                'what should I take for skin health'
+              }
+              className="w-full rounded-lg border border-[color:var(--merchant-line)] bg-transparent py-2 px-3 font-mono text-xs outline-none focus:border-[color:var(--merchant-accent,#6366f1)]"
+            />
+            {customPromptsError ? (
+              <p className="text-xs text-red-700">{customPromptsError}</p>
+            ) : (
+              <p className="merchant-text-muted text-xs">
+                We&apos;ll test exactly these buyer prompts and show whether AI
+                cited you, the sources it used, and which competitors it named.
+              </p>
+            )}
+          </div>
+
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="merchant-text-muted text-xs">
               We fetch each link for clean data (Shopify, Wix, or any product
@@ -754,6 +811,9 @@ export default function UrlAuditPage() {
                   />
                 ))}
               </div>
+
+              {/* The merchant's own test prompts, if any (brand-level). */}
+              <CustomPromptsPanel prompts={result.custom_prompts} />
             </>
           ) : report && agg ? (
             <>
