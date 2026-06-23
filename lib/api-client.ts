@@ -456,6 +456,45 @@ class ApiClient {
     return response.data;
   }
 
+  // Store-less brand-authored catalog (gated server-side by ENABLE_STORELESS_BRAND_CATALOG).
+  async createMerchantProduct(body: {
+    title: string;
+    brand?: string;
+    category?: string;
+    description?: string;
+    image_url?: string;
+    tags?: string[];
+    price?: number;
+    currency?: string;
+    summary_short?: string;
+    bullet_points?: string[];
+  }) {
+    const response = await this.client.post('/merchant/products', body);
+    return response.data;
+  }
+
+  async updateMerchantProduct(
+    productId: string,
+    body: Partial<{
+      title: string;
+      brand: string;
+      category: string;
+      description: string;
+      image_url: string;
+      tags: string[];
+      price: number;
+      currency: string;
+      summary_short: string;
+      bullet_points: string[];
+    }>
+  ) {
+    const response = await this.client.put(
+      `/merchant/products/${encodeURIComponent(productId)}`,
+      body
+    );
+    return response.data;
+  }
+
   // --- Pivota PDP contributions (merchant adds content straight to the
   // canonical PDP agents read — the "Add to your Pivota page" path). The
   // backend keys the contribution to the authed merchant_id; we only pass the
