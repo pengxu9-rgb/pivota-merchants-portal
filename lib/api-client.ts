@@ -1817,12 +1817,14 @@ class ApiClient {
     const runId = kicked?.run_id || kicked?.audit_run_id;
     if (!runId) throw new Error('Audit did not start. Please try again.');
 
-    // 2. Poll until the background audit finishes. Per-product runs go through
-    //    the durable per-SKU worker and can take several minutes for 5 URLs, so
-    //    the budget matches the per-SKU page (~15 min); the run continues
-    //    server-side regardless and can be re-opened from history.
+    // 2. Poll until the background audit finishes. The grounded per-SKU probes
+    //    serialize upstream — a single product was observed at ~16 min, so the
+    //    inline budget is 18 min to let a typical 1–2 URL run finish in-page.
+    //    Multi-URL runs can exceed it; the run is durable and continues
+    //    server-side, so on budget-exhaustion we signal 'poll_timeout' (handled
+    //    as a "still running → Past visibility checks" notice, not a failure).
     const startedAt = Date.now();
-    const MAX_MS = 15 * 60_000;
+    const MAX_MS = 18 * 60_000;
     const INTERVAL_MS = 5_000;
     for (;;) {
       await new Promise((r) => setTimeout(r, INTERVAL_MS));
@@ -1847,8 +1849,16 @@ class ApiClient {
       }
       params.onProgress?.({ elapsedMs, status: poll?.status || 'running' });
       if (elapsedMs >= MAX_MS) {
-        throw new Error(
-          'The audit is taking longer than expected — it may still finish. Check back shortly.',
+        // The grounded per-SKU probes serialize upstream and can run past the
+        // browser poll budget. The run is durable — it keeps going server-side
+        // and lands in Past visibility checks. Signal this as a recoverable
+        // "still running" state (with the run_id) rather than a hard failure so
+        // the caller can point the merchant to history instead of an error.
+        throw Object.assign(
+          new Error(
+            "Still auditing — this can take a few minutes. We'll save it to Past visibility checks; you can leave this page and re-open it there.",
+          ),
+          { code: 'poll_timeout', runId },
         );
       }
     }
