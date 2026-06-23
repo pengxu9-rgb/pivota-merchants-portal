@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { getDescriptionText } from '@/lib/html-text';
@@ -48,6 +48,7 @@ import { ProductWorkspace } from './_components/ProductWorkspace';
 
 export default function ProductOptimizationPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const fromReadiness = searchParams.get('source') === 'readiness';
   const focusIssue = searchParams.get('focus');
   const [loading, setLoading] = useState(true);
@@ -318,6 +319,16 @@ export default function ProductOptimizationPage() {
     setPushFilter(config.pushFilter);
     setShowBlockedOnly(config.blockedOnly);
     setShowOnlyLowQuality(false);
+  };
+
+  // Escape hatch for the queue's active issue filter. Also strips a lingering
+  // ?focus= from the URL so it can't re-pin the filter on remount (e.g. after
+  // arriving from a setup deep-link with a non-product focus).
+  const clearIssueFilter = () => {
+    setIssueFilter('all');
+    if (focusIssue) {
+      router.replace('/dashboard/product-optimization');
+    }
   };
 
   const loadSourceDataTriage = async (
@@ -1695,6 +1706,7 @@ export default function ProductOptimizationPage() {
         qualityMetadataReady={qualityMetadataReady}
         issueFilter={issueFilter}
         setIssueFilter={setIssueFilter}
+        onClearIssueFilter={clearIssueFilter}
         issueBuckets={issueBuckets}
         pushFilter={pushFilter}
         setPushFilter={setPushFilter}

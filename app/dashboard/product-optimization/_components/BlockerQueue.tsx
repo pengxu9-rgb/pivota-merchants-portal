@@ -1,7 +1,7 @@
 'use client';
 
 import type { Dispatch, SetStateAction } from 'react';
-import { ArrowRight, Loader2, Package, Search, Wand2 } from 'lucide-react';
+import { ArrowRight, Loader2, Package, Search, Wand2, X } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import {
   type AgentPushSummary,
@@ -37,6 +37,7 @@ interface BlockerQueueProps {
   qualityMetadataReady: boolean;
   issueFilter: string;
   setIssueFilter: Dispatch<SetStateAction<string>>;
+  onClearIssueFilter: () => void;
   issueBuckets: ReadinessIssueBucket[];
   pushFilter: 'all' | 'eligible' | 'excluded';
   setPushFilter: Dispatch<SetStateAction<'all' | 'eligible' | 'excluded'>>;
@@ -73,6 +74,7 @@ export function BlockerQueue({
   qualityMetadataReady,
   issueFilter,
   setIssueFilter,
+  onClearIssueFilter,
   issueBuckets,
   pushFilter,
   setPushFilter,
@@ -203,6 +205,25 @@ export function BlockerQueue({
                 })}
               </div>
             </div>
+            {issueFilter !== 'all' && (
+              <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-900 ring-1 ring-amber-200">
+                <span className="min-w-0 truncate">
+                  Filtered:{' '}
+                  <span className="font-medium">
+                    {issueBuckets.find((b) => b.code === issueFilter)?.label ??
+                      issueFilter.replaceAll('_', ' ')}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={onClearIssueFilter}
+                  className="ml-auto inline-flex flex-shrink-0 items-center gap-1 rounded-full bg-white px-2 py-0.5 font-medium text-amber-800 ring-1 ring-amber-200 hover:bg-amber-100"
+                >
+                  Clear
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
