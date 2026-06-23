@@ -160,26 +160,41 @@ export function CatalogHealthHeader({
                 </a>
               </div>
               <div className="mt-2 space-y-1">
-                {storeSetupActions.length > 0
-                  ? storeSetupActions.map((action) => (
-                      <a
-                        key={`${action.label}-${action.target_url}`}
-                        href={action.target_url}
-                        className="block rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-amber-100 hover:bg-amber-50"
-                      >
-                        <div className="font-medium text-slate-900">{action.label}</div>
-                        <div className="mt-1 text-xs text-slate-600">{action.description}</div>
-                      </a>
-                    ))
-                  : pivotaManagedActions.map((action) => (
-                      <div
-                        key={`${action.label}-${action.description}`}
-                        className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-amber-100"
-                      >
-                        <div className="font-medium text-slate-900">{action.label}</div>
-                        <div className="mt-1 text-xs text-slate-600">{action.description}</div>
+                {storeSetupActions.map((action) =>
+                  action.fix_surface === 'integrations' ? (
+                    <a
+                      key={`${action.label}-${action.target_url}`}
+                      href={action.target_url}
+                      className="block rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-amber-100 hover:bg-amber-50"
+                    >
+                      <div className="font-medium text-slate-900">{action.label}</div>
+                      <div className="mt-1 text-xs text-slate-600">{action.description}</div>
+                    </a>
+                  ) : (
+                    // Policy items (shipping/returns, warranty/trust) have no fix
+                    // surface in Pivota yet — render as guidance, not a link that
+                    // would loop back and break the queue filter.
+                    <div
+                      key={`${action.label}-${action.target_url}`}
+                      className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-amber-100"
+                    >
+                      <div className="font-medium text-slate-900">{action.label}</div>
+                      <div className="mt-1 text-xs text-slate-600">{action.description}</div>
+                      <div className="mt-1 text-[11px] text-slate-500">
+                        Update this in your store platform&rsquo;s shipping, returns &amp; policy settings — not editable from Pivota yet.
                       </div>
-                    ))}
+                    </div>
+                  )
+                )}
+                {pivotaManagedActions.map((action) => (
+                  <div
+                    key={`${action.label}-${action.description}`}
+                    className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-amber-100"
+                  >
+                    <div className="font-medium text-slate-900">{action.label}</div>
+                    <div className="mt-1 text-xs text-slate-600">{action.description}</div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
