@@ -485,7 +485,6 @@ export default function ProductOptimizationPage() {
   const readinessSummary = optimizationData?.readiness_summary || null;
   const agentPushSummary = optimizationData?.agent_push_summary || null;
   const issueBuckets = optimizationData?.issue_buckets || [];
-  const merchantActions = optimizationData?.merchant_actions || [];
   const productQueue = optimizationData?.product_queue || [];
   const productQueuePage = optimizationData?.product_queue_page || null;
   const queueSegmentCounts = optimizationData?.queue_segment_counts || null;
@@ -1088,13 +1087,6 @@ export default function ProductOptimizationPage() {
     return Date.now() - ts < 30_000;
   })();
 
-  const storeSetupActions = merchantActions.filter((action) =>
-    ['integrations', 'policy'].includes(action.fix_surface)
-  );
-  const pivotaManagedActions = merchantActions.filter(
-    (action) => action.fix_surface === 'pivota_managed'
-  );
-
   const activeSourceDataTriage =
     sourceDataTriageReason === triageReason ? sourceDataTriage : null;
   const triageSummaryByCode = new Map(
@@ -1659,8 +1651,6 @@ export default function ProductOptimizationPage() {
           contentOpportunityCount={contentOpportunityCount}
           readinessLoading={readinessLoading}
           loadOptimizationData={loadOptimizationData}
-          storeSetupActions={storeSetupActions}
-          pivotaManagedActions={pivotaManagedActions}
         />
       )}
 

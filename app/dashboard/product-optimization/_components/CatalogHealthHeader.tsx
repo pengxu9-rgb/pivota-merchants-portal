@@ -2,7 +2,6 @@
 
 import {
   type AgentPushSummary,
-  type MerchantReadinessAction,
   type OptimizationPlan,
   type ReadinessOptimizationPayload,
   type ReadinessSummary,
@@ -27,8 +26,6 @@ interface CatalogHealthHeaderProps {
     reasonCode?: SourceDataReasonCode;
     page?: number;
   }) => Promise<ReadinessOptimizationPayload | null>;
-  storeSetupActions: MerchantReadinessAction[];
-  pivotaManagedActions: MerchantReadinessAction[];
 }
 
 export function CatalogHealthHeader({
@@ -41,11 +38,7 @@ export function CatalogHealthHeader({
   contentOpportunityCount,
   readinessLoading,
   loadOptimizationData,
-  storeSetupActions,
-  pivotaManagedActions,
 }: CatalogHealthHeaderProps) {
-  const hasSetupBanner =
-    storeSetupActions.length > 0 || pivotaManagedActions.length > 0;
   return (
         <div className={`rounded-xl border p-5 ${getReadinessTone(readinessSummary.tier).card}`}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -145,59 +138,6 @@ export function CatalogHealthHeader({
               </button>
             </div>
           </div>
-
-          {hasSetupBanner && (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-sm font-medium text-amber-900">
-                  Store setup to review
-                </div>
-                <a
-                  href="/dashboard/integrations"
-                  className="inline-flex items-center justify-center rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-slate-900 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
-                >
-                  Review integrations
-                </a>
-              </div>
-              <div className="mt-2 space-y-1">
-                {storeSetupActions.map((action) =>
-                  action.fix_surface === 'integrations' ? (
-                    <a
-                      key={`${action.label}-${action.target_url}`}
-                      href={action.target_url}
-                      className="block rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-amber-100 hover:bg-amber-50"
-                    >
-                      <div className="font-medium text-slate-900">{action.label}</div>
-                      <div className="mt-1 text-xs text-slate-600">{action.description}</div>
-                    </a>
-                  ) : (
-                    // Policy items (shipping/returns, warranty/trust) have no fix
-                    // surface in Pivota yet — render as guidance, not a link that
-                    // would loop back and break the queue filter.
-                    <div
-                      key={`${action.label}-${action.target_url}`}
-                      className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-amber-100"
-                    >
-                      <div className="font-medium text-slate-900">{action.label}</div>
-                      <div className="mt-1 text-xs text-slate-600">{action.description}</div>
-                      <div className="mt-1 text-[11px] text-slate-500">
-                        Update this in your store platform&rsquo;s shipping, returns &amp; policy settings — not editable from Pivota yet.
-                      </div>
-                    </div>
-                  )
-                )}
-                {pivotaManagedActions.map((action) => (
-                  <div
-                    key={`${action.label}-${action.description}`}
-                    className="rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-amber-100"
-                  >
-                    <div className="font-medium text-slate-900">{action.label}</div>
-                    <div className="mt-1 text-xs text-slate-600">{action.description}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
   );
 }
