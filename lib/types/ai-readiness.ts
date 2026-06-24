@@ -573,9 +573,37 @@ export interface SkuIntelligence {
   note?: string;
 }
 
+// Off-platform outreach move derived from a host AI cites instead of you.
+export interface OutreachMove {
+  host: string;
+  host_type: string;
+  host_subtype?: string | null;
+  action_verb: string;
+  lever: string;
+  recommendation_class?: string | null;
+  prompts_cited_count?: number;
+  cited_on_category_query?: boolean;
+  headline: string;
+  why: string;
+  first_move?: string | null;
+  pitch_recipient?: string | null;
+}
+
+export interface WhereYoureLosing {
+  summary?: string;
+  outreach_moves?: OutreachMove[];
+  who_ai_cites_instead?: {
+    available?: boolean;
+    competitors?: Array<{ name: string; times_named: number }>;
+    note?: string | null;
+  };
+}
+
 export interface UrlReadinessAuditResponse {
   status?: string;
   run_id?: string | null;
+  /** Competitive landscape + off-platform outreach moves (brand-level). */
+  where_youre_losing?: WhereYoureLosing;
   /**
    * Per-product reports — one per pasted URL — produced by the durable per-SKU
    * pipeline. This is the primary payload for the rich per-product UI.
