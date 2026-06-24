@@ -42,6 +42,7 @@ import { RecentAuditsPanel } from '@/components/audit/RecentAuditsPanel';
 import { BuyCreditsCard } from '@/components/billing/BuyCreditsCard';
 import { PerSkuReportCard } from '@/components/audit/PerSkuReportCard';
 import { CustomPromptsPanel } from '@/components/audit/CustomPromptsPanel';
+import { OutreachMovesPanel } from '@/components/audit/OutreachMovesPanel';
 import type {
   AgentCenterBdReport,
   AgentCenterBdVerdictLabel,
@@ -811,6 +812,12 @@ export default function UrlAuditPage() {
                   />
                 ))}
               </div>
+
+              {/* Off-platform outreach moves (brand-level): get cited where AI
+                  already cites competitors. */}
+              <OutreachMovesPanel
+                moves={result.where_youre_losing?.outreach_moves}
+              />
 
               {/* The merchant's own test prompts, if any (brand-level). */}
               <CustomPromptsPanel prompts={result.custom_prompts} />
