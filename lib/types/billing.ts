@@ -72,4 +72,10 @@ export interface BillingPlan {
 /** GET /api/billing/plans envelope. */
 export interface BillingPlansResponse {
   plans: BillingPlan[];
+  /**
+   * False for App Store / exempt merchants who must never be billed
+   * off-platform — the portal hides all billing UI (and Stripe references)
+   * when this is explicitly false. Absent/true keeps billing visible.
+   */
+  off_platform_billing?: boolean;
 }

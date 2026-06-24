@@ -82,6 +82,8 @@ export default function BillingPage() {
   const [period, setPeriod] = useState<BillingCurrentPeriod | null>(null);
   const [statements, setStatements] = useState<BillingStatement[]>([]);
   const [plans, setPlans] = useState<BillingPlan[]>([]);
+  // False for App Store / exempt merchants: hide all billing UI (no Stripe refs).
+  const [offPlatformBilling, setOffPlatformBilling] = useState(true);
 
   const [activating, setActivating] = useState(false);
   const [activationTimedOut, setActivationTimedOut] = useState(false);
@@ -145,6 +147,8 @@ export default function BillingPage() {
       const plansRes = await apiClient.getBillingPlans();
       if (cancelledRef.current) return;
       setPlans(plansRes.plans || []);
+      // Only an explicit `false` hides billing; absent/true keeps it visible.
+      setOffPlatformBilling(plansRes.off_platform_billing !== false);
     } catch {
       /* leave plans empty; upgrade section shows the soft message */
     }
@@ -164,8 +168,11 @@ export default function BillingPage() {
       setLoading(false);
       return;
     }
-    setLoading(false);
+    // Keep the spinner up until plans resolve so billing-free (App Store)
+    // merchants never flash the Stripe-billing UI before it's hidden.
     await Promise.allSettled([loadStatements(), loadPlans()]);
+    if (cancelledRef.current) return;
+    setLoading(false);
   };
 
   const pollActivation = async (prevTier: string) => {
@@ -224,6 +231,26 @@ export default function BillingPage() {
         <div className="merchant-panel px-8 py-6">
           <div className="animate-spin rounded-full h-10 w-10 border-2 border-[color:var(--merchant-line-strong)] border-t-[color:var(--merchant-success)]"></div>
         </div>
+      </div>
+    );
+  }
+
+  // App Store / exempt merchants are never billed off-platform: show a clean,
+  // Stripe-free "nothing to manage" state instead of the plan/usage/upgrade UI.
+  if (!offPlatformBilling) {
+    return (
+      <div className="space-y-8">
+        <PageHeader
+          eyebrow="Plan & billing"
+          title="Billing"
+          description="Pivota is free on the Shopify App Store."
+        />
+        <SurfaceCard eyebrow="Plan" title="Included — no subscription to manage">
+          <div className="px-5 py-6 text-sm text-[color:var(--merchant-muted-strong)]">
+            Your Pivota app is free. There is no separate subscription or payment
+            to set up here — there is nothing to manage on this page.
+          </div>
+        </SurfaceCard>
       </div>
     );
   }
