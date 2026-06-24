@@ -604,6 +604,9 @@ export interface UrlReadinessAuditResponse {
   run_id?: string | null;
   /** Competitive landscape + off-platform outreach moves (brand-level). */
   where_youre_losing?: WhereYoureLosing;
+  /** Merchant-grade narrative: headline, what's working, where you're losing,
+   * prioritized actions, answer-quality — the insight layer. */
+  merchant_narrative?: AgentCenterMerchantNarrative | null;
   /**
    * Per-product reports — one per pasted URL — produced by the durable per-SKU
    * pipeline. This is the primary payload for the rich per-product UI.
