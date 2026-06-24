@@ -46,7 +46,7 @@ Citation is a **public good** (the moat is *being cited*, not gating reads). So:
 | **Caching** | Responses are cacheable (`Cache-Control: public, max-age=…` + `ETag` on `content_key` + view version). Citation data is not real-time; staleness of minutes is fine and shifts load off the app. |
 | **ToS** | A short machine-readable usage note (`attribution_required: true`, `commercial_use: cite-and-link`) in the response envelope + a human ToS page. Citation is permitted and encouraged; re-hosting the catalog as a competing index is not. |
 
-> **Decision deferred to founder Q (ADR-007):** whether **Pivota Agent's own** read stays offer/seed-gated while this external read opens. This contract assumes *external read opens, internal Pivota-Agent recall keeps its existing gates* — they are different callers hitting different lanes.
+> **Founder-confirmed (2026-06-24, ADR-007 Accepted):** **Pivota Agent's own** read **stays offer/seed-gated** while this external read opens — the asymmetry is intentional and permanent (open index for citation, curated gate for first-party transact). They are different callers hitting different lanes.
 
 ---
 
