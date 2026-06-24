@@ -43,6 +43,7 @@ import { BuyCreditsCard } from '@/components/billing/BuyCreditsCard';
 import { PerSkuReportCard } from '@/components/audit/PerSkuReportCard';
 import { CustomPromptsPanel } from '@/components/audit/CustomPromptsPanel';
 import { OutreachMovesPanel } from '@/components/audit/OutreachMovesPanel';
+import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
 import type {
   AgentCenterBdReport,
   AgentCenterBdVerdictLabel,
@@ -796,6 +797,11 @@ export default function UrlAuditPage() {
                   ) : null}
                 </div>
               </SurfaceCard>
+
+              {/* The insight layer: headline story, what's working, where you're
+                  losing, prioritized actions + answer-quality — before the
+                  per-product detail. */}
+              <MerchantNarrativePanel narrative={result.merchant_narrative} />
 
               {/* One card per pasted product — its own analysis + action plan. */}
               <div className="space-y-3">
