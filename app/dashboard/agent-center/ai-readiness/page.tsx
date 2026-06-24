@@ -991,12 +991,20 @@ function CostMeterPanel({
       </div>
       <div
         className={`rounded border px-3 py-2 text-sm ${
-          previewData.sufficient
-            ? 'border-green-200 bg-green-50 text-green-900'
-            : 'border-red-300 bg-red-50 text-red-900'
+          !previewData.sufficient
+            ? 'border-red-300 bg-red-50 text-red-900'
+            : previewData.will_overage
+              ? 'border-amber-200 bg-amber-50 text-amber-900'
+              : 'border-green-200 bg-green-50 text-green-900'
         }`}
       >
-        {previewData.sufficient ? (
+        {previewData.sufficient && previewData.will_overage ? (
+          <>
+            <strong>Ready to launch.</strong> This run costs more than your
+            current credits, so {previewData.gaps[0]?.short ?? 0} will bill as
+            overage on your {balance.plan_tier} plan.
+          </>
+        ) : previewData.sufficient ? (
           <>
             <strong>Ready to launch.</strong> Plan: {balance.plan_tier}.
           </>

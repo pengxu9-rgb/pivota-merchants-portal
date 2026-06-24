@@ -1536,6 +1536,9 @@ export interface AgentCenterAuditPreviewResponse {
   estimated_execution_credits: number;
   current_balance: MerchantCreditBalance;
   sufficient: boolean;
+  /** True when a PAID tier will run the excess on overage (sufficient stays
+   * true — paid tiers aren't blocked; the overage bills after). */
+  will_overage?: boolean;
   gaps: AuditPreviewGap[];
 }
 
