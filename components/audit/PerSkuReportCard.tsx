@@ -19,6 +19,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronUp, Quote } from 'lucide-react';
 import { StrategicBriefPanel } from './StrategicBriefPanel';
 import { ChannelAppearancePanel } from './ChannelAppearancePanel';
+import { ProductCompetitivenessPanel } from './ProductCompetitivenessPanel';
 import type {
   AgentCenterPerSkuReport,
   SkuDimensionScore,
@@ -272,8 +273,13 @@ export function PerSkuReportCard({
           modelsCited={report.models_cited}
         />
 
-        {/* Brand-centric status FIRST: where this product shows up in AI —
-            your own site vs the channels AI cites instead. */}
+        {/* PRODUCT competitiveness FIRST: does the product win non-branded
+            discovery demand (where the brand gains new buyers) + who wins
+            instead. Branded queries shown as low-value. */}
+        <ProductCompetitivenessPanel report={report} />
+
+        {/* Then CHANNEL context: where it shows up — own site vs the channels
+            AI cites instead. */}
         <ChannelAppearancePanel report={report} />
 
         {/* Consultant-grade action plan: root cause (why you lose) + the

@@ -913,6 +913,22 @@ export interface AgentCenterPerSkuReport {
   // it shows up in AI answers — the brand's own site vs each retailer/marketplace
   // AI cites instead. The subject is the product; cited hosts are channels.
   channel_appearance?: ChannelAppearance | null;
+  // Product-FIRST competitiveness: does the product win NON-BRANDED discovery
+  // demand ("best hair oil for damaged hair") — where the brand gains new buyers
+  // — and who AI recommends instead. Leads the card; branded queries low-value.
+  product_competitiveness?: ProductCompetitiveness | null;
+}
+
+export interface ProductCompetitiveness {
+  has_discovery: boolean;
+  discovery: {
+    appeared: number;
+    total: number;
+    rate: number | null;
+    missed: string[];
+    top_competitors: { name: string; query_count: number }[];
+  };
+  branded: { appeared: number; total: number; rate: number | null };
 }
 
 export interface ChannelAppearanceChannel {
