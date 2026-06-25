@@ -921,10 +921,14 @@ export interface AgentCenterPerSkuReport {
 
 export interface ProductCompetitiveness {
   has_discovery: boolean;
+  // Discovery queries ran but the AI grounded none of them → couldn't measure
+  // this run (a transient grounding failure), NOT "appears nowhere".
+  grounding_unavailable?: boolean;
   discovery: {
     appeared: number;
     total: number;
     rate: number | null;
+    ungrounded?: number;
     missed: string[];
     top_competitors: { name: string; query_count: number }[];
   };
@@ -946,6 +950,9 @@ export interface ChannelAppearanceChannel {
 export interface ChannelAppearance {
   total_queries: number;
   own_site_host?: string | null;
+  // No host cited + brand never appeared anywhere = the AI didn't ground any
+  // answer this run → couldn't measure, not "appears on no channel".
+  grounding_unavailable?: boolean;
   // Your OWN domain cited as a source (the honest "are you the answer?").
   own_site_cited: boolean;
   own_site_cited_count: number;
