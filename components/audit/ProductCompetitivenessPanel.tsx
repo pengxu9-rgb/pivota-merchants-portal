@@ -63,6 +63,37 @@ export function ProductCompetitivenessPanel({
             />
           </div>
 
+          {pc.by_model && Object.keys(pc.by_model).length > 0 ? (
+            <div className="mt-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
+                By model
+              </div>
+              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                {Object.entries(pc.by_model).map(([model, m]) => (
+                  <span key={model}>
+                    <span className="font-medium capitalize">{model}</span>
+                    <span className="opacity-70">
+                      {' '}
+                      {m.appeared}/{m.total} discovery
+                    </span>
+                  </span>
+                ))}
+              </div>
+              {pc.model_divergence && pc.model_divergence.length > 0 ? (
+                <p className="mt-1.5 text-[11px] leading-relaxed opacity-70">
+                  Models disagree (different indexes) — e.g.{' '}
+                  {pc.model_divergence.slice(0, 2).map((d, i) => (
+                    <span key={i}>
+                      {i > 0 ? '; ' : ''}&ldquo;{d.query}&rdquo; wins on{' '}
+                      {d.won.join(', ')} but not {d.lost.join(', ')}
+                    </span>
+                  ))}
+                  . Work each model&apos;s sources separately.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           {discovery.top_competitors.length > 0 ? (
             <div className="mt-3">
               <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide opacity-70">
