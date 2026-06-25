@@ -933,6 +933,14 @@ export interface ProductCompetitiveness {
     top_competitors: { name: string; query_count: number }[];
   };
   branded: { appeared: number; total: number; rate: number | null };
+  // Per-model discovery appearance — Gemini and ChatGPT ground different
+  // indexes, so wins diverge; the merchant should act per model.
+  by_model?: Record<
+    string,
+    { appeared: number; total: number; rate: number | null }
+  >;
+  // Per-query model divergence (won in one model, lost in another).
+  model_divergence?: { query: string; won: string[]; lost: string[] }[];
 }
 
 export interface ChannelAppearanceChannel {
