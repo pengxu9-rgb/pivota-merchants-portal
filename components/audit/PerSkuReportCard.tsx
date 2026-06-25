@@ -17,7 +17,7 @@
 
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, Quote } from 'lucide-react';
-import { PerSkuNextStep } from './PerSkuNextStep';
+import { StrategicBriefPanel } from './StrategicBriefPanel';
 import type {
   AgentCenterPerSkuReport,
   SkuDimensionScore,
@@ -271,8 +271,9 @@ export function PerSkuReportCard({
           modelsCited={report.models_cited}
         />
 
-        {/* Action plan (off-platform actions + connect-store funnel). */}
-        <PerSkuNextStep report={report} />
+        {/* Consultant-grade action plan: root cause (why you lose) + the
+            decision + concrete first moves + honest you-vs-Pivota. */}
+        <StrategicBriefPanel report={report} />
 
         {expanded ? (
           <div className="mt-3 space-y-3">
