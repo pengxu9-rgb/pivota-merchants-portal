@@ -32,7 +32,13 @@ export function ProductCompetitivenessPanel({
         Can this product win in AI?
       </div>
 
-      {!pc.has_discovery ? (
+      {pc.grounding_unavailable ? (
+        <p className="mt-1 text-xs leading-relaxed opacity-70">
+          We couldn&apos;t measure this product this run — the AI answered the
+          discovery searches without citing sources (a temporary grounding
+          hiccup), so there&apos;s nothing reliable to score. Re-run to measure.
+        </p>
+      ) : !pc.has_discovery ? (
         <p className="mt-1 text-xs leading-relaxed opacity-70">
           We couldn&apos;t test discovery searches for this product yet — we
           need a clearer product category to probe demand like &ldquo;best{' '}
