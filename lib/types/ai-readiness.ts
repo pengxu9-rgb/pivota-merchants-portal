@@ -531,6 +531,20 @@ export interface SkuNextBestAction {
   pivota_path?: string | null;
   tracking_metrics?: string[];
   evidence_summary?: string | null;
+  // Consultant-grade brief: root cause + the decision + concrete moves. The
+  // backend computes this (attach_sku_strategic_brief) but the UI dropped it,
+  // leaving only the shallow headline + a dead-end "Pivota handles this". This
+  // is the depth a merchant operator needs to act.
+  strategic_brief?: {
+    position?: string | null;
+    your_angle?: string | null;
+    why_you_lose?: string | null;
+    core_decision?: string | null;
+    first_moves?: string[];
+    traffic_strategy?: string[];
+    substitution_play?: string | null;
+    diy_vs_pivota?: { pivota?: string | null; self_serve?: string[] } | null;
+  } | null;
   // Backend now stamps {action, target_sku_key} so the CTA can POST a real
   // tracked request instead of rendering a dead label.
   cta?: {
@@ -607,6 +621,15 @@ export interface UrlReadinessAuditResponse {
   /** Merchant-grade narrative: headline, what's working, where you're losing,
    * prioritized actions, answer-quality — the insight layer. */
   merchant_narrative?: AgentCenterMerchantNarrative | null;
+  /** Subscription tier + store-connection state, so the results page doesn't
+   * push the free-sample / connect-store / buy-credits funnel at a merchant who
+   * is already subscribed and connected. */
+  merchant_context?: {
+    plan_tier?: string;
+    is_paid?: boolean;
+    store_connected?: boolean;
+    credits?: number;
+  } | null;
   /**
    * Per-product reports — one per pasted URL — produced by the durable per-SKU
    * pipeline. This is the primary payload for the rich per-product UI.

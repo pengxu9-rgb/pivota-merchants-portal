@@ -109,7 +109,7 @@ function buildDeeperCta(
         eyebrow,
         title: 'Get the full picture, per SKU',
         description:
-          'This free sample checks a handful of queries. The full audit covers your whole catalog with a per-SKU win-plan — connect your store to become buyable inside AI agents, too.',
+          'This audits the products you pasted, per SKU, across AI shopping agents. The full audit covers your whole catalog with availability + serving data — connect your store to become buyable inside AI agents, too.',
       };
   }
 }
@@ -572,13 +572,19 @@ export default function UrlAuditPage() {
   // catalog → the integration driver).
   const topCompetitor = report?.cross_product_competitors?.[0]?.host ?? null;
   const deeperCta = buildDeeperCta(agg?.brand_verdict_label ?? null, topCompetitor);
+  // Don't push the connect-store / buy-credits / free-sample funnel at a
+  // merchant who's already subscribed + connected. Unknown context (older runs)
+  // → undefined → funnel still shows (safe default).
+  const isPaid = result?.merchant_context?.is_paid ?? false;
+  const storeConnected = result?.merchant_context?.store_connected ?? false;
+  const fullySetUp = isPaid && storeConnected;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Step 1 · first 2 free · no sync"
+        eyebrow="Per-product · no catalog sync"
         title="See how AI sees your products"
-        description="Paste your top product links and we'll show how AI shopping agents (Gemini grounded search) find them — no catalog sync required. You pick the products; we audit exactly those. Your first 2 audits are free. Step 2 — the full per-SKU audit — unlocks once you connect your store."
+        description="Paste up to 5 product links and we'll audit each one — how AI shopping agents (Gemini + ChatGPT) cite it, which competitors and channels they surface instead, and what to do about it. No catalog sync required. Connect your store for the full-catalog audit with availability + agent checkout."
       />
 
       {/* Re-open a past visibility check (subject_type=merchant_url). Renders
@@ -848,7 +854,7 @@ export default function UrlAuditPage() {
                   Based on {methodology.products_audited} product
                   {methodology.products_audited === 1 ? '' : 's'} ×{' '}
                   {methodology.queries_per_product} buyer-intent queries — a
-                  small free sample, not a definitive measurement.
+                  focused sample, not an exhaustive measurement.
                 </p>
               ) : null}
               {agg.brand_verdict_explanation ? (
@@ -952,40 +958,61 @@ export default function UrlAuditPage() {
             </SurfaceCard>
           ) : null}
 
-          {/* Funnel: integrate (sync → buyable) + subscribe (recurring).
-              Headline tailored to the finding — see buildDeeperCta. */}
-          <SurfaceCard
-            eyebrow={deeperCta.eyebrow}
-            title={deeperCta.title}
-            description={deeperCta.description}
-          >
-            <div className="flex flex-col gap-3 px-5 py-4 lg:flex-row">
-              <a
-                href="/dashboard/agent-center/ai-readiness"
-                className="flex-1 rounded-lg border border-[color:var(--merchant-line)] p-4 transition hover:border-[color:var(--merchant-accent,#6366f1)]"
-              >
-                <div className="text-sm font-semibold">Connect your store</div>
-                <p className="merchant-text-muted mt-1 text-xs">
-                  Sync your catalog → we audit every SKU automatically with
-                  availability + serving data, and make you transactable in
-                  agent checkout.
-                </p>
-              </a>
-              {/* Pay-as-you-go: buy credits and run the deeper audit now,
-                  without committing to a subscription (ADR-005). */}
-              <BuyCreditsCard />
-              <a
-                href="/dashboard/billing"
-                className="flex-1 rounded-lg border border-[color:var(--merchant-line)] p-4 transition hover:border-[color:var(--merchant-accent,#6366f1)]"
-              >
-                <div className="text-sm font-semibold">Subscribe</div>
-                <p className="merchant-text-muted mt-1 text-xs">
-                  Recurring audits + monitoring + more SKUs per run, so you catch
-                  visibility drops before they cost you sales.
-                </p>
-              </a>
-            </div>
-          </SurfaceCard>
+          {/* Next step — tailored to the merchant's state. A subscribed +
+              connected merchant gets a "run the full catalog" CTA, not the
+              free-sample / connect-store / buy-credits funnel. */}
+          {fullySetUp ? (
+            <SurfaceCard
+              eyebrow="Full catalog"
+              title="Run this across your whole catalog"
+              description="You're subscribed and connected — run the full per-SKU audit on your synced catalog, with availability, serving, and agent-checkout."
+            >
+              <div className="px-5 py-4">
+                <a
+                  href="/dashboard/agent-center/ai-readiness"
+                  className="inline-flex items-center gap-1 rounded-md border border-[color:var(--merchant-accent,#6366f1)] px-3 py-1.5 text-sm font-semibold text-[color:var(--merchant-accent,#6366f1)]"
+                >
+                  Run the full per-SKU audit <ArrowRight className="h-4 w-4" />
+                </a>
+              </div>
+            </SurfaceCard>
+          ) : (
+            <SurfaceCard
+              eyebrow={deeperCta.eyebrow}
+              title={deeperCta.title}
+              description={deeperCta.description}
+            >
+              <div className="flex flex-col gap-3 px-5 py-4 lg:flex-row">
+                {!storeConnected ? (
+                  <a
+                    href="/dashboard/agent-center/ai-readiness"
+                    className="flex-1 rounded-lg border border-[color:var(--merchant-line)] p-4 transition hover:border-[color:var(--merchant-accent,#6366f1)]"
+                  >
+                    <div className="text-sm font-semibold">Connect your store</div>
+                    <p className="merchant-text-muted mt-1 text-xs">
+                      Sync your catalog → we audit every SKU automatically with
+                      availability + serving data, and make you transactable in
+                      agent checkout.
+                    </p>
+                  </a>
+                ) : null}
+                {/* Pay-as-you-go / subscribe only when NOT already subscribed. */}
+                {!isPaid ? <BuyCreditsCard /> : null}
+                {!isPaid ? (
+                  <a
+                    href="/dashboard/billing"
+                    className="flex-1 rounded-lg border border-[color:var(--merchant-line)] p-4 transition hover:border-[color:var(--merchant-accent,#6366f1)]"
+                  >
+                    <div className="text-sm font-semibold">Subscribe</div>
+                    <p className="merchant-text-muted mt-1 text-xs">
+                      Recurring audits + monitoring + more SKUs per run, so you
+                      catch visibility drops before they cost you sales.
+                    </p>
+                  </a>
+                ) : null}
+              </div>
+            </SurfaceCard>
+          )}
         </div>
       ) : null}
     </div>
