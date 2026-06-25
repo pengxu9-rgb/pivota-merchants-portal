@@ -18,6 +18,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, Quote } from 'lucide-react';
 import { StrategicBriefPanel } from './StrategicBriefPanel';
+import { ChannelAppearancePanel } from './ChannelAppearancePanel';
 import type {
   AgentCenterPerSkuReport,
   SkuDimensionScore,
@@ -270,6 +271,10 @@ export function PerSkuReportCard({
           citationByProvider={report.citation_by_provider}
           modelsCited={report.models_cited}
         />
+
+        {/* Brand-centric status FIRST: where this product shows up in AI —
+            your own site vs the channels AI cites instead. */}
+        <ChannelAppearancePanel report={report} />
 
         {/* Consultant-grade action plan: root cause (why you lose) + the
             decision + concrete first moves + honest you-vs-Pivota. */}

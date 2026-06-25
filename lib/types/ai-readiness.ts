@@ -909,6 +909,33 @@ export interface AgentCenterPerSkuReport {
   next_best_action?: SkuNextBestAction | null;
   verbatim_grounding_evidence: SkuGroundingEvidence[];
   axis_coverage: Record<string, number>;
+  // Channel-by-channel appearance: across this product's probed queries, where
+  // it shows up in AI answers — the brand's own site vs each retailer/marketplace
+  // AI cites instead. The subject is the product; cited hosts are channels.
+  channel_appearance?: ChannelAppearance | null;
+}
+
+export interface ChannelAppearanceChannel {
+  host: string;
+  type: string;
+  type_label: string;
+  is_own_site: boolean;
+  is_your_listing?: boolean;
+  cited_query_count: number;
+  total_queries: number;
+  times_cited?: number;
+  intents_cited?: string[];
+}
+
+export interface ChannelAppearance {
+  total_queries: number;
+  own_site_host?: string | null;
+  // Your OWN domain cited as a source (the honest "are you the answer?").
+  own_site_cited: boolean;
+  own_site_cited_count: number;
+  // Softer signal: AI named your brand somewhere (often via a channel).
+  brand_mentioned_count: number;
+  channels: ChannelAppearanceChannel[];
 }
 
 // Per-dimension median/p25/p75 across the audited SKUs. Values are null when no
