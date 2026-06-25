@@ -54,6 +54,9 @@ export function ProductCompetitivenessPanel({
           <p className="mt-0.5 text-xs opacity-70">
             These are non-branded searches (&ldquo;best&hellip;&rdquo;) where AI
             picks what to recommend — the demand you can win.
+            &ldquo;Appears&rdquo; means the product shows up at all — often{' '}
+            <em>through a retailer</em>; see Channels below for whether
+            it&apos;s your own page.
           </p>
 
           <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-black/10">
