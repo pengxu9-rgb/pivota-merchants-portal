@@ -123,8 +123,13 @@ function FreeformAsk({
     try {
       const res = await apiClient.askAuditQuestion({ runId, question: q, productKey });
       setAnswer(res?.answer || 'No answer came back — please try again.');
-    } catch {
-      setError("Couldn't get an answer right now — please try again.");
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      setError(
+        status === 402
+          ? 'You’re out of credits — top up to ask a question.'
+          : "Couldn't get an answer right now — please try again.",
+      );
     } finally {
       setLoading(false);
     }
