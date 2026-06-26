@@ -545,11 +545,15 @@ export interface SkuNextBestAction {
   pivota_path?: string | null;
   tracking_metrics?: string[];
   evidence_summary?: string | null;
-  // Brief provenance. We only show strategic_brief when it's the real LLM brief
-  // (brief_debug.outcome === 'llm'); the deterministic fallback is generic
-  // boilerplate (near-identical across SKUs) and is suppressed, never shown.
+  // Brief provenance. We only show strategic_brief when it's the real LLM brief;
+  // the deterministic fallback is safe-but-generic and is suppressed (we fall
+  // back to the operational next-step). Prefer brief_source ('llm'|'deterministic')
+  // — the explicit signal — over the older brief_debug.outcome.
   brief_status?: string | null;
+  brief_source?: 'llm' | 'deterministic' | string | null;
   brief_debug?: { outcome?: string | null; [k: string]: unknown } | null;
+  // "What the category winner does right" — the verbatim known_for is the gold.
+  competitor_intel?: CompetitorIntel | null;
   // Consultant-grade brief: root cause + the decision + concrete moves. The
   // backend computes this (attach_sku_strategic_brief) but the UI dropped it,
   // leaving only the shallow headline + a dead-end "Pivota handles this". This
@@ -574,6 +578,17 @@ export interface SkuNextBestAction {
     action?: SkuCtaAction;
     target_sku_key?: string;
   } | null;
+}
+
+// next_best_action.competitor_intel — grounded read of what AI says the
+// category winner is known for. known_for is the verbatim AI text (the gold).
+export interface CompetitorIntel {
+  status?: string | null; // "assessed" when populated
+  competitor?: string | null;
+  known_for?: string | null;
+  attributes_present?: string[];
+  evidence?: { provider?: string; attribute?: string; verbatim?: string }[];
+  note?: string | null;
 }
 
 export interface SkuIntelligenceLadderLayer {
@@ -622,6 +637,9 @@ export interface OutreachMove {
   why: string;
   first_move?: string | null;
   pitch_recipient?: string | null;
+  // How achievable this move is for an emerging brand — drives sort/grouping.
+  // Lead with reachable/diy; de-emphasize 'hard' (major-publisher) moves.
+  realism?: 'reachable' | 'diy' | 'onboarding' | 'hard' | 'investigate' | string | null;
 }
 
 export interface WhereYoureLosing {
@@ -942,6 +960,41 @@ export interface AgentCenterPerSkuReport {
   // cited_evidence.excerpt is the verbatim AI answer — the richest proof of
   // what the AI actually said and who it recommended instead.
   opportunity?: SkuOpportunity | null;
+  // Per-engine operating plan: Gemini and ChatGPT are two different games
+  // (different indexes), so each gets its own status + how-it-cites + moves.
+  engine_playbook?: EnginePlaybook | null;
+  // Pivota's moat lever: turn merchant-supplied proof into grounded, citable
+  // claims. Only render when present.
+  evidence_play?: EvidencePlay | null;
+}
+
+// per_sku_reports[].engine_playbook — the per-engine operating plan.
+export interface EnginePlaybookEngine {
+  label?: string; // "Gemini (Google index)" / "ChatGPT (Bing + community)"
+  how_it_cites?: string;
+  appeared?: number;
+  total?: number;
+  rate?: number | null;
+  status?: 'invisible' | 'weak' | 'present' | 'couldnt_measure' | string;
+  moves?: string[];
+}
+
+export interface EnginePlaybook {
+  has_signal?: boolean;
+  primary_gap?: 'gemini' | 'chatgpt' | string | null;
+  engines?: Record<string, EnginePlaybookEngine>;
+  divergence?: { query: string; won: string[]; lost: string[] }[];
+  divergence_note?: string | null;
+}
+
+// per_sku_reports[].evidence_play — supply proof → Pivota publishes citable claims.
+export interface EvidencePlay {
+  present?: boolean;
+  already_substantiated?: boolean;
+  claims_to_substantiate?: string[];
+  unsubstantiated_in_ai?: number;
+  moves?: string[];
+  pivota_value?: string | null;
 }
 
 // Per-query probe row inside per_sku_reports[].opportunity.per_prompt. Carries
