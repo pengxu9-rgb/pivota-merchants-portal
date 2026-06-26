@@ -13,9 +13,10 @@
  */
 
 import { useState } from 'react';
-import { MessageCircleQuestion } from 'lucide-react';
+import { MessageCircleQuestion, Send, Loader2, Sparkles } from 'lucide-react';
 import type { AgentCenterPerSkuReport } from '@/lib/types/ai-readiness';
 import { realBrief } from '@/lib/audit/strategicBrief';
+import { apiClient } from '@/lib/api-client';
 
 interface Chip {
   q: string;
@@ -94,10 +95,92 @@ function buildChips(report: AgentCenterPerSkuReport): Chip[] {
   return chips;
 }
 
-export function AskAboutThis({ report }: { report: AgentCenterPerSkuReport }) {
+/**
+ * Freeform "ask anything" box. Only renders when a runId is available (it needs
+ * a completed run to ground against). Calls the backend, which answers using
+ * ONLY this run's audit data via ungrounded DeepSeek — so the reply stays
+ * faithful to the report. Rendered as a clearly-labelled "AI summary", distinct
+ * from the deterministic numbers above, which remain the source of truth.
+ */
+function FreeformAsk({
+  runId,
+  productKey,
+}: {
+  runId: string;
+  productKey?: string | null;
+}) {
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    const q = question.trim();
+    if (q.length < 3 || loading) return;
+    setLoading(true);
+    setError(null);
+    setAnswer(null);
+    try {
+      const res = await apiClient.askAuditQuestion({ runId, question: q, productKey });
+      setAnswer(res?.answer || 'No answer came back — please try again.');
+    } catch {
+      setError("Couldn't get an answer right now — please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t border-[color:var(--merchant-line)] pt-3">
+      <label className="text-[11px] font-medium opacity-60">
+        Or ask your own question
+      </label>
+      <div className="mt-1 flex items-center gap-1.5">
+        <input
+          type="text"
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit();
+          }}
+          maxLength={500}
+          placeholder="e.g. How do I get cited on the editorial sites?"
+          className="min-w-0 flex-1 rounded-md border border-[color:var(--merchant-line)] bg-white/70 px-2.5 py-1.5 text-xs outline-none focus:border-[color:var(--merchant-accent,#6366f1)]"
+        />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={loading || question.trim().length < 3}
+          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[color:var(--merchant-accent,#6366f1)] px-2.5 py-1.5 text-xs font-medium text-[color:var(--merchant-accent,#6366f1)] disabled:opacity-40"
+        >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+          Ask
+        </button>
+      </div>
+      {error ? <p className="mt-2 text-xs text-red-700">{error}</p> : null}
+      {answer ? (
+        <div className="mt-2 rounded bg-white/70 px-3 py-2">
+          <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide opacity-50">
+            <Sparkles className="h-3 w-3" />
+            AI summary · grounded in your audit
+          </div>
+          <p className="text-xs leading-relaxed">{answer}</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function AskAboutThis({
+  report,
+  runId,
+}: {
+  report: AgentCenterPerSkuReport;
+  runId?: string | null;
+}) {
   const chips = buildChips(report);
   const [open, setOpen] = useState<number | null>(null);
-  if (chips.length === 0) return null;
+  if (chips.length === 0 && !runId) return null;
 
   return (
     <div className="mt-3 rounded-md border border-[color:var(--merchant-line)] bg-white/40 px-3 py-3">
@@ -105,25 +188,30 @@ export function AskAboutThis({ report }: { report: AgentCenterPerSkuReport }) {
         <MessageCircleQuestion className="h-3.5 w-3.5" />
         Ask about this product
       </div>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {chips.map((c, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => setOpen((v) => (v === i ? null : i))}
-            className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
-              open === i
-                ? 'border-[color:var(--merchant-accent,#6366f1)] bg-[color:var(--merchant-accent,#6366f1)]/10 font-medium'
-                : 'border-[color:var(--merchant-line)] hover:bg-black/5'
-            }`}
-          >
-            {c.q}
-          </button>
-        ))}
-      </div>
-      {open != null ? (
-        <p className="mt-2 rounded bg-white/70 px-3 py-2 text-xs leading-relaxed">{chips[open].a}</p>
+      {chips.length > 0 ? (
+        <>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {chips.map((c, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setOpen((v) => (v === i ? null : i))}
+                className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                  open === i
+                    ? 'border-[color:var(--merchant-accent,#6366f1)] bg-[color:var(--merchant-accent,#6366f1)]/10 font-medium'
+                    : 'border-[color:var(--merchant-line)] hover:bg-black/5'
+                }`}
+              >
+                {c.q}
+              </button>
+            ))}
+          </div>
+          {open != null ? (
+            <p className="mt-2 rounded bg-white/70 px-3 py-2 text-xs leading-relaxed">{chips[open].a}</p>
+          ) : null}
+        </>
       ) : null}
+      {runId ? <FreeformAsk runId={runId} productKey={report.product_key} /> : null}
     </div>
   );
 }

@@ -2629,6 +2629,7 @@ export function PerSkuAuditReportRenderer({
         <PerSkuCardList
           reports={report.per_sku_reports}
           authorityMap={report.authority_map}
+          runId={report.audit_run_id}
         />
       </Zone>
 
@@ -3730,9 +3731,11 @@ function RollupDimensionStat({
 function PerSkuCardList({
   reports,
   authorityMap,
+  runId,
 }: {
   reports: AgentCenterPerSkuReport[];
   authorityMap: AgentCenterAuthorityMap;
+  runId?: string | null;
 }) {
   if (reports.length === 0) {
     return (
@@ -3758,6 +3761,7 @@ function PerSkuCardList({
               authority={authorityMap.per_sku?.[r.sku_key]}
               index={i}
               total={reports.length}
+              runId={runId}
             />
           ))}
         </div>
@@ -3848,6 +3852,7 @@ function PerSkuCard({
   authority,
   index,
   total,
+  runId,
 }: {
   report: AgentCenterPerSkuReport;
   authority: AgentCenterAuthorityMap['per_sku'][string] | undefined;
@@ -3855,6 +3860,7 @@ function PerSkuCard({
   // products read as distinct sections at a glance, not one undifferentiated list.
   index?: number;
   total?: number;
+  runId?: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const bandCls = bandColorClasses(report.band);
@@ -3938,7 +3944,7 @@ function PerSkuCard({
             verbatim AI answers, channels, and the strategic brief. Shared with
             the url-audit surface so both read identically; degrades cleanly when
             a catalog SKU didn't probe discovery. */}
-        <AgenticVisibilityPanels report={report} />
+        <AgenticVisibilityPanels report={report} runId={runId} />
         <PerSkuNextStep report={report} />
         <PerSkuCopyToStore report={report} />
         {expanded ? (

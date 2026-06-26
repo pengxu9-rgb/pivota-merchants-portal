@@ -182,11 +182,13 @@ export function PerSkuReportCard({
   index,
   catalogDimensionsAvailable = false,
   pdpUrl,
+  runId,
 }: {
   report: AgentCenterPerSkuReport;
   index?: number;
   catalogDimensionsAvailable?: boolean;
   pdpUrl?: string | null;
+  runId?: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const evidence = report.verbatim_grounding_evidence || [];
@@ -222,7 +224,7 @@ export function PerSkuReportCard({
 
       <div className="px-4 pb-4">
         {/* The merchant's four questions, honest split leading. */}
-        <AgenticVisibilityPanels report={report} />
+        <AgenticVisibilityPanels report={report} runId={runId} />
 
         <button
           type="button"

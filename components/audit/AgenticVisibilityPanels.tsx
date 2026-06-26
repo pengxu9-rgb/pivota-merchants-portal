@@ -23,8 +23,12 @@ import { AskAboutThis } from './AskAboutThis';
 
 export function AgenticVisibilityPanels({
   report,
+  runId,
 }: {
   report: AgentCenterPerSkuReport;
+  // When present, AskAboutThis renders the freeform "ask anything" box (it needs
+  // a completed run to ground the answer against).
+  runId?: string | null;
 }) {
   return (
     <>
@@ -32,7 +36,7 @@ export function AgenticVisibilityPanels({
       <PromptEvidencePanel report={report} />
       <ChannelAppearancePanel report={report} />
       <StrategicBriefPanel report={report} />
-      <AskAboutThis report={report} />
+      <AskAboutThis report={report} runId={runId} />
     </>
   );
 }

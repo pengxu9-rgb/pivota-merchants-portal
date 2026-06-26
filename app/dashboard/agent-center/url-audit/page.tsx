@@ -557,6 +557,7 @@ export default function UrlAuditPage() {
                     report={r}
                     index={i}
                     catalogDimensionsAvailable={catalogAvail}
+                    runId={result.run_id ?? result.audit_run_id ?? null}
                     pdpUrl={
                       result.audited_products?.find((p) => p.sku_key === r.sku_key)
                         ?.pdp_url ?? null
