@@ -3,28 +3,28 @@
 /**
  * Per-product report card for the URL audit (one pasted URL → one card).
  *
- * Renders an AgentCenterPerSkuReport: citation is the PRIMARY signal (it's the
- * only dimension measurable from a pasted URL with no synced catalog), shown
- * with the per-model strip. The catalog-only dimensions (identity / content /
- * routability) are rendered as "Connect store to measure" when
- * `catalogDimensionsAvailable` is false, rather than a misleading low score —
- * that's the connect-store funnel. The action plan reuses PerSkuNextStep.
- *
- * Visual patterns mirror the ai-readiness PerSkuCard so the two surfaces feel
- * like one product; kept as a standalone component (not extracted from the
- * 4k-line ai-readiness page) to avoid coupling.
+ * Reordered around the merchant's real questions, leading with the HONEST
+ * agentic picture (recommended vs merely findable, per model) instead of a
+ * single inflated "appears" number or the catalog-dominated dimension band:
+ *   1. Does AI recommend you?      (ProductCompetitivenessPanel)
+ *   2. Who wins & what AI said?    (PromptEvidencePanel — verbatim answers)
+ *   3. Where does AI send buyers?  (ChannelAppearancePanel)
+ *   4. What do I do?               (StrategicBriefPanel)
+ * The catalog-only dimensions (identity/content/routability) + the 0–100
+ * citation score by model are demoted into the expandable "details" drawer —
+ * they're the connect-store funnel, not the headline, and the score-by-model
+ * strip is kept apart from the appearance-by-model line to avoid conflating two
+ * different "by model" numbers.
  */
 
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, Quote } from 'lucide-react';
-import { StrategicBriefPanel } from './StrategicBriefPanel';
-import { ChannelAppearancePanel } from './ChannelAppearancePanel';
-import { ProductCompetitivenessPanel } from './ProductCompetitivenessPanel';
+import { AgenticVisibilityPanels } from './AgenticVisibilityPanels';
+import { agenticVerdict, verdictPillClasses } from '@/lib/audit/agenticVerdict';
 import type {
   AgentCenterPerSkuReport,
   SkuDimensionScore,
   SkuProviderCitation,
-  ModelsCited,
 } from '@/lib/types/ai-readiness';
 
 const BAND_LABEL: Record<string, string> = {
@@ -92,19 +92,6 @@ function skuDisplayName(report: AgentCenterPerSkuReport): string {
   );
 }
 
-function BandPill({ band, label }: { band: string; label?: string }) {
-  const text = label || BAND_LABEL[band] || band;
-  return (
-    <span
-      className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${bandBorderClass(
-        band,
-      )} ${bandTextClass(band)}`}
-    >
-      {text}
-    </span>
-  );
-}
-
 function DimensionCell({
   label,
   score,
@@ -138,10 +125,7 @@ function DimensionCell({
           : 'border-[color:var(--merchant-line)] bg-white/40'
       }`}
     >
-      <div className="text-[10px] uppercase tracking-wide opacity-60">
-        {label}
-        {highlight ? ' · outcome' : ''}
-      </div>
+      <div className="text-[10px] uppercase tracking-wide opacity-60">{label}</div>
       <div className="flex items-baseline gap-1.5">
         <span className={`text-lg font-bold ${bandTextClass(band)}`}>
           {score.score == null ? '—' : score.score}
@@ -159,41 +143,36 @@ function DimensionCell({
   );
 }
 
-function ModelStrip({
+function CitationScoreByModel({
   citationByProvider,
-  modelsCited,
 }: {
   citationByProvider?: Record<string, SkuProviderCitation>;
-  modelsCited?: ModelsCited;
 }) {
   const entries = Object.entries(citationByProvider || {});
-  if (entries.length === 0 && !modelsCited) return null;
+  if (entries.length === 0) return null;
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-1.5">
-      <span className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
-        By model
-      </span>
-      {entries.map(([provider, entry]) => {
-        const failed = entry?.status === 'probe_failed';
-        return (
-          <span
-            key={provider}
-            className="inline-flex items-center gap-1 rounded-full border border-[color:var(--merchant-line)] bg-white/60 px-2 py-0.5 text-[11px]"
-            title={failed ? 'This model failed to respond on this run' : undefined}
-          >
-            <span className="font-medium">{providerLabel(provider)}</span>
-            <span className="opacity-70">
-              {failed ? 'no response' : entry?.score == null ? '—' : entry.score}
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
+        Citation score by model{' '}
+        <span className="font-normal lowercase opacity-60">(0–100)</span>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+        {entries.map(([provider, entry]) => {
+          const failed = entry?.status === 'probe_failed';
+          return (
+            <span
+              key={provider}
+              className="inline-flex items-center gap-1 rounded-full border border-[color:var(--merchant-line)] bg-white/60 px-2 py-0.5 text-[11px]"
+              title={failed ? 'This model failed to respond on this run' : undefined}
+            >
+              <span className="font-medium">{providerLabel(provider)}</span>
+              <span className="opacity-70">
+                {failed ? 'no response' : entry?.score == null ? '—' : entry.score}
+              </span>
             </span>
-          </span>
-        );
-      })}
-      {modelsCited && modelsCited.of > 0 ? (
-        <span className="ml-1 text-[11px] opacity-70">
-          cited in {modelsCited.cited}/{modelsCited.of} model
-          {modelsCited.of === 1 ? '' : 's'}
-        </span>
-      ) : null}
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -210,84 +189,77 @@ export function PerSkuReportCard({
   pdpUrl?: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const citationBand =
-    report.scores?.citation?.band ?? bandFromScore(report.scores?.citation?.score);
   const evidence = report.verbatim_grounding_evidence || [];
+  const verdict = agenticVerdict(report);
 
   return (
     <div className={`rounded-lg border-2 ${bandBorderClass(report.band)}`}>
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left"
-      >
-        <div className="min-w-0 flex-1">
-          <div className="text-base font-bold leading-snug">
-            {index != null ? (
-              <span className="mr-1.5 opacity-50">#{index + 1}</span>
+      <div className="px-4 pt-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-base font-bold leading-snug">
+              {index != null ? (
+                <span className="mr-1.5 opacity-50">#{index + 1}</span>
+              ) : null}
+              {skuDisplayName(report)}
+            </div>
+            {pdpUrl ? (
+              <div className="mt-0.5 truncate text-[11px] opacity-60">{pdpUrl}</div>
             ) : null}
-            {skuDisplayName(report)}
           </div>
-          {pdpUrl ? (
-            <div className="mt-0.5 truncate text-[11px] opacity-60">{pdpUrl}</div>
+          {verdict ? (
+            <span
+              className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${verdictPillClasses(
+                verdict.tone,
+              )}`}
+              title={verdict.meaning}
+            >
+              {verdict.label}
+            </span>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <BandPill band={report.band_display?.band ?? report.band} label={report.band_display?.label} />
+      </div>
+
+      <div className="px-4 pb-4">
+        {/* The merchant's four questions, honest split leading. */}
+        <AgenticVisibilityPanels report={report} />
+
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-3 flex w-full items-center justify-between gap-2 rounded-md border border-[color:var(--merchant-line)] bg-white/30 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide opacity-70"
+        >
+          <span>Pivota readiness scores &amp; raw evidence</span>
           {expanded ? (
             <ChevronUp className="h-4 w-4 opacity-60" />
           ) : (
             <ChevronDown className="h-4 w-4 opacity-60" />
           )}
-        </div>
-      </button>
-
-      <div className="px-4 pb-4">
-        {/* Citation is the measurable outcome for a URL audit; the catalog dims
-            sit behind the connect-store funnel. */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <DimensionCell
-            label="Cited by AI"
-            score={report.scores.citation}
-            highlight
-          />
-          <DimensionCell
-            label="Identity"
-            score={report.scores.identity}
-            unavailable={!catalogDimensionsAvailable}
-          />
-          <DimensionCell
-            label="Content"
-            score={report.scores.content_richness}
-            unavailable={!catalogDimensionsAvailable}
-          />
-          <DimensionCell
-            label="Routability"
-            score={report.scores.routability}
-            unavailable={!catalogDimensionsAvailable}
-          />
-        </div>
-
-        <ModelStrip
-          citationByProvider={report.citation_by_provider}
-          modelsCited={report.models_cited}
-        />
-
-        {/* PRODUCT competitiveness FIRST: does the product win non-branded
-            discovery demand (where the brand gains new buyers) + who wins
-            instead. Branded queries shown as low-value. */}
-        <ProductCompetitivenessPanel report={report} />
-
-        {/* Then CHANNEL context: where it shows up — own site vs the channels
-            AI cites instead. */}
-        <ChannelAppearancePanel report={report} />
-
-        {/* Consultant-grade action plan: root cause (why you lose) + the
-            decision + concrete first moves + honest you-vs-Pivota. */}
-        <StrategicBriefPanel report={report} />
+        </button>
 
         {expanded ? (
           <div className="mt-3 space-y-3">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <DimensionCell label="Cited by AI" score={report.scores.citation} highlight />
+              <DimensionCell
+                label="Identity"
+                score={report.scores.identity}
+                unavailable={!catalogDimensionsAvailable}
+              />
+              <DimensionCell
+                label="Content"
+                score={report.scores.content_richness}
+                unavailable={!catalogDimensionsAvailable}
+              />
+              <DimensionCell
+                label="Routability"
+                score={report.scores.routability}
+                unavailable={!catalogDimensionsAvailable}
+              />
+            </div>
+
+            <CitationScoreByModel citationByProvider={report.citation_by_provider} />
+
             {report.primary_gaps?.length ? (
               <div className="rounded-md border border-[color:var(--merchant-line)] bg-white/40 px-3 py-2">
                 <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
@@ -307,7 +279,7 @@ export function PerSkuReportCard({
             {evidence.length ? (
               <div className="rounded-md border border-[color:var(--merchant-line)] bg-white/40 px-3 py-2">
                 <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
-                  What AI actually said
+                  Branded findability — what AI said when asked for you by name
                 </div>
                 <ul className="mt-1 space-y-2">
                   {evidence.slice(0, 4).map((e, i) => {

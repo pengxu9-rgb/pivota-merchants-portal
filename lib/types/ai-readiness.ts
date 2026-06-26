@@ -514,6 +514,20 @@ export interface SkuIntelligencePromptRow {
   opportunity_score?: number;
 }
 
+/** A move inside a strategic brief: a plain sentence (LLM path) or a structured
+ * step (deterministic fallback). The UI normalizes both to one line. */
+export type BriefMove =
+  | string
+  | {
+      how?: string | null;
+      move?: string | null;
+      step?: string | null;
+      action?: string | null;
+      where?: string | null;
+      who_controls?: string | null;
+      [k: string]: unknown;
+    };
+
 /** Per-SKU CTA action the merchant button executes (request a tracked Pivota
  * job). Maps to the backend _SKU_CTA_ACTION descriptor. */
 export type SkuCtaAction = 'request_enrichment' | 'request_indexing' | 'none';
@@ -531,6 +545,11 @@ export interface SkuNextBestAction {
   pivota_path?: string | null;
   tracking_metrics?: string[];
   evidence_summary?: string | null;
+  // Brief provenance. We only show strategic_brief when it's the real LLM brief
+  // (brief_debug.outcome === 'llm'); the deterministic fallback is generic
+  // boilerplate (near-identical across SKUs) and is suppressed, never shown.
+  brief_status?: string | null;
+  brief_debug?: { outcome?: string | null; [k: string]: unknown } | null;
   // Consultant-grade brief: root cause + the decision + concrete moves. The
   // backend computes this (attach_sku_strategic_brief) but the UI dropped it,
   // leaving only the shallow headline + a dead-end "Pivota handles this". This
@@ -540,10 +559,12 @@ export interface SkuNextBestAction {
     your_angle?: string | null;
     why_you_lose?: string | null;
     core_decision?: string | null;
-    first_moves?: string[];
-    traffic_strategy?: string[];
+    // The LLM brief emits plain strings; the deterministic fallback emits
+    // structured {how, where, who_controls} objects — handle both.
+    first_moves?: BriefMove[];
+    traffic_strategy?: BriefMove[];
     substitution_play?: string | null;
-    diy_vs_pivota?: { pivota?: string | null; self_serve?: string[] } | null;
+    diy_vs_pivota?: { pivota?: string | null; self_serve?: BriefMove[] } | null;
   } | null;
   // Backend now stamps {action, target_sku_key} so the CTA can POST a real
   // tracked request instead of rendering a dead label.
@@ -917,6 +938,53 @@ export interface AgentCenterPerSkuReport {
   // demand ("best hair oil for damaged hair") — where the brand gains new buyers
   // — and who AI recommends instead. Leads the card; branded queries low-value.
   product_competitiveness?: ProductCompetitiveness | null;
+  // Per-prompt probe detail (forwarded intact in the GET envelope). The
+  // cited_evidence.excerpt is the verbatim AI answer — the richest proof of
+  // what the AI actually said and who it recommended instead.
+  opportunity?: SkuOpportunity | null;
+}
+
+// Per-query probe row inside per_sku_reports[].opportunity.per_prompt. Carries
+// the verbatim AI answer (cited_evidence), per-engine verdicts, and the
+// substitution that names who AI recommends instead.
+export interface SkuPerPromptRow {
+  query: string;
+  normalized_query?: string;
+  axis?: string;
+  intent?: { label?: string; weight?: number } | null;
+  demand_state?: string | null;
+  ownership_state?: string | null;
+  who_owns?: string[];
+  competitors?: string[];
+  open_lane?: boolean;
+  // Did the product surface only because its own/retail LISTING was retrieved
+  // (findability), as opposed to an independent recommendation?
+  appearance_via_listing?: boolean;
+  provider_verdicts?: Record<string, 'win' | 'loss' | 'absent' | string>;
+  cited_evidence?: {
+    provider?: string | null;
+    excerpt?: string;
+    cited_hosts?: string[];
+    competitors_named?: string[];
+  } | null;
+  substitution?: {
+    present: boolean;
+    kind?: 'category' | 'branded' | string;
+    prompt?: string;
+    substituted_by?: string;
+    engines?: string[];
+  } | null;
+  source_summary?: {
+    top_cited_hosts?: { host: string; times_cited?: number }[];
+    merchant_cited_runs?: number;
+    runs_with_citations?: number;
+  } | null;
+}
+
+export interface SkuOpportunity {
+  per_prompt?: SkuPerPromptRow[];
+  substitution_alert?: SkuSubstitutionAlert | null;
+  demand_state_summary?: string | null;
 }
 
 export interface ProductCompetitiveness {
@@ -929,6 +997,12 @@ export interface ProductCompetitiveness {
     total: number;
     rate: number | null;
     ungrounded?: number;
+    // The HONEST decomposition of `appeared`: independent recommendation
+    // (an editorial/community source named you organically) vs merely findable
+    // (your own/retail listing was retrieved). appeared === recommended+listing.
+    // Never show a single inflated `appeared` — lead with this split.
+    appeared_recommended?: number;
+    appeared_listing?: number;
     missed: string[];
     top_competitors: { name: string; query_count: number }[];
   };

@@ -4,12 +4,50 @@
  * Product-FIRST competitiveness: does this product win NON-BRANDED discovery
  * demand inside AI ("best hair oil for damaged hair") — where the brand gains
  * NEW buyers — and who does AI recommend instead. Leads the per-product card.
- * Branded name queries are reported as a low-value footnote (a shopper who types
- * a product name already found it elsewhere).
+ *
+ * THE HONEST LEAD (do not flatten): `appeared` decomposes into
+ *  - appeared_recommended → an independent source named you organically, and
+ *  - appeared_listing → your own/retail listing was merely retrieved (findable).
+ * We surface that split, never a single inflated "appears N/M". Per-model
+ * appearance (Gemini vs ChatGPT, different indexes) is shown with divergence.
+ * Branded name queries are a low-value footnote.
  */
 
 import { Target, Trophy } from 'lucide-react';
 import type { AgentCenterPerSkuReport } from '@/lib/types/ai-readiness';
+
+function StatLine({
+  value,
+  total,
+  label,
+  sub,
+  tone,
+}: {
+  value: number;
+  total: number;
+  label: string;
+  sub?: string;
+  tone: 'good' | 'warn' | 'muted';
+}) {
+  const toneCls =
+    tone === 'good'
+      ? 'text-emerald-700'
+      : tone === 'warn'
+        ? 'text-red-700'
+        : 'text-slate-600';
+  return (
+    <div className="flex items-baseline gap-2">
+      <span className={`text-xl font-bold tabular-nums ${toneCls}`}>
+        {value}
+        <span className="text-sm font-semibold opacity-60">/{total}</span>
+      </span>
+      <div className="min-w-0">
+        <div className="text-xs font-semibold leading-tight">{label}</div>
+        {sub ? <div className="text-[11px] leading-tight opacity-60">{sub}</div> : null}
+      </div>
+    </div>
+  );
+}
 
 export function ProductCompetitivenessPanel({
   report,
@@ -20,16 +58,19 @@ export function ProductCompetitivenessPanel({
   if (!pc) return null;
 
   const { discovery, branded } = pc;
-  const pct =
-    discovery.total > 0
-      ? Math.round((discovery.appeared / discovery.total) * 100)
-      : 0;
+  const total = discovery.total;
+  // Prefer the honest split; fall back to the combined `appeared` only when an
+  // older payload didn't carry it (then we say so).
+  const hasSplit =
+    discovery.appeared_recommended != null || discovery.appeared_listing != null;
+  const recommended = discovery.appeared_recommended ?? 0;
+  const listing = discovery.appeared_listing ?? discovery.appeared;
 
   return (
     <div className="mt-3 rounded-md border border-[color:var(--merchant-line)] bg-white/40 px-3 py-3">
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide opacity-70">
         <Target className="h-3.5 w-3.5" />
-        Can this product win in AI?
+        Does AI recommend you?
       </div>
 
       {pc.grounding_unavailable ? (
@@ -46,30 +87,42 @@ export function ProductCompetitivenessPanel({
         </p>
       ) : (
         <>
-          <div className="mt-1 text-sm font-semibold">
-            {discovery.appeared === 0
-              ? `Your product appears in none of the ${discovery.total} discovery searches shoppers actually run`
-              : `Your product appears in ${discovery.appeared} of ${discovery.total} discovery searches`}
-          </div>
-          <p className="mt-0.5 text-xs opacity-70">
-            These are non-branded searches (&ldquo;best&hellip;&rdquo;) where AI
-            picks what to recommend — the demand you can win.
-            &ldquo;Appears&rdquo; means the product shows up at all — often{' '}
-            <em>through a retailer</em>; see Channels below for whether
-            it&apos;s your own page.
+          <p className="mt-1 text-[11px] leading-snug opacity-70">
+            Across {total} non-branded discovery search{total === 1 ? '' : 'es'}{' '}
+            (&ldquo;best&hellip;&rdquo;) where AI picks what to recommend — the
+            demand you can actually win:
           </p>
 
-          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-black/10">
-            <div
-              className="h-full rounded-full bg-[color:var(--merchant-accent,#6366f1)]"
-              style={{ width: `${pct}%` }}
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <StatLine
+              value={recommended}
+              total={total}
+              label="Independently recommended"
+              sub="an editorial/community source named you, unprompted"
+              tone={recommended > 0 ? 'good' : 'warn'}
+            />
+            <StatLine
+              value={listing}
+              total={total}
+              label="Found via a listing"
+              sub="your own/retail page was retrieved — not an endorsement"
+              tone="muted"
             />
           </div>
+
+          {hasSplit && recommended === 0 && listing > 0 ? (
+            <p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-[11px] leading-snug text-amber-800">
+              You&apos;re <strong>findable but not yet recommended</strong>: AI can
+              retrieve your listing, but no independent source endorses you when a
+              shopper asks the category question.
+            </p>
+          ) : null}
 
           {pc.by_model && Object.keys(pc.by_model).length > 0 ? (
             <div className="mt-3">
               <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
-                By model
+                Appears by model{' '}
+                <span className="font-normal lowercase opacity-60">(incl. listings)</span>
               </div>
               <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
                 {Object.entries(pc.by_model).map(([model, m]) => (
@@ -77,7 +130,7 @@ export function ProductCompetitivenessPanel({
                     <span className="font-medium capitalize">{model}</span>
                     <span className="opacity-70">
                       {' '}
-                      {m.appeared}/{m.total} discovery
+                      {m.appeared}/{m.total}
                     </span>
                   </span>
                 ))}
@@ -87,7 +140,7 @@ export function ProductCompetitivenessPanel({
                   Models disagree (different indexes) — e.g.{' '}
                   {pc.model_divergence.slice(0, 2).map((d, i) => (
                     <span key={i}>
-                      {i > 0 ? '; ' : ''}&ldquo;{d.query}&rdquo; wins on{' '}
+                      {i > 0 ? '; ' : ''}&ldquo;{d.query}&rdquo; appears on{' '}
                       {d.won.join(', ')} but not {d.lost.join(', ')}
                     </span>
                   ))}

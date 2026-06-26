@@ -16,19 +16,15 @@
  * pipeline; GET returns per_sku_reports + brand_rollup + authority_map.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
-  ArrowLeftRight,
   ArrowRight,
   Globe,
   Info,
   Link2,
   Loader2,
   Plus,
-  Search,
-  Sparkles,
-  Target,
   X,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
@@ -44,10 +40,10 @@ import { PerSkuReportCard } from '@/components/audit/PerSkuReportCard';
 import { CustomPromptsPanel } from '@/components/audit/CustomPromptsPanel';
 import { OutreachMovesPanel } from '@/components/audit/OutreachMovesPanel';
 import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
+import { PrioritizedActionsPanel } from '@/components/audit/PrioritizedActionsPanel';
 import type {
   AgentCenterBdReport,
   AgentCenterBdVerdictLabel,
-  SkuIntelligence,
   UrlReadinessAuditResponse,
 } from '@/lib/types/ai-readiness';
 
@@ -124,268 +120,6 @@ function scorePill(label: string, value: number | null | undefined) {
   );
 }
 
-function densityTone(band: string | undefined): string {
-  if (band === 'low') return 'text-emerald-700 bg-emerald-50 border-emerald-200';
-  if (band === 'high') return 'text-red-700 bg-red-50 border-red-200';
-  return 'text-amber-700 bg-amber-50 border-amber-200';
-}
-
-function verdictColor(v: string | undefined): string {
-  const s = (v || '').toLowerCase();
-  if (s === 'win') return 'text-emerald-700';
-  if (s === 'partial') return 'text-amber-700';
-  if (s === 'loss') return 'text-red-700';
-  return 'merchant-text-muted';
-}
-
-// Intent-ladder layers we surface, in merchant-readable terms. The sidewalk
-// layer is the hook; branded layers show "demand you already have".
-const LADDER_LAYERS: Array<[string, string]> = [
-  ['branded_transactional', 'When buyers name you'],
-  ['branded_consideration', 'Reviews & alternatives'],
-  ['head_category', 'Broad category'],
-  ['sidewalk_opportunity', 'Sidewalk opportunity'],
-];
-
-/** Per-SKU AI-visibility intelligence: the sidewalk money-shot + open lanes +
- * the prompt matrix. Renders nothing fabricated — empty/mock runs degrade to
- * the honest headline + matrix only. */
-function SkuIntelligenceCard({ data }: { data: SkuIntelligence }) {
-  const sub = data.substitution_alert;
-  const lanes = data.top_open_lanes || [];
-  const matrix = data.prompt_matrix || [];
-  const ladder = data.intent_ladder || {};
-  const nba = data.next_best_action;
-  // Only show the ChatGPT column once it has actually run (OPENAI_API_KEY live);
-  // before that every row is "absent", so the column stays hidden.
-  const hasChatgpt = matrix.some((r) => r.chatgpt && r.chatgpt !== 'absent');
-  return (
-    <SurfaceCard
-      eyebrow="Hero SKU · how AI sees this product"
-      title={data.hero_sku?.title || 'Your hero product'}
-      description={data.hero_sku?.pdp_url || undefined}
-    >
-      <div className="space-y-4 px-5 py-4">
-        {/* The money-shot lead. */}
-        <div className="flex items-start gap-2 rounded-lg border border-[color:var(--merchant-accent,#6366f1)] px-4 py-3">
-          <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--merchant-accent,#6366f1)]" />
-          <p className="text-sm font-medium leading-snug">{data.headline}</p>
-        </div>
-
-        {data.note ? (
-          <p className="merchant-text-muted text-xs">{data.note}</p>
-        ) : null}
-
-        {/* "AI recommends a rival when asked about YOU." */}
-        {sub?.present ? (
-          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-            <ArrowLeftRight className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
-              When buyers ask for alternatives to you, AI recommends{' '}
-              <span className="font-semibold">{sub.substituted_by || 'a competitor'}</span>
-              {sub.engines?.length ? ` (${sub.engines.join(', ')})` : ''}.
-            </span>
-          </div>
-        ) : null}
-
-        {/* Intent ladder: demand you have vs the opening. */}
-        {Object.keys(ladder).length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {LADDER_LAYERS.map(([key, label]) =>
-              ladder[key] != null ? (
-                <span key={key}>{scorePill(label, ladder[key]?.score)}</span>
-              ) : null,
-            )}
-          </div>
-        ) : null}
-
-        {/* Top open lanes — the sidewalk wins. */}
-        {lanes.length > 0 ? (
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-sm font-medium">
-              <Target className="h-4 w-4" /> Open lanes you can own
-            </div>
-            {lanes.map((lane, i) => (
-              <div
-                key={`${lane.query}-${i}`}
-                className="rounded-lg border border-[color:var(--merchant-line)] px-3 py-2"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium">{lane.query}</span>
-                  {lane.density_band ? (
-                    <span
-                      className={`shrink-0 rounded-md border px-2 py-0.5 text-[11px] font-semibold ${densityTone(
-                        lane.density_band,
-                      )}`}
-                    >
-                      {lane.density_band} competition
-                    </span>
-                  ) : null}
-                </div>
-                {lane.why_fit?.length ? (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {lane.why_fit.map((w, j) => (
-                      <span
-                        key={j}
-                        className="rounded border border-[color:var(--merchant-line)] px-1.5 py-0.5 text-[11px] merchant-text-muted"
-                      >
-                        {w}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-                {lane.first_move ? (
-                  <p className="mt-1 text-xs">
-                    <span className="merchant-text-muted">Move: </span>
-                    {lane.first_move}
-                  </p>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        {/* Prompt matrix — the receipts. */}
-        {matrix.length > 0 ? (
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-sm font-medium">
-              <Search className="h-4 w-4" /> Prompts we tested
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="merchant-text-muted">
-                  <tr className="border-b border-[color:var(--merchant-line)]">
-                    <th className="py-1.5 pr-2 font-medium">Buyer prompt</th>
-                    <th className="px-2 py-1.5 font-medium">Gemini</th>
-                    <th className="px-2 py-1.5 font-medium">DeepSeek</th>
-                    {hasChatgpt ? (
-                      <th className="px-2 py-1.5 font-medium">ChatGPT</th>
-                    ) : null}
-                    <th className="px-2 py-1.5 font-medium">Who owns it</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {matrix.map((row, i) => {
-                    const cited = row.cited_evidence;
-                    const showExcerpt =
-                      row.ownership_state !== 'merchant-owned' && !!cited?.excerpt;
-                    return (
-                      <Fragment key={`${row.query}-${i}`}>
-                        <tr className="border-b border-[color:var(--merchant-line)]">
-                          <td className="py-1.5 pr-2">
-                            {row.query}
-                            {row.demand_label ? (
-                              <span className="ml-1.5 text-[10px] uppercase tracking-wide merchant-text-muted">
-                                · {row.demand_label} demand
-                              </span>
-                            ) : null}
-                          </td>
-                          <td className={`px-2 py-1.5 font-medium ${verdictColor(row.gemini)}`}>
-                            {row.gemini || '—'}
-                          </td>
-                          <td className={`px-2 py-1.5 font-medium ${verdictColor(row.deepseek)}`}>
-                            {row.deepseek || '—'}
-                          </td>
-                          {hasChatgpt ? (
-                            <td className={`px-2 py-1.5 font-medium ${verdictColor(row.chatgpt)}`}>
-                              {row.chatgpt || '—'}
-                            </td>
-                          ) : null}
-                          <td className="px-2 py-1.5 merchant-text-muted">
-                            {row.who_owns ||
-                              (row.ownership_state === 'merchant-owned'
-                                ? 'You'
-                                : row.ownership_state || '—')}
-                          </td>
-                        </tr>
-                        {showExcerpt ? (
-                          <tr className="border-b border-[color:var(--merchant-line)]">
-                            <td
-                              colSpan={hasChatgpt ? 5 : 4}
-                              className="px-2 pb-2 merchant-text-muted text-xs italic"
-                            >
-                              AI said: “{cited!.excerpt}”
-                              {cited!.cited_hosts && cited!.cited_hosts.length > 0
-                                ? ` — pointing buyers to ${cited!.cited_hosts.join(', ')}`
-                                : ''}
-                            </td>
-                          </tr>
-                        ) : null}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ) : null}
-
-        {data.demand_state_summary ? (
-          <p className="merchant-text-muted text-xs">
-            Demand read: {data.demand_state_summary}
-          </p>
-        ) : null}
-
-        {/* What to do next — the per-SKU operational playbook (the prescription,
-            not just the diagnosis). Hidden in the honest empty/degraded state
-            (is_empty) and when there's no real content, so we never show a
-            bordered box with just a header. */}
-        {nba &&
-        !data.is_empty &&
-        (nba.headline ||
-          nba.first_move ||
-          nba.self_serve?.length ||
-          nba.pivota_assisted?.length) ? (
-          <div className="space-y-2 rounded-lg border border-[color:var(--merchant-line)] px-4 py-3">
-            <div className="flex items-center gap-1.5 text-sm font-medium">
-              <ArrowRight className="h-4 w-4" /> What to do next
-            </div>
-            {nba.headline ? (
-              <p className="text-sm font-medium leading-snug">{nba.headline}</p>
-            ) : null}
-            {nba.first_move ? (
-              <p className="text-xs">
-                <span className="merchant-text-muted">First move: </span>
-                {nba.first_move}
-              </p>
-            ) : null}
-            {nba.self_serve?.length ? (
-              <div>
-                <p className="text-xs font-medium">You can do this yourself</p>
-                <ul className="ml-4 list-disc text-xs merchant-text-muted">
-                  {nba.self_serve.map((s, j) => (
-                    <li key={j}>{s}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            {nba.pivota_assisted?.length ? (
-              <p className="text-xs">
-                <span className="merchant-text-muted">With Pivota: </span>
-                {nba.pivota_assisted[0]}
-              </p>
-            ) : null}
-            {nba.tracking_metrics?.length ? (
-              <p className="text-xs merchant-text-muted">
-                Track: {nba.tracking_metrics.join(' · ')}
-              </p>
-            ) : null}
-            {nba.cta?.label ? (
-              <div className="pt-1">
-                <span className="inline-flex items-center gap-1 rounded-md border border-[color:var(--merchant-accent,#6366f1)] px-2.5 py-1 text-xs font-semibold text-[color:var(--merchant-accent,#6366f1)]">
-                  {nba.cta.label}
-                </span>
-                {nba.cta.trust_note ? (
-                  <p className="mt-1 text-[11px] merchant-text-muted">{nba.cta.trust_note}</p>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-    </SurfaceCard>
-  );
-}
 
 export default function UrlAuditPage() {
   const [website, setWebsite] = useState('');
@@ -809,6 +543,12 @@ export default function UrlAuditPage() {
                   per-product detail. */}
               <MerchantNarrativePanel narrative={result.merchant_narrative} />
 
+              {/* The ranked first moves the backend computes — the bridge from
+                  the brand narrative into the per-product cards below. */}
+              <PrioritizedActionsPanel
+                actions={result.merchant_narrative?.prioritized_actions}
+              />
+
               {/* One card per pasted product — its own analysis + action plan. */}
               <div className="space-y-3">
                 {perSku.map((r, i) => (
@@ -875,10 +615,6 @@ export default function UrlAuditPage() {
               </p>
             </div>
           </SurfaceCard>
-
-          {result?.sku_intelligence?.headline ? (
-            <SkuIntelligenceCard data={result.sku_intelligence} />
-          ) : null}
 
           <SurfaceCard title="Per-product">
             <div className="divide-y divide-[color:var(--merchant-line)]">
