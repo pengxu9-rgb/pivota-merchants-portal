@@ -27,8 +27,21 @@ function Bar({ cited, total }: { cited: number; total: number }) {
   );
 }
 
+const INTENT_LABELS: Record<string, string> = {
+  category_head: 'category',
+  problem_jtbd: 'use-case',
+  constraint: 'constraint',
+  navigational: 'buy-now',
+  trust: 'trust',
+};
+
+function intentLabel(i: string): string {
+  return INTENT_LABELS[i] || i.replace(/_/g, ' ');
+}
+
 function Row({ ch }: { ch: ChannelAppearanceChannel }) {
   const own = ch.is_own_site;
+  const intents = ch.intents_cited && ch.intents_cited.length > 0 ? ch.intents_cited : null;
   return (
     <div
       className={`flex items-center gap-3 rounded-md px-2.5 py-2 ${
@@ -50,7 +63,14 @@ function Row({ ch }: { ch: ChannelAppearanceChannel }) {
               </span>
             ) : null}
           </div>
-          <div className="truncate text-[11px] opacity-55">{ch.host}</div>
+          <div className="flex items-center gap-1.5 truncate text-[11px] opacity-55">
+            <span className="truncate">{ch.host}</span>
+            {intents ? (
+              <span className="shrink-0 opacity-80">
+                · {intents.slice(0, 3).map(intentLabel).join(', ')}
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
       <div className="w-20 shrink-0">

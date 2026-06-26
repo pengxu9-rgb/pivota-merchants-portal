@@ -41,6 +41,8 @@ import {
 import { MerchantTaskQueuePanel } from '@/components/audit/MerchantTaskQueuePanel';
 import { MerchantOutreachPanel } from '@/components/audit/MerchantOutreachPanel';
 import { PerSkuNextStep } from '@/components/audit/PerSkuNextStep';
+import { AgenticVisibilityPanels } from '@/components/audit/AgenticVisibilityPanels';
+import { agenticVerdict, verdictPillClasses } from '@/lib/audit/agenticVerdict';
 import { PerSkuCopyToStore } from '@/components/audit/PerSkuCopyToStore';
 import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
 import { WinPlanPanel } from '@/components/audit/WinPlanPanel';
@@ -2627,6 +2629,7 @@ export function PerSkuAuditReportRenderer({
         <PerSkuCardList
           reports={report.per_sku_reports}
           authorityMap={report.authority_map}
+          runId={report.audit_run_id}
         />
       </Zone>
 
@@ -3728,9 +3731,11 @@ function RollupDimensionStat({
 function PerSkuCardList({
   reports,
   authorityMap,
+  runId,
 }: {
   reports: AgentCenterPerSkuReport[];
   authorityMap: AgentCenterAuthorityMap;
+  runId?: string | null;
 }) {
   if (reports.length === 0) {
     return (
@@ -3756,6 +3761,7 @@ function PerSkuCardList({
               authority={authorityMap.per_sku?.[r.sku_key]}
               index={i}
               total={reports.length}
+              runId={runId}
             />
           ))}
         </div>
@@ -3814,7 +3820,7 @@ function PerSkuModelStrip({
   return (
     <div className="mt-3 flex flex-wrap items-center gap-1.5">
       <span className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
-        By model
+        Citation score by model <span className="font-normal lowercase opacity-60">(0–100)</span>
       </span>
       {entries.map(([provider, entry]) => {
         const failed = entry?.status === 'probe_failed';
@@ -3846,6 +3852,7 @@ function PerSkuCard({
   authority,
   index,
   total,
+  runId,
 }: {
   report: AgentCenterPerSkuReport;
   authority: AgentCenterAuthorityMap['per_sku'][string] | undefined;
@@ -3853,9 +3860,11 @@ function PerSkuCard({
   // products read as distinct sections at a glance, not one undifferentiated list.
   index?: number;
   total?: number;
+  runId?: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const bandCls = bandColorClasses(report.band);
+  const verdict = agenticVerdict(report);
   return (
     <div className={`rounded-lg border-2 ${bandCls}`}>
       <button
@@ -3885,10 +3894,21 @@ function PerSkuCard({
           </div>
         </div>
         <div className="flex flex-none items-center gap-2">
-          <BandPill
-            band={report.band_display?.band ?? report.band}
-            label={report.band_display?.label}
-          />
+          {verdict ? (
+            <span
+              className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${verdictPillClasses(
+                verdict.tone,
+              )}`}
+              title={verdict.meaning}
+            >
+              {verdict.label}
+            </span>
+          ) : (
+            <BandPill
+              band={report.band_display?.band ?? report.band}
+              label={report.band_display?.label}
+            />
+          )}
           <span className="text-xs opacity-70">{expanded ? '−' : '+'}</span>
         </div>
       </button>
@@ -3920,6 +3940,11 @@ function PerSkuCard({
             </ul>
           </div>
         ) : null}
+        {/* The honest agentic picture — recommended vs merely findable, the
+            verbatim AI answers, channels, and the strategic brief. Shared with
+            the url-audit surface so both read identically; degrades cleanly when
+            a catalog SKU didn't probe discovery. */}
+        <AgenticVisibilityPanels report={report} runId={runId} />
         <PerSkuNextStep report={report} />
         <PerSkuCopyToStore report={report} />
         {expanded ? (

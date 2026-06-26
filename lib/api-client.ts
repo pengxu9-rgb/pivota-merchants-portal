@@ -2007,6 +2007,28 @@ class ApiClient {
     return res.data?.data ?? res.data;
   }
 
+  /**
+   * Ask a freeform question about a completed audit. The backend answers it
+   * grounded ONLY in that run's audit data (ungrounded DeepSeek — it can't
+   * reach the web), so the reply stays faithful to the report.
+   */
+  async askAuditQuestion(params: {
+    runId: string;
+    question: string;
+    productKey?: string | null;
+  }): Promise<{ answer: string; grounded?: boolean }> {
+    const res = await this.client.post(
+      '/api/merchant-center/audit/ask',
+      {
+        run_id: params.runId,
+        question: params.question,
+        product_key: params.productKey ?? undefined,
+      },
+      { timeout: 45_000 },
+    );
+    return res.data?.data ?? res.data;
+  }
+
   async runPerSkuAudit(request: {
     merchant_id: string;
     sku_keys: string[];
