@@ -2041,6 +2041,13 @@ class ApiClient {
     skuTitle?: string | null;
     growthPhase?: string | null;
     primaryGap?: string | null;
+    // External-channel outreach: when set, the backend drafts the artifact to
+    // SEND to that third-party source (pitch / review request / KOL DM /
+    // community post) instead of first-party copy.
+    channelHost?: string | null;
+    channelLever?: string | null;
+    channelType?: string | null;
+    query?: string | null;
   }): Promise<{
     status: 'success' | 'exists' | string;
     task_id?: string;
@@ -2056,6 +2063,10 @@ class ApiClient {
         sku_title: params.skuTitle ?? undefined,
         growth_phase: params.growthPhase ?? undefined,
         primary_gap: params.primaryGap ?? undefined,
+        channel_host: params.channelHost ?? undefined,
+        channel_lever: params.channelLever ?? undefined,
+        channel_type: params.channelType ?? undefined,
+        query: params.query ?? undefined,
       },
       { timeout: 45_000 },
     );

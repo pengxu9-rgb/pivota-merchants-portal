@@ -30,7 +30,10 @@ function ActionButton({
   runId: string;
 }) {
   const [st, setSt] = useState<ActionState>({});
-  const label = action.growth_phase_label || 'Create this';
+  // This drafts the merchant's OWN-page version (a comparison/section). It's a
+  // supporting step — agents mostly cite third-party sources, so the higher
+  // leverage is "Get cited on independent sources" below.
+  const label = 'Draft on-page version';
 
   async function run() {
     if (st.loading || st.done) return;
@@ -135,6 +138,10 @@ export function PrioritizedActionsPanel({
         <ListChecks className="h-3.5 w-3.5" />
         Start here — your highest-impact moves
       </div>
+      <p className="mt-1 text-[11px] leading-snug opacity-60">
+        These strengthen your own page. AI mostly cites <em>independent</em> sources, so pair each
+        with third-party proof in <span className="font-medium">Get cited on independent sources</span> below.
+      </p>
       <ol className="mt-2 space-y-2.5">
         {items.slice(0, 6).map((a, i) => (
           <li key={i} className="flex gap-2.5">
