@@ -1238,21 +1238,37 @@ export interface AgentCenterBrandRollup {
         visibility?: number | null;
         attribution?: number | null;
         category_visibility?: number | null;
+        // Per-engine visibility median for the most-recent run. Frontier models
+        // cite different sources, so we track each separately. null/absent on
+        // older runs that predate per-model history.
+        by_model?: AuditByModel | null;
       } | null;
       delta_from_most_recent?: {
         visibility?: number | null;
         attribution?: number | null;
         category_visibility?: number | null;
         days_since_last_audit?: number | null;
+        // Per-engine delta (current run minus most-recent prior run).
+        by_model?: AuditByModel | null;
       } | null;
       series?: {
         requested_at?: string | null;
         visibility?: number | null;
         attribution?: number | null;
         category_visibility?: number | null;
+        // Per-engine visibility median for this point in the series.
+        by_model?: AuditByModel | null;
       }[];
     } | null;
   } | null;
+}
+
+// Per-engine visibility medians. Keys are provider slugs (gemini, chatgpt, …);
+// each value is a 0-100 median visibility or null when that engine wasn't run.
+export interface AuditByModel {
+  gemini?: number | null;
+  chatgpt?: number | null;
+  [provider: string]: number | null | undefined;
 }
 
 // The verbatim AI answer behind a query (the proof) — forwarded from per_prompt
