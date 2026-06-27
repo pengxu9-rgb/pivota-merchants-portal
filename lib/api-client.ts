@@ -2029,6 +2029,39 @@ class ApiClient {
     return res.data?.data ?? res.data;
   }
 
+  /**
+   * Turn a "Start here" audit action into a real follow-up: creates a tracked
+   * task and (best-effort) drafts the deliverable via grounded DeepSeek. The
+   * task is created even if drafting is skipped/fails.
+   */
+  async startAuditAction(params: {
+    runId: string;
+    headline: string;
+    firstMove?: string | null;
+    skuTitle?: string | null;
+    growthPhase?: string | null;
+    primaryGap?: string | null;
+  }): Promise<{
+    status: 'success' | 'exists' | string;
+    task_id?: string;
+    draft?: string | null;
+    credits_charged?: number;
+  }> {
+    const res = await this.client.post(
+      '/api/merchant-center/audit/actions/start',
+      {
+        run_id: params.runId,
+        headline: params.headline,
+        first_move: params.firstMove ?? undefined,
+        sku_title: params.skuTitle ?? undefined,
+        growth_phase: params.growthPhase ?? undefined,
+        primary_gap: params.primaryGap ?? undefined,
+      },
+      { timeout: 45_000 },
+    );
+    return res.data?.data ?? res.data;
+  }
+
   async runPerSkuAudit(request: {
     merchant_id: string;
     sku_keys: string[];

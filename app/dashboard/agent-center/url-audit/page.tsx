@@ -547,6 +547,7 @@ export default function UrlAuditPage() {
                   the brand narrative into the per-product cards below. */}
               <PrioritizedActionsPanel
                 actions={result.merchant_narrative?.prioritized_actions}
+                runId={result.run_id ?? result.audit_run_id ?? null}
               />
 
               {/* One card per pasted product — its own analysis + action plan. */}
