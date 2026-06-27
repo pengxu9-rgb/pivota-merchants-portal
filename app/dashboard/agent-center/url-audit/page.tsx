@@ -38,7 +38,7 @@ import { RecentAuditsPanel } from '@/components/audit/RecentAuditsPanel';
 import { BuyCreditsCard } from '@/components/billing/BuyCreditsCard';
 import { PerSkuReportCard } from '@/components/audit/PerSkuReportCard';
 import { CustomPromptsPanel } from '@/components/audit/CustomPromptsPanel';
-import { OutreachMovesPanel } from '@/components/audit/OutreachMovesPanel';
+import { GetCitedPanel } from '@/components/audit/GetCitedPanel';
 import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
 import { PrioritizedActionsPanel } from '@/components/audit/PrioritizedActionsPanel';
 import type {
@@ -547,6 +547,7 @@ export default function UrlAuditPage() {
                   the brand narrative into the per-product cards below. */}
               <PrioritizedActionsPanel
                 actions={result.merchant_narrative?.prioritized_actions}
+                runId={result.run_id ?? result.audit_run_id ?? null}
               />
 
               {/* One card per pasted product — its own analysis + action plan. */}
@@ -566,11 +567,34 @@ export default function UrlAuditPage() {
                 ))}
               </div>
 
-              {/* Off-platform outreach moves (brand-level): get cited where AI
-                  already cites competitors. */}
-              <OutreachMovesPanel
-                moves={result.where_youre_losing?.outreach_moves}
-              />
+              {/* Get cited on the INDEPENDENT external sources AI trusts, per
+                  engine — the third-party evidence agents actually cite. */}
+              {(() => {
+                const authHosts =
+                  (result.authority_map as { hosts?: { host: string; providers?: string[] }[] } | undefined)
+                    ?.hosts ?? [];
+                const enginesByHost: Record<string, string[]> = {};
+                for (const h of authHosts) {
+                  if (h?.host) enginesByHost[h.host] = h.providers ?? [];
+                }
+                const ep = perSku[0]?.engine_playbook ?? null;
+                const categoryHint =
+                  perSku[0]?.product_competitiveness?.discovery?.missed?.[0] ??
+                  ep?.divergence?.[0]?.query ??
+                  null;
+                return (
+                  <GetCitedPanel
+                    moves={result.where_youre_losing?.outreach_moves}
+                    enginesByHost={enginesByHost}
+                    enginePlaybook={ep}
+                    categoryHint={categoryHint}
+                    brand={
+                      (result.brand_report as { merchant_name?: string } | undefined)?.merchant_name ?? null
+                    }
+                    runId={result.run_id ?? result.audit_run_id ?? null}
+                  />
+                );
+              })()}
 
               {/* The merchant's own test prompts, if any (brand-level). */}
               <CustomPromptsPanel prompts={result.custom_prompts} />
