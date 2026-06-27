@@ -274,55 +274,11 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                 />
               </div>
 
-              {SHOPIFY_OAUTH_ENABLED && (
-                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                  <div className="text-sm font-medium text-gray-700 mb-2">{copy.connectionMethod}</div>
-                  <div className="flex flex-col gap-2">
-                    <label className="flex items-start gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="shopifyConnectMode"
-                        value="oauth"
-                        checked={shopifyConnectMode === 'oauth'}
-                        onChange={() => {
-                          setShopifyConnectMode('oauth');
-                          setShopifyClientId('');
-                          setShopifyClientSecret('');
-                        }}
-                        className="mt-1"
-                      />
-                      <div className="text-sm">
-                        <div className="font-medium text-gray-900">{copy.oauthTitle}</div>
-                        <div className="text-gray-600">
-                          {copy.oauthDescription}
-                        </div>
-                      </div>
-                    </label>
-                    <label className="flex items-start gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="shopifyConnectMode"
-                        value="custom_token"
-                        checked={shopifyConnectMode === 'custom_token'}
-                        onChange={() => {
-                          setShopifyConnectMode('custom_token');
-                          setShopifyInstallUrl('');
-                        }}
-                        className="mt-1"
-                      />
-                      <div className="text-sm">
-                        <div className="font-medium text-gray-900">{copy.customTitle}</div>
-                        <div className="text-gray-600">{copy.customDescription}</div>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-              )}
-
               {SHOPIFY_OAUTH_ENABLED && shopifyConnectMode === 'oauth' ? (
                 <>
                   <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
-                    {copy.oauthHint}
+                    <div className="font-medium text-blue-900">{copy.oauthTitle}</div>
+                    <div className="mt-0.5">{copy.oauthDescription}</div>
                   </div>
                   {shopifyInstallUrl ? (
                     <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
@@ -362,9 +318,34 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                       </div>
                     </div>
                   ) : null}
+                  {SHOPIFY_OAUTH_ENABLED && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShopifyConnectMode('custom_token');
+                        setShopifyInstallUrl('');
+                      }}
+                      className="self-start text-xs text-gray-500 underline hover:text-gray-700"
+                    >
+                      Advanced: use your own custom app instead
+                    </button>
+                  )}
                 </>
               ) : (
                 <>
+                  {SHOPIFY_OAUTH_ENABLED && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShopifyConnectMode('oauth');
+                        setShopifyClientId('');
+                        setShopifyClientSecret('');
+                      }}
+                      className="self-start text-xs text-blue-600 underline hover:text-blue-800"
+                    >
+                      &larr; Use one-click Shopify connect instead
+                    </button>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">{copy.clientId} *</label>
                     <input
