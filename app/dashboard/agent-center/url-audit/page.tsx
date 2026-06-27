@@ -582,6 +582,12 @@ export default function UrlAuditPage() {
                   perSku[0]?.product_competitiveness?.discovery?.missed?.[0] ??
                   ep?.divergence?.[0]?.query ??
                   null;
+                // Specific subreddits/threads the backend tracked, aggregated
+                // across SKUs (the panel filters out junk + dedupes).
+                const redditSubreddits = (
+                  (result.authority_map as { skus?: { reddit?: { subreddits?: unknown[] } }[] } | undefined)
+                    ?.skus ?? []
+                ).flatMap((s) => s?.reddit?.subreddits ?? []);
                 return (
                   <GetCitedPanel
                     moves={result.where_youre_losing?.outreach_moves}
@@ -592,6 +598,7 @@ export default function UrlAuditPage() {
                       (result.brand_report as { merchant_name?: string } | undefined)?.merchant_name ?? null
                     }
                     runId={result.run_id ?? result.audit_run_id ?? null}
+                    redditSubreddits={redditSubreddits as Parameters<typeof GetCitedPanel>[0]['redditSubreddits']}
                   />
                 );
               })()}
