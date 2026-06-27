@@ -3583,6 +3583,13 @@ function BrandRollupCover({
 // Step 3: run-over-run "is it working?" — the overall AI-readiness delta vs the
 // merchant's last per_sku audit + a tiny sparkline. Renders nothing on the first
 // audit (no prior per_sku run) — a trend needs >= 2 runs.
+// Frontier engines cite different sources, so we trend each separately.
+// Order + label + accent color for the per-engine rows.
+const TREND_ENGINES: { key: string; label: string; line: string; text: string }[] = [
+  { key: 'gemini', label: 'Gemini', line: 'text-blue-500', text: 'text-blue-700' },
+  { key: 'chatgpt', label: 'ChatGPT', line: 'text-emerald-500', text: 'text-emerald-700' },
+];
+
 function BrandTrend({ tracking }: { tracking?: AgentCenterBrandRollup['tracking'] }) {
   const history = tracking?.history;
   const delta = history?.delta_from_most_recent;
@@ -3598,26 +3605,78 @@ function BrandTrend({ tracking }: { tracking?: AgentCenterBrandRollup['tracking'
       .filter((v): v is number => v != null),
     current,
   ];
+
+  // Per-engine rows: only render an engine when we have both a prior level
+  // (most_recent_audit.by_model) and a delta for it. Older runs that predate
+  // per-model history simply fall back to the aggregate line above.
+  const priorByModel = history.most_recent_audit?.by_model;
+  const deltaByModel = delta.by_model;
+  const engineRows = TREND_ENGINES.map((eng) => {
+    const ep = priorByModel?.[eng.key];
+    const ed = deltaByModel?.[eng.key];
+    if (ep == null || ed == null) return null;
+    const ecur = ep + ed;
+    const epts = [
+      ...(history.series ?? [])
+        .map((s) => s.by_model?.[eng.key])
+        .filter((v): v is number => v != null),
+      ecur,
+    ];
+    return { eng, prior: ep, current: ecur, delta: Math.round(ed), pts: epts };
+  }).filter((r): r is NonNullable<typeof r> => r != null);
+
   return (
-    <div className="mt-3 flex items-center gap-3 rounded-md border border-indigo-200 bg-white/60 px-3 py-2">
-      <div className="text-xs text-indigo-900/80">
-        <span className="font-semibold uppercase tracking-wide text-indigo-900/60">
-          AI-readiness
-        </span>{' '}
-        {Math.round(prior)} &rarr; {Math.round(current)}{' '}
-        <span className={up ? 'font-semibold text-green-700' : 'font-semibold text-red-700'}>
-          {d === 0 ? 'no change' : `${up ? '+' : ''}${d}`}
-        </span>{' '}
-        <span className="text-indigo-900/50">
-          since your last audit{days ? ` · ${days}d ago` : ''}
-        </span>
+    <div className="mt-3 rounded-md border border-indigo-200 bg-white/60 px-3 py-2">
+      <div className="flex items-center gap-3">
+        <div className="text-xs text-indigo-900/80">
+          <span className="font-semibold uppercase tracking-wide text-indigo-900/60">
+            AI-readiness
+          </span>{' '}
+          {Math.round(prior)} &rarr; {Math.round(current)}{' '}
+          <span className={up ? 'font-semibold text-green-700' : 'font-semibold text-red-700'}>
+            {d === 0 ? 'no change' : `${up ? '+' : ''}${d}`}
+          </span>{' '}
+          <span className="text-indigo-900/50">
+            since your last audit{days ? ` · ${days}d ago` : ''}
+          </span>
+        </div>
+        {pts.length >= 2 ? <Sparkline points={pts} /> : null}
       </div>
-      {pts.length >= 2 ? <Sparkline points={pts} /> : null}
+      {engineRows.length > 0 ? (
+        <div className="mt-2 flex flex-col gap-1 border-t border-indigo-100 pt-2">
+          <div className="text-[10px] uppercase tracking-wide text-indigo-900/40">
+            by engine · each cites different sources
+          </div>
+          {engineRows.map((r) => {
+            const eup = r.delta >= 0;
+            return (
+              <div key={r.eng.key} className="flex items-center gap-2">
+                <span className={`w-16 text-[11px] font-semibold ${r.eng.text}`}>
+                  {r.eng.label}
+                </span>
+                <span className="text-[11px] text-indigo-900/70">
+                  {Math.round(r.prior)} &rarr; {Math.round(r.current)}{' '}
+                  <span
+                    className={
+                      eup ? 'font-semibold text-green-700' : 'font-semibold text-red-700'
+                    }
+                  >
+                    {r.delta === 0 ? 'no change' : `${eup ? '+' : ''}${r.delta}`}
+                  </span>
+                </span>
+                {r.pts.length >= 2 ? (
+                  <Sparkline points={r.pts} className={`shrink-0 ${r.eng.line}`} />
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function Sparkline({ points }: { points: number[] }) {
+function Sparkline({ points, className }: { points: number[]; className?: string }) {
   const w = 64;
   const h = 18;
   const pad = 2;
@@ -3635,7 +3694,12 @@ function Sparkline({ points }: { points: number[] }) {
     )
     .join(' ');
   return (
-    <svg width={w} height={h} className="shrink-0 text-indigo-500" aria-hidden="true">
+    <svg
+      width={w}
+      height={h}
+      className={className ?? 'shrink-0 text-indigo-500'}
+      aria-hidden="true"
+    >
       <polyline points={coords} fill="none" stroke="currentColor" strokeWidth="1.5" />
     </svg>
   );
