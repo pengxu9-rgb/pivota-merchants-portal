@@ -84,6 +84,7 @@ export function StrategicBriefPanel({ report }: { report: AgentCenterPerSkuRepor
   const pivota = brief?.diy_vs_pivota?.pivota || null;
   const angle = brief?.your_angle || null;
   const subPlay = brief?.substitution_play || null;
+  const position = brief?.position || null;
 
   // Nothing meaningful to say.
   if (!whyLose && !decision && steps.length === 0 && !nba.headline && !angle) {
@@ -98,6 +99,10 @@ export function StrategicBriefPanel({ report }: { report: AgentCenterPerSkuRepor
     <div className="mt-3 rounded-md border border-[color:var(--merchant-line)] bg-white/40 px-3 py-3">
       {nba.headline ? (
         <div className="text-sm font-semibold">{nba.headline}</div>
+      ) : null}
+
+      {position ? (
+        <p className="mt-1 text-[11px] italic leading-snug opacity-60">{position}</p>
       ) : null}
 
       {angle ? (
