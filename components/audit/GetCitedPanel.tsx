@@ -64,6 +64,97 @@ function cleanCategory(q?: string | null, brand?: string | null): string {
   return c || (brand || '').trim();
 }
 
+// A tracked subreddit/thread from authority_map.skus[].reddit.subreddits[].
+interface TrackedSubreddit {
+  name?: string | null;
+  threads?: { title?: string | null; url?: string | null; sentiment?: string | null }[];
+  recurring_objections?: string[];
+}
+
+function cleanSubName(name?: string | null): string | null {
+  const n = (name || '').trim().replace(/^\/?r\//i, '');
+  if (!n || /^unknown$/i.test(n) || /\s/.test(n) || n.length > 30) return null;
+  return n;
+}
+
+function isRedditPermalink(url?: string | null): boolean {
+  return !!url && /(^https?:\/\/)?(www\.)?reddit\.com\/r\/[^/]+\/comments\//i.test(url);
+}
+
+// Category → a few relevant subreddits, so merchants get CONCRETE places to go
+// even when the audit didn't capture specific threads. Only suggests on a known
+// keyword (never guesses a wrong community for an unrelated category).
+function suggestSubreddits(category: string): string[] {
+  const c = category.toLowerCase();
+  const out: string[] = [];
+  const add = (...s: string[]) => s.forEach((x) => out.includes(x) || out.push(x));
+  if (/\bhair\b|shampoo|conditioner|curl|scalp/.test(c)) add('HaircareScience', 'curlyhair', 'FemaleHairAdvice');
+  if (/skin|serum|moistur|acne|cleanser|cream|spf|sunscreen/.test(c)) add('SkincareAddiction', 'AsianBeauty', '30PlusSkinCare');
+  if (/makeup|lipstick|foundation|mascara|concealer/.test(c)) add('MakeupAddiction', 'BeautyGuruChatter');
+  if (/fragrance|perfume|cologne|scent/.test(c)) add('fragrance', 'DryFragrance');
+  if (/supplement|vitamin|protein|collagen|nutrition/.test(c)) add('Supplements', 'Nutrition');
+  if (/coffee|espresso/.test(c)) add('Coffee');
+  if (/\btea\b|matcha/.test(c)) add('tea');
+  if (/beauty|cosmetic|k-?beauty/.test(c) && out.length === 0) add('AsianBeauty', 'BeautyGuruChatter');
+  return out.slice(0, 4);
+}
+
+interface Starter { kind: Kind; title: string; url: string; how: string }
+
+// Build the Community paths: real tracked subreddits/threads first (grounded),
+// then category-suggested subreddits, then a search catch-all. The more concrete
+// places a merchant can go, the more evidence AI eventually picks up.
+function buildRedditPaths(tracked: TrackedSubreddit[], category: string): Starter[] {
+  const enc = encodeURIComponent;
+  const out: Starter[] = [];
+  const seen = new Set<string>();
+  const catQ = category || 'this category';
+
+  for (const sub of tracked || []) {
+    const name = cleanSubName(sub?.name);
+    const thread = (sub?.threads || []).find((t) => isRedditPermalink(t?.url));
+    if (!name && !thread) continue;
+    const key = (name || thread?.url || '').toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const obj = (sub?.recurring_objections || []).filter(Boolean).slice(0, 2);
+    if (thread?.url) {
+      out.push({
+        kind: 'community',
+        title: thread.title?.trim() ? `Reddit thread: ${thread.title.trim().slice(0, 50)}` : `r/${name} — a cited thread`,
+        url: thread.url,
+        how: `AI already cites this discussion${obj.length ? ` — address: ${obj.join(', ')}` : ''}. Add a genuine, disclosed reply.`,
+      });
+    } else if (name) {
+      out.push({
+        kind: 'community',
+        title: `r/${name}`,
+        url: `https://www.reddit.com/r/${name}/`,
+        how: `A subreddit AI already cites for your category${obj.length ? ` — people raise: ${obj.join(', ')}` : ''}. Join the conversation, disclosed.`,
+      });
+    }
+  }
+
+  for (const name of suggestSubreddits(category)) {
+    if (seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    out.push({
+      kind: 'community',
+      title: `r/${name}`,
+      url: `https://www.reddit.com/r/${name}/`,
+      how: `An active community for this category — answer real questions and disclose your brand.`,
+    });
+  }
+
+  out.push({
+    kind: 'community',
+    title: 'Search Reddit for your topic',
+    url: `https://www.reddit.com/search/?q=${enc(catQ)}`,
+    how: 'Find the exact threads where shoppers ask about this category.',
+  });
+  return out.slice(0, 6);
+}
+
 /** A single channel row with an outbound link + a Pivota draft-outreach button. */
 function ChannelRow({
   kind, title, host, url, realism, how, runId, channelHost, channelLever, channelType, query,
@@ -239,6 +330,7 @@ export function GetCitedPanel({
   categoryHint,
   brand,
   runId,
+  redditSubreddits,
 }: {
   moves?: OutreachMove[] | null;
   enginesByHost?: Record<string, string[]>;
@@ -246,6 +338,9 @@ export function GetCitedPanel({
   categoryHint?: string | null;
   brand?: string | null;
   runId?: string | null;
+  // Tracked subreddits/threads from authority_map.skus[].reddit.subreddits — when
+  // present + clean, we link merchants to the SPECIFIC communities AI already cites.
+  redditSubreddits?: TrackedSubreddit[];
 }) {
   const list = (moves || []).filter((m) => m && m.host);
   if (list.length === 0 && !enginePlaybook?.has_signal) return null;
@@ -256,11 +351,12 @@ export function GetCitedPanel({
 
   // Multiple actionable paths per engine — the more a merchant can follow, the
   // more evidence AI picks up. ChatGPT leans community/Reddit; both reward KOLs.
-  const chatgptStarters = [
-    { kind: 'community' as Kind, title: 'Reddit — seed authentic threads', url: `https://www.reddit.com/search/?q=${enc(catQ)}`, how: 'ChatGPT weights Reddit heavily. Answer real questions in relevant threads and disclose your brand.' },
-    { kind: 'community' as Kind, title: 'Quora — answer category questions', url: `https://www.quora.com/search?q=${enc(catQ)}`, how: 'Write genuinely helpful answers where your product fits.' },
-    { kind: 'kol' as Kind, title: 'YouTube creators — get reviewed', url: `https://www.youtube.com/results?search_query=${enc(catQ + ' review')}`, how: 'Find creators reviewing this category and offer a gifting/review collab.' },
-    { kind: 'kol' as Kind, title: 'TikTok creators', url: `https://www.tiktok.com/search?q=${enc(catQ)}`, how: 'Short-form reviews build the community signal ChatGPT picks up.' },
+  // Community paths lead with the specific subreddits/threads AI already cites.
+  const chatgptStarters: Starter[] = [
+    ...buildRedditPaths(redditSubreddits || [], category),
+    { kind: 'community', title: 'Quora — answer category questions', url: `https://www.quora.com/search?q=${enc(catQ)}`, how: 'Write genuinely helpful answers where your product fits.' },
+    { kind: 'kol', title: 'YouTube creators — get reviewed', url: `https://www.youtube.com/results?search_query=${enc(catQ + ' review')}`, how: 'Find creators reviewing this category and offer a gifting/review collab.' },
+    { kind: 'kol', title: 'TikTok creators', url: `https://www.tiktok.com/search?q=${enc(catQ)}`, how: 'Short-form reviews build the community signal ChatGPT picks up.' },
   ];
   const geminiStarters = [
     { kind: 'reviews' as Kind, title: 'Get into "best of" roundups', url: `https://www.google.com/search?q=${enc('best ' + catQ)}`, how: 'Find the review roundups Google ranks for this category and pitch to be included.' },
