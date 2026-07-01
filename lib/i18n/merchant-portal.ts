@@ -1180,6 +1180,11 @@ Object.assign(enMessages, {
   "dashboard.billing.usage.daysRemaining": "{days} days left in this period",
   "dashboard.billing.usage.overageBanner":
     "You're {count} credits over your allowance — an extra {amount} will be billed this period.",
+  "dashboard.billing.usage.topUpLabel": "Top-up credits",
+  "dashboard.billing.usage.topUpBalance": "{credits} credits",
+  "dashboard.billing.usage.topUpHint":
+    "Purchased credits that carry over between months. They're used after your monthly allowance runs out.",
+  "dashboard.billing.usage.availableHint": "{credits} credits available to spend now",
   "dashboard.billing.upgrade.eyebrow": "Plans",
   "dashboard.billing.upgrade.title": "Choose a plan",
   "dashboard.billing.upgrade.creditsPerMonth": "{credits} credits / mo",

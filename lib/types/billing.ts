@@ -21,6 +21,19 @@ export interface BillingCurrentPeriod {
   /** ISO date (first day of the next calendar month). */
   period_end: string;
   in_overage: boolean;
+  /**
+   * Purchased top-up credits in the merchant's wallet. These persist across
+   * calendar months and are spent AFTER the monthly allowance is drained —
+   * they are distinct from `allowance_credits`. May be absent on older
+   * backends. Defaults to 0.
+   */
+  purchased_credits?: number;
+  /**
+   * Total spendable credits available right now = remaining monthly allowance
+   * + purchased top-ups. NOT additive with allowance/consumed (which describe
+   * allowance usage). May be absent on older backends.
+   */
+  available_credits?: number;
 }
 
 export type BillingStatementStatus = "frozen" | "invoiced";
