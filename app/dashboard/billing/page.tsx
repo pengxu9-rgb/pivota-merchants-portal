@@ -259,6 +259,36 @@ export default function BillingPage() {
   const allowance = period?.allowance_credits ?? 0;
   const consumed = period?.consumed_credits ?? 0;
   const usagePct = allowance > 0 ? Math.min(100, Math.round((consumed / allowance) * 100)) : 0;
+  // Purchased top-up credits persist across months and are spent after the
+  // monthly allowance — surface them distinctly so top-ups aren't invisible.
+  const purchasedCredits = period?.purchased_credits ?? 0;
+  const availableCredits = period?.available_credits ?? 0;
+  const hasTopUp = purchasedCredits > 0;
+
+  const topUpBlock = hasTopUp ? (
+    <div className="flex items-start justify-between gap-3 rounded-[1rem] border border-[color:var(--merchant-line)] px-4 py-3">
+      <div>
+        <div className="text-sm font-medium text-[color:var(--merchant-ink)]">
+          {t('dashboard.billing.usage.topUpLabel')}
+        </div>
+        <p className="mt-0.5 text-xs text-[color:var(--merchant-muted-strong)]">
+          {t('dashboard.billing.usage.topUpHint')}
+        </p>
+        {availableCredits > 0 && (
+          <p className="mt-1 text-xs text-[color:var(--merchant-muted)]">
+            {t('dashboard.billing.usage.availableHint', {
+              credits: availableCredits.toLocaleString(),
+            })}
+          </p>
+        )}
+      </div>
+      <div className="whitespace-nowrap text-lg font-semibold text-[color:var(--merchant-ink)]">
+        {t('dashboard.billing.usage.topUpBalance', {
+          credits: purchasedCredits.toLocaleString(),
+        })}
+      </div>
+    </div>
+  ) : null;
 
   return (
     <div className="space-y-8">
@@ -352,10 +382,14 @@ export default function BillingPage() {
                 </p>
               </div>
             )}
+            {topUpBlock}
           </div>
         ) : (
-          <div className="px-5 py-6 text-sm text-[color:var(--merchant-muted)]">
-            {t('dashboard.billing.plan.noneHint')}
+          <div className="space-y-4 px-5 py-6">
+            <p className="text-sm text-[color:var(--merchant-muted)]">
+              {t('dashboard.billing.plan.noneHint')}
+            </p>
+            {topUpBlock}
           </div>
         )}
       </SurfaceCard>
