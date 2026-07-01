@@ -9,11 +9,30 @@
  * because it's unique to Pivota. Hidden when present=false.
  */
 
-import { BadgeCheck, ShieldCheck, ArrowRight } from 'lucide-react';
+import { useState } from 'react';
+import { BadgeCheck, ShieldCheck, ArrowRight, Upload } from 'lucide-react';
 import type { AgentCenterPerSkuReport } from '@/lib/types/ai-readiness';
+import { ProductEvidencePanel } from '@/components/evidence/ProductEvidencePanel';
+
+/** Audit product_key is `merchant_id|platform|platform_product_id`. The evidence
+ *  intake endpoints key off platform + platform_product_id (the backend scopes
+ *  the write to the authed merchant). Returns null for non-3-part keys
+ *  (external_seed / canonical-URL / malformed) so we never show an intake that
+ *  can't post. Mirrors parseProductKey in PerSkuNextStep. */
+function parseProductKey(
+  productKey: string | null | undefined,
+): { platform: string; platformProductId: string } | null {
+  const parts = String(productKey ?? '').split('|');
+  if (parts.length !== 3 || parts.some((p) => !p.trim())) return null;
+  return { platform: parts[1], platformProductId: parts[2] };
+}
 
 export function EvidencePlayPanel({ report }: { report: AgentCenterPerSkuReport }) {
   const ev = report.evidence_play;
+  const [intakeOpen, setIntakeOpen] = useState(false);
+
+  const product = parseProductKey(report.product_key);
+
   if (!ev || !ev.present) return null;
 
   const claims = (ev.claims_to_substantiate || []).filter(Boolean);
@@ -21,6 +40,7 @@ export function EvidencePlayPanel({ report }: { report: AgentCenterPerSkuReport 
   const moves = (ev.moves || []).filter(Boolean);
 
   return (
+    <>
     <div className="mt-3 rounded-md border border-[color:var(--merchant-accent,#6366f1)] bg-[color:var(--merchant-accent,#6366f1)]/[0.05] px-3 py-3">
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--merchant-accent,#6366f1)]">
         <ShieldCheck className="h-3.5 w-3.5" />
@@ -76,6 +96,33 @@ export function EvidencePlayPanel({ report }: { report: AgentCenterPerSkuReport 
           {ev.pivota_value}
         </p>
       ) : null}
+
+      {/* Supply proof / upload docs — reveals the shared evidence intake
+          (positioning + lab/third-party report upload) already backed by the
+          governance endpoints. Only when the SKU is indexed (3-part product_key),
+          because that's what the intake can post against. */}
+      {product ? (
+        <button
+          type="button"
+          onClick={() => setIntakeOpen((v) => !v)}
+          aria-expanded={intakeOpen}
+          className="mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-[color:var(--merchant-accent,#6366f1)] px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+        >
+          <Upload className="h-3.5 w-3.5" />
+          {intakeOpen ? 'Hide proof upload' : 'Supply proof / upload docs'}
+        </button>
+      ) : null}
     </div>
+
+    {product && intakeOpen ? (
+      <div className="mt-2">
+        <ProductEvidencePanel
+          platform={product.platform}
+          platformProductId={product.platformProductId}
+          defaultExpanded
+        />
+      </div>
+    ) : null}
+    </>
   );
 }
