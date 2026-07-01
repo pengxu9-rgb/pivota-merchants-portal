@@ -13,7 +13,7 @@
  * until the merchant confirms — the trust spine, surfaced honestly.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -61,11 +61,16 @@ function ClaimRow({ claim }: { claim: ProductEvidenceClaim }) {
 export function ProductEvidencePanel({
   platform,
   platformProductId,
+  defaultExpanded = false,
 }: {
   platform: string;
   platformProductId: string;
+  // When mounted from an explicit "Supply proof" affordance (e.g. the audit
+  // "Make your claims citable" section), open expanded so the intake is visible
+  // immediately rather than requiring a second click.
+  defaultExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [evidence, setEvidence] = useState<ProductEvidence | null>(null);
@@ -107,6 +112,13 @@ export function ProductEvidencePanel({
     setExpanded(next);
     if (next && !loaded && !loading) void loadEvidence();
   }
+
+  // When the panel is mounted already-expanded (defaultExpanded), toggle() never
+  // fires, so kick off the initial load here.
+  useEffect(() => {
+    if (expanded && !loaded && !loading) void loadEvidence();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleAddPositioning() {
     const text = positioningText.trim();
