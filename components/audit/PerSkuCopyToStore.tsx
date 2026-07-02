@@ -5,6 +5,7 @@ import { Check, Copy, ExternalLink, Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import type { AgentCenterPerSkuReport } from '@/lib/types/ai-readiness';
 import { PublishToStoreLane } from '@/components/audit/PublishToStoreLane';
+import { parseAuditProductKey } from '@/lib/audit/productKey';
 
 // Copy-back rung (Option B, lowest-risk middle path): surface the finished,
 // factually-gated E1 copy so the merchant can PASTE it into their OWN store PDP,
@@ -16,16 +17,6 @@ import { PublishToStoreLane } from '@/components/audit/PublishToStoreLane';
 // {id} detail (the `enrichment` overlay + `platform_admin_url`); the merchant
 // performs any paste/save themselves in their own store.
 
-/** Audit product_key is `merchant_id|platform|platform_product_id`. Returns null
- *  for non-3-part keys (external_seed / malformed) so we never show a card that
- *  can't resolve a store product. Mirrors PerSkuNextStep.parseProductKey. */
-function parseProductKey(
-  productKey: string | null | undefined,
-): { platform: string; platformProductId: string } | null {
-  const parts = String(productKey ?? '').split('|');
-  if (parts.length !== 3 || parts.some((p) => !p.trim())) return null;
-  return { platform: parts[1], platformProductId: parts[2] };
-}
 
 function storeAdminLabel(platform: string): string {
   const p = platform.toLowerCase();
@@ -107,7 +98,7 @@ type CopyState =
     };
 
 export function PerSkuCopyToStore({ report }: { report: AgentCenterPerSkuReport }) {
-  const parsed = parseProductKey(report?.product_key);
+  const parsed = parseAuditProductKey(report?.product_key);
   const [state, setState] = useState<CopyState>({ kind: 'idle' });
 
   if (!parsed) return null; // can't resolve a store product -> no card

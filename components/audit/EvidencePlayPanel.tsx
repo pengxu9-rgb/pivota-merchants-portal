@@ -13,25 +13,13 @@ import { useState } from 'react';
 import { BadgeCheck, ShieldCheck, ArrowRight, Upload } from 'lucide-react';
 import type { AgentCenterPerSkuReport } from '@/lib/types/ai-readiness';
 import { ProductEvidencePanel } from '@/components/evidence/ProductEvidencePanel';
-
-/** Audit product_key is `merchant_id|platform|platform_product_id`. The evidence
- *  intake endpoints key off platform + platform_product_id (the backend scopes
- *  the write to the authed merchant). Returns null for non-3-part keys
- *  (external_seed / canonical-URL / malformed) so we never show an intake that
- *  can't post. Mirrors parseProductKey in PerSkuNextStep. */
-function parseProductKey(
-  productKey: string | null | undefined,
-): { platform: string; platformProductId: string } | null {
-  const parts = String(productKey ?? '').split('|');
-  if (parts.length !== 3 || parts.some((p) => !p.trim())) return null;
-  return { platform: parts[1], platformProductId: parts[2] };
-}
+import { parseAuditProductKey } from '@/lib/audit/productKey';
 
 export function EvidencePlayPanel({ report }: { report: AgentCenterPerSkuReport }) {
   const ev = report.evidence_play;
   const [intakeOpen, setIntakeOpen] = useState(false);
 
-  const product = parseProductKey(report.product_key);
+  const product = parseAuditProductKey(report.product_key);
 
   if (!ev || !ev.present) return null;
 

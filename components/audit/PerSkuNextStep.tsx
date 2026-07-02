@@ -6,6 +6,7 @@ import type {
   AgentCenterPerSkuReport,
   SkuNextBestAction,
 } from '@/lib/types/ai-readiness';
+import { parseAuditProductKey } from '@/lib/audit/productKey';
 
 // The per-SKU "What to do next" — two clearly-separated paths:
 //   A. "Add to your Pivota page" — the merchant types the missing content into a
@@ -24,17 +25,6 @@ type ContribState =
   | { kind: 'not_inci' }
   | { kind: 'error'; message: string };
 
-/** Audit product_key is `merchant_id|platform|platform_product_id`. We pass the
- *  platform + platform_product_id to the governance endpoints; the backend keys
- *  the contribution to the authed merchant. Returns null when not a 3-part key
- *  (e.g. external_seed / malformed) so we never show a button that can't work. */
-function parseProductKey(
-  productKey: string | null | undefined,
-): { platform: string; platformProductId: string } | null {
-  const parts = String(productKey ?? '').split('|');
-  if (parts.length !== 3 || parts.some((p) => !p.trim())) return null;
-  return { platform: parts[1], platformProductId: parts[2] };
-}
 
 function AddToPivotaPageForm({
   productName,
@@ -194,7 +184,7 @@ function Field({
 
 export function PerSkuNextStep({ report }: { report: AgentCenterPerSkuReport }) {
   const nba: SkuNextBestAction | null | undefined = report.next_best_action;
-  const product = useMemo(() => parseProductKey(report.product_key), [report.product_key]);
+  const product = useMemo(() => parseAuditProductKey(report.product_key), [report.product_key]);
   // Prefer the backend's resolved identity.name (often the raw sku_title is a
   // bare variant label like "2 Box"); mirrors skuDisplayName in the page.
   const productName =
