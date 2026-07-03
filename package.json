@@ -10,7 +10,8 @@
     "smoke:merchant": "node scripts/smoke-merchant-contracts.mjs",
     "verify:winplan": "node scripts/verify-winplan-render.mjs",
     "verify:copyback": "node scripts/verify-copyback-render.mjs",
-    "verify:publish": "node scripts/verify-publish-lane.mjs"
+    "verify:publish": "node scripts/verify-publish-lane.mjs",
+    "verify:indexing": "node scripts/verify-indexing-lane.mjs"
   },
   "dependencies": {
     "@adyen/adyen-web": "^6.32.0",

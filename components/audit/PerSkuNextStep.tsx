@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import type {
   AgentCenterPerSkuReport,
+  SkuIndexingResult,
   SkuNextBestAction,
 } from '@/lib/types/ai-readiness';
 import { parseAuditProductKey } from '@/lib/audit/productKey';
@@ -182,6 +183,125 @@ function Field({
   );
 }
 
+type IndexingState =
+  | { kind: 'idle' }
+  | { kind: 'submitting' }
+  | { kind: 'done'; result: SkuIndexingResult }
+  | { kind: 'error'; message: string };
+
+// Turn the backend's real request_indexing status into merchant-safe copy. The
+// STATUS is the source of truth (not a hardcoded "Automatic" label): it reflects
+// whether Pivota-owned indexing is switched on (gsc_pivota_submit_enabled) and
+// whether the SKU has a minted canonical page — the two conditions the old copy
+// silently assumed.
+function describeIndexingStatus(result: SkuIndexingResult): {
+  text: string;
+  className: string;
+  canRetry: boolean;
+} {
+  const ok = 'bg-emerald-50 text-emerald-800';
+  const info = 'bg-slate-100 text-slate-700';
+  switch (result.status) {
+    case 'submitted':
+    case 'pending':
+      return {
+        text: result.deduped
+          ? "Already submitted — Pivota is getting this indexed. We'll re-audit to confirm."
+          : "Submitted — Pivota is getting this indexed. We'll re-audit to confirm.",
+        className: ok,
+        canRetry: false,
+      };
+    case 'indexed':
+      return { text: 'Already indexed by Pivota.', className: ok, canRetry: false };
+    case 'no_canonical_url':
+      return {
+        text:
+          result.message ||
+          "This product doesn't have a Pivota page yet, so there's nothing to submit — make your own page crawlable first (see the checklist).",
+        className: info,
+        canRetry: false,
+      };
+    case 'not_enabled':
+      return {
+        text:
+          result.message ||
+          "Pivota-assisted indexing isn't switched on for your account yet. Use the checklist for now — you'll be able to submit this here once it's enabled.",
+        className: info,
+        canRetry: false,
+      };
+    default:
+      return {
+        text: result.message || "Couldn't submit for indexing just now. Please try again.",
+        className: 'bg-rose-50 text-rose-800',
+        canRetry: true,
+      };
+  }
+}
+
+// Interactive replacement for the old static "Automatic — Pivota handles this"
+// card on the per-SKU request_indexing gap. That card over-promised: it always
+// claimed Pivota would submit the page, even when the feature flag is off or the
+// SKU has no minted canonical URL (both make the real trigger a clean no-op).
+// Here the merchant fires the real POST /sku/request-indexing and we render
+// exactly what the backend reports back — no hardcoded promise.
+function PivotaIndexingLane({ targetSkuKey }: { targetSkuKey: string }) {
+  const [state, setState] = useState<IndexingState>({ kind: 'idle' });
+
+  async function handleSubmit() {
+    if (state.kind === 'submitting') return;
+    setState({ kind: 'submitting' });
+    try {
+      const result = await apiClient.requestSkuIndexing({ targetSkuKey });
+      setState({ kind: 'done', result });
+    } catch (err: unknown) {
+      setState({ kind: 'error', message: friendlyError(err) });
+    }
+  }
+
+  const outcome = state.kind === 'done' ? describeIndexingStatus(state.result) : null;
+  const showButton = !outcome || outcome.canRetry;
+
+  return (
+    <div className="rounded-md border-2 border-indigo-300 bg-indigo-50/60 p-2.5">
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs font-semibold text-indigo-900">Let Pivota get this indexed</span>
+        <span className="rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+          One click
+        </span>
+      </div>
+      <div className="mt-1 text-[11px] leading-relaxed text-indigo-900/80">
+        Pivota can submit this product&apos;s canonical page to Google&apos;s Indexing API
+        and track it to live, then re-audit to measure real AI visibility.
+      </div>
+
+      {outcome ? (
+        <div className={`mt-2 rounded-md px-2 py-1.5 text-[11px] leading-relaxed ${outcome.className}`}>
+          {outcome.text}
+        </div>
+      ) : state.kind === 'error' ? (
+        <div className="mt-2 rounded-md bg-rose-50 px-2 py-1.5 text-[11px] leading-relaxed text-rose-800">
+          {state.message}
+        </div>
+      ) : null}
+
+      {showButton ? (
+        <button
+          type="button"
+          disabled={state.kind === 'submitting'}
+          onClick={handleSubmit}
+          className="mt-2 rounded-md border border-indigo-300 bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {state.kind === 'submitting'
+            ? 'Submitting…'
+            : outcome?.canRetry
+            ? 'Try again'
+            : 'Submit my Pivota page for indexing'}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 export function PerSkuNextStep({ report }: { report: AgentCenterPerSkuReport }) {
   const nba: SkuNextBestAction | null | undefined = report.next_best_action;
   const product = useMemo(() => parseAuditProductKey(report.product_key), [report.product_key]);
@@ -213,16 +333,30 @@ export function PerSkuNextStep({ report }: { report: AgentCenterPerSkuReport }) 
   // yourself", plus the conditional "Once it's live and crawlable…" Pivota note.
   const showPivotaForm = action === 'request_enrichment' && !!product;
   // request_indexing has no INCI form (the evidence grader does nothing for an
-  // un-indexed SKU), but Pivota DOES submit the canonical page for indexing and
-  // track it (nba.pivota_assisted). Surface that as a proper "Pivota handles this"
-  // lane parallel to the self-serve checklist — so the indexing case gets the same
-  // "Pivota does it for you vs do it yourself" clarity enrichment already has —
-  // instead of burying it as a one-line note. Informational only: the
-  // request_indexing CTA is a no-op and GSC-connect lives in IntegrationCtaPanel.
+  // un-indexed SKU). For this gap Pivota can submit the canonical page for
+  // indexing under its own credential — but ONLY when the feature flag is on
+  // AND the SKU has a minted canonical page; otherwise the trigger is a clean
+  // no-op. So we render an INTERACTIVE lane (PivotaIndexingLane) that fires the
+  // real endpoint and surfaces the backend's actual status, instead of the old
+  // static "Automatic — Pivota handles this" card that promised it
+  // unconditionally. target_sku_key is stamped by next_best_action; fall back to
+  // the report's own sku_key.
+  const isIndexingLane = action === 'request_indexing';
+  const targetSkuKey = nba.cta?.target_sku_key || report.sku_key;
+  // The static info lane still backs the non-indexing plays (open-lane /
+  // substitution content the backend describes in pivota_assisted). Those aren't
+  // wired to a trigger here, so they keep the descriptive note.
   const pivotaAssistedNote =
     nba.pivota_assisted && nba.pivota_assisted.length > 0 ? nba.pivota_assisted[0] : null;
-  const showPivotaInfoLane = !showPivotaForm && !!pivotaAssistedNote;
-  const hasPivotaLane = showPivotaForm || showPivotaInfoLane;
+  const showPivotaIndexingLane = !showPivotaForm && isIndexingLane && !!targetSkuKey;
+  // Exclude the indexing gap outright (`!isIndexingLane`), not just via
+  // `!showPivotaIndexingLane`: if a request_indexing SKU ever lacked a
+  // target_sku_key the interactive lane would be off, and without this guard
+  // the old unconditional "Automatic" note would resurface for it. The static
+  // info lane backs only the non-indexing content plays.
+  const showPivotaInfoLane =
+    !showPivotaForm && !isIndexingLane && !!pivotaAssistedNote;
+  const hasPivotaLane = showPivotaForm || showPivotaIndexingLane || showPivotaInfoLane;
   const tracking = nba.tracking_metrics ?? [];
 
   return (
@@ -265,6 +399,10 @@ export function PerSkuNextStep({ report }: { report: AgentCenterPerSkuReport }) 
               platformProductId={product.platformProductId}
             />
           </div>
+        ) : null}
+
+        {showPivotaIndexingLane ? (
+          <PivotaIndexingLane targetSkuKey={targetSkuKey} />
         ) : null}
 
         {showPivotaInfoLane && pivotaAssistedNote ? (
