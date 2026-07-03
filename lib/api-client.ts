@@ -2289,6 +2289,38 @@ class ApiClient {
     return response.data;
   }
 
+  // ADR-006 Phase 3 — per-SKU request_indexing trigger. Submits the SKU's
+  // Pivota canonical PDP URL for indexing under the Pivota credential and
+  // returns the REAL backend status (submitted / no_canonical_url / not_enabled
+  // / …). Backs the "Pivota handles this" lane so its copy is truthful instead
+  // of an unconditional "Automatic" promise. merchant scoping is enforced by
+  // the token server-side; target_sku_key comes from nba.cta.target_sku_key.
+  async requestSkuIndexing(args: {
+    targetSkuKey: string;
+    auditRunId?: string | null;
+  }): Promise<import('./types/ai-readiness').SkuIndexingResult> {
+    const { targetSkuKey, auditRunId } = args;
+    const response = await this.client.post(
+      '/api/merchant-center/audit/sku/request-indexing',
+      {
+        target_sku_key: targetSkuKey,
+        ...(auditRunId ? { audit_run_id: auditRunId } : {}),
+      },
+    );
+    return response.data;
+  }
+
+  // Read-back of the per-SKU Pivota-page indexing status for the status chip.
+  async getSkuIndexingStatus(
+    targetSkuKey: string,
+  ): Promise<import('./types/ai-readiness').SkuIndexingResult> {
+    const response = await this.client.get(
+      '/api/merchant-center/audit/sku/indexing-status',
+      { params: { target_sku_key: targetSkuKey } },
+    );
+    return response.data;
+  }
+
   async listMerchantExecutorRuns(options?: {
     agentName?: string;
     limit?: number;

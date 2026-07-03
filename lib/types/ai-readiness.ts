@@ -580,6 +580,37 @@ export interface SkuNextBestAction {
   } | null;
 }
 
+// Result of the per-SKU request_indexing trigger / status read-back
+// (backend: services/pivota_indexing_request.py, routes POST
+// /api/merchant-center/audit/sku/request-indexing + GET .../indexing-status).
+// The `status` is the single source of truth the portal renders — it reflects
+// the real flag + minted-signature state, so the "Pivota handles this" lane
+// stops over-promising:
+//   - "submitted" | "pending" | "indexed": Pivota is/has submitted the canonical page
+//   - "no_canonical_url": SKU has no minted Pivota page yet → nothing to submit
+//   - "not_enabled": gsc_pivota_submit_enabled is off → no-op, use the checklist
+//   - "not_submitted": status read-back only, no submission row yet
+//   - "error": submit failed
+export type SkuIndexingStatus =
+  | 'submitted'
+  | 'pending'
+  | 'indexed'
+  | 'no_canonical_url'
+  | 'not_enabled'
+  | 'not_submitted'
+  | 'error'
+  | 'unknown';
+
+export interface SkuIndexingResult {
+  status: SkuIndexingStatus;
+  last_status?: string | null;
+  url?: string | null;
+  message?: string | null;
+  deduped?: boolean;
+  submitted_at?: string | null;
+  indexed_at?: string | null;
+}
+
 // next_best_action.competitor_intel — grounded read of what AI says the
 // category winner is known for. known_for is the verbatim AI text (the gold).
 export interface CompetitorIntel {
