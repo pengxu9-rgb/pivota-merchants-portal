@@ -393,6 +393,13 @@ const enMessages: MessageCatalog = {
   "settings.notificationWeeklyTitle": "Weekly reports",
   "settings.notificationWeeklyDescription":
     "Receive a quieter weekly summary of performance and catalog health",
+  "settings.automationCardTitle": "AI actions",
+  "settings.automationCardDescription":
+    "Decide whether Pivota runs recommended fixes for you, or waits for your approval.",
+  "settings.automationBadge": "Automation",
+  "settings.autoExecuteTitle": "Auto-run recommended actions",
+  "settings.autoExecuteDescription":
+    "When on, Pivota runs recommended actions for you automatically. Turn off to review and approve each action before it runs.",
   "settings.changePasswordTitle": "Change password",
   "settings.changePasswordDescription": "Update your merchant login password.",
   "settings.currentPassword": "Current Password",

@@ -39,6 +39,7 @@ import {
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
 import { MerchantTaskQueuePanel } from '@/components/audit/MerchantTaskQueuePanel';
+import { ExecutorApprovalPanel } from '@/components/audit/ExecutorApprovalPanel';
 import { MerchantOutreachPanel } from '@/components/audit/MerchantOutreachPanel';
 import { PerSkuNextStep } from '@/components/audit/PerSkuNextStep';
 import { AgenticVisibilityPanels } from '@/components/audit/AgenticVisibilityPanels';
@@ -2675,6 +2676,10 @@ export function PerSkuAuditReportRenderer({
             Pivota" lane). The standalone executor-activity feed was removed: it
             showed unscoped, stale internal agent runs ("34d ago") that confused
             more than they helped; Pivota's work now lives here as tagged tasks. */}
+        {/* W5 P7 — when the merchant has turned OFF auto-execute, executor runs
+            park for approval here. Renders null when auto-execute is on or the
+            queue is empty. */}
+        <ExecutorApprovalPanel auditRunId={report.audit_run_id} />
         <MerchantTaskQueuePanel />
       </Zone>
 
