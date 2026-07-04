@@ -839,6 +839,20 @@ export interface MerchantTask {
   dismissed_reason: string | null;
 }
 
+// W5 P7 — a parked executor run awaiting the merchant's approve/decline, when
+// executor_auto_execute is off. `expired` rows can no longer be actioned.
+export interface PendingExecutorRun {
+  run_id: string;
+  agent_name?: string | null;
+  kind?: string | null;
+  stage?: string | null;
+  expired?: boolean;
+  title?: string | null;
+  requested_at?: string | null;
+  parent_audit_run_id?: string | null;
+  [k: string]: unknown;
+}
+
 export interface MerchantExecutorRun {
   run_id: string;
   agent_name: string;
