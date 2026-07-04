@@ -393,6 +393,9 @@ class ApiClient {
     email_inventory?: boolean;
     email_weekly?: boolean;
     portal_language?: "en" | "zh-CN" | "ja-JP" | "ko-KR" | "fr-FR" | "de-DE";
+    // Per-merchant executor consent (P7). true = Pivota auto-runs recommended
+    // actions; false = the merchant approves each executor action before it runs.
+    executor_auto_execute?: boolean;
   }) {
     const response = await this.client.put('/merchant/settings/preferences', data);
     return response.data?.data || response.data;
@@ -2307,6 +2310,70 @@ class ApiClient {
       { params },
     );
     return response.data;
+  }
+
+  // ── W5 P4: request indexing of a product's Pivota canonical page (ADR-006 —
+  // this submits agent.pivota.cc/products/… to Google Search Console, NEVER the
+  // merchant's own store page). Both endpoints live under the merchant audit
+  // router (/api/merchant-center/audit/...). The status dict is honest:
+  // not_enabled (GSC submission not turned on yet) | no_canonical_url (nothing
+  // to submit) | submitted | pending | indexed.
+  async requestSkuIndexing(args: {
+    targetSkuKey: string;
+    auditRunId?: string | null;
+  }): Promise<import('./types/ai-readiness').SkuIndexingStatusResponse> {
+    const response = await this.client.post(
+      '/api/merchant-center/audit/sku/request-indexing',
+      {
+        target_sku_key: args.targetSkuKey,
+        ...(args.auditRunId ? { audit_run_id: args.auditRunId } : {}),
+      },
+    );
+    return response.data?.data || response.data;
+  }
+
+  async getSkuIndexingStatus(
+    targetSkuKey: string,
+  ): Promise<import('./types/ai-readiness').SkuIndexingStatusResponse> {
+    const response = await this.client.get(
+      '/api/merchant-center/audit/sku/indexing-status',
+      { params: { target_sku_key: targetSkuKey } },
+    );
+    return response.data?.data || response.data;
+  }
+
+  // ── W5 P7: per-merchant executor consent. When executor_auto_execute is off,
+  // executor runs park in a pending queue the merchant approves/declines.
+  async getPendingExecutorRuns(auditRunId?: string | null): Promise<{
+    runs: import('./types/ai-readiness').PendingExecutorRun[];
+    count: number;
+  }> {
+    const response = await this.client.get('/merchant/executor-runs/pending', {
+      params: auditRunId ? { audit_run_id: auditRunId } : {},
+    });
+    const data = response.data?.data || response.data || {};
+    return {
+      runs: Array.isArray(data.runs) ? data.runs : [],
+      count: typeof data.count === 'number' ? data.count : (data.runs?.length ?? 0),
+    };
+  }
+
+  /** Approve a parked executor run (idempotent → 200; 404 not-found;
+   *  409 expired/conflict). */
+  async approveExecutorRun(runId: string): Promise<{ status?: string }> {
+    const response = await this.client.post(
+      `/merchant/executor-runs/${encodeURIComponent(runId)}/approve`,
+    );
+    return response.data?.data || response.data || {};
+  }
+
+  /** Decline a parked executor run (idempotent → 200; 404 not-found;
+   *  409 expired/conflict). */
+  async declineExecutorRun(runId: string): Promise<{ status?: string }> {
+    const response = await this.client.post(
+      `/merchant/executor-runs/${encodeURIComponent(runId)}/decline`,
+    );
+    return response.data?.data || response.data || {};
   }
 }
 

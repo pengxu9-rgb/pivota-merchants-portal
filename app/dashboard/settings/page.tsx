@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
-import { AlertCircle, User, Bell, Shield, Save, Loader2, Lock, Languages } from 'lucide-react';
+import { AlertCircle, User, Bell, Shield, Save, Loader2, Lock, Languages, Zap } from 'lucide-react';
 import { PortalLanguageSwitcher } from '@/components/portal/portal-language-switcher';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { apiClient } from '@/lib/api-client';
@@ -47,6 +47,11 @@ export default function SettingsPage() {
     email_payments: true,
     email_inventory: false,
     email_weekly: false,
+  });
+  // Per-merchant executor consent (W5 P7). Default true = Pivota auto-runs
+  // recommended actions; false = the merchant approves each action first.
+  const [automation, setAutomation] = useState({
+    executor_auto_execute: true,
   });
   const [portalLanguage, setPortalLanguage] = useState(language);
   const [passwordForm, setPasswordForm] = useState({
@@ -122,6 +127,9 @@ export default function SettingsPage() {
           email_inventory: preferences.email_inventory ?? false,
           email_weekly: preferences.email_weekly ?? false,
         });
+        setAutomation({
+          executor_auto_execute: preferences.executor_auto_execute ?? true,
+        });
         const nextLanguage = preferences.portal_language ?? 'en';
         setPortalLanguage(nextLanguage);
         setLanguage(nextLanguage);
@@ -146,6 +154,7 @@ export default function SettingsPage() {
         apiClient.updateProfile(profile),
         apiClient.updateSettingsPreferences({
           ...notifications,
+          ...automation,
           portal_language: portalLanguage,
         }),
       ]);
@@ -400,6 +409,27 @@ export default function SettingsPage() {
           </div>
         </SurfaceCard>
       </div>
+
+      <SurfaceCard
+        title={t('settings.automationCardTitle')}
+        description={t('settings.automationCardDescription')}
+        action={<StatusBadge tone="neutral" icon={Zap}>{t('settings.automationBadge')}</StatusBadge>}
+      >
+        <div className="space-y-3 p-5">
+          <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
+            <div>
+              <div className="font-medium text-[color:var(--merchant-ink)]">{t('settings.autoExecuteTitle')}</div>
+              <div className="text-sm text-[color:var(--merchant-muted)]">{t('settings.autoExecuteDescription')}</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={automation.executor_auto_execute}
+              onChange={(e) => setAutomation({ executor_auto_execute: e.target.checked })}
+              className="rounded"
+            />
+          </label>
+        </div>
+      </SurfaceCard>
 
       <SurfaceCard
         title={t('settings.languageCardTitle')}

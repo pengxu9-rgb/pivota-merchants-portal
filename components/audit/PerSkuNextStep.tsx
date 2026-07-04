@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import type {
   AgentCenterPerSkuReport,
+  SkuIndexingStatus,
   SkuNextBestAction,
 } from '@/lib/types/ai-readiness';
 import { parseAuditProductKey } from '@/lib/audit/productKey';
@@ -182,7 +183,13 @@ function Field({
   );
 }
 
-export function PerSkuNextStep({ report }: { report: AgentCenterPerSkuReport }) {
+export function PerSkuNextStep({
+  report,
+  runId,
+}: {
+  report: AgentCenterPerSkuReport;
+  runId?: string | null;
+}) {
   const nba: SkuNextBestAction | null | undefined = report.next_best_action;
   const product = useMemo(() => parseAuditProductKey(report.product_key), [report.product_key]);
   // Prefer the backend's resolved identity.name (often the raw sku_title is a
@@ -213,16 +220,22 @@ export function PerSkuNextStep({ report }: { report: AgentCenterPerSkuReport }) 
   // yourself", plus the conditional "Once it's live and crawlable…" Pivota note.
   const showPivotaForm = action === 'request_enrichment' && !!product;
   // request_indexing has no INCI form (the evidence grader does nothing for an
-  // un-indexed SKU), but Pivota DOES submit the canonical page for indexing and
-  // track it (nba.pivota_assisted). Surface that as a proper "Pivota handles this"
-  // lane parallel to the self-serve checklist — so the indexing case gets the same
-  // "Pivota does it for you vs do it yourself" clarity enrichment already has —
-  // instead of burying it as a one-line note. Informational only: the
-  // request_indexing CTA is a no-op and GSC-connect lives in IntegrationCtaPanel.
+  // un-indexed SKU) — but Pivota DOES submit the product's canonical PIVOTA PAGE
+  // (agent.pivota.cc, per ADR-006 — never the merchant's own store page) to
+  // Google Search Console. W5 P4 makes this a real, tracked action: the lane
+  // below POSTs request-indexing and renders the honest submission status,
+  // parallel to the self-serve checklist.
   const pivotaAssistedNote =
     nba.pivota_assisted && nba.pivota_assisted.length > 0 ? nba.pivota_assisted[0] : null;
-  const showPivotaInfoLane = !showPivotaForm && !!pivotaAssistedNote;
-  const hasPivotaLane = showPivotaForm || showPivotaInfoLane;
+  // The SKU key the indexing job targets. The backend stamps cta.target_sku_key;
+  // fall back to the report's own sku_key so the button never renders dead.
+  const indexingTargetSkuKey = nba.cta?.target_sku_key || report.sku_key;
+  const showIndexingLane =
+    !showPivotaForm && action === 'request_indexing' && !!indexingTargetSkuKey;
+  // Any other non-form pivota_assisted note stays informational (no URL-tier
+  // action backs it), so we don't fabricate a handler for it.
+  const showPivotaInfoLane = !showPivotaForm && !showIndexingLane && !!pivotaAssistedNote;
+  const hasPivotaLane = showPivotaForm || showIndexingLane || showPivotaInfoLane;
   const tracking = nba.tracking_metrics ?? [];
 
   return (
@@ -267,6 +280,27 @@ export function PerSkuNextStep({ report }: { report: AgentCenterPerSkuReport }) 
           </div>
         ) : null}
 
+        {showIndexingLane ? (
+          <div className="rounded-md border-2 border-indigo-300 bg-indigo-50/60 p-2.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-indigo-900">
+                Get your Pivota page indexed
+              </span>
+              <span className="rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                Pivota submits it
+              </span>
+            </div>
+            <div className="mt-1 text-[11px] leading-relaxed text-indigo-900/80">
+              {pivotaAssistedNote ??
+                "Pivota submits this product's Pivota page (agent.pivota.cc) to Google Search Console so AI shoppers can find it — no changes to your own store."}
+            </div>
+            <RequestIndexingLane
+              targetSkuKey={indexingTargetSkuKey}
+              auditRunId={runId}
+            />
+          </div>
+        ) : null}
+
         {showPivotaInfoLane && pivotaAssistedNote ? (
           <div className="rounded-md border-2 border-indigo-300 bg-indigo-50/60 p-2.5">
             <div className="flex items-center gap-1.5">
@@ -307,6 +341,147 @@ export function PerSkuNextStep({ report }: { report: AgentCenterPerSkuReport }) 
       ) : null}
     </div>
   );
+}
+
+// W5 P4 — real request_indexing control. Checks the current submission status
+// on mount, then POSTs request-indexing on click and renders the honest status
+// chip. ADR-006: the subject is always the product's PIVOTA PAGE, never the
+// merchant's own store page; not_enabled is a calm "not yet available", not an
+// error.
+type IndexingState =
+  | { kind: 'checking' }
+  | { kind: 'idle' }
+  | { kind: 'submitting' }
+  | { kind: 'status'; status: SkuIndexingStatus }
+  | { kind: 'error'; message: string };
+
+function RequestIndexingLane({
+  targetSkuKey,
+  auditRunId,
+}: {
+  targetSkuKey: string;
+  auditRunId?: string | null;
+}) {
+  const [state, setState] = useState<IndexingState>({ kind: 'checking' });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.getSkuIndexingStatus(targetSkuKey);
+        if (cancelled) return;
+        const status = String(res?.status || '').trim();
+        // A recognized lifecycle status → show its chip/state; anything else
+        // (empty / not_submitted / unknown) → the actionable submit button.
+        if (isKnownIndexingStatus(status)) {
+          setState({ kind: 'status', status });
+        } else {
+          setState({ kind: 'idle' });
+        }
+      } catch {
+        // A failed status check shouldn't block the merchant from submitting.
+        if (!cancelled) setState({ kind: 'idle' });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [targetSkuKey]);
+
+  async function handleSubmit() {
+    setState({ kind: 'submitting' });
+    try {
+      const res = await apiClient.requestSkuIndexing({ targetSkuKey, auditRunId });
+      const status = String(res?.status || 'submitted').trim();
+      setState({ kind: 'status', status });
+    } catch (err: unknown) {
+      setState({ kind: 'error', message: friendlyError(err) });
+    }
+  }
+
+  if (state.kind === 'checking') {
+    return (
+      <div className="mt-2 text-[11px] text-indigo-900/60">Checking indexing status…</div>
+    );
+  }
+
+  if (state.kind === 'status') {
+    return <div className="mt-2">{renderIndexingStatus(state.status)}</div>;
+  }
+
+  const submitting = state.kind === 'submitting';
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        disabled={submitting}
+        onClick={handleSubmit}
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-indigo-300 bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+      >
+        {submitting ? 'Submitting…' : "Get this product's Pivota page indexed"}
+      </button>
+      {state.kind === 'error' ? (
+        <div className="mt-2 rounded border border-red-300 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+          {state.message}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function isKnownIndexingStatus(status: string): boolean {
+  return (
+    status === 'not_enabled' ||
+    status === 'no_canonical_url' ||
+    status === 'submitted' ||
+    status === 'pending' ||
+    status === 'indexed'
+  );
+}
+
+function renderIndexingStatus(status: SkuIndexingStatus) {
+  switch (status) {
+    case 'indexed':
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full border border-green-300 bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-900">
+          <span aria-hidden>✓</span> Indexed
+        </span>
+      );
+    case 'submitted':
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-900">
+          Submitted — awaiting indexing
+        </span>
+      );
+    case 'pending':
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-900">
+          Awaiting indexing
+        </span>
+      );
+    case 'not_enabled':
+      // Calm "not yet available" — Pivota hasn't turned on submission. NOT an error.
+      return (
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600">
+          Not yet available — Pivota will submit your Pivota page for indexing once
+          this is switched on. Nothing you need to do.
+        </div>
+      );
+    case 'no_canonical_url':
+      // Gentle: there's no Pivota page to submit yet.
+      return (
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600">
+          No Pivota page to index yet — it appears once this product is set up on
+          Pivota.
+        </div>
+      );
+    default:
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+          {status}
+        </span>
+      );
+  }
 }
 
 function lowerFirst(s: string): string {

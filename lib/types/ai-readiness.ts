@@ -808,6 +808,39 @@ export interface MerchantTask {
   dismissed_reason: string | null;
 }
 
+// W5 P4 — honest indexing status for a product's Pivota canonical page.
+//   not_enabled       — Pivota hasn't turned on GSC submission yet (calm state)
+//   no_canonical_url   — no Pivota page exists to submit yet
+//   submitted / pending — submitted to Search Console, awaiting indexing
+//   indexed            — Google has indexed the Pivota page
+export type SkuIndexingStatus =
+  | 'not_enabled'
+  | 'no_canonical_url'
+  | 'submitted'
+  | 'pending'
+  | 'indexed'
+  | string;
+
+export interface SkuIndexingStatusResponse {
+  status: SkuIndexingStatus;
+  // Optional detail the backend may include (canonical url, submitted_at, …).
+  [k: string]: unknown;
+}
+
+// W5 P7 — a parked executor run awaiting the merchant's approve/decline, when
+// executor_auto_execute is off. `expired` rows can no longer be actioned.
+export interface PendingExecutorRun {
+  run_id: string;
+  agent_name?: string | null;
+  kind?: string | null;
+  stage?: string | null;
+  expired?: boolean;
+  title?: string | null;
+  requested_at?: string | null;
+  parent_audit_run_id?: string | null;
+  [k: string]: unknown;
+}
+
 export interface MerchantExecutorRun {
   run_id: string;
   agent_name: string;
