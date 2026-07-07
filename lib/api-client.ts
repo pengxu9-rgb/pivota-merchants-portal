@@ -1758,6 +1758,30 @@ class ApiClient {
     return response.data as ApmFunnelResponse;
   }
 
+  // -------------------------------------------------------------------
+  // Visibility-over-time series (the W2 pinned-basis payoff / retention
+  // chart). GET /api/merchant-center/audit/tracking?limit=1..50.
+  //
+  // Brand-level visibility / attribution / category scores across the
+  // merchant's completed audits, each point tagged with its measurement
+  // basis so the chart connects ONLY comparable (same pinned prompt set)
+  // points and breaks where the basis changed. Same merchant-JWT auth as
+  // the other /api/merchant-center/audit/* calls (interceptor attaches it).
+  //
+  // Returns the payload UNWRAPPED (the route returns it directly, not under
+  // `data`); we still tolerate a `data` envelope defensively.
+  // -------------------------------------------------------------------
+  async getVisibilityTracking(
+    limit: number = 50,
+  ): Promise<import('./types/visibility-tracking').VisibilityTrackingResponse> {
+    const clamped = Math.max(1, Math.min(50, Math.floor(limit) || 50));
+    const response = await this.client.get(
+      '/api/merchant-center/audit/tracking',
+      { params: { limit: clamped } },
+    );
+    return response.data?.data || response.data;
+  }
+
   async runAiReadinessAudit(
     products: { platform: string; source_product_id: string }[],
     maxRuns: number = 3,
