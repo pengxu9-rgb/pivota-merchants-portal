@@ -3437,9 +3437,19 @@ function bandFromScore(score: number | null | undefined): string {
 
 function BandPill({ band, label }: { band: string; label?: string }) {
   const text = label || BAND_LABEL[band] || band;
+  // Blocked-band SKU whose backend band_display was softened (partial+ citation
+  // under a blocked min — "Recommended, but not agent-ready"): amber, not
+  // blocked-red, so the pill's severity matches its own copy. Detected by the
+  // label diverging from the stock blocked copy; the raw enum stays `blocked`.
+  const softened =
+    band === 'blocked' && Boolean(label) && label !== BAND_LABEL.blocked;
   return (
     <span
-      className={`inline-flex flex-none items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${bandPillClass(band)}`}
+      className={`inline-flex flex-none items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+        softened
+          ? 'bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-300'
+          : bandPillClass(band)
+      }`}
     >
       {text}
     </span>
