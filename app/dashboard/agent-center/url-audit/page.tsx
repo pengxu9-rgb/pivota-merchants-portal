@@ -35,6 +35,7 @@ import {
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
 import { RecentAuditsPanel } from '@/components/audit/RecentAuditsPanel';
+import { VisibilityTrendChart } from '@/components/audit/VisibilityTrendChart';
 import { BuyCreditsCard } from '@/components/billing/BuyCreditsCard';
 import { PerSkuReportCard } from '@/components/audit/PerSkuReportCard';
 import { CustomPromptsPanel } from '@/components/audit/CustomPromptsPanel';
@@ -332,6 +333,11 @@ export default function UrlAuditPage() {
         loadingRunId={loadingRunId}
         reloadKey={historyReloadKey}
       />
+
+      {/* Visibility-over-time trend (the pinned-basis payoff). Refetches when a
+          new check completes. Self-manages its own empty/baseline states, so it
+          renders on a first-time page too (as a "run your first check" nudge). */}
+      <VisibilityTrendChart reloadKey={historyReloadKey} />
 
       <SurfaceCard title="Audit your products">
         <div className="space-y-4 px-5 py-4">
