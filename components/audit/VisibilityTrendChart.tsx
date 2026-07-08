@@ -109,6 +109,7 @@ type ChartRow = {
   __dateISO: string | null;
   __comparable: boolean;
   __isBreak: boolean; // a NEW basis first appeared at this point (and it isn't the first)
+  __thread: string | null; // thread letter (A, B, …) when the point is on a connected line
   __scores: TrackingScores;
   __providers: TrackingProviderScores | null;
   [seriesKey: string]: string | number | boolean | null | TrackingScores | TrackingProviderScores;
@@ -121,6 +122,7 @@ function segmentKey(metricOrProvider: string, segmentIndex: number): string {
 function buildRows(
   points: TrackingPoint[],
   segments: TrackingSegment[],
+  threadLetterBySegment: Map<number, string>,
 ): ChartRow[] {
   // point index -> which segment it belongs to
   const segOf = new Map<number, number>();
@@ -134,6 +136,7 @@ function buildRows(
       __dateISO: p.date,
       __comparable: !!p.comparable_with_prev,
       __isBreak: i > 0 && !p.comparable_with_prev,
+      __thread: threadLetterBySegment.get(si) ?? null,
       __scores: p.scores,
       __providers: p.provider_scores,
     };
@@ -217,11 +220,13 @@ function ChartTooltip({
         }}
       >
         {row.__comparable
-          ? '✓ Same prompt set — comparable to the earlier checks on its line.'
+          ? `✓ Same prompt set${row.__thread ? ` (thread ${row.__thread})` : ''} — comparable to the earlier checks on its line.`
           : allIsolated
             ? 'Independent snapshot — its own prompt set.'
             : row.__isBreak
-              ? '⟳ New prompt set — not comparable to any earlier check.'
+              ? row.__thread
+                ? `⟳ New prompt set — starts comparison thread ${row.__thread}.`
+                : '⟳ New prompt set — not comparable to any earlier check.'
               : 'Baseline point.'}
       </div>
     </div>
@@ -296,7 +301,39 @@ export function VisibilityTrendChart({
   const segments = data?.segments ?? EMPTY_SEGMENTS;
   const basisChanges = data?.basis_changes ?? EMPTY_INDICES;
 
-  const rows = useMemo(() => buildRows(points, segments), [points, segments]);
+  // A "thread" is a connected comparison line — a segment with >= 2 points.
+  // With two or more threads, same-metric strands are visually ambiguous (same
+  // color), so: threads get stable letters (A, B, … by first appearance) for
+  // the tooltip, and the thread holding the MOST RECENT check renders at full
+  // strength while earlier threads are dimmed. One thread → nothing to
+  // disambiguate, everything renders full-strength as before.
+  const threadInfo = useMemo(() => {
+    const letterBySegment = new Map<number, string>();
+    let currentSegment: number | null = null;
+    let latestPoint = -1;
+    segments.forEach((s, si) => {
+      if (s.indices.length < 2) return;
+      letterBySegment.set(si, String.fromCharCode(65 + (letterBySegment.size % 26)));
+      const last = Math.max(...s.indices);
+      if (last > latestPoint) {
+        latestPoint = last;
+        currentSegment = si;
+      }
+    });
+    return { letterBySegment, currentSegment, threadCount: letterBySegment.size };
+  }, [segments]);
+
+  const rows = useMemo(
+    () => buildRows(points, segments, threadInfo.letterBySegment),
+    [points, segments, threadInfo],
+  );
+
+  // Dim a segment's line when it's an EARLIER thread sitting under the current
+  // one — never the current thread, never singletons (they have no line).
+  const isDimmedSegment = (si: number) =>
+    threadInfo.threadCount >= 2 &&
+    threadInfo.letterBySegment.has(si) &&
+    si !== threadInfo.currentSegment;
 
   // Only plot metrics that actually have data. A metric that's null across every
   // run (e.g. category_visibility on URL-wedge runs) would otherwise sit in the
@@ -547,47 +584,77 @@ export function VisibilityTrendChart({
                   URL set's check interleaved), and the rows in between hold null
                   for this segment's dataKey — the line must span them. */}
               {activeMetrics.flatMap((m) =>
-                Array.from({ length: nSegments }, (_, si) => (
-                  <Line
-                    key={`${m.key}-${si}`}
-                    dataKey={segmentKey(m.key, si)}
-                    name={m.label}
-                    stroke={m.color}
-                    strokeWidth={2}
-                    type="monotone"
-                    connectNulls
-                    dot={{ r: 3.5, fill: m.color, stroke: '#fff', strokeWidth: 1.5 }}
-                    activeDot={{ r: 5.5, stroke: '#fff', strokeWidth: 2 }}
-                    legendType={si === 0 ? 'plainline' : 'none'}
-                    isAnimationActive={false}
-                  />
-                )),
+                Array.from({ length: nSegments }, (_, si) => {
+                  const dimmed = isDimmedSegment(si);
+                  return (
+                    <Line
+                      key={`${m.key}-${si}`}
+                      dataKey={segmentKey(m.key, si)}
+                      name={m.label}
+                      stroke={m.color}
+                      strokeWidth={dimmed ? 1.5 : 2}
+                      strokeOpacity={dimmed ? 0.35 : 1}
+                      type="monotone"
+                      connectNulls
+                      dot={{
+                        r: 3.5,
+                        fill: m.color,
+                        stroke: '#fff',
+                        strokeWidth: 1.5,
+                        fillOpacity: dimmed ? 0.45 : 1,
+                      }}
+                      activeDot={{ r: 5.5, stroke: '#fff', strokeWidth: 2 }}
+                      legendType={si === 0 ? 'plainline' : 'none'}
+                      isAnimationActive={false}
+                    />
+                  );
+                }),
               )}
 
               {/* Per-engine sub-lines (dashed, thinner) — only when toggled. */}
               {showProviders
                 ? PROVIDERS.flatMap((pr) =>
-                    Array.from({ length: nSegments }, (_, si) => (
-                      <Line
-                        key={`${pr.key}-${si}`}
-                        dataKey={segmentKey(pr.key, si)}
-                        name={pr.label}
-                        stroke={pr.color}
-                        strokeWidth={1.5}
-                        strokeDasharray="5 4"
-                        type="monotone"
-                        connectNulls
-                        dot={{ r: 2, fill: pr.color, strokeWidth: 0 }}
-                        activeDot={{ r: 4 }}
-                        legendType={si === 0 ? 'plainline' : 'none'}
-                        isAnimationActive={false}
-                      />
-                    )),
+                    Array.from({ length: nSegments }, (_, si) => {
+                      const dimmed = isDimmedSegment(si);
+                      return (
+                        <Line
+                          key={`${pr.key}-${si}`}
+                          dataKey={segmentKey(pr.key, si)}
+                          name={pr.label}
+                          stroke={pr.color}
+                          strokeWidth={dimmed ? 1 : 1.5}
+                          strokeOpacity={dimmed ? 0.35 : 1}
+                          strokeDasharray="5 4"
+                          type="monotone"
+                          connectNulls
+                          dot={{
+                            r: 2,
+                            fill: pr.color,
+                            strokeWidth: 0,
+                            fillOpacity: dimmed ? 0.45 : 1,
+                          }}
+                          activeDot={{ r: 4 }}
+                          legendType={si === 0 ? 'plainline' : 'none'}
+                          isAnimationActive={false}
+                        />
+                      );
+                    }),
                   )
                 : null}
             </LineChart>
           </ResponsiveContainer>
         </div>
+
+        {/* Multi-thread hint — only when two or more connected lines share the
+            chart and same-metric strands would otherwise be ambiguous. */}
+        {threadInfo.threadCount >= 2 ? (
+          <p className="mt-2 px-3 text-xs text-[color:var(--merchant-muted)]">
+            You have {threadInfo.threadCount} comparison threads — separate
+            prompt sets, each with its own line. The thread with your most
+            recent check is drawn at full strength; earlier threads are dimmed.
+            Hover any point to see which thread it belongs to.
+          </p>
+        ) : null}
 
         {/* The honesty caption — the rule, in plain words. Three cases:
             a pure scatter (nothing comparable yet), a mix of connected runs
