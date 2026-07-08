@@ -336,8 +336,10 @@ export default function UrlAuditPage() {
 
       {/* Visibility-over-time trend (the pinned-basis payoff). Refetches when a
           new check completes. Self-manages its own empty/baseline states, so it
-          renders on a first-time page too (as a "run your first check" nudge). */}
-      <VisibilityTrendChart reloadKey={historyReloadKey} />
+          renders on a first-time page too (as a "run your first check" nudge).
+          subjectType='merchant_url' scopes the series to the URL checks run on
+          THIS page — the default ('merchant') trends catalog audits instead. */}
+      <VisibilityTrendChart reloadKey={historyReloadKey} subjectType="merchant_url" />
 
       <SurfaceCard title="Audit your products">
         <div className="space-y-4 px-5 py-4">

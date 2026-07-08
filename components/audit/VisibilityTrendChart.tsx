@@ -237,10 +237,18 @@ function BreakLabel({ viewBox }: { viewBox?: { x?: number; y?: number } }) {
 export function VisibilityTrendChart({
   limit = 50,
   reloadKey,
+  subjectType = 'merchant',
 }: {
   limit?: number;
   /** Bump to refetch (e.g. after a new audit completes). */
   reloadKey?: number | string;
+  /**
+   * Which run kind to trend: 'merchant' (per-SKU catalog audits) or
+   * 'merchant_url' (the URL-visibility wedge). The two are measured on
+   * different subjects and never mix in one series — the URL-audit page
+   * passes 'merchant_url' so the chart reflects the audits run there.
+   */
+  subjectType?: 'merchant' | 'merchant_url';
 }) {
   const [data, setData] = useState<VisibilityTrackingResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -252,7 +260,7 @@ export function VisibilityTrendChart({
     setLoading(true);
     setError(null);
     apiClient
-      .getVisibilityTracking(limit)
+      .getVisibilityTracking(limit, subjectType)
       .then((res) => {
         if (cancelled) return;
         setData(res);
@@ -271,7 +279,7 @@ export function VisibilityTrendChart({
     return () => {
       cancelled = true;
     };
-  }, [limit, reloadKey]);
+  }, [limit, reloadKey, subjectType]);
 
   // Derive off the (stable-per-fetch) `data` reference so the memos below don't
   // rebuild on every render from freshly-allocated `?? []` fallbacks.

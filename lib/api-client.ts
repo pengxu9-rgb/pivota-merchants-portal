@@ -1776,11 +1776,12 @@ class ApiClient {
   // -------------------------------------------------------------------
   async getVisibilityTracking(
     limit: number = 50,
+    subjectType: 'merchant' | 'merchant_url' = 'merchant',
   ): Promise<import('./types/visibility-tracking').VisibilityTrackingResponse> {
     const clamped = Math.max(1, Math.min(50, Math.floor(limit) || 50));
     const response = await this.client.get(
       '/api/merchant-center/audit/tracking',
-      { params: { limit: clamped } },
+      { params: { limit: clamped, subject_type: subjectType } },
     );
     return response.data?.data || response.data;
   }
