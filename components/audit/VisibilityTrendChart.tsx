@@ -43,6 +43,7 @@ import type {
   TrackingSegment,
   TrackingScores,
   TrackingProviderScores,
+  TrackingSubjectType,
 } from '@/lib/types/visibility-tracking';
 
 // The three brand-level metrics. Distinct in HUE (not just lightness) so they
@@ -236,9 +237,17 @@ function BreakLabel({ viewBox }: { viewBox?: { x?: number; y?: number } }) {
 // ---------------------------------------------------------------------------
 export function VisibilityTrendChart({
   limit = 50,
+  subjectType = 'merchant',
   reloadKey,
 }: {
   limit?: number;
+  /**
+   * Which run kind to trend: 'merchant' (catalog audits, default) or
+   * 'merchant_url' (URL-wedge audits). The url-audit page must pass
+   * 'merchant_url' — its runs persist under that subject_type, so the
+   * default series would always be empty there.
+   */
+  subjectType?: TrackingSubjectType;
   /** Bump to refetch (e.g. after a new audit completes). */
   reloadKey?: number | string;
 }) {
@@ -252,7 +261,7 @@ export function VisibilityTrendChart({
     setLoading(true);
     setError(null);
     apiClient
-      .getVisibilityTracking(limit)
+      .getVisibilityTracking(limit, subjectType)
       .then((res) => {
         if (cancelled) return;
         setData(res);
@@ -271,7 +280,7 @@ export function VisibilityTrendChart({
     return () => {
       cancelled = true;
     };
-  }, [limit, reloadKey]);
+  }, [limit, subjectType, reloadKey]);
 
   // Derive off the (stable-per-fetch) `data` reference so the memos below don't
   // rebuild on every render from freshly-allocated `?? []` fallbacks.

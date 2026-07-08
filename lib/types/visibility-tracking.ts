@@ -53,8 +53,17 @@ export interface TrackingSegment {
   indices: number[];
 }
 
+/**
+ * Which run kind the series trends. 'merchant' = catalog audits (the
+ * agent-center audit page); 'merchant_url' = URL-wedge audits (the
+ * url-audit page). The two are separate series — never mixed on one chart.
+ */
+export type TrackingSubjectType = 'merchant' | 'merchant_url';
+
 export interface VisibilityTrackingResponse {
   merchant_id: string;
+  /** Echoes the requested run kind. Absent from older backends. */
+  subject_type?: TrackingSubjectType;
   /** True when there are <2 runs — nothing to trend yet (show a baseline note). */
   is_baseline_only: boolean;
   /** OLDEST → newest, one per completed audit. */

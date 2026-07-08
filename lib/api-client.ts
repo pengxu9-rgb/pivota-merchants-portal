@@ -1763,7 +1763,8 @@ class ApiClient {
 
   // -------------------------------------------------------------------
   // Visibility-over-time series (the W2 pinned-basis payoff / retention
-  // chart). GET /api/merchant-center/audit/tracking?limit=1..50.
+  // chart). GET /api/merchant-center/audit/tracking
+  //   ?limit=1..50&subject_type=merchant|merchant_url
   //
   // Brand-level visibility / attribution / category scores across the
   // merchant's completed audits, each point tagged with its measurement
@@ -1771,16 +1772,21 @@ class ApiClient {
   // points and breaks where the basis changed. Same merchant-JWT auth as
   // the other /api/merchant-center/audit/* calls (interceptor attaches it).
   //
+  // `subjectType` picks which run kind to trend: 'merchant' (catalog
+  // audits, default) or 'merchant_url' (URL-wedge audits — what the
+  // url-audit page launches). Disjoint series server-side; never mixed.
+  //
   // Returns the payload UNWRAPPED (the route returns it directly, not under
   // `data`); we still tolerate a `data` envelope defensively.
   // -------------------------------------------------------------------
   async getVisibilityTracking(
     limit: number = 50,
+    subjectType: import('./types/visibility-tracking').TrackingSubjectType = 'merchant',
   ): Promise<import('./types/visibility-tracking').VisibilityTrackingResponse> {
     const clamped = Math.max(1, Math.min(50, Math.floor(limit) || 50));
     const response = await this.client.get(
       '/api/merchant-center/audit/tracking',
-      { params: { limit: clamped } },
+      { params: { limit: clamped, subject_type: subjectType } },
     );
     return response.data?.data || response.data;
   }
