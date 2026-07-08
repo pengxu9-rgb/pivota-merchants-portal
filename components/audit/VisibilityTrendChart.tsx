@@ -153,10 +153,14 @@ function ChartTooltip({
   active,
   payload,
   showProviders,
+  metrics,
+  allIsolated,
 }: {
   active?: boolean;
   payload?: Array<{ payload: ChartRow }>;
   showProviders: boolean;
+  metrics: typeof METRICS;
+  allIsolated: boolean;
 }) {
   if (!active || !payload || payload.length === 0) return null;
   const row = payload[0]?.payload;
@@ -177,7 +181,7 @@ function ChartTooltip({
       <div style={{ fontWeight: 600, marginBottom: 6, color: '#231f1a' }}>
         {fullDate(row.__dateISO)}
       </div>
-      {METRICS.map((m) => (
+      {metrics.map((m) => (
         <div
           key={m.key}
           style={{ display: 'flex', justifyContent: 'space-between', gap: 16, lineHeight: 1.6 }}
@@ -206,14 +210,16 @@ function ChartTooltip({
           marginTop: 6,
           paddingTop: 6,
           borderTop: '1px solid #f0ece5',
-          color: row.__isBreak ? '#B45309' : '#3f765f',
+          color: row.__comparable ? '#3f765f' : '#786f65',
         }}
       >
-        {row.__isBreak
-          ? '⟳ New measurement basis — not comparable to the previous check.'
-          : row.__comparable
-            ? '✓ Same basis — comparable to the previous check.'
-            : 'Baseline point.'}
+        {row.__comparable
+          ? '✓ Same prompt set — comparable to the previous check.'
+          : allIsolated
+            ? 'Independent snapshot — its own prompt set.'
+            : row.__isBreak
+              ? '⟳ New prompt set — not comparable to the previous check.'
+              : 'Baseline point.'}
       </div>
     </div>
   );
@@ -288,6 +294,36 @@ export function VisibilityTrendChart({
   const basisChanges = data?.basis_changes ?? EMPTY_INDICES;
 
   const rows = useMemo(() => buildRows(points, segments), [points, segments]);
+
+  // Only plot metrics that actually have data. A metric that's null across every
+  // run (e.g. category_visibility on URL-wedge runs) would otherwise sit in the
+  // legend as a dead entry and reserve a color that never renders — pure noise.
+  const activeMetrics = useMemo(
+    () => METRICS.filter((m) => points.some((p) => p.scores?.[m.key] != null)),
+    [points],
+  );
+
+  // When NO two consecutive checks share a prompt set, nothing connects — the
+  // chart degrades to a scatter of independent snapshots. In that case the
+  // per-point ⟳ break markers fire on every column and become noise, so we drop
+  // them and reframe the caption around "independent snapshots" instead of a
+  // string of "not comparable" breaks.
+  const allIsolated = useMemo(
+    () => points.length >= 2 && segments.every((s) => s.indices.length < 2),
+    [points, segments],
+  );
+
+  // A break is only worth annotating when it actually separates something
+  // comparable — i.e. a connected run (segment length >= 2) sits on at least one
+  // side of it. Breaks between two lone snapshots say nothing a scatter doesn't
+  // already show, so we suppress them.
+  const meaningfulBreaks = useMemo(() => {
+    const lenAt = new Map<number, number>();
+    segments.forEach((s) => s.indices.forEach((i) => lenAt.set(i, s.indices.length)));
+    return basisChanges.filter(
+      (idx) => (lenAt.get(idx) ?? 1) >= 2 || (lenAt.get(idx - 1) ?? 1) >= 2,
+    );
+  }, [basisChanges, segments]);
 
   // Only offer the per-engine toggle when there's actually provider data.
   const hasProviderData = useMemo(
@@ -393,7 +429,7 @@ export function VisibilityTrendChart({
   // Recharts' legend icon renderer reads `entry.payload.strokeDasharray`, so
   // each item needs a nested `payload` (solid for metrics, dashed for engines).
   const legendPayload = [
-    ...METRICS.map((m) => ({
+    ...activeMetrics.map((m) => ({
       value: m.label,
       id: m.key,
       type: 'plainline' as const,
@@ -417,7 +453,11 @@ export function VisibilityTrendChart({
     <SurfaceCard
       title="Visibility over time"
       eyebrow="AI visibility · trend"
-      description="Brand-level scores across your completed checks. We connect a line only between checks measured on the same prompt set — a true comparison."
+      description={
+        allIsolated
+          ? 'Brand-level scores from each completed check. Every check so far used a different prompt set, so these are independent snapshots — hover any point for its scores.'
+          : 'Brand-level scores across your completed checks. We connect a line only between checks measured on the same prompt set — a true comparison.'
+      }
       action={
         hasProviderData ? (
           <label className="flex cursor-pointer items-center gap-2 text-xs text-[color:var(--merchant-muted-strong)]">
@@ -440,12 +480,21 @@ export function VisibilityTrendChart({
               <XAxis
                 dataKey="x"
                 type="category"
-                tickFormatter={(x: string) => rows[Number(x)]?.dateLabel ?? ''}
+                // Show a day label only when it differs from the point before it,
+                // so a cluster of same-day checks (e.g. five on Jul 3) reads as one
+                // labelled group instead of the same date repeated five times. The
+                // tooltip still carries each point's exact date + time.
+                tickFormatter={(x: string) => {
+                  const i = Number(x);
+                  const cur = rows[i]?.dateLabel ?? '';
+                  const prev = i > 0 ? rows[i - 1]?.dateLabel : null;
+                  return cur && cur !== prev ? cur : '';
+                }}
                 tick={{ fontSize: 11, fill: '#786f65' }}
                 angle={-35}
                 textAnchor="end"
                 height={56}
-                interval="preserveStartEnd"
+                interval={0}
                 stroke="#d8cfc2"
               />
               <YAxis
@@ -456,7 +505,13 @@ export function VisibilityTrendChart({
                 stroke="#d8cfc2"
               />
               <Tooltip
-                content={<ChartTooltip showProviders={showProviders} />}
+                content={
+                  <ChartTooltip
+                    showProviders={showProviders}
+                    metrics={activeMetrics}
+                    allIsolated={allIsolated}
+                  />
+                }
                 cursor={{ stroke: '#c9bfb0', strokeDasharray: '3 3' }}
               />
               <Legend
@@ -467,8 +522,9 @@ export function VisibilityTrendChart({
 
               {/* Basis-change breaks: vertical dashed line + ⟳ marker. The line
                   is already broken here (segments don't share a dataKey); this
-                  annotates WHY. */}
-              {basisChanges.map((idx) => (
+                  annotates WHY. Only drawn for breaks that separate something
+                  comparable — a pure scatter of one-off checks gets none. */}
+              {meaningfulBreaks.map((idx) => (
                 <ReferenceLine
                   key={`break-${idx}`}
                   x={String(idx)}
@@ -481,8 +537,10 @@ export function VisibilityTrendChart({
               ))}
 
               {/* One <Line> per (metric, segment). Same metric → same color;
-                  only the first segment carries the legend entry + name. */}
-              {METRICS.flatMap((m) =>
+                  only the first segment carries the legend entry + name. A white
+                  halo on each dot keeps points legible where they overlap or
+                  cluster on the same day. */}
+              {activeMetrics.flatMap((m) =>
                 Array.from({ length: nSegments }, (_, si) => (
                   <Line
                     key={`${m.key}-${si}`}
@@ -492,8 +550,8 @@ export function VisibilityTrendChart({
                     strokeWidth={2}
                     type="monotone"
                     connectNulls={false}
-                    dot={{ r: 3, fill: m.color, strokeWidth: 0 }}
-                    activeDot={{ r: 5 }}
+                    dot={{ r: 3.5, fill: m.color, stroke: '#fff', strokeWidth: 1.5 }}
+                    activeDot={{ r: 5.5, stroke: '#fff', strokeWidth: 2 }}
                     legendType={si === 0 ? 'plainline' : 'none'}
                     isAnimationActive={false}
                   />
@@ -525,8 +583,18 @@ export function VisibilityTrendChart({
           </ResponsiveContainer>
         </div>
 
-        {/* The honesty caption — the rule, in plain words. */}
-        {basisChanges.length > 0 ? (
+        {/* The honesty caption — the rule, in plain words. Three cases:
+            a pure scatter (nothing comparable yet), a mix of connected runs
+            with refresh breaks, or one fully-comparable series. */}
+        {allIsolated ? (
+          <p className="mt-2 px-3 text-xs text-[color:var(--merchant-muted)]">
+            Each point is one check, plotted by date. Every check so far used a
+            different prompt set, so we show them as independent snapshots rather
+            than a connected trend — a rise or fall between different prompts
+            wouldn&apos;t be real. Re-check on the same prompt set and we&apos;ll
+            connect those points into a true trend line.
+          </p>
+        ) : meaningfulBreaks.length > 0 ? (
           <p className="mt-2 flex items-start gap-2 px-3 text-xs text-[color:var(--merchant-muted)]">
             <span className="mt-0.5 text-[#B45309]">⟳</span>
             <span>
