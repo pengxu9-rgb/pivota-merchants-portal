@@ -7,19 +7,22 @@
  *   GET /api/merchant-center/audit/tracking   (apiClient.getVisibilityTracking)
  *
  * THE ONE NON-NEGOTIABLE RULE (this is the whole point):
- *   Only connect a line between two consecutive points when the later point's
- *   `comparable_with_prev` is true (same pinned prompt set). Where it's false
- *   (a `basis_changes` index / new segment) we BREAK the line and draw a marker
- *   "Measurement basis refreshed — comparison resets here."
+ *   Only connect a line between two points when they share a pinned prompt set
+ *   (the backend groups same-basis points into a `segment`). Where a NEW basis
+ *   first appears (a `basis_changes` index) we draw a marker "Measurement basis
+ *   refreshed — comparison resets here."
  *
  *   Rationale baked into the copy: two points measured on different prompts
  *   aren't a real rise/fall — they're different questions. Connecting them would
- *   be a lie. Same basis = a true comparison.
+ *   be a lie. Same basis = a true comparison — regardless of whether a
+ *   differently-based check ran in between (a merchant alternating two URL
+ *   sets still gets one connected line per set).
  *
- * We implement the break by giving each metric one Recharts <Line> PER SEGMENT
- * (a run of consecutive same-basis points). A point's value only populates its
- * own segment's dataKey (null elsewhere), so lines connect within a segment and
- * gap between segments — while every point still renders its dot.
+ * We implement this by giving each metric one Recharts <Line> PER SEGMENT
+ * (all points sharing a basis, not necessarily consecutive). A point's value
+ * only populates its own segment's dataKey (null elsewhere), and each segment
+ * line sets connectNulls so it spans interleaved other-basis points — while
+ * every point still renders its dot.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -105,7 +108,7 @@ type ChartRow = {
   dateLabel: string;
   __dateISO: string | null;
   __comparable: boolean;
-  __isBreak: boolean; // basis changed at this point (and it isn't the first)
+  __isBreak: boolean; // a NEW basis first appeared at this point (and it isn't the first)
   __scores: TrackingScores;
   __providers: TrackingProviderScores | null;
   [seriesKey: string]: string | number | boolean | null | TrackingScores | TrackingProviderScores;
@@ -214,11 +217,11 @@ function ChartTooltip({
         }}
       >
         {row.__comparable
-          ? '✓ Same prompt set — comparable to the previous check.'
+          ? '✓ Same prompt set — comparable to the earlier checks on its line.'
           : allIsolated
             ? 'Independent snapshot — its own prompt set.'
             : row.__isBreak
-              ? '⟳ New prompt set — not comparable to the previous check.'
+              ? '⟳ New prompt set — not comparable to any earlier check.'
               : 'Baseline point.'}
       </div>
     </div>
@@ -539,7 +542,10 @@ export function VisibilityTrendChart({
               {/* One <Line> per (metric, segment). Same metric → same color;
                   only the first segment carries the legend entry + name. A white
                   halo on each dot keeps points legible where they overlap or
-                  cluster on the same day. */}
+                  cluster on the same day. connectNulls is REQUIRED: a segment's
+                  points need not be consecutive (same-basis checks with another
+                  URL set's check interleaved), and the rows in between hold null
+                  for this segment's dataKey — the line must span them. */}
               {activeMetrics.flatMap((m) =>
                 Array.from({ length: nSegments }, (_, si) => (
                   <Line
@@ -549,7 +555,7 @@ export function VisibilityTrendChart({
                     stroke={m.color}
                     strokeWidth={2}
                     type="monotone"
-                    connectNulls={false}
+                    connectNulls
                     dot={{ r: 3.5, fill: m.color, stroke: '#fff', strokeWidth: 1.5 }}
                     activeDot={{ r: 5.5, stroke: '#fff', strokeWidth: 2 }}
                     legendType={si === 0 ? 'plainline' : 'none'}
@@ -570,7 +576,7 @@ export function VisibilityTrendChart({
                         strokeWidth={1.5}
                         strokeDasharray="5 4"
                         type="monotone"
-                        connectNulls={false}
+                        connectNulls
                         dot={{ r: 2, fill: pr.color, strokeWidth: 0 }}
                         activeDot={{ r: 4 }}
                         legendType={si === 0 ? 'plainline' : 'none'}
@@ -599,10 +605,11 @@ export function VisibilityTrendChart({
             <span className="mt-0.5 text-[#B45309]">⟳</span>
             <span>
               A <span className="font-medium text-[#B45309]">⟳ break</span> marks
-              where the measurement basis was refreshed — comparison resets there.
-              Points across a refresh aren&apos;t connected because they were
-              measured on different prompts: they answer different questions, so a
-              rise or fall between them wouldn&apos;t be real.
+              where a new measurement basis first appeared — a fresh comparison
+              thread starts there. We only connect checks measured on the same
+              prompt set (even when other checks ran in between): different
+              prompts answer different questions, so a rise or fall between them
+              wouldn&apos;t be real.
             </span>
           </p>
         ) : (
