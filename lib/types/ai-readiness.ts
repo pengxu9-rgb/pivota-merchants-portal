@@ -1666,7 +1666,12 @@ export type WinPlanOutreachState = 'draft_ready' | 'submission_only' | 'target_o
 export interface WinPlanPitchDraft {
   subject: string;
   body: string;
-  recipient_email: string;
+  /** P3-8: 'email' = one-click mailto; 'submission_form' = paste-ready draft
+   * for the host's published form (recipient_email is null there). Older
+   * reports predate the field — treat absent as 'email'. */
+  channel?: 'email' | 'submission_form' | string;
+  recipient_email: string | null;
+  submission_url?: string | null;
   recipient_note: string | null;
 }
 
