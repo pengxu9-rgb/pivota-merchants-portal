@@ -167,7 +167,7 @@ function TargetRow({
       {/* Actions: one-click mailto for draft_ready; the form link for
           submission_only; nothing fabricated for target_only. */}
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
-        {draft ? (
+        {draft && draft.recipient_email ? (
           <>
             <a
               href={mailtoHref(draft.recipient_email, draft.subject, draft.body)}
@@ -181,6 +181,26 @@ function TargetRow({
               className="text-[11px] font-medium text-indigo-700 hover:underline"
             >
               {open ? 'Hide draft' : 'Preview draft'}
+            </button>
+          </>
+        ) : draft ? (
+          /* P3-8 submission_form channel: never a mailto — the paste-ready
+             draft next to the host's published form. */
+          <>
+            <a
+              href={draft.submission_url ?? o.recipient?.submission_url ?? '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded bg-indigo-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-indigo-700"
+            >
+              <ExternalLink className="h-3 w-3" /> Open submission form
+            </a>
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              className="text-[11px] font-medium text-indigo-700 hover:underline"
+            >
+              {open ? 'Hide draft' : 'Preview draft to paste'}
             </button>
           </>
         ) : o.state === 'submission_only' && o.recipient?.submission_url ? (
