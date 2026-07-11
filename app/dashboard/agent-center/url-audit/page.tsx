@@ -599,6 +599,7 @@ export default function UrlAuditPage() {
                 return (
                   <GetCitedPanel
                     moves={result.where_youre_losing?.outreach_moves}
+                    pitchTargets={result.where_youre_losing?.pitch_targets}
                     enginesByHost={enginesByHost}
                     enginePlaybook={ep}
                     categoryHint={categoryHint}
