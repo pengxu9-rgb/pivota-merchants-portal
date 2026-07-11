@@ -69,6 +69,17 @@ export interface BillingCheckoutSession {
   session_id: string;
 }
 
+/** POST /api/billing/portal-session request body. */
+export interface BillingPortalSessionRequest {
+  /** Where Stripe returns the merchant after they finish in the portal. */
+  return_url: string;
+}
+
+/** POST /api/billing/portal-session response. */
+export interface BillingPortalSession {
+  portal_url: string;
+}
+
 /** One entry of GET /api/billing/plans (mode-scoped, merchant-safe). */
 export interface BillingPlan {
   /** Stable id for React keys (the Stripe price id). */
