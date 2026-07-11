@@ -89,6 +89,7 @@ export default function BillingPage() {
   const [activationTimedOut, setActivationTimedOut] = useState(false);
   const [upgradingPriceId, setUpgradingPriceId] = useState<string | null>(null);
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
+  const [openingPortal, setOpeningPortal] = useState(false);
 
   // Set on unmount so in-flight polls stop touching state after navigation.
   const cancelledRef = useRef(false);
@@ -222,6 +223,26 @@ export default function BillingPage() {
       sessionStorage.removeItem(PREV_TIER_KEY);
       setUpgradingPriceId(null);
       setCheckoutNotice(errToMessage(err, t('dashboard.billing.upgrade.error')));
+    }
+  };
+
+  // Opens the Stripe-hosted Billing Portal, the merchant's self-serve off-ramp:
+  // cancel the subscription (stops future monthly charges), update or remove the
+  // saved card, and view invoices. Whatever they change flows back through the
+  // billing webhooks, so this page reflects it on return.
+  const handleManageBilling = async () => {
+    setOpeningPortal(true);
+    setCheckoutNotice(null);
+    try {
+      const origin = window.location.origin;
+      const session = await apiClient.createBillingPortalSession({
+        return_url: `${origin}/dashboard/billing`,
+      });
+      window.location.href = session.portal_url;
+    } catch (err: any) {
+      console.error('Failed to open billing portal:', err);
+      setOpeningPortal(false);
+      setCheckoutNotice(errToMessage(err, t('dashboard.billing.manage.error')));
     }
   };
 
@@ -383,6 +404,23 @@ export default function BillingPage() {
               </div>
             )}
             {topUpBlock}
+            {/* Self-serve off-ramp: opens the Stripe Billing Portal so the
+                merchant can cancel, update/remove their card, and view invoices. */}
+            <div className="flex flex-col gap-2 border-t border-[color:var(--merchant-line)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <span className="text-sm text-[color:var(--merchant-muted-strong)]">
+                {t('dashboard.billing.manage.hint')}
+              </span>
+              <MerchantButton
+                type="button"
+                variant="secondary"
+                onClick={handleManageBilling}
+                disabled={openingPortal}
+              >
+                {openingPortal
+                  ? t('dashboard.billing.manage.starting')
+                  : t('dashboard.billing.manage.cta')}
+              </MerchantButton>
+            </div>
           </div>
         ) : (
           <div className="space-y-4 px-5 py-6">

@@ -5,6 +5,8 @@ import type {
   BillingCheckoutSessionRequest,
   BillingCurrentPeriod,
   BillingPlansResponse,
+  BillingPortalSession,
+  BillingPortalSessionRequest,
   BillingStatementsResponse,
 } from './types/billing';
 import type {
@@ -1662,6 +1664,13 @@ class ApiClient {
     data: BillingCheckoutSessionRequest,
   ): Promise<BillingCheckoutSession> {
     const response = await this.client.post('/api/billing/checkout-session', data);
+    return response.data;
+  }
+
+  async createBillingPortalSession(
+    data: BillingPortalSessionRequest,
+  ): Promise<BillingPortalSession> {
+    const response = await this.client.post('/api/billing/portal-session', data);
     return response.data;
   }
 

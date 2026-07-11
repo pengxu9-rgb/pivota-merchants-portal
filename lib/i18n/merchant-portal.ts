@@ -1204,6 +1204,11 @@ Object.assign(enMessages, {
     "Plans are being finalized. Contact your account manager to subscribe.",
   "dashboard.billing.upgrade.cancelled": "Checkout cancelled — no changes were made.",
   "dashboard.billing.upgrade.error": "Could not start checkout. Please try again.",
+  "dashboard.billing.manage.cta": "Manage subscription",
+  "dashboard.billing.manage.hint":
+    "Cancel your plan, update or remove your card, and view invoices.",
+  "dashboard.billing.manage.starting": "Opening…",
+  "dashboard.billing.manage.error": "Could not open the billing portal. Please try again.",
   "dashboard.billing.activating.title": "Activating your plan…",
   "dashboard.billing.activating.body": "This usually takes a few seconds.",
   "dashboard.billing.activating.timeout":
