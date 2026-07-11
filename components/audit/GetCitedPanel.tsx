@@ -17,7 +17,7 @@ import {
   Globe, Star, Newspaper, Users, Megaphone, Store, ExternalLink,
   Sparkles, Loader2, Check, Copy, ArrowRight,
 } from 'lucide-react';
-import type { OutreachMove, EnginePlaybook } from '@/lib/types/ai-readiness';
+import type { OutreachMove, EnginePlaybook, PitchTarget } from '@/lib/types/ai-readiness';
 import { apiClient } from '@/lib/api-client';
 
 type Kind = 'reviews' | 'media' | 'kol' | 'community' | 'retailer' | 'other';
@@ -157,7 +157,7 @@ function buildRedditPaths(tracked: TrackedSubreddit[], category: string): Starte
 
 /** A single channel row with an outbound link + a Pivota draft-outreach button. */
 function ChannelRow({
-  kind, title, host, url, realism, how, runId, channelHost, channelLever, channelType, query,
+  kind, title, host, url, realism, how, runId, channelHost, channelLever, channelType, query, badge,
 }: {
   kind: Kind;
   title: string;
@@ -170,6 +170,7 @@ function ChannelRow({
   channelLever: string;
   channelType: Kind;
   query?: string | null;
+  badge?: { label: string; cls: string };
 }) {
   const [st, setSt] = useState<{ loading?: boolean; done?: boolean; draft?: string | null; error?: string | null; copied?: boolean }>({});
   const Meta = KIND_META[kind];
@@ -207,6 +208,7 @@ function ChannelRow({
             <span className="text-xs font-semibold">{title}</span>
             <span className="rounded-sm bg-black/5 px-1 text-[10px] uppercase tracking-wide opacity-60">{Meta.label}</span>
             {rm ? <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${rm.cls}`}>{rm.label}</span> : null}
+            {badge ? <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${badge.cls}`}>{badge.label}</span> : null}
           </div>
         </div>
         {url ? (
@@ -250,6 +252,59 @@ function ChannelRow({
           </div>
         )
       ) : null}
+    </div>
+  );
+}
+
+// Phase-4 T5 — status badge for a standing vertical pitch target.
+const TARGET_STATUS_META: Record<string, { label: string; cls: string }> = {
+  already_endorses_you: { label: 'Already cites you', cls: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+  cited_in_your_category: { label: 'Grounds your category', cls: 'border-indigo-200 bg-indigo-50 text-indigo-700' },
+  not_yet_observed: { label: 'Standing target', cls: 'border-[color:var(--merchant-line)] text-slate-500' },
+};
+
+/**
+ * The vertical's standing pitch list (profile authority hosts) — rendered even
+ * when this run's sample didn't cite them, so an electronics partner always
+ * sees Rtings/SoundGuys/What Hi-Fi/Wirecutter as the category's targets
+ * rather than only whichever hosts one probe run happened to surface.
+ */
+function PitchTargetsSection({ targets, runId, category }: {
+  targets: PitchTarget[];
+  runId?: string | null;
+  category: string;
+}) {
+  if (!targets.length) return null;
+  return (
+    <div className="mt-3 rounded-md border border-[color:var(--merchant-line)] bg-white/30 p-3">
+      <div className="text-xs font-bold">Your category&apos;s pitch targets</div>
+      <p className="mt-0.5 text-[11px] leading-snug opacity-60">
+        The review sites AI grounds this category&apos;s recommendations in. Earning a
+        listing or review here moves every engine at once.
+      </p>
+      <div className="mt-2 space-y-1.5">
+        {targets.map((t, i) => {
+          const badge = TARGET_STATUS_META[t.status || ''];
+          return (
+            <div key={`${t.host}-${i}`}>
+              <ChannelRow
+                kind={t.realism === 'hard' ? 'media' : 'reviews'}
+                title={t.host}
+                host={t.host}
+                url={`https://${t.host}`}
+                realism={t.realism}
+                how={t.first_move}
+                runId={runId}
+                channelHost={t.host}
+                channelLever="editorial_outreach"
+                channelType={t.realism === 'hard' ? 'media' : 'reviews'}
+                query={category}
+                badge={badge}
+              />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -325,6 +380,7 @@ function EngineGroup({
 
 export function GetCitedPanel({
   moves,
+  pitchTargets,
   enginesByHost = {},
   enginePlaybook,
   categoryHint,
@@ -333,6 +389,8 @@ export function GetCitedPanel({
   redditSubreddits,
 }: {
   moves?: OutreachMove[] | null;
+  /** Phase-4 T5: standing vertical pitch list (where_youre_losing.pitch_targets). */
+  pitchTargets?: PitchTarget[] | null;
   enginesByHost?: Record<string, string[]>;
   enginePlaybook?: EnginePlaybook | null;
   categoryHint?: string | null;
@@ -343,7 +401,8 @@ export function GetCitedPanel({
   redditSubreddits?: TrackedSubreddit[];
 }) {
   const list = (moves || []).filter((m) => m && m.host);
-  if (list.length === 0 && !enginePlaybook?.has_signal) return null;
+  const targets = (pitchTargets || []).filter((t) => t && t.host);
+  if (list.length === 0 && targets.length === 0 && !enginePlaybook?.has_signal) return null;
 
   const category = cleanCategory(categoryHint, brand);
   const enc = encodeURIComponent;
@@ -376,6 +435,7 @@ export function GetCitedPanel({
         product page. Gemini and ChatGPT trust <em>different</em> ones, so earn evidence on each.
         The more places you show up, the more AI cites you.
       </p>
+      <PitchTargetsSection targets={targets} runId={runId} category={category} />
       <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
         <EngineGroup
           engineKey="gemini"

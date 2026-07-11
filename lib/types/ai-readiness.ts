@@ -673,9 +673,29 @@ export interface OutreachMove {
   realism?: 'reachable' | 'diy' | 'onboarding' | 'hard' | 'investigate' | string | null;
 }
 
+/**
+ * Phase-4 T5 — a standing authority host for the merchant's vertical (from the
+ * VerticalProfile pitch list), status-stamped against what this audit observed.
+ * Unlike outreach_moves (hosts the engines happened to cite this run), these
+ * render even when the sample missed them — they're the category's pitch list.
+ */
+export interface PitchTarget {
+  host: string;
+  status: 'already_endorses_you' | 'cited_in_your_category' | 'not_yet_observed' | string;
+  why?: string | null;
+  realism?: OutreachMove['realism'];
+  tier?: number | null;
+  ai_grounding_weight?: string | null;
+  expected_outreach_cycle_weeks?: [number, number] | number[] | null;
+  pitch_recipient?: string | null;
+  first_move?: string | null;
+}
+
 export interface WhereYoureLosing {
   summary?: string;
   outreach_moves?: OutreachMove[];
+  /** Vertical authority pitch list (empty for verticals without one). */
+  pitch_targets?: PitchTarget[];
   who_ai_cites_instead?: {
     available?: boolean;
     competitors?: Array<{ name: string; times_named: number }>;
