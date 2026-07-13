@@ -5,7 +5,7 @@
  *
  * Merchant-CURATED: you give us your brand site + up to 5 product URLs (your
  * hero SKUs); we fetch each for clean data and audit each as ITS OWN per-product
- * report — how AI shopping agents (Gemini grounded search) cite it, which
+ * report — how AI shopping agents (grounded search) cite it, which
  * competitors are cited instead, and the action plan to win. No catalog sync.
  * Catalog-only dimensions (identity/content/routability) need a connected store
  * and render as "connect store to measure". The deeper full-catalog audit lives
@@ -50,6 +50,28 @@ import type {
 
 const MAX_PRODUCT_URLS = 5;
 const MAX_CUSTOM_PROMPTS = 10;
+
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  gemini: 'Gemini',
+  chatgpt: 'ChatGPT',
+  openai: 'ChatGPT',
+  deepseek: 'DeepSeek',
+  claude: 'Claude',
+};
+
+function providerDisplayName(id: string): string {
+  return PROVIDER_DISPLAY_NAMES[id.toLowerCase()] || id;
+}
+
+// "Gemini + ChatGPT" from the providers that actually ran. Falls back to the
+// generic label when the honest reshape didn't attach a provider list (older
+// payloads), so the header never regresses to a fabricated single-model claim.
+function groundedSearchLabel(providersRan?: string[]): string {
+  if (providersRan && providersRan.length > 0) {
+    return providersRan.map(providerDisplayName).join(' + ');
+  }
+  return 'AI shopping agents';
+}
 
 function verdictTone(label: AgentCenterBdVerdictLabel | null | undefined): string {
   const l = (label || '').toUpperCase();
@@ -520,12 +542,36 @@ export default function UrlAuditPage() {
                     the buyer-intent prompts we tested.
                   </p>
                   {methodology ? (
-                    <p className="merchant-text-muted text-xs">
-                      {methodology.products_audited} product
-                      {methodology.products_audited === 1 ? '' : 's'} ×{' '}
-                      {methodology.queries_per_product} buyer-intent queries (Gemini
-                      grounded search).
-                    </p>
+                    methodology.coverage_unavailable ? (
+                      <p className="merchant-text-muted text-xs">
+                        No model returned a scored result on this run — the AI
+                        providers errored or were rate-limited. Re-run to
+                        measure coverage.
+                      </p>
+                    ) : (
+                      <p className="merchant-text-muted text-xs">
+                        {methodology.products_audited} product
+                        {methodology.products_audited === 1 ? '' : 's'} ×{' '}
+                        {methodology.queries_per_product} buyer-intent queries (
+                        {groundedSearchLabel(methodology.providers_ran)} grounded
+                        search).
+                        {methodology.prompts_by_provider &&
+                        Object.keys(methodology.prompts_by_provider).length >
+                          0 ? (
+                          <span className="opacity-80">
+                            {' '}
+                            Queries run per model:{' '}
+                            {Object.entries(methodology.prompts_by_provider)
+                              .map(
+                                ([prov, n]) =>
+                                  `${providerDisplayName(prov)} ${n}`,
+                              )
+                              .join(' · ')}
+                            .
+                          </span>
+                        ) : null}
+                      </p>
+                    )
                   ) : null}
                   {typeof result.free_audits_remaining === 'number' ? (
                     <p className="merchant-text-muted text-xs">

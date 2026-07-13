@@ -455,7 +455,20 @@ export interface UrlReadinessMethodology {
   model: 'merchant_curated' | 'merchant_curated_per_sku' | string;
   products_audited: number;
   products_requested: number;
+  // MEASURED per-product buyer-intent query count once the run completes
+  // (the fullest single-model coverage). Falls back to the planned budget on
+  // older/empty payloads.
   queries_per_product: number;
+  // The planned per-product query budget (`_WEDGE_PROMPTS_PER_SKU`), preserved
+  // for reference. Present only after the honest reshape ran.
+  queries_per_product_target?: number;
+  // Provider ids that actually produced ≥1 scored run, e.g. ['chatgpt','gemini'].
+  providers_ran?: string[];
+  // Real per-model run counts across audited SKUs, e.g. {gemini: 7, chatgpt: 10}.
+  prompts_by_provider?: Record<string, number>;
+  // True when a run "succeeded" but every provider failed / was rate-limited,
+  // so no query coverage was measured — header shows a re-run prompt, not a 0.
+  coverage_unavailable?: boolean;
   what_we_checked: string;
   limitations: string[];
   unresolved_urls: Array<{ url: string; reason: string }>;
