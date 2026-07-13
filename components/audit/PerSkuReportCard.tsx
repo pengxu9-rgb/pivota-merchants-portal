@@ -190,10 +190,10 @@ export function PerSkuReportCard({
   pdpUrl?: string | null;
   runId?: string | null;
 }) {
-  // Default OPEN so "What AI actually said" (the verbatim grounded evidence) is
-  // visible without a click — it's the substance of the audit, not a detail to
-  // hunt for. The header button still toggles it closed.
-  const [expanded, setExpanded] = useState(true);
+  // Collapsed by default: the verbatim AI answers already show above in the
+  // always-visible PromptEvidencePanel; this drawer holds secondary detail
+  // (catalog dimensions + score-by-model), so it stays tucked until asked for.
+  const [expanded, setExpanded] = useState(false);
   const evidence = report.verbatim_grounding_evidence || [];
   const verdict = agenticVerdict(report);
 
