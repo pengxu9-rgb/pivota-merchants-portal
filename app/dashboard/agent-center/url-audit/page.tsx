@@ -51,29 +51,12 @@ import type {
 const MAX_PRODUCT_URLS = 5;
 const MAX_CUSTOM_PROMPTS = 10;
 
-const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
-  gemini: 'Gemini',
-  chatgpt: 'ChatGPT',
-  openai: 'ChatGPT',
-  deepseek: 'DeepSeek',
-  claude: 'Claude',
-};
-
-function providerDisplayName(id: string): string {
-  return PROVIDER_DISPLAY_NAMES[id.toLowerCase()] || id;
-}
-
-// The parenthetical after the query count: names the models that actually ran
-// ("Gemini + ChatGPT grounded search") or, on older payloads without a provider
-// list, just "grounded search" — never a fabricated single-model claim, and it
-// reads cleanly in both cases (the old fallback produced the clumsy
-// "AI shopping agents grounded search").
-function groundedSearchDescriptor(providersRan?: string[]): string {
-  if (providersRan && providersRan.length > 0) {
-    return `${providersRan.map(providerDisplayName).join(' + ')} grounded search`;
-  }
-  return 'grounded search';
-}
+// Model naming for the header lives on the BACKEND now — `methodology`
+// carries display-ready `grounded_search_label` / `provider_run_summary`
+// strings that we render verbatim, so the client never re-derives a provider
+// label or falls back to a generic one. When a field is absent (a legacy
+// payload that predates the honest reshape) we omit that bit rather than
+// fabricate it.
 
 function verdictTone(label: AgentCenterBdVerdictLabel | null | undefined): string {
   const l = (label || '').toUpperCase();
@@ -554,21 +537,16 @@ export default function UrlAuditPage() {
                       <p className="merchant-text-muted text-xs">
                         {methodology.products_audited} product
                         {methodology.products_audited === 1 ? '' : 's'} ×{' '}
-                        {methodology.queries_per_product} buyer-intent queries (
-                        {groundedSearchDescriptor(methodology.providers_ran)}).
-                        {methodology.prompts_by_provider &&
-                        Object.keys(methodology.prompts_by_provider).length >
-                          0 ? (
+                        {methodology.queries_per_product} buyer-intent queries
+                        {methodology.grounded_search_label
+                          ? ` (${methodology.grounded_search_label})`
+                          : ''}
+                        .
+                        {methodology.provider_run_summary ? (
                           <span className="opacity-80">
                             {' '}
                             Queries run per model:{' '}
-                            {Object.entries(methodology.prompts_by_provider)
-                              .map(
-                                ([prov, n]) =>
-                                  `${providerDisplayName(prov)} ${n}`,
-                              )
-                              .join(' · ')}
-                            .
+                            {methodology.provider_run_summary}.
                           </span>
                         ) : null}
                       </p>

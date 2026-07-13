@@ -463,9 +463,14 @@ export interface UrlReadinessMethodology {
   // for reference. Present only after the honest reshape ran.
   queries_per_product_target?: number;
   // Provider ids that actually produced ≥1 scored run, e.g. ['chatgpt','gemini'].
+  // Structured data; the header renders the display strings below, not this.
   providers_ran?: string[];
   // Real per-model run counts across audited SKUs, e.g. {gemini: 7, chatgpt: 10}.
   prompts_by_provider?: Record<string, number>;
+  // Display-ready header strings owned by the backend (single source of truth
+  // for model naming) — rendered verbatim; absent on legacy/unavailable payloads.
+  grounded_search_label?: string; // e.g. "Gemini + ChatGPT grounded search"
+  provider_run_summary?: string; // e.g. "Gemini 7 · ChatGPT 10"
   // True when a run "succeeded" but every provider failed / was rate-limited,
   // so no query coverage was measured — header shows a re-run prompt, not a 0.
   coverage_unavailable?: boolean;
