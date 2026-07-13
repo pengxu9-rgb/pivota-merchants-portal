@@ -63,14 +63,16 @@ function providerDisplayName(id: string): string {
   return PROVIDER_DISPLAY_NAMES[id.toLowerCase()] || id;
 }
 
-// "Gemini + ChatGPT" from the providers that actually ran. Falls back to the
-// generic label when the honest reshape didn't attach a provider list (older
-// payloads), so the header never regresses to a fabricated single-model claim.
-function groundedSearchLabel(providersRan?: string[]): string {
+// The parenthetical after the query count: names the models that actually ran
+// ("Gemini + ChatGPT grounded search") or, on older payloads without a provider
+// list, just "grounded search" — never a fabricated single-model claim, and it
+// reads cleanly in both cases (the old fallback produced the clumsy
+// "AI shopping agents grounded search").
+function groundedSearchDescriptor(providersRan?: string[]): string {
   if (providersRan && providersRan.length > 0) {
-    return providersRan.map(providerDisplayName).join(' + ');
+    return `${providersRan.map(providerDisplayName).join(' + ')} grounded search`;
   }
-  return 'AI shopping agents';
+  return 'grounded search';
 }
 
 function verdictTone(label: AgentCenterBdVerdictLabel | null | undefined): string {
@@ -553,8 +555,7 @@ export default function UrlAuditPage() {
                         {methodology.products_audited} product
                         {methodology.products_audited === 1 ? '' : 's'} ×{' '}
                         {methodology.queries_per_product} buyer-intent queries (
-                        {groundedSearchLabel(methodology.providers_ran)} grounded
-                        search).
+                        {groundedSearchDescriptor(methodology.providers_ran)}).
                         {methodology.prompts_by_provider &&
                         Object.keys(methodology.prompts_by_provider).length >
                           0 ? (
