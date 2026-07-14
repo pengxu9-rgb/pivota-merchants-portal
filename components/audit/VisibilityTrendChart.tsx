@@ -430,25 +430,30 @@ export function VisibilityTrendChart({
   // comparable — i.e. a connected run (segment length >= 2) sits on at least one
   // side of it. Breaks between two lone snapshots say nothing a scatter doesn't
   // already show, so we suppress them. The same rule gates both marker kinds.
-  const meaningfulBreaks = useMemo(() => {
+  const segLenAt = useMemo(() => {
     const lenAt = new Map<number, number>();
     segments.forEach((s) => s.indices.forEach((i) => lenAt.set(i, s.indices.length)));
-    return basisChanges.filter(
-      (idx) => (lenAt.get(idx) ?? 1) >= 2 || (lenAt.get(idx - 1) ?? 1) >= 2,
-    );
-  }, [basisChanges, segments]);
+    return lenAt;
+  }, [segments]);
+  const meaningfulBreaks = useMemo(
+    () =>
+      basisChanges.filter(
+        (idx) => (segLenAt.get(idx) ?? 1) >= 2 || (segLenAt.get(idx - 1) ?? 1) >= 2,
+      ),
+    [basisChanges, segLenAt],
+  );
 
   // Two marker kinds, one x-position each. Where a check changed BOTH the
   // measured products and the prompt set (usual — different products beget
   // different prompts), the ⇄ products-changed marker wins: it's the more
   // specific reason the point can't read as a rise/fall.
-  const panelBreaks = useMemo(() => {
-    const lenAt = new Map<number, number>();
-    segments.forEach((s) => s.indices.forEach((i) => lenAt.set(i, s.indices.length)));
-    return panelChanges.filter(
-      (idx) => (lenAt.get(idx) ?? 1) >= 2 || (lenAt.get(idx - 1) ?? 1) >= 2,
-    );
-  }, [panelChanges, segments]);
+  const panelBreaks = useMemo(
+    () =>
+      panelChanges.filter(
+        (idx) => (segLenAt.get(idx) ?? 1) >= 2 || (segLenAt.get(idx - 1) ?? 1) >= 2,
+      ),
+    [panelChanges, segLenAt],
+  );
   const refreshBreaks = useMemo(() => {
     const panelSet = new Set(panelBreaks);
     return meaningfulBreaks.filter((idx) => !panelSet.has(idx));
@@ -473,6 +478,10 @@ export function VisibilityTrendChart({
   // and legend entries only when the CURRENT view actually has the data.
   const providersVisible = showProviders && hasProviderData;
 
+  // Only promise "hover for the count" when at least one point can honor it —
+  // a pre-upgrade backend (or all-unknown-coverage history) never shows one.
+  const hasCoverageData = useMemo(() => points.some((p) => coverageLabel(p) != null), [points]);
+
   const isBaseline =
     !!data && (points.length < 2 || (!selectedSeries && data.is_baseline_only));
 
@@ -481,9 +490,11 @@ export function VisibilityTrendChart({
   // needs the control to switch back). Options are most-covered first;
   // "N/M checks" tells the user how much history each lens has before they
   // switch. Truncation is disclosed, never silent.
+  // `|| selectedSeries`: if a refetch shrinks the SKU list to just the selected
+  // one, the lens is still applied — keep the control so it can't dead-end.
   const totalRuns = data?.points?.length ?? 0;
   const skuDropdown =
-    skuOptions.length >= 2 ? (
+    skuOptions.length >= 2 || selectedSeries ? (
       <select
         value={selectedSeries ? selectedSku : ''}
         onChange={(e) => setSelectedSku(e.target.value)}
@@ -626,24 +637,28 @@ export function VisibilityTrendChart({
         selectedSeries
           ? `${selectedSeries.title || 'This product'} — its own scores from the ${points.length} of ${totalRuns} checks that measured it, not the brand average. Lines still connect only same-prompt-set checks.`
           : allIsolated
-            ? 'Each point averages the products that check measured. Every check so far used a different prompt set, so these are independent snapshots — hover any point for its scores and coverage.'
-            : 'Each point averages the products that check measured — hover for the count. We connect a line only between checks measured on the same prompt set: a true comparison.'
+            ? `Each point averages the products that check measured. Every check so far used a different prompt set, so these are independent snapshots — hover any point for its scores${hasCoverageData ? ' and coverage' : ''}.`
+            : `Each point averages the products that check measured${hasCoverageData ? ' — hover for the count' : ''}. We connect a line only between checks measured on the same prompt set: a true comparison.`
       }
       action={
-        <div className="flex items-center gap-3">
-          {skuDropdown}
-          {hasProviderData ? (
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-[color:var(--merchant-muted-strong)]">
-              <input
-                type="checkbox"
-                checked={showProviders}
-                onChange={(e) => setShowProviders(e.target.checked)}
-                className="h-3.5 w-3.5 accent-[color:var(--merchant-brand)]"
-              />
-              Show per-engine
-            </label>
-          ) : null}
-        </div>
+        // Null when both children are absent — a truthy empty <div> would make
+        // SurfaceCard render its action container and leak dead header space.
+        skuDropdown || hasProviderData ? (
+          <div className="flex items-center gap-3">
+            {skuDropdown}
+            {hasProviderData ? (
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-[color:var(--merchant-muted-strong)]">
+                <input
+                  type="checkbox"
+                  checked={showProviders}
+                  onChange={(e) => setShowProviders(e.target.checked)}
+                  className="h-3.5 w-3.5 accent-[color:var(--merchant-brand)]"
+                />
+                Show per-engine
+              </label>
+            ) : null}
+          </div>
+        ) : null
       }
     >
       <div className="px-2 py-4 sm:px-4">
