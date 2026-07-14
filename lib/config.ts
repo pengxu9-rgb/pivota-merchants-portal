@@ -32,7 +32,6 @@ export const API_CONFIG = {
     
     // Integrations
     SHOPIFY_CONNECT: '/integrations/shopify/connect',
-    SHOPIFY_INSTALL_LINKS: '/integrations/shopify/install-links',
     SHOPIFY_OAUTH_START: '/integrations/shopify/oauth/start',
     SHOPIFY_DISCONNECT: '/integrations/shopify/disconnect',
     WIX_CONNECT: '/integrations/wix/connect',

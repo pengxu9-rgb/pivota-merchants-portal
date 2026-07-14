@@ -47,12 +47,6 @@ const MERCHANT_WEBHOOK_EVENTS = [
 
 const SUPPORTED_CONNECT_PROVIDERS = ['Stripe', 'Adyen', 'Checkout.com'];
 
-const SHOPIFY_OAUTH_ENABLED = (
-  process.env.NEXT_PUBLIC_FEATURE_SHOPIFY_OAUTH ||
-  process.env.NEXT_PUBLIC_ENABLE_SHOPIFY_OAUTH ||
-  'false'
-).toLowerCase() === 'true';
-
 const isFiniteMetric = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
 
@@ -1454,11 +1448,7 @@ export default function IntegrationsPage() {
         onClose={() => setGuideChooserCategory(null)}
         onSelect={openGuide}
       />
-      <IntegrationGuideDialog
-        guideKey={openGuideKey}
-        onClose={() => setOpenGuideKey(null)}
-        shopifyOAuthEnabled={SHOPIFY_OAUTH_ENABLED}
-      />
+      <IntegrationGuideDialog guideKey={openGuideKey} onClose={() => setOpenGuideKey(null)} />
     </div>
   );
 }

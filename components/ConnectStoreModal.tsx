@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { X, Store, Loader2, Link as LinkIcon, Copy } from 'lucide-react';
+import { X, Store, Loader2 } from 'lucide-react';
 import { IntegrationGuideDialog } from '@/components/integration-guides/IntegrationGuideDialog';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { formatApiError, formatApiErrorPayload } from '@/lib/api-error';
@@ -29,12 +29,6 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
   const { language } = useMerchantLanguage();
   const copy = getStoreFormCopy(language);
   const guideUiText = getIntegrationGuideUiText(language);
-  // Keep OAuth hidden by default until the product is ready.
-  const SHOPIFY_OAUTH_ENABLED = (
-    process.env.NEXT_PUBLIC_FEATURE_SHOPIFY_OAUTH ||
-    process.env.NEXT_PUBLIC_ENABLE_SHOPIFY_OAUTH ||
-    'false'
-  ).toLowerCase() === 'true';
   const [platform, setPlatform] = useState<string>('');
   const [openGuideKey, setOpenGuideKey] = useState<IntegrationGuideKey | null>(null);
   const [loading, setLoading] = useState(false);
@@ -42,10 +36,9 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
   
   // Form fields for different platforms
   const [shopifyDomain, setShopifyDomain] = useState('');
-  const [shopifyConnectMode, setShopifyConnectMode] = useState<'oauth' | 'custom_token'>(
-    SHOPIFY_OAUTH_ENABLED ? 'oauth' : 'custom_token'
-  );
-  const [shopifyInstallUrl, setShopifyInstallUrl] = useState('');
+  // OAuth (Pivota's public read-only Shopify app) is the default and recommended
+  // path; the custom-app form is an explicit opt-in behind the "Advanced" link.
+  const [shopifyConnectMode, setShopifyConnectMode] = useState<'oauth' | 'custom_token'>('oauth');
   const [shopifyClientId, setShopifyClientId] = useState('');
   const [shopifyClientSecret, setShopifyClientSecret] = useState('');
   
@@ -68,8 +61,49 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
 
   const selectedGuideKey = normalizeIntegrationGuideKey(platform);
 
+  // One-click connect: ask the backend for Shopify's authorize URL, then hand the
+  // browser to Shopify. The merchant never sees or copies an install link.
+  const handleShopifyOAuthConnect = async () => {
+    setLoading(true);
+    try {
+      const url =
+        `${baseUrl}${API_CONFIG.ENDPOINTS.SHOPIFY_OAUTH_START}` +
+        `?merchant_id=${encodeURIComponent(merchantId)}&shop=${encodeURIComponent(shopifyDomain.trim())}`;
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('merchant_token')}` },
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(`${copy.failedPrefix}: ${formatApiErrorPayload(data, 'Unknown error')}`);
+        setLoading(false);
+        return;
+      }
+
+      const authorizeUrl = data?.authorization_url || '';
+      if (!authorizeUrl) {
+        alert(copy.oauthStartFailed);
+        setLoading(false);
+        return;
+      }
+
+      // Full-page handoff to Shopify's consent screen; the OAuth callback brings
+      // the merchant back into the portal.
+      window.location.href = authorizeUrl;
+    } catch (error: any) {
+      alert(`${copy.errorPrefix}: ${formatApiError(error, 'Unknown error')}`);
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (platform === 'shopify' && shopifyConnectMode === 'oauth') {
+      await handleShopifyOAuthConnect();
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -78,21 +112,13 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
 
       switch (platform) {
         case 'shopify':
-          if (!SHOPIFY_OAUTH_ENABLED || shopifyConnectMode === 'custom_token') {
-            endpoint = `${baseUrl}${API_CONFIG.ENDPOINTS.SHOPIFY_CONNECT}`;
-            payload = {
-              merchant_id: merchantId,
-              shop_domain: shopifyDomain,
-              client_id: shopifyClientId,
-              client_secret: shopifyClientSecret,
-            };
-          } else {
-            endpoint = `${baseUrl}${API_CONFIG.ENDPOINTS.SHOPIFY_INSTALL_LINKS}`;
-            payload = {
-              merchant_id: merchantId,
-              shop_domain: shopifyDomain,
-            };
-          }
+          endpoint = `${baseUrl}${API_CONFIG.ENDPOINTS.SHOPIFY_CONNECT}`;
+          payload = {
+            merchant_id: merchantId,
+            shop_domain: shopifyDomain,
+            client_id: shopifyClientId,
+            client_secret: shopifyClientSecret,
+          };
           break;
 
         case 'wix':
@@ -153,20 +179,9 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
 
       if (response.ok) {
         if (platform === 'shopify') {
-          if (!SHOPIFY_OAUTH_ENABLED || shopifyConnectMode === 'custom_token') {
-            alert(copy.shopifyConnected);
-            onSuccess();
-            handleClose();
-          } else {
-            const installUrl = data?.install_url || '';
-            if (installUrl) {
-              setShopifyInstallUrl(installUrl);
-              window.open(installUrl, '_blank', 'noopener,noreferrer');
-              alert(copy.installCreated);
-            } else {
-              alert(copy.installMissing);
-            }
-          }
+          alert(copy.shopifyConnected);
+          onSuccess();
+          handleClose();
         } else {
           alert(
             formatIntegrationCopy(copy.platformConnected, {
@@ -190,8 +205,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
     setPlatform('');
     setOpenGuideKey(null);
     setShopifyDomain('');
-    setShopifyConnectMode(SHOPIFY_OAUTH_ENABLED ? 'oauth' : 'custom_token');
-    setShopifyInstallUrl('');
+    setShopifyConnectMode('oauth');
     setShopifyClientId('');
     setShopifyClientSecret('');
     setWixSiteId('');
@@ -206,11 +220,6 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
     setPsStoreUrl('');
     setPsApiKey('');
     onClose();
-  };
-
-  const handleShopifyInstalled = async () => {
-    await onSuccess();
-    handleClose();
   };
 
   return (
@@ -274,78 +283,33 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                 />
               </div>
 
-              {SHOPIFY_OAUTH_ENABLED && shopifyConnectMode === 'oauth' ? (
+              {shopifyConnectMode === 'oauth' ? (
                 <>
                   <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
                     <div className="font-medium text-blue-900">{copy.oauthTitle}</div>
                     <div className="mt-0.5">{copy.oauthDescription}</div>
                   </div>
-                  {shopifyInstallUrl ? (
-                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                      <div className="text-xs text-gray-500 mb-2">{copy.installLink}</div>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          readOnly
-                          value={shopifyInstallUrl}
-                          className="w-full px-3 py-2 border rounded-lg bg-white text-xs"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => navigator.clipboard.writeText(shopifyInstallUrl)}
-                          className="inline-flex items-center px-2 py-2 rounded-lg border text-gray-600 hover:text-gray-900"
-                          title={copy.copy}
-                        >
-                          <Copy className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => window.open(shopifyInstallUrl, '_blank', 'noopener,noreferrer')}
-                          className="inline-flex items-center px-2 py-2 rounded-lg border text-blue-600 hover:text-blue-800"
-                          title={copy.open}
-                        >
-                          <LinkIcon className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <div className="mt-3 flex items-center justify-end">
-                        <button
-                          type="button"
-                          onClick={handleShopifyInstalled}
-                          className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700 hover:bg-blue-100"
-                        >
-                          {copy.installedRefresh}
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-                  {SHOPIFY_OAUTH_ENABLED && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShopifyConnectMode('custom_token');
-                        setShopifyInstallUrl('');
-                      }}
-                      className="self-start text-xs text-gray-500 underline hover:text-gray-700"
-                    >
-                      Advanced: use your own custom app instead
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShopifyConnectMode('custom_token')}
+                    className="self-start text-xs text-gray-500 underline hover:text-gray-700"
+                  >
+                    {copy.advancedUseCustomApp}
+                  </button>
                 </>
               ) : (
                 <>
-                  {SHOPIFY_OAUTH_ENABLED && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShopifyConnectMode('oauth');
-                        setShopifyClientId('');
-                        setShopifyClientSecret('');
-                      }}
-                      className="self-start text-xs text-blue-600 underline hover:text-blue-800"
-                    >
-                      &larr; Use one-click Shopify connect instead
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShopifyConnectMode('oauth');
+                      setShopifyClientId('');
+                      setShopifyClientSecret('');
+                    }}
+                    className="self-start text-xs text-blue-600 underline hover:text-blue-800"
+                  >
+                    {copy.backToOneClick}
+                  </button>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">{copy.clientId} *</label>
                     <input
@@ -561,7 +525,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                 !platform ||
                 (platform === 'shopify' &&
                   (!shopifyDomain.trim() ||
-                    ((!SHOPIFY_OAUTH_ENABLED || shopifyConnectMode === 'custom_token') &&
+                    (shopifyConnectMode === 'custom_token' &&
                       (!shopifyClientId.trim() || !shopifyClientSecret.trim()))))
               }
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
@@ -570,8 +534,8 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span>
-                    {platform === 'shopify' && SHOPIFY_OAUTH_ENABLED && shopifyConnectMode === 'oauth'
-                      ? copy.generatingLink
+                    {platform === 'shopify' && shopifyConnectMode === 'oauth'
+                      ? copy.redirectingToShopify
                       : copy.connecting}
                   </span>
                 </>
@@ -579,10 +543,8 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                 <>
                   <Store className="w-4 h-4" />
                   <span>
-                    {platform === 'shopify'
-                      ? SHOPIFY_OAUTH_ENABLED && shopifyConnectMode === 'oauth'
-                        ? copy.generateInstallLink
-                        : copy.connectStoreButton
+                    {platform === 'shopify' && shopifyConnectMode === 'oauth'
+                      ? copy.connectWithShopify
                       : copy.connectStoreButton}
                   </span>
                 </>
@@ -591,11 +553,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
           </div>
         </form>
       </div>
-      <IntegrationGuideDialog
-        guideKey={openGuideKey}
-        onClose={() => setOpenGuideKey(null)}
-        shopifyOAuthEnabled={SHOPIFY_OAUTH_ENABLED}
-      />
+      <IntegrationGuideDialog guideKey={openGuideKey} onClose={() => setOpenGuideKey(null)} />
     </div>
   );
 }
