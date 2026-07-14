@@ -136,7 +136,10 @@ function rankRow(row: SkuPerPromptRow): number {
 
 export function PromptEvidencePanel({
   report,
-  defaultOpen = false,
+  // Open by default: this IS the "see what AI answered" surface, and hiding the
+  // verbatim answers behind a click defeated it (the header alone reads like a
+  // summary line, so merchants never expanded it).
+  defaultOpen = true,
 }: {
   report: AgentCenterPerSkuReport;
   defaultOpen?: boolean;
