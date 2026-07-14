@@ -53,7 +53,24 @@ const btn: CSSProperties = {
   textDecoration: "none",
 };
 
-export default function ShopifyInstallSuccessPage() {
+export default async function ShopifyInstallSuccessPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ claim_token?: string; shop?: string }>;
+}) {
+  const { claim_token: claimToken, shop } = await searchParams;
+
+  // An App Store install creates a shell merchant with no user account, so sending
+  // the installer straight to /dashboard would dead-end them at a login they cannot
+  // pass. When the callback hands us a claim token, route them into account setup
+  // instead. Without one the store is already claimed, so plain sign-in is right.
+  const ctaHref = claimToken
+    ? `/app/install/claim?token=${encodeURIComponent(claimToken)}${
+        shop ? `&shop=${encodeURIComponent(shop)}` : ""
+      }`
+    : "/dashboard/integrations";
+  const ctaLabel = claimToken ? "Set up your Pivota account" : "Go to your Pivota dashboard";
+
   return (
     <main style={wrap}>
       <div style={card}>
@@ -68,10 +85,12 @@ export default function ShopifyInstallSuccessPage() {
           and never processes checkout.
         </p>
         <p style={p}>
-          Open the dashboard to review your AI-readiness score and recommendations.
+          {claimToken
+            ? "One last step: set up your account to see your AI-readiness score and recommendations."
+            : "Open the dashboard to review your AI-readiness score and recommendations."}
         </p>
-        <a href="https://merchant.pivota.cc/dashboard/integrations" style={btn}>
-          Go to your Pivota dashboard
+        <a href={ctaHref} style={btn}>
+          {ctaLabel}
         </a>
         <p style={muted}>
           Need help? Contact{" "}
