@@ -792,6 +792,25 @@ export interface AuditReadiness {
     product_enrichment: number;
     product_enrichment_with_content: number;
   };
+  /**
+   * Provenance breakdown of the merchant's catalog (merchant-wide, all
+   * platforms — unlike `counts`, which is platform-scoped to the audit gate).
+   * Drives the "ready, but observed-only" nudge: a merchant whose whole catalog
+   * is historical URL-audit/seed observations, with no connected store, is
+   * pointed at Integrations for a deeper first-party audit. Optional: absent on
+   * older backends.
+   */
+  provenance?: {
+    connected_store_products: number;
+    observed_referral_products: number;
+    brand_authored_products: number;
+  };
+  /**
+   * True when the catalog is entirely observed URL-audit/seed rows with no
+   * connected store — recommend a sync for a first-party audit. Advisory only;
+   * never affects `ready`. Absent on older backends → treated as false.
+   */
+  recommend_store_sync?: boolean;
   blocking_gaps: string[];
   enhancement_gaps: string[];
   recommendation: string;
