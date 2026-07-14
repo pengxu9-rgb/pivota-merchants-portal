@@ -25,11 +25,9 @@ function GuideList({ items, ordered = false }: { items: string[]; ordered?: bool
 export function IntegrationGuideDialog({
   guideKey,
   onClose,
-  shopifyOAuthEnabled = false,
 }: {
   guideKey: IntegrationGuideKey | null;
   onClose: () => void;
-  shopifyOAuthEnabled?: boolean;
 }) {
   const { language } = useMerchantLanguage();
 
@@ -37,8 +35,7 @@ export function IntegrationGuideDialog({
 
   const guide = getIntegrationGuide(language, guideKey);
   const uiText = getIntegrationGuideUiText(language);
-  const optionalNotes =
-    guideKey === "shopify" && !shopifyOAuthEnabled ? [] : guide.optionalNotes || [];
+  const optionalNotes = guide.optionalNotes || [];
 
   const sections = [
     { title: uiText.sections.requiredFields, items: guide.requiredFields },

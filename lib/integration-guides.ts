@@ -205,7 +205,7 @@ const enGuides: Record<IntegrationGuideKey, IntegrationGuide> = {
       "If Shopify returns 401 or 403, recheck the app credentials, scopes, and store ownership.",
     ],
     optionalNotes: [
-      "If the Pivota app OAuth mode is enabled for your account, the portal can generate a one-time Shopify install link. The custom app steps remain the manual fallback.",
+      "The recommended path is \"Connect with Shopify\", which installs Pivota's read-only app via Shopify OAuth - no credentials needed. The custom app steps below are the advanced fallback.",
     ],
     officialLinks: officialLinks.shopify,
   },
@@ -504,7 +504,7 @@ const zhGuides: Record<IntegrationGuideKey, IntegrationGuide> = {
     steps: ["打开 Shopify Admin > Settings > Apps and sales channels > Develop apps。", "为 Pivota 创建一个 custom app，或打开已有的 Pivota app。", "配置 Admin API scopes：read_products、read_orders、read_fulfillments、write_orders、write_webhooks、read_discounts。", "配置完成后把 app 安装到 Shopify 店铺。", "打开 app 的 API credentials 页面，复制 API key 和 API secret key。", "把 API key 填入 Pivota Client ID，把 API secret key 填入 Pivota Client Secret。", "把 MyShopify 域名填入 Store Domain，然后连接。"],
     pitfalls: ["如果有 MyShopify 域名，不要只填 brand.com 这类品牌官网域名。", "后续如果改过 scopes，需要重新安装或刷新 app 凭据后再 reconnect。", "缺少 read_discounts 时，即使商品同步正常，也可能无法读取折扣和促销。"],
     validationNotes: ["Pivota 会用 client ID 和 client secret 换取 Admin access token，然后检查 Shopify Admin API /shop.json。", "如果能通过 Admin token 创建 Storefront API token，Pivota 会保存它用于定价和 checkout 相关流程。", "如果 Shopify 返回 401 或 403，请重新检查 app 凭据、scopes 和店铺归属。"],
-    optionalNotes: ["如果你的账号启用了 Pivota app OAuth 模式，portal 可以生成一次性 Shopify install link。custom app 步骤仍然是手动 fallback。"],
+    optionalNotes: ["推荐使用「连接 Shopify」，通过 Shopify OAuth 安装 Pivota 只读 app，无需任何凭据。下面的 custom app 步骤是高级备用方式。"],
   },
   wix: {
     ...enGuides.wix,

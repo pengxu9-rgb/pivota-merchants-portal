@@ -70,12 +70,14 @@ export default function StoreConnectionStep({ merchantId, storeUrl, onComplete, 
       try {
         const shopDomain = storeUrl.replace('https://', '').replace('http://', '').split('/')[0];
         const response = await fetch(
-          `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.SHOPIFY_OAUTH_START}?merchant_id=${merchantId}&shop=${shopDomain}`
+          `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.SHOPIFY_OAUTH_START}` +
+            `?merchant_id=${encodeURIComponent(merchantId)}&shop=${encodeURIComponent(shopDomain)}`,
+          { headers: { Authorization: `Bearer ${localStorage.getItem('merchant_token')}` } }
         );
         const data = await response.json();
-        
-        if (data.authorize) {
-          window.location.href = data.authorize;
+
+        if (response.ok && data.authorization_url) {
+          window.location.href = data.authorization_url;
         } else {
           throw new Error('Failed to start OAuth');
         }

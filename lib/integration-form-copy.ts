@@ -6,16 +6,12 @@ type StoreFormCopy = {
   choosePlatform: string;
   storeDomain: string;
   storeDomainHint: string;
-  connectionMethod: string;
   oauthTitle: string;
   oauthDescription: string;
   customTitle: string;
   customDescription: string;
-  oauthHint: string;
-  installLink: string;
-  copy: string;
-  open: string;
-  installedRefresh: string;
+  advancedUseCustomApp: string;
+  backToOneClick: string;
   clientId: string;
   clientSecret: string;
   clientIdPlaceholder: string;
@@ -34,15 +30,14 @@ type StoreFormCopy = {
   bcClientIdOptional: string;
   prestashopCredentialHelp: string;
   cancel: string;
-  generatingLink: string;
   connecting: string;
-  generateInstallLink: string;
+  redirectingToShopify: string;
+  connectWithShopify: string;
   connectStoreButton: string;
   selectPlatformAlert: string;
   shopifyConnected: string;
   platformConnected: string;
-  installCreated: string;
-  installMissing: string;
+  oauthStartFailed: string;
   failedPrefix: string;
   errorPrefix: string;
 };
@@ -83,18 +78,14 @@ const enStore: StoreFormCopy = {
   choosePlatform: "-- Choose Platform --",
   storeDomain: "Store Domain",
   storeDomainHint: "e.g., mystore.myshopify.com",
-  connectionMethod: "Connection method",
   oauthTitle: "Connect with Pivota (read-only) - recommended",
   oauthDescription:
     "One-click connection for catalog sync, AI-readiness, and analytics. Buyers are handed to your Shopify checkout (Shop Pay). Read-only - never changes your products or orders. No credentials needed.",
   customTitle: "Use your own Shopify app - advanced",
   customDescription:
     "Paste credentials from a custom app you create in your Shopify admin. Required for agent checkout with your own payment processor (needs the write_orders scope); also works as a fallback if one-click install is unavailable.",
-  oauthHint: "Use the store's MyShopify domain. Install links are one-time use.",
-  installLink: "Install link (valid for about 15 minutes, one-time use)",
-  copy: "Copy",
-  open: "Open",
-  installedRefresh: "I've installed, refresh stores",
+  advancedUseCustomApp: "Advanced: use your own custom app instead",
+  backToOneClick: "← Use one-click Shopify connect instead",
   clientId: "Client ID",
   clientSecret: "Client Secret",
   clientIdPlaceholder: "Shopify app client ID",
@@ -114,16 +105,14 @@ const enStore: StoreFormCopy = {
   bcClientIdOptional: "Client ID (Optional)",
   prestashopCredentialHelp: "Get from PrestaShop > Advanced Parameters > Webservice.",
   cancel: "Cancel",
-  generatingLink: "Generating link...",
   connecting: "Connecting...",
-  generateInstallLink: "Generate Install Link",
+  redirectingToShopify: "Redirecting to Shopify...",
+  connectWithShopify: "Connect with Shopify",
   connectStoreButton: "Connect Store",
   selectPlatformAlert: "Please select a platform",
   shopifyConnected: "Shopify store connected successfully.",
   platformConnected: "{platform} store connected successfully.",
-  installCreated:
-    "Install link created. Complete the Shopify authorization, then return here and click \"I've installed, refresh stores\".",
-  installMissing: "Install link created, but no URL was returned. Please try again.",
+  oauthStartFailed: "Could not start the Shopify connection. Please try again.",
   failedPrefix: "Failed",
   errorPrefix: "Error",
 };
@@ -135,16 +124,12 @@ const zhStore: StoreFormCopy = {
   choosePlatform: "-- 选择平台 --",
   storeDomain: "店铺域名",
   storeDomainHint: "例如 mystore.myshopify.com",
-  connectionMethod: "连接方式",
   oauthTitle: "使用 Pivota 连接（只读）- 推荐",
   oauthDescription: "一键连接，用于目录同步、AI-readiness 和分析。买家将被引导至你的 Shopify 结账页（Shop Pay）。只读 —— 不会更改你的商品或订单。无需凭据。",
   customTitle: "使用你自己的 Shopify app —— 高级",
   customDescription: "粘贴你在 Shopify 后台自建 custom app 的凭据。如果你希望通过自有支付处理商进行 agent checkout（需要 write_orders 权限），则需要此项；当一键安装不可用时也可作为备用方式。",
-  oauthHint: "请使用店铺的 MyShopify 域名。安装链接只能使用一次。",
-  installLink: "安装链接（约 15 分钟内有效，一次性使用）",
-  copy: "复制",
-  open: "打开",
-  installedRefresh: "已安装，刷新店铺",
+  advancedUseCustomApp: "高级：改用你自己的 custom app",
+  backToOneClick: "← 改用一键连接 Shopify",
   clientId: "Client ID",
   clientSecret: "Client Secret",
   shopifyCredentialHelp: "从 Shopify Admin > Apps > Develop apps > Your app > API credentials 获取。如需通过自有 PSP 进行 agent checkout，请启用 write_orders Admin API 权限。Pivota 会用 client ID + secret 自动轮换 token。",
@@ -160,15 +145,14 @@ const zhStore: StoreFormCopy = {
   bcClientIdOptional: "Client ID（可选）",
   prestashopCredentialHelp: "从 PrestaShop > Advanced Parameters > Webservice 获取。",
   cancel: "取消",
-  generatingLink: "正在生成链接...",
+  redirectingToShopify: "正在跳转到 Shopify...",
+  connectWithShopify: "连接 Shopify",
   connecting: "正在连接...",
-  generateInstallLink: "生成安装链接",
   connectStoreButton: "连接店铺",
   selectPlatformAlert: "请选择平台",
   shopifyConnected: "Shopify 店铺已连接。",
   platformConnected: "{platform} 店铺已连接。",
-  installCreated: "安装链接已创建。完成 Shopify 授权后返回这里，并点击“已安装，刷新店铺”。",
-  installMissing: "安装链接已创建，但没有返回 URL。请重试。",
+  oauthStartFailed: "无法启动 Shopify 连接，请重试。",
   failedPrefix: "失败",
   errorPrefix: "错误",
 };
@@ -180,7 +164,7 @@ const jaStore: StoreFormCopy = {
   choosePlatform: "-- プラットフォームを選択 --",
   cancel: "キャンセル",
   connecting: "接続中...",
-  generateInstallLink: "インストールリンクを生成",
+  connectWithShopify: "Shopify と連携",
   connectStoreButton: "ストアを接続",
   selectPlatformAlert: "プラットフォームを選択してください",
   failedPrefix: "失敗",
@@ -194,7 +178,7 @@ const koStore: StoreFormCopy = {
   choosePlatform: "-- 플랫폼 선택 --",
   cancel: "취소",
   connecting: "연결 중...",
-  generateInstallLink: "설치 링크 생성",
+  connectWithShopify: "Shopify 연결",
   connectStoreButton: "스토어 연결",
   selectPlatformAlert: "플랫폼을 선택하세요",
   failedPrefix: "실패",
@@ -208,7 +192,7 @@ const frStore: StoreFormCopy = {
   choosePlatform: "-- Choisir une plateforme --",
   cancel: "Annuler",
   connecting: "Connexion...",
-  generateInstallLink: "Generer le lien d'installation",
+  connectWithShopify: "Connecter avec Shopify",
   connectStoreButton: "Connecter la boutique",
   selectPlatformAlert: "Selectionnez une plateforme",
   failedPrefix: "Echec",
@@ -222,7 +206,7 @@ const deStore: StoreFormCopy = {
   choosePlatform: "-- Plattform auswahlen --",
   cancel: "Abbrechen",
   connecting: "Verbinden...",
-  generateInstallLink: "Installationslink erstellen",
+  connectWithShopify: "Mit Shopify verbinden",
   connectStoreButton: "Store verbinden",
   selectPlatformAlert: "Bitte Plattform auswahlen",
   failedPrefix: "Fehlgeschlagen",
