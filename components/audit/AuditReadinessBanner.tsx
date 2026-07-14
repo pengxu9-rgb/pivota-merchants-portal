@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   Loader2,
   RefreshCw,
+  Sparkles,
   Store,
 } from 'lucide-react';
 import type { AuditReadiness } from '@/lib/types/ai-readiness';
@@ -58,6 +59,39 @@ export function AuditReadinessBanner({
 
   if (readiness.ready) {
     const n = readiness.counts.catalog_products;
+    // "Ready, but observed-only": the catalog is entirely historical URL-audit /
+    // seed observations with no connected store behind it. The audit still runs
+    // (ready stays true), but it runs on thin observed data — so recommend a
+    // store sync for a deeper first-party audit instead of calling these rows
+    // "synced" (which they aren't).
+    if (readiness.recommend_store_sync) {
+      const observed = readiness.provenance?.observed_referral_products ?? n;
+      return (
+        <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          <div className="flex items-start gap-2">
+            <Sparkles className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <div className="flex-1 space-y-2">
+              <p>
+                <strong>
+                  {observed} product{observed === 1 ? '' : 's'} from your URL
+                  audits
+                </strong>{' '}
+                {observed === 1 ? 'is' : 'are'} ready to audit. These were
+                discovered from your product pages, not synced from your store —
+                connect your store to audit your full catalog with richer
+                first-party data.
+              </p>
+              <Link href="/dashboard/integrations">
+                <MerchantButton variant="ghost">
+                  <Store className="mr-2 h-4 w-4" />
+                  Connect your store
+                </MerchantButton>
+              </Link>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
         <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
