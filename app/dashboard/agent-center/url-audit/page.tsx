@@ -625,6 +625,8 @@ export default function UrlAuditPage() {
                   <GetCitedPanel
                     moves={result.where_youre_losing?.outreach_moves}
                     pitchTargets={result.where_youre_losing?.pitch_targets}
+                    closedChannels={result.where_youre_losing?.closed_channels}
+                    closedChannelsNote={result.where_youre_losing?.closed_channels_note}
                     enginesByHost={enginesByHost}
                     enginePlaybook={ep}
                     categoryHint={categoryHint}

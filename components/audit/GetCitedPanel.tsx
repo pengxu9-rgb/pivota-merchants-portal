@@ -15,9 +15,11 @@
 import { useState } from 'react';
 import {
   Globe, Star, Newspaper, Users, Megaphone, Store, ExternalLink,
-  Sparkles, Loader2, Check, Copy, ArrowRight,
+  Sparkles, Loader2, Check, Copy, ArrowRight, Lock,
 } from 'lucide-react';
-import type { OutreachMove, EnginePlaybook, PitchTarget } from '@/lib/types/ai-readiness';
+import type {
+  OutreachMove, EnginePlaybook, PitchTarget, ClosedChannel,
+} from '@/lib/types/ai-readiness';
 import { apiClient } from '@/lib/api-client';
 
 type Kind = 'reviews' | 'media' | 'kol' | 'community' | 'retailer' | 'other';
@@ -378,9 +380,35 @@ function EngineGroup({
   );
 }
 
+/** A cited source no pitch can ever win, because a competitor owns it — its
+ * "best of" roundups are the owner's marketing wearing an editorial mask
+ * (hair.com is L'Oreal's house media for Redken / Kerastase / Matrix). It is
+ * deliberately absent from the channels above; showing it here is the difference
+ * between a merchant understanding their category and quietly concluding their
+ * pitches keep failing. */
+function ClosedDoor({ c }: { c: ClosedChannel }) {
+  return (
+    <div className="rounded-md border border-dashed border-[color:var(--merchant-line)] bg-white/20 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="text-sm font-semibold opacity-80">{c.host}</div>
+        <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+          Owned by a competitor
+        </span>
+      </div>
+      <div className="mt-1 text-xs leading-snug opacity-70">{c.why_closed}</div>
+      <div className="mt-2 text-xs leading-snug">
+        <span className="opacity-60">What this means: </span>
+        {c.what_it_means}
+      </div>
+    </div>
+  );
+}
+
 export function GetCitedPanel({
   moves,
   pitchTargets,
+  closedChannels,
+  closedChannelsNote,
   enginesByHost = {},
   enginePlaybook,
   categoryHint,
@@ -391,6 +419,9 @@ export function GetCitedPanel({
   moves?: OutreachMove[] | null;
   /** Phase-4 T5: standing vertical pitch list (where_youre_losing.pitch_targets). */
   pitchTargets?: PitchTarget[] | null;
+  /** Cited hosts a rival owns — unpitchable by construction, named not hidden. */
+  closedChannels?: ClosedChannel[] | null;
+  closedChannelsNote?: string | null;
   enginesByHost?: Record<string, string[]>;
   enginePlaybook?: EnginePlaybook | null;
   categoryHint?: string | null;
@@ -402,7 +433,14 @@ export function GetCitedPanel({
 }) {
   const list = (moves || []).filter((m) => m && m.host);
   const targets = (pitchTargets || []).filter((t) => t && t.host);
-  if (list.length === 0 && targets.length === 0 && !enginePlaybook?.has_signal) return null;
+  const closed = (closedChannels || []).filter((c) => c && c.host);
+  // A merchant whose category is dominated by rival-owned media may have few
+  // channels to work and most needs the explanation — so a closed door alone is
+  // enough to keep this section on screen.
+  if (
+    list.length === 0 && targets.length === 0 && closed.length === 0
+    && !enginePlaybook?.has_signal
+  ) return null;
 
   const category = cleanCategory(categoryHint, brand);
   const enc = encodeURIComponent;
@@ -460,6 +498,25 @@ export function GetCitedPanel({
           starters={chatgptStarters}
         />
       </div>
+
+      {closed.length > 0 ? (
+        <div className="mt-5 border-t border-[color:var(--merchant-line)] pt-4">
+          <div className="flex items-center gap-1.5">
+            <Lock className="h-3.5 w-3.5 opacity-50" />
+            <div className="text-[11px] font-semibold uppercase tracking-wide opacity-55">
+              Closed doors — not worth a pitch
+            </div>
+          </div>
+          {closedChannelsNote ? (
+            <p className="mt-1 text-[11px] leading-snug opacity-60">{closedChannelsNote}</p>
+          ) : null}
+          <div className="mt-2.5 space-y-2">
+            {closed.map((c, i) => (
+              <ClosedDoor key={`${c.host}-closed-${i}`} c={c} />
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,0 +1,295 @@
+{
+  "run_id": "e3d3019a-d1be-4236-9d35-7df74cbb78bf",
+  "merchant_id": "merch_924da2be8503e5f7",
+  "where_youre_losing": {
+    "summary": "When shoppers ask the category question, Anuko doesn't surface at all — neither your own listings nor any independent source appears.",
+    "independently_recommended_for_category": false,
+    "endorsement_hosts": [],
+    "who_ai_cites_instead": {
+      "available": true,
+      "cited_hosts": [
+        {
+          "host": "hwahae.com",
+          "citation_role": "editorial_review",
+          "recommendation_class": "recommends",
+          "prompts_cited_count": 11,
+          "cited_on_category_query": true,
+          "competitors_named": [
+            "Keratin Research",
+            "Hers",
+            "Happy Head",
+            "Hims",
+            "Tangle Teezer",
+            "SheaMoisture",
+            "Dove",
+            "L'Oréal Elvive"
+          ]
+        },
+        {
+          "host": "oliveyoung.co.kr",
+          "citation_role": "unclassified",
+          "recommendation_class": "unknown",
+          "prompts_cited_count": 5,
+          "cited_on_category_query": false,
+          "competitors_named": [
+            "DR+BANGGIWON Teenager Shampoo",
+            "CLABO Romantic Citrus Deep Clean Rinse",
+            "tamz Signature Treatment [001 Ever Bloom]",
+            "KERASYS Propolis Hair Bonding Pro Repair Treatment",
+            "SILK THERAPY Bond & Seal No-Wash Treatment",
+            "Dr.SEED Super Seed Balm Nourishing Treatment Midnight Rose",
+            "그로우어스 데미지 테라피 리페어 클리닉 헤어팩",
+            "Hair Chemist Bond & Repair Argan Hair Oil"
+          ]
+        },
+        {
+          "host": "glowpick.com",
+          "citation_role": "unclassified",
+          "recommendation_class": "unknown",
+          "prompts_cited_count": 2,
+          "cited_on_category_query": false,
+          "competitors_named": [
+            "그로우어스 데미지 테라피 리페어 클리닉 헤어팩",
+            "Rene Furterer",
+            "Dr. Groot",
+            "Yves Rocher",
+            "Unove",
+            "Urbantribe",
+            "Kerastase",
+            "Tsubaki"
+          ]
+        },
+        {
+          "host": "vogue.com",
+          "citation_role": "editorial_review",
+          "recommendation_class": "recommends",
+          "prompts_cited_count": 1,
+          "cited_on_category_query": true,
+          "competitors_named": [
+            "K18 Biomimetic Hairscience Molecular Repair Oil",
+            "Mielle Organics Rosemary Mint Scalp & Hair Strengthening Oil",
+            "Moroccanoil Treatment Light",
+            "Oribe Gold Lust Nourishing Hair Oil",
+            "Champo Weightless Hair Oil",
+            "OGX Coconut Miracle Oil Extra Strength",
+            "Fable & Mane HoliRoots Hair Oil",
+            "Curlsmith Bonding Oil"
+          ]
+        },
+        {
+          "host": "whowhatwear.com",
+          "citation_role": "editorial_review",
+          "recommendation_class": "recommends",
+          "prompts_cited_count": 1,
+          "cited_on_category_query": true,
+          "competitors_named": [
+            "Kérastase",
+            "Bread Beauty Supply",
+            "Olaplex",
+            "Mielle Organics",
+            "Rōz",
+            "Verb Haircare",
+            "PATTERN",
+            "Ouai"
+          ]
+        },
+        {
+          "host": "fabfitfun.com",
+          "citation_role": "unclassified",
+          "recommendation_class": "unknown",
+          "prompts_cited_count": 1,
+          "cited_on_category_query": true,
+          "competitors_named": [
+            "Neutrogena",
+            "L'Oréal Paris",
+            "Redken",
+            "Bumble and bumble",
+            "Moroccanoil",
+            "Living Proof",
+            "COLOR WOW",
+            "Rossano Ferretti Parma"
+          ]
+        },
+        {
+          "host": "health.clevelandclinic.org",
+          "citation_role": "unclassified",
+          "recommendation_class": "unknown",
+          "prompts_cited_count": 1,
+          "cited_on_category_query": true,
+          "competitors_named": [
+            "Redken",
+            "Kérastase",
+            "Davines"
+          ]
+        },
+        {
+          "host": "indiatimes.com",
+          "citation_role": "unclassified",
+          "recommendation_class": "unknown",
+          "prompts_cited_count": 1,
+          "cited_on_category_query": true,
+          "competitors_named": [
+            "Moroccanoil Treatment Light",
+            "Verb Ghost Oil",
+            "Virtue Healing Oil",
+            "OGX Renewing + Argan Oil of Morocco Weightless Healing Dry Oil",
+            "NatureSum's Rosemary & Jatamansi Hair Oil",
+            "Lador Wonder Hair Oil",
+            "Garnier Fructis Sleek & Shine Anti-Frizz Serum",
+            "Pantene Gold Series Intense Hydrating Oil"
+          ]
+        }
+      ],
+      "competitors": [
+        {
+          "name": "Briogeo",
+          "times_named": 2
+        },
+        {
+          "name": "Moroccanoil",
+          "times_named": 2
+        },
+        {
+          "name": "Olaplex",
+          "times_named": 2
+        },
+        {
+          "name": "Bumble and bumble",
+          "times_named": 2
+        },
+        {
+          "name": "amika",
+          "times_named": 2
+        },
+        {
+          "name": "SheaMoisture",
+          "times_named": 2
+        },
+        {
+          "name": "CÉCRED",
+          "times_named": 2
+        },
+        {
+          "name": "Living Proof",
+          "times_named": 2
+        }
+      ],
+      "note": null
+    },
+    "outreach_moves": [
+      {
+        "host": "hwahae.com",
+        "host_type": "editorial",
+        "host_subtype": "review_aggregator",
+        "action_verb": "Pitch",
+        "lever": "editorial_outreach",
+        "recommendation_class": "recommends",
+        "prompts_cited_count": 11,
+        "cited_on_category_query": true,
+        "already_endorses_you": false,
+        "headline": "Pitch hwahae.com",
+        "why": "AI cites hwahae.com and it grounds answers that recommend competitors over you on category questions — getting in front of it is how you get cited there too.",
+        "first_move": "Earn authentic reviews and keep your product listing accurate in their crowd-reviewed database — that's how AI (and shoppers) pick you up here, not a paid pitch.",
+        "realism": "reachable",
+        "pitch_recipient": {
+          "email": null,
+          "submission_url": "https://business.hwahae.co.kr/",
+          "note": "Reviews are user-generated — brands can't pitch them. The brand door is Hwahae Business: ad/seeding programs and Hwahae Shopping entry (part_ads_sales@hwahae.com is the ads-sales inbox, not an editorial pitch address). Verified 2026-07-11."
+        }
+      },
+      {
+        "host": "whowhatwear.com",
+        "host_type": "editorial",
+        "host_subtype": "fashion",
+        "action_verb": "Pitch",
+        "lever": "editorial_outreach",
+        "recommendation_class": "recommends",
+        "prompts_cited_count": 1,
+        "cited_on_category_query": true,
+        "already_endorses_you": false,
+        "headline": "Pitch whowhatwear.com",
+        "why": "AI cites whowhatwear.com and it grounds answers that recommend competitors over you on category questions — getting in front of it is how you get cited there too.",
+        "first_move": "Editorial pitch — trend-led angle.",
+        "realism": "reachable",
+        "pitch_recipient": null
+      },
+      {
+        "host": "oliveyoung.co.kr",
+        "host_type": "retailer",
+        "host_subtype": "vertical_retailer",
+        "action_verb": "Get carried by",
+        "lever": "wholesale_onboarding",
+        "recommendation_class": "unknown",
+        "prompts_cited_count": 5,
+        "cited_on_category_query": false,
+        "already_endorses_you": false,
+        "headline": "Get carried by oliveyoung.co.kr",
+        "why": "AI cites oliveyoung.co.kr in 5 of your tested prompts — getting in front of it is how you get cited there too.",
+        "first_move": "Apply to be carried, and make sure your listing's title and specs match your own product page exactly.",
+        "realism": "onboarding",
+        "pitch_recipient": null
+      },
+      {
+        "host": "vogue.com",
+        "host_type": "editorial",
+        "host_subtype": "fashion",
+        "action_verb": "Pitch",
+        "lever": "editorial_outreach",
+        "recommendation_class": "recommends",
+        "prompts_cited_count": 1,
+        "cited_on_category_query": true,
+        "already_endorses_you": false,
+        "headline": "Pitch vogue.com",
+        "why": "AI cites vogue.com and it grounds answers that recommend competitors over you on category questions — getting in front of it is how you get cited there too.",
+        "first_move": "Major publishers rarely cover an emerging brand on a cold pitch. Build review-site listings and authentic community/Reddit presence first — editorial coverage follows the signals they pick up.",
+        "realism": "hard",
+        "pitch_recipient": null
+      },
+      {
+        "host": "glowpick.com",
+        "host_type": "editorial",
+        "host_subtype": "review_aggregator",
+        "action_verb": "Pitch",
+        "lever": "editorial_outreach",
+        "recommendation_class": "unknown",
+        "prompts_cited_count": 2,
+        "cited_on_category_query": false,
+        "already_endorses_you": false,
+        "headline": "Pitch glowpick.com",
+        "why": "AI cites glowpick.com in 2 of your tested prompts — getting in front of it is how you get cited there too.",
+        "first_move": "Earn authentic reviews and keep your product listing accurate in their crowd-reviewed database — that's how AI (and shoppers) pick you up here, not a paid pitch.",
+        "realism": "reachable",
+        "pitch_recipient": null
+      },
+      {
+        "host": "fabfitfun.com",
+        "host_type": "unclassified",
+        "host_subtype": null,
+        "action_verb": "Get cited on",
+        "lever": "research",
+        "recommendation_class": "unknown",
+        "prompts_cited_count": 1,
+        "cited_on_category_query": true,
+        "already_endorses_you": false,
+        "headline": "Get cited on fabfitfun.com",
+        "why": "AI cites fabfitfun.com in 1 of your tested prompts on category questions — getting in front of it is how you get cited there too.",
+        "first_move": "AI grounds answers in this source — look at what it covers and how to get your product featured, listed, or reviewed there.",
+        "realism": "investigate",
+        "pitch_recipient": null
+      }
+    ],
+    "closed_channels": [
+      {
+        "host": "hair.com",
+        "prompts_cited_count": 1,
+        "cited_on_category_query": true,
+        "why_closed": "AI cited hair.com in 1 of your tested prompts on your category questions, and its 'best of' roundups read like independent editorial — but a competitor owns the site, and those roundups only ever feature the owner's own brands.",
+        "what_it_means": "No pitch can win a citation here: the recommendation is the owner's marketing. Don't count it as a target you're failing to land — it is a closed door, and the category is the thing to win instead.",
+        "detail": "Hair.com By L'Oreal is L'Oreal's own house media + storefront for its Professional Products portfolio (Redken, Kerastase, Matrix, Pureology, Mizani). Verified 2026-07-14 from its own page titles ('25 of the Best Hair Products from L'Oreal Pro Brands') and from the pages our audits cited (best-hair-oil.html, hair-oil-for-frizz.html): the roundups read editorial but only ever recommend L'Oreal-owned brands. Neither a neutral retailer nor a single brand — a corporate portfolio's owned media."
+      }
+    ],
+    "closed_channels_note": "hair.com is cited for your category but owned by a competitor — the roundups there are the owner's marketing, so no pitch can win a citation. They are excluded from the moves above on purpose.",
+    "pitch_targets": [],
+    "win_plan_summary": null
+  }
+}

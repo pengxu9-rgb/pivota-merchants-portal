@@ -709,11 +709,28 @@ export interface PitchTarget {
   first_move?: string | null;
 }
 
+/** A cited host that looks like an outreach target but can never cite you: a
+ * competitor owns it, and its editorial-shaped "best of" roundups only feature
+ * the owner's own brands (hair.com is L'Oreal's house media for Redken /
+ * Kerastase / Matrix). Deliberately excluded from outreach_moves — shown so the
+ * merchant knows the door is closed rather than assuming a weak pitch. */
+export interface ClosedChannel {
+  host: string;
+  prompts_cited_count?: number;
+  cited_on_category_query?: boolean;
+  why_closed: string;
+  what_it_means: string;
+  detail?: string | null;
+}
+
 export interface WhereYoureLosing {
   summary?: string;
   outreach_moves?: OutreachMove[];
   /** Vertical authority pitch list (empty for verticals without one). */
   pitch_targets?: PitchTarget[];
+  /** Cited hosts a rival owns — unpitchable by construction. */
+  closed_channels?: ClosedChannel[];
+  closed_channels_note?: string | null;
   who_ai_cites_instead?: {
     available?: boolean;
     competitors?: Array<{ name: string; times_named: number }>;
