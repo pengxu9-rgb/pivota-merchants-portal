@@ -44,6 +44,41 @@ export interface TrackingPoint {
    * first point and wherever the basis changed.
    */
   comparable_with_prev: boolean;
+  /**
+   * SKU-coverage disclosure (the second honesty axis): every brand score on
+   * this point is an AVERAGE over `sku_count` measured products. Null (or
+   * absent, pre-upgrade backend) = unknown — never assume 0.
+   */
+  sku_count?: number | null;
+  /** Products the run TRIED to measure (measured + failed). Null = unknown. */
+  attempted_sku_count?: number | null;
+  /** Order-independent identity of the measured SKU set. Null = unknown. */
+  panel_id?: string | null;
+}
+
+/**
+ * One point of a per-SKU mini-series — the SKU's OWN verdict scores for a run
+ * that measured it (not the brand average). Same comparability semantics as
+ * TrackingPoint; per-provider scores aren't emitted per-SKU today.
+ */
+export interface SkuTrackingPoint {
+  run_id: string | null;
+  date: string | null;
+  scores: TrackingScores;
+  basis_id: string | null;
+  comparable_with_prev: boolean;
+  provider_scores?: TrackingProviderScores | null;
+}
+
+/** A single product's honest mini-series, exploded from the same run history. */
+export interface SkuTrackingSeries {
+  title: string | null;
+  pdp_url: string | null;
+  /** OLDEST → newest — only the runs that measured THIS product. */
+  points: SkuTrackingPoint[];
+  /** Same basis-segmentation rule as the brand-level series. */
+  segments: TrackingSegment[];
+  basis_changes: number[];
 }
 
 /** Consecutive same-basis points the chart connects as one continuous line. */
@@ -62,4 +97,14 @@ export interface VisibilityTrackingResponse {
   /** Point indices where the basis changed (draw a break/marker here). */
   basis_changes: number[];
   segments: TrackingSegment[];
+  /**
+   * Point indices where the measured SKU set differs from the previous check —
+   * annotate "tracked products changed": a composition shift, not a score
+   * movement. Absent on pre-upgrade backends.
+   */
+  panel_changes?: number[];
+  /** Per-SKU mini-series keyed by the backend's stable sku_key hash. */
+  per_sku?: Record<string, SkuTrackingSeries>;
+  /** True when >50 SKUs exist and only the most-covered series are included. */
+  per_sku_truncated?: boolean;
 }
