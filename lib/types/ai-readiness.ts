@@ -2064,6 +2064,17 @@ export interface ReportSummaryScore {
     previous_audit_run_id?: string | null;
     days_since_last_audit?: number | null;
   } | null;
+  /** Contract 1.2 — the weakest MEASURED dimension (drives the ⓘ popover). */
+  weakest_dimension?: {
+    key?: string | null;
+    label?: string | null;
+    raw?: number | null;
+    display?: number | null;
+  } | null;
+  /** Dimensions this run type couldn't measure, excluded from the score. */
+  unmeasured_excluded?: string[];
+  /** Prewritten popover copy: weakest-link method + what wasn't counted. */
+  explainer?: string | null;
 }
 
 export interface ReportSummarySkuRow {

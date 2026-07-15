@@ -33,7 +33,12 @@ const ok = (cond, msg) => {
 };
 
 console.log('envelope:');
-ok(['1.0', '1.1'].includes(summary.contract_version), 'contract_version 1.x');
+ok(/^1\.\d+$/.test(summary.contract_version), 'contract_version 1.x');
+// 1.2 explainer contract: the score-side info mark needs prewritten copy.
+ok(
+  typeof summary.score.explainer === 'string' && summary.score.explainer.length > 0,
+  'score.explainer present (1.2)',
+);
 ok(typeof summary.audit_run_id === 'string', 'audit_run_id present');
 ok(summary.subject?.type === 'brand', 'subject.type brand');
 
