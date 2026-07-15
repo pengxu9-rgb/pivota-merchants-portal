@@ -865,6 +865,10 @@ export interface UrlReadinessAuditResponse {
   catalog_dimensions_available?: boolean;
   /** Full per_sku brand report (kept for back-compat / debugging). */
   brand_report?: AgentCenterBdBrandReport;
+  /** Report Summary Contract v1 — condensed summary layer (backend-dark;
+   * rendered only behind FEATURE_FLAGS.REPORT_SUMMARY_VIEW). Null when the
+   * backend build failed; absent on runs that predate it. */
+  report_summary?: ReportSummary | null;
   /** Per-SKU hero intelligence (legacy wedge shape). Absent on per_sku runs. */
   sku_intelligence?: SkuIntelligence | null;
   audit_run_id: string | null;
@@ -1992,3 +1996,113 @@ export interface AgentCenterAuditPreviewResponse {
 export type AgentCenterAuditResponse =
   | (AiReadinessAuditResponse & { audit_mode?: 'legacy' })
   | AgentCenterPerSkuAuditResponse;
+
+// ── Report Summary Contract v1 ──────────────────────────────────────────────
+// The condensed summary layer the backend attaches (dark) as `report_summary`
+// on the URL-audit response — one shape consumed by the 3-page condensed view,
+// the PPT export, and the homepage hero. Mirrors
+// pivota-backend services/report_summary_builder.py (contract doc:
+// docs/report_summary_contract_v1_2026-07-15.md). All prose is authored by the
+// backend narrative layer and rendered verbatim — the client never re-derives
+// a claim or a score.
+
+/** One measured probe backing an action — only fields the probe actually
+ * produced; the backend attaches these via real joins only (basis stamped). */
+export interface ReportSummaryPromptEvidence {
+  query: string;
+  axis?: string | null;
+  provider?: string | null;
+  reason?: string | null;
+  evidence_run_id?: string | null;
+  competitors_named?: string[] | null;
+}
+
+export interface ReportSummaryAction {
+  action_id?: string | null;
+  headline?: string | null;
+  why_this_first?: string | null;
+  first_move?: string | null;
+  evidence_summary?: string | null;
+  how_to_track?: string[];
+  primary_gap?: string | null;
+  growth_phase?: string | null;
+  sku_title?: string | null;
+  target_sku_key?: string | null;
+  cta?: { label?: string; action?: string; target_sku_key?: string | null } | null;
+  supporting_prompts?: ReportSummaryPromptEvidence[];
+  /** 'evidence_used' (real join) or 'none' — never render prompts when 'none'. */
+  supporting_prompts_basis?: string | null;
+}
+
+export interface ReportSummaryFinding {
+  finding_id?: string | null;
+  kind?: string | null;
+  title?: string | null;
+  severity?: 'high' | 'medium' | 'info' | string | null;
+  evidence_summary?: string | null;
+  supporting_prompts?: ReportSummaryPromptEvidence[];
+}
+
+export interface ReportSummaryScore {
+  /** Raw 0–100 — kept for delta tracking; never re-derived client-side. */
+  raw?: number | null;
+  /** 0–10 at one decimal (backend-computed). */
+  display?: number | null;
+  scale_max?: number;
+  band?: 'needs_work' | 'pass' | 'good' | 'excellent' | string | null;
+  /** Pass/good/excellent cutoffs on the 0–10 scale (calibration pending). */
+  band_thresholds?: number[];
+  subscores?: { key: string; raw?: number | null; display?: number | null }[];
+  delta?: {
+    raw?: number | null;
+    previous_audit_run_id?: string | null;
+    days_since_last_audit?: number | null;
+  } | null;
+}
+
+export interface ReportSummarySkuRow {
+  sku_key?: string | null;
+  sku_title?: string | null;
+  score?: ReportSummaryScore;
+  band_display?: { band?: string; label?: string; meaning?: string } | null;
+  primary_gap?: string | null;
+  action_headline?: string | null;
+  supporting_prompts?: ReportSummaryPromptEvidence[];
+  supporting_prompts_basis?: string | null;
+}
+
+export interface ReportSummary {
+  contract_version?: string;
+  audit_run_id?: string | null;
+  generated_at?: string | null;
+  subject?: {
+    type?: 'brand' | 'sku' | string;
+    merchant_id?: string | null;
+    merchant_name?: string | null;
+  };
+  score?: ReportSummaryScore;
+  verdict?: {
+    headline?: string | null;
+    label?: string | null;
+    explanation?: string | null;
+    primary_gap?: string | null;
+  };
+  top_findings?: ReportSummaryFinding[];
+  top_actions?: ReportSummaryAction[];
+  competitive_snapshot?: {
+    available?: boolean;
+    top_cited_hosts?: string[];
+    competitors_named?: string[];
+    note?: string | null;
+  };
+  sku_summaries?: ReportSummarySkuRow[];
+  meta?: {
+    source?: string;
+    audit_mode?: string | null;
+    providers?: string[];
+    verify_providers?: string[];
+    products_audited?: number;
+    actions_total?: number;
+    honest_limits?: string[];
+  };
+}

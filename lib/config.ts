@@ -84,4 +84,10 @@ export const FEATURE_FLAGS = {
   // Pivota) and was confusing merchants. Flip on when the program is live.
   AGENT_COMMISSIONS:
     (process.env.NEXT_PUBLIC_FEATURE_AGENT_COMMISSIONS || 'false').toLowerCase() === 'true',
+  // Report Summary Contract v1 — the condensed 3-page audit view (0-10 score
+  // display + top findings/actions with collapsed prompt evidence). Off by
+  // default until the score-band calibration decision lands (contract doc §7);
+  // when off, the report page renders exactly as before.
+  REPORT_SUMMARY_VIEW:
+    (process.env.NEXT_PUBLIC_FEATURE_REPORT_SUMMARY_VIEW || 'false').toLowerCase() === 'true',
 };

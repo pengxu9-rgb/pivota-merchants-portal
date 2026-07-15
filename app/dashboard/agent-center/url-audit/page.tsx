@@ -28,7 +28,11 @@ import {
   X,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { FEATURE_FLAGS } from '@/lib/config';
 import { stashVisibilityHandoff } from '@/lib/visibility-handoff';
+import { summaryRenderable } from '@/lib/audit/reportSummary';
+import { Disclosure } from '@/components/ui/Disclosure';
+import { ReportSummaryView } from '@/components/audit/ReportSummaryView';
 import {
   MerchantButton,
   PageHeader,
@@ -322,6 +326,151 @@ export default function UrlAuditPage() {
   const storeConnected = result?.merchant_context?.store_connected ?? false;
   const fullySetUp = isPaid && storeConnected;
 
+  // Report Summary Contract v1 — the condensed 3-page first view. Only leads
+  // the page when the flag is on AND the backend summary carries a score or a
+  // verdict (a degraded/null summary must not replace the report with a blank
+  // hero). Flag off → the page renders exactly as before.
+  const condensedSummary =
+    FEATURE_FLAGS.REPORT_SUMMARY_VIEW && summaryRenderable(result?.report_summary)
+      ? result?.report_summary ?? null
+      : null;
+
+  // The full per-product detail stack (unchanged). With the condensed view on,
+  // this whole stack collapses behind "View the full report".
+  const perSkuDetail =
+    result && perSku.length > 0 ? (
+      <>
+        <SurfaceCard
+          eyebrow="AI visibility · per product"
+          title="How AI sees each of your products"
+          description={result.audited_url || undefined}
+        >
+          <div className="space-y-2 px-5 py-4">
+            <p className="text-sm">
+              <span className="font-semibold">{citedCount}</span> of{' '}
+              <span className="font-semibold">{perSku.length}</span> product
+              {perSku.length === 1 ? '' : 's'}{' '}
+              {citedCount === 1 ? 'is' : 'are'} cited by AI shopping agents for
+              the buyer-intent prompts we tested.
+            </p>
+            {methodology ? (
+              methodology.coverage_unavailable ? (
+                <p className="merchant-text-muted text-xs">
+                  No model returned a scored result on this run — the AI
+                  providers errored or were rate-limited. Re-run to
+                  measure coverage.
+                </p>
+              ) : (
+                <p className="merchant-text-muted text-xs">
+                  {methodology.products_audited} product
+                  {methodology.products_audited === 1 ? '' : 's'} ×{' '}
+                  {methodology.queries_per_product} buyer-intent queries
+                  {methodology.grounded_search_label
+                    ? ` (${methodology.grounded_search_label})`
+                    : ''}
+                  .
+                  {methodology.provider_run_summary ? (
+                    <span className="opacity-80">
+                      {' '}
+                      Queries run per model:{' '}
+                      {methodology.provider_run_summary}.
+                    </span>
+                  ) : null}
+                </p>
+              )
+            ) : null}
+            {typeof result.free_audits_remaining === 'number' ? (
+              <p className="merchant-text-muted text-xs">
+                {result.free_audits_remaining} free audit
+                {result.free_audits_remaining === 1 ? '' : 's'} left.
+              </p>
+            ) : null}
+            {!catalogAvail ? (
+              <div className="flex items-start gap-2 rounded-md border border-[color:var(--merchant-line)] bg-white/40 px-3 py-2 text-xs">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-60" />
+                <span className="merchant-text-muted">
+                  Catalog signals (identity, content depth, structured routing)
+                  need a connected store — connect to unlock the full per-SKU
+                  score and one-click execution.
+                </span>
+              </div>
+            ) : null}
+          </div>
+        </SurfaceCard>
+
+        {/* The insight layer: headline story, what's working, where you're
+            losing, prioritized actions + answer-quality — before the
+            per-product detail. */}
+        <MerchantNarrativePanel narrative={result.merchant_narrative} />
+
+        {/* The ranked first moves the backend computes — the bridge from
+            the brand narrative into the per-product cards below. */}
+        <PrioritizedActionsPanel
+          actions={result.merchant_narrative?.prioritized_actions}
+          runId={result.run_id ?? result.audit_run_id ?? null}
+        />
+
+        {/* One card per pasted product — its own analysis + action plan. */}
+        <div className="space-y-3">
+          {perSku.map((r, i) => (
+            <PerSkuReportCard
+              key={r.sku_key || i}
+              report={r}
+              index={i}
+              catalogDimensionsAvailable={catalogAvail}
+              runId={result.run_id ?? result.audit_run_id ?? null}
+              pdpUrl={
+                result.audited_products?.find((p) => p.sku_key === r.sku_key)
+                  ?.pdp_url ?? null
+              }
+            />
+          ))}
+        </div>
+
+        {/* Get cited on the INDEPENDENT external sources AI trusts, per
+            engine — the third-party evidence agents actually cite. */}
+        {(() => {
+          const authHosts =
+            (result.authority_map as { hosts?: { host: string; providers?: string[] }[] } | undefined)
+              ?.hosts ?? [];
+          const enginesByHost: Record<string, string[]> = {};
+          for (const h of authHosts) {
+            if (h?.host) enginesByHost[h.host] = h.providers ?? [];
+          }
+          const ep = perSku[0]?.engine_playbook ?? null;
+          const categoryHint =
+            perSku[0]?.product_competitiveness?.discovery?.missed?.[0] ??
+            ep?.divergence?.[0]?.query ??
+            null;
+          // Specific subreddits/threads the backend tracked, aggregated
+          // across SKUs (the panel filters out junk + dedupes).
+          const redditSubreddits = (
+            (result.authority_map as { skus?: { reddit?: { subreddits?: unknown[] } }[] } | undefined)
+              ?.skus ?? []
+          ).flatMap((s) => s?.reddit?.subreddits ?? []);
+          return (
+            <GetCitedPanel
+              moves={result.where_youre_losing?.outreach_moves}
+              pitchTargets={result.where_youre_losing?.pitch_targets}
+              closedChannels={result.where_youre_losing?.closed_channels}
+              closedChannelsNote={result.where_youre_losing?.closed_channels_note}
+              enginesByHost={enginesByHost}
+              enginePlaybook={ep}
+              categoryHint={categoryHint}
+              brand={
+                (result.brand_report as { merchant_name?: string } | undefined)?.merchant_name ?? null
+              }
+              runId={result.run_id ?? result.audit_run_id ?? null}
+              redditSubreddits={redditSubreddits as Parameters<typeof GetCitedPanel>[0]['redditSubreddits']}
+            />
+          );
+        })()}
+
+        {/* The merchant's own test prompts, if any (brand-level). */}
+        <CustomPromptsPanel prompts={result.custom_prompts} />
+      </>
+    ) : null;
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -513,136 +662,20 @@ export default function UrlAuditPage() {
       {result ? (
         <div ref={resultRef} className="space-y-4">
           {perSku.length > 0 ? (
-            <>
-              <SurfaceCard
-                eyebrow="AI visibility · per product"
-                title="How AI sees each of your products"
-                description={result.audited_url || undefined}
-              >
-                <div className="space-y-2 px-5 py-4">
-                  <p className="text-sm">
-                    <span className="font-semibold">{citedCount}</span> of{' '}
-                    <span className="font-semibold">{perSku.length}</span> product
-                    {perSku.length === 1 ? '' : 's'}{' '}
-                    {citedCount === 1 ? 'is' : 'are'} cited by AI shopping agents for
-                    the buyer-intent prompts we tested.
-                  </p>
-                  {methodology ? (
-                    methodology.coverage_unavailable ? (
-                      <p className="merchant-text-muted text-xs">
-                        No model returned a scored result on this run — the AI
-                        providers errored or were rate-limited. Re-run to
-                        measure coverage.
-                      </p>
-                    ) : (
-                      <p className="merchant-text-muted text-xs">
-                        {methodology.products_audited} product
-                        {methodology.products_audited === 1 ? '' : 's'} ×{' '}
-                        {methodology.queries_per_product} buyer-intent queries
-                        {methodology.grounded_search_label
-                          ? ` (${methodology.grounded_search_label})`
-                          : ''}
-                        .
-                        {methodology.provider_run_summary ? (
-                          <span className="opacity-80">
-                            {' '}
-                            Queries run per model:{' '}
-                            {methodology.provider_run_summary}.
-                          </span>
-                        ) : null}
-                      </p>
-                    )
-                  ) : null}
-                  {typeof result.free_audits_remaining === 'number' ? (
-                    <p className="merchant-text-muted text-xs">
-                      {result.free_audits_remaining} free audit
-                      {result.free_audits_remaining === 1 ? '' : 's'} left.
-                    </p>
-                  ) : null}
-                  {!catalogAvail ? (
-                    <div className="flex items-start gap-2 rounded-md border border-[color:var(--merchant-line)] bg-white/40 px-3 py-2 text-xs">
-                      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-60" />
-                      <span className="merchant-text-muted">
-                        Catalog signals (identity, content depth, structured routing)
-                        need a connected store — connect to unlock the full per-SKU
-                        score and one-click execution.
-                      </span>
-                    </div>
-                  ) : null}
-                </div>
-              </SurfaceCard>
-
-              {/* The insight layer: headline story, what's working, where you're
-                  losing, prioritized actions + answer-quality — before the
-                  per-product detail. */}
-              <MerchantNarrativePanel narrative={result.merchant_narrative} />
-
-              {/* The ranked first moves the backend computes — the bridge from
-                  the brand narrative into the per-product cards below. */}
-              <PrioritizedActionsPanel
-                actions={result.merchant_narrative?.prioritized_actions}
-                runId={result.run_id ?? result.audit_run_id ?? null}
-              />
-
-              {/* One card per pasted product — its own analysis + action plan. */}
-              <div className="space-y-3">
-                {perSku.map((r, i) => (
-                  <PerSkuReportCard
-                    key={r.sku_key || i}
-                    report={r}
-                    index={i}
-                    catalogDimensionsAvailable={catalogAvail}
-                    runId={result.run_id ?? result.audit_run_id ?? null}
-                    pdpUrl={
-                      result.audited_products?.find((p) => p.sku_key === r.sku_key)
-                        ?.pdp_url ?? null
-                    }
-                  />
-                ))}
-              </div>
-
-              {/* Get cited on the INDEPENDENT external sources AI trusts, per
-                  engine — the third-party evidence agents actually cite. */}
-              {(() => {
-                const authHosts =
-                  (result.authority_map as { hosts?: { host: string; providers?: string[] }[] } | undefined)
-                    ?.hosts ?? [];
-                const enginesByHost: Record<string, string[]> = {};
-                for (const h of authHosts) {
-                  if (h?.host) enginesByHost[h.host] = h.providers ?? [];
-                }
-                const ep = perSku[0]?.engine_playbook ?? null;
-                const categoryHint =
-                  perSku[0]?.product_competitiveness?.discovery?.missed?.[0] ??
-                  ep?.divergence?.[0]?.query ??
-                  null;
-                // Specific subreddits/threads the backend tracked, aggregated
-                // across SKUs (the panel filters out junk + dedupes).
-                const redditSubreddits = (
-                  (result.authority_map as { skus?: { reddit?: { subreddits?: unknown[] } }[] } | undefined)
-                    ?.skus ?? []
-                ).flatMap((s) => s?.reddit?.subreddits ?? []);
-                return (
-                  <GetCitedPanel
-                    moves={result.where_youre_losing?.outreach_moves}
-                    pitchTargets={result.where_youre_losing?.pitch_targets}
-                    closedChannels={result.where_youre_losing?.closed_channels}
-                    closedChannelsNote={result.where_youre_losing?.closed_channels_note}
-                    enginesByHost={enginesByHost}
-                    enginePlaybook={ep}
-                    categoryHint={categoryHint}
-                    brand={
-                      (result.brand_report as { merchant_name?: string } | undefined)?.merchant_name ?? null
-                    }
-                    runId={result.run_id ?? result.audit_run_id ?? null}
-                    redditSubreddits={redditSubreddits as Parameters<typeof GetCitedPanel>[0]['redditSubreddits']}
-                  />
-                );
-              })()}
-
-              {/* The merchant's own test prompts, if any (brand-level). */}
-              <CustomPromptsPanel prompts={result.custom_prompts} />
-            </>
+            condensedSummary ? (
+              <>
+                <ReportSummaryView summary={condensedSummary} />
+                <Disclosure
+                  className="px-1"
+                  label="View the full report"
+                  labelOpen="Hide the full report"
+                >
+                  <div className="space-y-4">{perSkuDetail}</div>
+                </Disclosure>
+              </>
+            ) : (
+              perSkuDetail
+            )
           ) : report && agg ? (
             <>
           <SurfaceCard
