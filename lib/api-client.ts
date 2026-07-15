@@ -1835,6 +1835,9 @@ class ApiClient {
     website?: string;
     brand?: string;
     customPrompts?: string[];
+    /** Per-product prompts keyed by the EXACT productUrls entry — probed
+     * inside that product's audit context and pinned into its weekly basis. */
+    customPromptsByUrl?: Record<string, string[]>;
     onProgress?: (info: { elapsedMs: number; status: string }) => void;
   }): Promise<import('./types/ai-readiness').UrlReadinessAuditResponse> {
     const body: Record<string, unknown> = {
@@ -1844,6 +1847,12 @@ class ApiClient {
     if (params.brand) body.brand = params.brand;
     if (params.customPrompts && params.customPrompts.length > 0) {
       body.custom_prompts = params.customPrompts;
+    }
+    if (
+      params.customPromptsByUrl &&
+      Object.keys(params.customPromptsByUrl).length > 0
+    ) {
+      body.custom_prompts_by_url = params.customPromptsByUrl;
     }
 
     // 1. Kick off — returns quickly with a run_id (status: 'running').

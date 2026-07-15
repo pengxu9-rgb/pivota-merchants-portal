@@ -16,6 +16,9 @@ type Row = {
   sku: string;
   axis: string;
   specMatched: boolean;
+  // Merchant-authored (prompt_source="merchant_custom"): a brand-level slot or
+  // a per-product prompt — badged so the merchant can spot THEIR tests.
+  merchantCustom: boolean;
   won: boolean;
   providers: Record<string, string>;
   competitors: string[];
@@ -41,6 +44,7 @@ function flatten(perSku: AgentCenterPerSkuReport[]): Row[] {
         sku: String(r.sku_title ?? r.sku_key ?? ''),
         axis: String((p as { axis?: unknown }).axis ?? ''),
         specMatched: src === 'llm_winnable' || src === 'llm_scenario',
+        merchantCustom: src === 'merchant_custom',
         won,
         providers:
           ((p as { provider_verdicts?: Record<string, string> })
@@ -166,6 +170,11 @@ export function PromptExplorer({
                   {r.specMatched ? (
                     <span className="ml-1 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">
                       Spec-matched
+                    </span>
+                  ) : null}
+                  {r.merchantCustom ? (
+                    <span className="ml-1 rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-700">
+                      Your prompt
                     </span>
                   ) : null}
                   {skus.length > 1 && r.sku ? (
