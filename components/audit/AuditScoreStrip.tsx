@@ -12,6 +12,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Gauge, Info } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/merchant-primitives';
 import { ExportDeckButton } from '@/components/audit/ExportDeckButton';
+import { ShareLinkButton } from '@/components/audit/ShareLinkButton';
+import { FEATURE_FLAGS } from '@/lib/config';
 import {
   bandLabel,
   bandTone,
@@ -166,7 +168,12 @@ export function AuditScoreStrip({
           </span>
         ) : null}
       </div>
-      {runId ? <ExportDeckButton runId={runId} /> : null}
+      {runId ? (
+        <div className="flex items-start gap-2">
+          {FEATURE_FLAGS.SHARE_LINK ? <ShareLinkButton runId={runId} /> : null}
+          <ExportDeckButton runId={runId} />
+        </div>
+      ) : null}
     </div>
   );
 }
