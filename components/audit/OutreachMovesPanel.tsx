@@ -47,6 +47,14 @@ function MoveCard({ m, muted }: { m: OutreachMove; muted?: boolean }) {
       <div className="flex items-start justify-between gap-3">
         <div className={`font-semibold ${muted ? 'text-xs' : 'text-sm'}`}>{m.headline}</div>
         <div className="flex shrink-0 items-center gap-1">
+          {m.signal_strength === 'single_sighting' ? (
+            <span
+              title={m.signal_note ?? undefined}
+              className="rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500"
+            >
+              Seen once
+            </span>
+          ) : null}
           {realism ? (
             <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${realism.cls}`}>
               {realism.label}
@@ -58,6 +66,9 @@ function MoveCard({ m, muted }: { m: OutreachMove; muted?: boolean }) {
         </div>
       </div>
       {m.why && !muted ? <div className="mt-1 text-xs opacity-70">{m.why}</div> : null}
+      {m.signal_strength === 'single_sighting' && m.signal_note && !muted ? (
+        <div className="mt-1 text-[11px] italic text-slate-500">{m.signal_note}</div>
+      ) : null}
       {m.first_move ? (
         <div className={`mt-2 ${muted ? 'text-[11px] opacity-70' : 'text-xs'}`}>
           {!muted ? <span className="opacity-60">First move: </span> : null}
