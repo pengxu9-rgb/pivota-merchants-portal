@@ -1,6 +1,7 @@
 'use client';
 
-import { AuditScoreStrip } from '@/components/audit/AuditScoreStrip';
+import { AuditScoreStrip, AuditScoreStripFooter } from '@/components/audit/AuditScoreStrip';
+import { ShareOfVoiceBars } from '@/components/audit/ShareOfVoiceBars';
 import { PrioritizedActionsPanel } from '@/components/audit/PrioritizedActionsPanel';
 import { OutreachMovesPanel } from '@/components/audit/OutreachMovesPanel';
 import { DetailDisclosureCard } from '@/components/ui/DetailDisclosureCard';
@@ -78,6 +79,8 @@ export function LayoutPreviewClient() {
         title="How AI sees each of your products"
       >
         <AuditScoreStrip summary={summary} runId={null} />
+        <AuditScoreStripFooter summary={summary} />
+        <ShareOfVoiceBars summary={summary} />
         <div className="space-y-2 px-5 py-4">
           <p className="text-sm">
             <span className="font-semibold">0</span> of{' '}

@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.3",
+  "contract_version": "1.4",
   "audit_run_id": "audit-1",
   "generated_at": "2026-07-15T00:00:00+00:00",
   "subject": {
@@ -210,5 +210,31 @@
     ],
     "material_movements": 1,
     "basis_same": true
+  },
+  "share_of_voice": {
+    "available": true,
+    "prompts_probed": 14,
+    "brand": {
+      "name": "GlowLab",
+      "prompts_cited": 3,
+      "pct": 21.4
+    },
+    "competitors": [
+      {
+        "name": "CeraVe",
+        "prompts_named": 8,
+        "pct": 57.1
+      },
+      {
+        "name": "The Ordinary",
+        "prompts_named": 5,
+        "pct": 35.7
+      },
+      {
+        "name": "La Roche-Posay",
+        "prompts_named": 3,
+        "pct": 21.4
+      }
+    ]
   }
 }
