@@ -33,6 +33,8 @@ import { stashVisibilityHandoff } from '@/lib/visibility-handoff';
 import { actionSupportingPrompts, summaryRenderable } from '@/lib/audit/reportSummary';
 import { DetailDisclosureCard } from '@/components/ui/DetailDisclosureCard';
 import { AuditScoreStrip, AuditScoreStripFooter } from '@/components/audit/AuditScoreStrip';
+import { ShareOfVoiceBars } from '@/components/audit/ShareOfVoiceBars';
+import { PromptExplorer } from '@/components/audit/PromptExplorer';
 import {
   MerchantButton,
   PageHeader,
@@ -378,6 +380,7 @@ export default function UrlAuditPage() {
                 runId={result.run_id ?? result.audit_run_id ?? activeRunId ?? null}
               />
               <AuditScoreStripFooter summary={stripSummary} />
+              <ShareOfVoiceBars summary={stripSummary} />
             </>
           ) : null}
           <div className="space-y-2 px-5 py-4">
@@ -533,6 +536,9 @@ export default function UrlAuditPage() {
           subtitle="Per-product scorecards, engine playbooks, the verbatim AI answers we probed, channel routing, and your custom prompts."
           badge={`${perSku.length} product${perSku.length === 1 ? '' : 's'}`}
         >
+          {/* Wave-2 A3: the prompt-centric view first — one filterable table
+              of every probed prompt (incl. wins) before the per-card deep dive. */}
+          <PromptExplorer perSku={perSku} />
           {detailBlocks.skuCards}
           {detailBlocks.customPrompts}
         </DetailDisclosureCard>

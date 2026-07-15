@@ -2129,6 +2129,13 @@ export interface ReportSummary {
     primary_gap?: string | null;
   };
   since_last_audit?: ReportSummarySinceLastAudit | null;
+  /** 1.4 — prompt-level share of voice for THIS run (one shared denominator). */
+  share_of_voice?: {
+    available?: boolean;
+    prompts_probed?: number;
+    brand?: { name?: string | null; prompts_cited?: number; pct?: number };
+    competitors?: { name?: string; prompts_named?: number; pct?: number }[];
+  } | null;
   top_findings?: ReportSummaryFinding[];
   top_actions?: ReportSummaryAction[];
   competitive_snapshot?: {
