@@ -83,3 +83,24 @@ test("measuredSubscores drops unmeasured axes", () => {
   );
   assert.deepEqual(measuredSubscores(null), []);
 });
+
+
+test("pickLatestSucceededRunId honours the 'succeeded' status vocabulary", async () => {
+  const { pickLatestSucceededRunId } = await import("../lib/audit/reportSummary.ts");
+  assert.equal(
+    pickLatestSucceededRunId([
+      { run_id: "r-running", status: "running" },
+      { run_id: "r-done", status: "succeeded" },
+      { run_id: "r-older", status: "succeeded" },
+    ]),
+    "r-done", // newest-first list → first succeeded wins
+  );
+  // 'completed' is NOT a real status in merchant_audit_runs — never match it.
+  assert.equal(
+    pickLatestSucceededRunId([{ run_id: "r1", status: "completed" }]),
+    null,
+  );
+  assert.equal(pickLatestSucceededRunId([{ run_id: null, status: "succeeded" }]), null);
+  assert.equal(pickLatestSucceededRunId([]), null);
+  assert.equal(pickLatestSucceededRunId(null), null);
+});

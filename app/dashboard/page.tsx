@@ -16,6 +16,8 @@ import {
   Users,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { FEATURE_FLAGS } from '@/lib/config';
+import { AiReadinessHomeHero } from '@/components/audit/AiReadinessHomeHero';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import {
   MerchantButton,
@@ -891,6 +893,11 @@ export default function DashboardPage() {
           </>
         }
       />
+
+      {/* "AI readiness first": the merchant's first question — can AI agents
+          recommend me? — leads the Overview (latest visibility score, or the
+          run-your-first-check funnel). Flag off → page unchanged. */}
+      {FEATURE_FLAGS.AI_READINESS_HOME ? <AiReadinessHomeHero /> : null}
 
       {showSetupReminder ? (
         <SurfaceCard

@@ -103,3 +103,18 @@ export const SUBSCORE_LABEL: Record<string, string> = {
   attribution: 'Your-URL attribution',
   category_visibility: 'Category visibility',
 };
+
+/** The run the homepage hero should open: newest succeeded run with an id.
+ * merchant_audit_runs status vocabulary is 'succeeded' (never 'completed');
+ * anything else is running/failed and can't carry a summary yet. */
+export function pickLatestSucceededRunId(
+  runs: Array<{ run_id?: string | null; status?: string | null }> | null | undefined,
+): string | null {
+  for (const run of runs ?? []) {
+    if (!run) continue;
+    if ((run.status || '').toLowerCase() === 'succeeded' && run.run_id) {
+      return run.run_id;
+    }
+  }
+  return null;
+}
