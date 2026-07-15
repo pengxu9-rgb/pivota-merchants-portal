@@ -24,6 +24,8 @@ export function EvidencePlayPanel({ report }: { report: AgentCenterPerSkuReport 
   if (!ev || !ev.present) return null;
 
   const claims = (ev.claims_to_substantiate || []).filter(Boolean);
+  const checklist = (ev.evidence_checklist || []).filter((c) => c && c.claim);
+  const flaggedAnswers = (ev.flagged_answers || []).filter((f) => f && f.query);
   const flagged = ev.unsubstantiated_in_ai ?? 0;
   const moves = (ev.moves || []).filter(Boolean);
 
@@ -45,7 +47,23 @@ export function EvidencePlayPanel({ report }: { report: AgentCenterPerSkuReport 
         </p>
       ) : (
         <>
-          {claims.length > 0 ? (
+          {checklist.length > 0 ? (
+            <div className="mt-1.5">
+              <span className="text-xs opacity-70">
+                What to prove, and what proves it:
+              </span>
+              <ul className="mt-1 space-y-1">
+                {checklist.map((c, i) => (
+                  <li key={i} className="flex gap-1.5 text-xs leading-snug">
+                    <span className="shrink-0 rounded-full border border-[color:var(--merchant-accent,#6366f1)]/40 px-2 py-0.5 text-[11px] font-medium">
+                      {c.claim}
+                    </span>
+                    <span className="pt-0.5">{c.prove_with}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : claims.length > 0 ? (
             <div className="mt-1.5">
               <span className="text-xs opacity-70">Claims to back with proof: </span>
               {claims.map((c) => (
@@ -58,7 +76,24 @@ export function EvidencePlayPanel({ report }: { report: AgentCenterPerSkuReport 
               ))}
             </div>
           ) : null}
-          {flagged > 0 ? (
+          {flaggedAnswers.length > 0 ? (
+            <div className="mt-1.5">
+              <span className="text-xs opacity-70">
+                The answers AI couldn&apos;t back up:
+              </span>
+              <ul className="mt-1 space-y-1">
+                {flaggedAnswers.map((f, i) => (
+                  <li key={i} className="rounded-md border border-[color:var(--merchant-line)] bg-white/60 px-2.5 py-1.5 text-xs leading-snug">
+                    <span className="font-medium">&ldquo;{f.query}&rdquo;</span>
+                    <span className="merchant-text-muted"> — {f.why}</span>
+                    {f.note ? (
+                      <div className="merchant-text-muted mt-0.5 text-[11px]">{f.note}</div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : flagged > 0 ? (
             <p className="mt-1.5 text-xs leading-snug">
               AI couldn&apos;t verify your product in{' '}
               <span className="font-semibold">{flagged}</span> answer

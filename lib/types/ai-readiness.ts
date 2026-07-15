@@ -1213,6 +1213,10 @@ export interface EvidencePlay {
   present?: boolean;
   already_substantiated?: boolean;
   claims_to_substantiate?: string[];
+  /** Verification-feedback round: claim -> what concretely proves it. */
+  evidence_checklist?: { claim?: string; prove_with?: string }[];
+  /** The specific verify-flagged answers (query + why + note). */
+  flagged_answers?: { query?: string; why?: string; note?: string }[];
   unsubstantiated_in_ai?: number;
   moves?: string[];
   pivota_value?: string | null;
