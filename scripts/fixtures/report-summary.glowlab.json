@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.2",
+  "contract_version": "1.3",
   "audit_run_id": "audit-1",
   "generated_at": "2026-07-15T00:00:00+00:00",
   "subject": {
@@ -116,7 +116,11 @@
           "prompt_source": "llm_winnable"
         }
       ],
-      "supporting_prompts_basis": "evidence_used"
+      "supporting_prompts_basis": "evidence_used",
+      "impact": {
+        "dimension": "routability",
+        "label": "routability"
+      }
     }
   ],
   "competitive_snapshot": {
@@ -181,5 +185,30 @@
     "honest_limits": [
       "Provider coverage: grounded on gemini, openai."
     ]
+  },
+  "since_last_audit": {
+    "is_first_audit": false,
+    "days_since_last": 7,
+    "headline": "Visibility improved materially since your last audit.",
+    "movements": [
+      {
+        "signal": "visibility",
+        "label": "AI visibility",
+        "from": 20,
+        "to": 33,
+        "direction": "improved",
+        "is_material": true
+      },
+      {
+        "signal": "attribution",
+        "label": "Attribution",
+        "from": 46,
+        "to": 44,
+        "direction": "stable",
+        "is_material": false
+      }
+    ],
+    "material_movements": 1,
+    "basis_same": true
   }
 }

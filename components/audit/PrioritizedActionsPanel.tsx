@@ -134,11 +134,17 @@ export function PrioritizedActionsPanel({
 }: {
   actions?: NarrativePrioritizedAction[] | null;
   runId?: string | null;
-  /** Measured prompt evidence per action headline (report_summary contract,
-   *  niche-first selection — spec-matched losses, never lead with head
-   *  terms). Rendered collapsed under the action; absent → no evidence row,
-   *  never an inferred one. */
-  evidenceByHeadline?: Record<string, ReportSummaryPromptEvidence[]>;
+  /** Measured prompt evidence + impact per action (report_summary contract,
+   *  keyed gap|headline). prompts: niche-first selection — never lead with
+   *  head terms; impact: which dimension the action lifts (1.3). Absent →
+   *  nothing rendered, never inferred. */
+  evidenceByHeadline?: Record<
+    string,
+    {
+      prompts: ReportSummaryPromptEvidence[];
+      impact: { dimension?: string | null; label?: string | null } | null;
+    }
+  >;
 }) {
   const items = (actions || []).filter((a) => a && (a.headline || a.first_move));
   if (items.length === 0) return null;
@@ -160,7 +166,19 @@ export function PrioritizedActionsPanel({
               {i + 1}
             </span>
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium leading-snug">{a.headline}</div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-sm font-medium leading-snug">{a.headline}</span>
+                {(() => {
+                  const impact = a.headline
+                    ? evidenceByHeadline?.[`${a.primary_gap ?? ''}|${a.headline}`]?.impact
+                    : undefined;
+                  return impact?.label ? (
+                    <span className="rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">
+                      Lifts: {impact.label}
+                    </span>
+                  ) : null;
+                })()}
+              </div>
               {a.sku_title ? (
                 <div className="mt-0.5 truncate text-[11px] opacity-55">{a.sku_title}</div>
               ) : null}
@@ -177,7 +195,7 @@ export function PrioritizedActionsPanel({
               ) : null}
               {(() => {
                 const evidence = a.headline
-                  ? evidenceByHeadline?.[`${a.primary_gap ?? ''}|${a.headline}`]
+                  ? evidenceByHeadline?.[`${a.primary_gap ?? ''}|${a.headline}`]?.prompts
                   : undefined;
                 if (!evidence || evidence.length === 0) return null;
                 return (

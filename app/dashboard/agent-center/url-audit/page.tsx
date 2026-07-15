@@ -32,7 +32,7 @@ import { FEATURE_FLAGS } from '@/lib/config';
 import { stashVisibilityHandoff } from '@/lib/visibility-handoff';
 import { actionSupportingPrompts, summaryRenderable } from '@/lib/audit/reportSummary';
 import { DetailDisclosureCard } from '@/components/ui/DetailDisclosureCard';
-import { AuditScoreStrip } from '@/components/audit/AuditScoreStrip';
+import { AuditScoreStrip, AuditScoreStripFooter } from '@/components/audit/AuditScoreStrip';
 import {
   MerchantButton,
   PageHeader,
@@ -342,13 +342,19 @@ export default function UrlAuditPage() {
   // sharing a headline across different gaps can never swap evidence.
   const actionEvidence: Record<
     string,
-    NonNullable<ReturnType<typeof actionSupportingPrompts>>
+    {
+      prompts: NonNullable<ReturnType<typeof actionSupportingPrompts>>;
+      impact: { dimension?: string | null; label?: string | null } | null;
+    }
   > = {};
   if (FEATURE_FLAGS.REPORT_SUMMARY_VIEW) {
     for (const a of result?.report_summary?.top_actions ?? []) {
       const prompts = actionSupportingPrompts(a);
-      if (a?.headline && prompts.length > 0) {
-        actionEvidence[`${a.primary_gap ?? ''}|${a.headline}`] = prompts;
+      if (a?.headline && (prompts.length > 0 || a.impact)) {
+        actionEvidence[`${a.primary_gap ?? ''}|${a.headline}`] = {
+          prompts,
+          impact: a.impact ?? null,
+        };
       }
     }
   }
@@ -366,10 +372,13 @@ export default function UrlAuditPage() {
           description={result.audited_url || undefined}
         >
           {stripSummary ? (
-            <AuditScoreStrip
-              summary={stripSummary}
-              runId={result.run_id ?? result.audit_run_id ?? activeRunId ?? null}
-            />
+            <>
+              <AuditScoreStrip
+                summary={stripSummary}
+                runId={result.run_id ?? result.audit_run_id ?? activeRunId ?? null}
+              />
+              <AuditScoreStripFooter summary={stripSummary} />
+            </>
           ) : null}
           <div className="space-y-2 px-5 py-4">
             <p className="text-sm">

@@ -158,8 +158,21 @@ function buildRedditPaths(tracked: TrackedSubreddit[], category: string): Starte
 }
 
 /** A single channel row with an outbound link + a Pivota draft-outreach button. */
+/** mailto bodies have a ~2KB practical ceiling in many clients; CJK encodes
+ * at ~9 bytes/char, so cap the ENCODED length (never cut mid-%XX escape) —
+ * the full draft stays available via the Copy button above. */
+function encodedBodyWithinBudget(draft: string, budget = 1800): string {
+  let out = '';
+  for (const ch of draft) {
+    const enc = encodeURIComponent(ch);
+    if (out.length + enc.length > budget) break;
+    out += enc;
+  }
+  return out;
+}
+
 function ChannelRow({
-  kind, title, host, url, realism, how, runId, channelHost, channelLever, channelType, query, badge, losingQueries,
+  kind, title, host, url, realism, how, runId, channelHost, channelLever, channelType, query, badge, losingQueries, pitchSubmissionUrl, pitchEmail,
 }: {
   kind: Kind;
   title: string;
@@ -177,6 +190,11 @@ function ChannelRow({
    *  grounded answers cited it (backend win-plan join). Absent → no line,
    *  never an inferred one. */
   losingQueries?: string[] | null;
+  /** Registry pitch path (1.3, serve-time): verified submission URL replaces
+   *  the homepage link; a known recipient enables post-draft mailto. A
+   *  guessed URL never reaches here — registry-curated only. */
+  pitchSubmissionUrl?: string | null;
+  pitchEmail?: string | null;
 }) {
   const [st, setSt] = useState<{ loading?: boolean; done?: boolean; draft?: string | null; error?: string | null; copied?: boolean }>({});
   const Meta = KIND_META[kind];
@@ -217,7 +235,11 @@ function ChannelRow({
             {badge ? <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${badge.cls}`}>{badge.label}</span> : null}
           </div>
         </div>
-        {url ? (
+        {pitchSubmissionUrl ? (
+          <a href={pitchSubmissionUrl} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-[color:var(--merchant-accent,#6366f1)] hover:underline">
+            Open pitch page <ExternalLink className="h-3 w-3" />
+          </a>
+        ) : url ? (
           <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-[color:var(--merchant-accent,#6366f1)] hover:underline">
             Open <ExternalLink className="h-3 w-3" />
           </a>
@@ -253,6 +275,16 @@ function ChannelRow({
                   </button>
                 </div>
                 <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed">{st.draft}</p>
+                {pitchEmail ? (
+                  <a
+                    href={`mailto:${pitchEmail}?subject=${encodeURIComponent(
+                      `Pitch: ${channelHost ?? host ?? title}`,
+                    )}&body=${encodedBodyWithinBudget(st.draft)}`}
+                    className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-[color:var(--merchant-accent,#6366f1)] hover:underline"
+                  >
+                    Email to {pitchEmail}
+                  </a>
+                ) : null}
               </div>
             ) : (
               <span className="ml-1 text-[11px] opacity-55">(top up credits to have Pivota draft the outreach)</span>
@@ -374,6 +406,8 @@ function EngineGroup({
               channelType={k}
               query={category}
               losingQueries={m.losing_queries}
+              pitchSubmissionUrl={m.pitch_submission_url}
+              pitchEmail={m.pitch_email}
             />
           );
         })}
