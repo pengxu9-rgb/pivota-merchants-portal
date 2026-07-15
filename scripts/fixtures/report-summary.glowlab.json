@@ -1,0 +1,171 @@
+{
+  "contract_version": "1.0",
+  "audit_run_id": "audit-1",
+  "generated_at": "2026-07-15T00:00:00+00:00",
+  "subject": {
+    "type": "brand",
+    "merchant_id": "m-1",
+    "merchant_name": "GlowLab"
+  },
+  "score": {
+    "raw": 42.0,
+    "display": 4.2,
+    "scale_max": 10,
+    "band": "needs_work",
+    "band_thresholds": [
+      6.0,
+      7.5,
+      9.0
+    ],
+    "subscores": [
+      {
+        "key": "visibility",
+        "raw": 42.0,
+        "display": 4.2
+      },
+      {
+        "key": "attribution",
+        "raw": 30.0,
+        "display": 3.0
+      }
+    ],
+    "delta": {
+      "raw": 5,
+      "previous_audit_run_id": "audit-0",
+      "days_since_last_audit": 14
+    }
+  },
+  "verdict": {
+    "headline": "GlowLab is invisible to AI shopping agents today.",
+    "label": "Not yet recommended",
+    "explanation": "No independent source cites the brand.",
+    "primary_gap": "get_indexed"
+  },
+  "top_findings": [
+    {
+      "finding_id": null,
+      "kind": "independent_endorsement",
+      "title": "Who AI recommends instead",
+      "severity": "high",
+      "evidence_summary": "No independent source recommends GlowLab.",
+      "supporting_prompts": []
+    },
+    {
+      "finding_id": null,
+      "kind": "findability",
+      "title": "What's already working",
+      "severity": "info",
+      "evidence_summary": "Listed on amazon.com.",
+      "supporting_prompts": []
+    },
+    {
+      "finding_id": null,
+      "kind": "answer_quality",
+      "title": "Are AI answers about you accurate?",
+      "severity": "medium",
+      "evidence_summary": "We fact-checked 2 of 3 cited answers; 1 flagged.",
+      "supporting_prompts": []
+    }
+  ],
+  "top_actions": [
+    {
+      "action_id": null,
+      "headline": "Get Hydra Serum indexed so AI can find it.",
+      "why_this_first": "It is not live in the AI surface yet.",
+      "first_move": "Get it live and crawlable.",
+      "evidence_summary": "Not indexed yet.",
+      "how_to_track": [
+        "indexing status",
+        "citation rate"
+      ],
+      "primary_gap": "get_indexed",
+      "growth_phase": "create_and_distribute",
+      "sku_title": "Hydra Serum",
+      "target_sku_key": "sku-1",
+      "cta": {
+        "label": "Get this product indexed",
+        "target_sku_key": "sku-1"
+      },
+      "supporting_prompts": [
+        {
+          "query": "best hydrating serum for dry skin",
+          "axis": "category_discovery",
+          "provider": "gemini",
+          "reason": "no first-party or correct-SKU grounded citation",
+          "evidence_run_id": "run-9"
+        },
+        {
+          "query": "hydra serum reviews",
+          "axis": "trust",
+          "provider": "openai",
+          "reason": "no first-party or correct-SKU grounded citation",
+          "evidence_run_id": "run-10"
+        }
+      ],
+      "supporting_prompts_basis": "evidence_used"
+    }
+  ],
+  "competitive_snapshot": {
+    "available": true,
+    "top_cited_hosts": [
+      "byrdie.com",
+      "allure.com"
+    ],
+    "competitors_named": [
+      "CeraVe"
+    ],
+    "note": null
+  },
+  "sku_summaries": [
+    {
+      "sku_key": "sku-1",
+      "sku_title": "Hydra Serum",
+      "score": {
+        "raw": 20,
+        "display": 2.0,
+        "scale_max": 10,
+        "band": "needs_work"
+      },
+      "band_display": {
+        "band": "blocked",
+        "label": "Not yet visible",
+        "meaning": "AI cannot recommend this yet."
+      },
+      "primary_gap": "get_indexed",
+      "action_headline": "Get Hydra Serum indexed so AI can find it.",
+      "supporting_prompts": [
+        {
+          "query": "best hydrating serum for dry skin",
+          "axis": "category_discovery",
+          "provider": "gemini",
+          "reason": "no first-party or correct-SKU grounded citation",
+          "evidence_run_id": "run-9"
+        },
+        {
+          "query": "hydra serum reviews",
+          "axis": "trust",
+          "provider": "openai",
+          "reason": "no first-party or correct-SKU grounded citation",
+          "evidence_run_id": "run-10"
+        }
+      ],
+      "supporting_prompts_basis": "evidence_used"
+    }
+  ],
+  "meta": {
+    "source": "per_sku_brand_report",
+    "audit_mode": "per_sku",
+    "providers": [
+      "gemini",
+      "openai"
+    ],
+    "verify_providers": [
+      "deepseek"
+    ],
+    "products_audited": 1,
+    "actions_total": 1,
+    "honest_limits": [
+      "Provider coverage: grounded on gemini, openai."
+    ]
+  }
+}
