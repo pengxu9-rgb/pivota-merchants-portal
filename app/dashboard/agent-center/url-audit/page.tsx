@@ -22,6 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
+  Check,
   Globe,
   Info,
   Link2,
@@ -216,6 +217,47 @@ export default function UrlAuditPage() {
       : null;
 
   const canRun = cleanedUrls.length > 0 && !loading && !customPromptsError;
+
+  // Adopt-from-suggestions (win-the-specific-long-tail Step 3, wedge edition):
+  // the loaded run's computed-but-unprobed winnable niches, offered as one-click
+  // chips beside the prompts box. Prefer the brand rollup (deduped + ranked,
+  // carries the source SKU); fall back to flattening the per-SKU lists for runs
+  // that predate the rollup. Empty until a run is on screen — an honest nothing.
+  const suggestedPrompts = useMemo(() => {
+    const rollup = result?.brand_rollup?.suggested_prompts;
+    if (rollup?.has_prompts && (rollup.prompts?.length ?? 0) > 0) {
+      return rollup.prompts.map((p) => ({
+        query: (p.query || '').trim(),
+        sku: p.sku ?? null,
+      })).filter((p) => p.query);
+    }
+    const seen = new Set<string>();
+    const out: { query: string; sku: string | null }[] = [];
+    for (const r of result?.per_sku_reports ?? []) {
+      for (const s of r.suggested_prompts ?? []) {
+        const q = (s.query || '').trim();
+        const key = q.toLowerCase();
+        if (!q || seen.has(key)) continue;
+        seen.add(key);
+        out.push({ query: q, sku: r.identity?.name ?? r.sku_title ?? null });
+      }
+    }
+    return out;
+  }, [result]);
+
+  // Append one suggested niche to the prompts textarea (case-insensitive
+  // dedupe + slot cap). "Added" state is DERIVED from the parsed list, so
+  // hand-deleting a line makes its chip addable again.
+  const customPromptKeys = useMemo(
+    () => new Set(customPromptsParsed.map((p) => p.toLowerCase())),
+    [customPromptsParsed],
+  );
+  const promptSlotsFull = customPromptsParsed.length >= MAX_CUSTOM_PROMPTS;
+  const addSuggestedPrompt = (query: string) => {
+    const q = query.trim();
+    if (!q || customPromptKeys.has(q.toLowerCase()) || promptSlotsFull) return;
+    setCustomPromptsText([...customPromptsParsed, q].join('\n'));
+  };
 
   const run = async () => {
     if (cleanedUrls.length === 0) {
@@ -723,6 +765,50 @@ export default function UrlAuditPage() {
                 cited you, the sources it used, and which competitors it named.
               </p>
             )}
+            {/* Adopt-from-suggestions: the loaded run's computed-but-unprobed
+                winnable niches as one-click chips. Adopted prompts ride every
+                weekly re-run of this set. Nothing on screen → no chips. */}
+            {suggestedPrompts.length > 0 ? (
+              <div className="space-y-1.5 pt-1">
+                <p className="merchant-text-muted text-xs">
+                  Niches we built from your products but didn&apos;t test in
+                  this audit — click to test them next (they ride your weekly
+                  re-runs too):
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {suggestedPrompts.map((s, i) => {
+                    const isAdded = customPromptKeys.has(s.query.toLowerCase());
+                    return (
+                      <button
+                        key={`sugg-${i}`}
+                        type="button"
+                        onClick={() => addSuggestedPrompt(s.query)}
+                        disabled={loading || isAdded || promptSlotsFull}
+                        title={s.sku ? `via ${s.sku}` : undefined}
+                        className={
+                          isAdded
+                            ? 'inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700'
+                            : 'inline-flex items-center gap-1 rounded-full border border-[color:var(--merchant-line)] bg-white/60 px-2.5 py-1 text-[11px] font-medium text-[color:var(--merchant-accent,#6366f1)] hover:bg-indigo-50 disabled:opacity-50'
+                        }
+                      >
+                        {isAdded ? (
+                          <Check className="h-3 w-3" />
+                        ) : (
+                          <Plus className="h-3 w-3" />
+                        )}
+                        {s.query}
+                      </button>
+                    );
+                  })}
+                </div>
+                {promptSlotsFull ? (
+                  <p className="merchant-text-muted text-xs">
+                    Prompt list full ({MAX_CUSTOM_PROMPTS} max) — remove a line
+                    above to add another suggestion.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

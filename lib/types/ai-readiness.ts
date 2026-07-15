@@ -1187,6 +1187,15 @@ export interface AgentCenterPerSkuReport {
   // Pivota's moat lever: turn merchant-supplied proof into grounded, citable
   // claims. Only render when present.
   evidence_play?: EvidencePlay | null;
+  // Win-the-specific-long-tail (Step 2): specific attribute-stacked prompts the
+  // engine built from this SKU's evidenced attributes but did NOT probe this
+  // audit — the niches to test next. Rolled up brand-level into
+  // brand_rollup.suggested_prompts via build_suggested_prompts.
+  suggested_prompts?: {
+    query: string;
+    attribute_basis?: string[];
+    intent_weight?: number;
+  }[];
 }
 
 // per_sku_reports[].engine_playbook — the per-engine operating plan.
