@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/merchant-primitives';
 import { RecentAuditsPanel } from '@/components/audit/RecentAuditsPanel';
 import { WeeklyReauditSwitch } from '@/components/audit/WeeklyReauditSwitch';
+import { AuditQuotaLine } from '@/components/audit/AuditQuotaLine';
 import { VisibilityTrendChart } from '@/components/audit/VisibilityTrendChart';
 import { BuyCreditsCard } from '@/components/billing/BuyCreditsCard';
 import { PerSkuReportCard } from '@/components/audit/PerSkuReportCard';
@@ -373,6 +374,11 @@ export default function UrlAuditPage() {
           eyebrow="AI visibility · per product"
           title="How AI sees each of your products"
           description={result.audited_url || undefined}
+          action={
+            FEATURE_FLAGS.REPORT_SUMMARY_VIEW ? (
+              <WeeklyReauditSwitch compact />
+            ) : undefined
+          }
         >
           {stripSummary ? (
             <>
@@ -418,12 +424,10 @@ export default function UrlAuditPage() {
                 </p>
               )
             ) : null}
-            {typeof result.free_audits_remaining === 'number' ? (
-              <p className="merchant-text-muted text-xs">
-                {result.free_audits_remaining} free audit
-                {result.free_audits_remaining === 1 ? '' : 's'} left.
-              </p>
-            ) : null}
+            <AuditQuotaLine
+              remaining={result.free_audits_remaining}
+              isPaid={isPaid}
+            />
             {!catalogAvail ? (
               <div className="flex items-start gap-2 rounded-md border border-[color:var(--merchant-line)] bg-white/40 px-3 py-2 text-xs">
                 <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-60" />
@@ -527,10 +531,6 @@ export default function UrlAuditPage() {
     FEATURE_FLAGS.REPORT_SUMMARY_VIEW ? (
       <>
         {detailBlocks.overview}
-        {/* Verification feedback: the weekly switch at page-bottom was
-            effectively invisible — under the overview it's the natural
-            'keep measuring this' follow-on. */}
-        <WeeklyReauditSwitch />
         {detailBlocks.narrative}
         {detailBlocks.getCited}
         {/* The heavy diagnostics tier — highlighted so merchants can't miss
@@ -570,10 +570,12 @@ export default function UrlAuditPage() {
       {/* Re-open a past visibility check (subject_type=merchant_url). Renders
           null when there's no history yet. */}
       {/* Flag-off (legacy layout) keeps the switch beside run history; the
-          re-layout renders it under the overview card — but only when a
-          result is on screen, so with no run displayed the bottom spot
-          still carries it (review: flag-on + no-result rendered NO switch). */}
-      {!FEATURE_FLAGS.REPORT_SUMMARY_VIEW || !result ? <WeeklyReauditSwitch /> : null}
+          re-layout renders it under the overview card — but only when the
+          per-SKU detail is on screen (detailBlocks non-null), so otherwise
+          the bottom spot still carries it. Gating on `result` alone missed
+          the brand-verdict result (result present, perSku empty): flag-on
+          rendered NO switch at all. */}
+      {!FEATURE_FLAGS.REPORT_SUMMARY_VIEW || !detailBlocks ? <WeeklyReauditSwitch /> : null}
       <RecentAuditsPanel
         subjectType="merchant_url"
         title="Past visibility checks"
@@ -788,13 +790,12 @@ export default function UrlAuditPage() {
                 {scorePill('Category visibility', agg.avg_category_visibility)}
               </div>
               <p className="merchant-text-muted text-xs">
-                {agg.products_succeeded}/{agg.products_count} products audited ·{' '}
-                {typeof result?.free_audits_remaining === 'number'
-                  ? `${result.free_audits_remaining} free audit${
-                      result.free_audits_remaining === 1 ? '' : 's'
-                    } left`
-                  : null}
+                {agg.products_succeeded}/{agg.products_count} products audited
               </p>
+              <AuditQuotaLine
+                remaining={result?.free_audits_remaining}
+                isPaid={isPaid}
+              />
             </div>
           </SurfaceCard>
 
