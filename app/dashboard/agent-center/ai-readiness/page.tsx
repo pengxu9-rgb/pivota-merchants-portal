@@ -47,6 +47,7 @@ import { agenticVerdict, verdictPillClasses } from '@/lib/audit/agenticVerdict';
 import { PerSkuCopyToStore } from '@/components/audit/PerSkuCopyToStore';
 import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
 import { WinPlanPanel } from '@/components/audit/WinPlanPanel';
+import { OutreachOutcomesPanel } from '@/components/audit/OutreachOutcomesPanel';
 import { IntegrationCtaPanel } from '@/components/audit/IntegrationCtaPanel';
 import { RecentAuditsPanel } from '@/components/audit/RecentAuditsPanel';
 import { AuditReadinessBanner } from '@/components/audit/AuditReadinessBanner';
@@ -2689,6 +2690,10 @@ export function PerSkuAuditReportRenderer({
         question="Is it working?"
         subtitle="Your AI-readiness over time — the proof your changes moved the needle."
       >
+        {/* Audit→action→outcome loop: what changed at the hosts your last audit
+            told you to target (won / progress / no_change / source-shifted).
+            Returns null on the first audit / when outcomes aren't measurable. */}
+        <OutreachOutcomesPanel outcomes={report.outreach_outcomes} />
         {/* Outreach proof-of-lift: which pitched hosts now cite you (the closed loop). */}
         <MerchantOutreachPanel />
         <PerformanceZone tracking={report.brand_rollup.tracking} />
