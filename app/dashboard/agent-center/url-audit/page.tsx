@@ -41,6 +41,7 @@ import {
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
 import { RecentAuditsPanel } from '@/components/audit/RecentAuditsPanel';
+import { WeeklyReauditSwitch } from '@/components/audit/WeeklyReauditSwitch';
 import { VisibilityTrendChart } from '@/components/audit/VisibilityTrendChart';
 import { BuyCreditsCard } from '@/components/billing/BuyCreditsCard';
 import { PerSkuReportCard } from '@/components/audit/PerSkuReportCard';
@@ -564,6 +565,8 @@ export default function UrlAuditPage() {
 
       {/* Re-open a past visibility check (subject_type=merchant_url). Renders
           null when there's no history yet. */}
+      {/* Wave-3 B1: fixed-weekly re-audit opt-in (decision: on/off only). */}
+      <WeeklyReauditSwitch />
       <RecentAuditsPanel
         subjectType="merchant_url"
         title="Past visibility checks"

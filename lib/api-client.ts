@@ -2029,6 +2029,26 @@ class ApiClient {
     return Array.isArray(data) ? data : [];
   }
 
+  /** APM (auto re-audit) settings — wave-3 B1's fixed-weekly switch reads
+   *  and writes these existing endpoints. 404 = never configured (off). */
+  async getApmConfig(): Promise<{ enabled?: boolean; cadence_days?: number } | null> {
+    const res = await this.client.get('/api/merchant-center/audit/apm-config', {
+      timeout: 15_000,
+    });
+    return res.data?.data ?? res.data;
+  }
+
+  async configureApm(params: {
+    enabled: boolean;
+    cadence_days: number;
+  }): Promise<void> {
+    await this.client.post('/api/merchant-center/audit/configure-apm', {
+      enabled: params.enabled,
+      cadence_days: params.cadence_days,
+      scope: {},
+    });
+  }
+
   /** Summary-only fetch of a completed URL-visibility run — just {status,
    *  run_id, audit_run_id, report_summary}. For surfaces (the homepage hero)
    *  that need the condensed contract and must not pull the full report. */
