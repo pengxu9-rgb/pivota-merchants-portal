@@ -666,7 +666,12 @@ export default function UrlAuditPage() {
               <>
                 <ReportSummaryView
                   summary={condensedSummary}
-                  runId={result?.run_id ?? result?.audit_run_id ?? null}
+                  runId={
+                    // activeRunId last: a history-reopened run whose response
+                    // echoes a null audit_run_id still keeps its export button
+                    // (#170 review P2).
+                    result?.run_id ?? result?.audit_run_id ?? activeRunId ?? null
+                  }
                 />
                 <Disclosure
                   className="px-1"

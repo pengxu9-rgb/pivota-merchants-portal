@@ -112,16 +112,47 @@ function FindingRow({ finding }: { finding: ReportSummaryFinding }) {
   );
 }
 
+/** Honest post-export feedback from the response's billing headers (the
+ * backend exposes them cross-origin via Access-Control-Expose-Headers). */
+function exportNote(
+  billingMode: string | null,
+  creditsCharged: number,
+): string | null {
+  if (billingMode === 'preview_only') {
+    return 'Preview slide exported — upgrade to export the full deck.';
+  }
+  if (billingMode === 'metered' && creditsCharged > 0) {
+    return `Deck exported — ${creditsCharged} credit${
+      creditsCharged === 1 ? '' : 's'
+    } used.`;
+  }
+  if (billingMode) return 'Deck exported.';
+  return null;
+}
+
+function exportErrorCopy(status: number | undefined): string {
+  if (status === 402) {
+    return 'Not enough credits — top up or upgrade on the Billing page.';
+  }
+  if (status === 409) {
+    return "This audit isn't ready to export yet — re-run it or wait for it to finish.";
+  }
+  return "Couldn't export the deck right now — try again.";
+}
+
 function ExportDeckButton({ runId }: { runId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   async function exportDeck() {
     if (busy) return;
     setBusy(true);
     setError(null);
+    setNote(null);
     try {
-      const { blob } = await apiClient.exportReportDeck(runId);
+      const { blob, billingMode, creditsCharged } =
+        await apiClient.exportReportDeck(runId);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -129,14 +160,14 @@ function ExportDeckButton({ runId }: { runId: string }) {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      // Deferred a tick: revoking synchronously after click() works in
+      // current browsers but capturing the stream first is the defensive
+      // idiom (#170 review P2).
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      setNote(exportNote(billingMode, creditsCharged));
     } catch (e) {
       const status = (e as { response?: { status?: number } })?.response?.status;
-      setError(
-        status === 402
-          ? 'Not enough credits — top up or upgrade on the Billing page.'
-          : "Couldn't export the deck right now — try again.",
-      );
+      setError(exportErrorCopy(status));
     } finally {
       setBusy(false);
     }
@@ -154,6 +185,9 @@ function ExportDeckButton({ runId }: { runId: string }) {
         {busy ? 'Exporting…' : 'Export deck (PPT)'}
       </button>
       {error ? <p className="max-w-56 text-right text-[11px] text-red-700">{error}</p> : null}
+      {note ? (
+        <p className="merchant-text-muted max-w-56 text-right text-[11px]">{note}</p>
+      ) : null}
     </div>
   );
 }
