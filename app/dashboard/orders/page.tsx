@@ -212,9 +212,9 @@ export default function OrdersPage() {
   };
 
   const filteredOrders = orders.filter(order => {
-    const matchesSearch = searchTerm === '' || 
+    const matchesSearch = searchTerm === '' ||
       order.order_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.customer_email?.toLowerCase().includes(searchTerm.toLowerCase());
+      order.order_id?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -410,7 +410,6 @@ export default function OrdersPage() {
             <thead className="bg-[color:var(--merchant-surface-muted)]/60">
               <tr>
                 <th>{t('dashboard.orders.table.orderId')}</th>
-                <th>{t('dashboard.orders.table.customer')}</th>
                 <th>{t('dashboard.orders.table.amount')}</th>
                 <th>{t('dashboard.orders.table.status')}</th>
                 <th>{t('dashboard.orders.table.date')}</th>
@@ -428,9 +427,6 @@ export default function OrdersPage() {
                       >
                         {order.order_id || order.order_number || order.id}
                       </span>
-                    </td>
-                    <td className="text-sm text-[color:var(--merchant-muted-strong)]">
-                      {order.customer?.email || order.customer_email || t('dashboard.orders.table.guest')}
                     </td>
                     <td className="whitespace-nowrap text-sm font-medium text-[color:var(--merchant-ink)]">
                       {formatCurrency(order.amount || order.total_amount || 0)}
@@ -455,7 +451,7 @@ export default function OrdersPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-[color:var(--merchant-muted)]">
+                  <td colSpan={5} className="px-6 py-12 text-center text-[color:var(--merchant-muted)]">
                     <ShoppingBag className="mx-auto mb-3 h-12 w-12 text-[color:var(--merchant-muted)]" />
                     <p>{t('dashboard.orders.table.noOrders')}</p>
                   </td>
@@ -535,23 +531,15 @@ export default function OrdersPage() {
                   </div>
                 </div>
 
-                <div className="border-t pt-4">
-                  <h3 className="font-semibold mb-2">Customer</h3>
-                  <p className="text-sm">
-                    <span className="text-gray-600">Name:</span>{' '}
-                    {orderData.customer?.name || orderData.customer_name || shippingAddress?.name || 'N/A'}
-                  </p>
-                  <p className="text-sm">
-                    <span className="text-gray-600">Email:</span>{' '}
-                    {orderData.customer?.email || orderData.customer_email || 'N/A'}
-                  </p>
-                  {shippingAddress && (
-                    <p className="text-sm mt-1 text-gray-500">
+                {shippingAddress && (
+                  <div className="border-t pt-4">
+                    <h3 className="font-semibold mb-2">Ship to</h3>
+                    <p className="text-sm text-gray-500">
                       {shippingAddress.address_line1}
                       {shippingAddress.address_line2 ? `, ${shippingAddress.address_line2}` : ''}, {shippingAddress.city}, {shippingAddress.state} {shippingAddress.postal_code}
                     </p>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 {orderItems.length > 0 && (
                   <div className="border-t pt-4">
