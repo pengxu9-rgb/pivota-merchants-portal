@@ -569,9 +569,11 @@ export default function UrlAuditPage() {
 
       {/* Re-open a past visibility check (subject_type=merchant_url). Renders
           null when there's no history yet. */}
-      {/* Flag-off (legacy layout) keeps the switch beside run history;
-          flag-on renders it under the overview card instead. */}
-      {!FEATURE_FLAGS.REPORT_SUMMARY_VIEW ? <WeeklyReauditSwitch /> : null}
+      {/* Flag-off (legacy layout) keeps the switch beside run history; the
+          re-layout renders it under the overview card — but only when a
+          result is on screen, so with no run displayed the bottom spot
+          still carries it (review: flag-on + no-result rendered NO switch). */}
+      {!FEATURE_FLAGS.REPORT_SUMMARY_VIEW || !result ? <WeeklyReauditSwitch /> : null}
       <RecentAuditsPanel
         subjectType="merchant_url"
         title="Past visibility checks"
