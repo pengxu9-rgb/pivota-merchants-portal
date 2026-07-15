@@ -11,8 +11,13 @@
 
 import { useState } from 'react';
 import { ListChecks, ArrowRight, Loader2, Check, Sparkles, Copy } from 'lucide-react';
-import type { NarrativePrioritizedAction } from '@/lib/types/ai-readiness';
+import type {
+  NarrativePrioritizedAction,
+  ReportSummaryPromptEvidence,
+} from '@/lib/types/ai-readiness';
 import { apiClient } from '@/lib/api-client';
+import { Disclosure } from '@/components/ui/Disclosure';
+import { PromptEvidenceList } from '@/components/audit/PromptEvidenceList';
 
 interface ActionState {
   loading?: boolean;
@@ -125,9 +130,15 @@ function ActionButton({
 export function PrioritizedActionsPanel({
   actions,
   runId,
+  evidenceByHeadline,
 }: {
   actions?: NarrativePrioritizedAction[] | null;
   runId?: string | null;
+  /** Measured prompt evidence per action headline (report_summary contract,
+   *  niche-first selection — spec-matched losses, never lead with head
+   *  terms). Rendered collapsed under the action; absent → no evidence row,
+   *  never an inferred one. */
+  evidenceByHeadline?: Record<string, ReportSummaryPromptEvidence[]>;
 }) {
   const items = (actions || []).filter((a) => a && (a.headline || a.first_move));
   if (items.length === 0) return null;
@@ -164,6 +175,21 @@ export function PrioritizedActionsPanel({
                   {a.why_this_first}
                 </div>
               ) : null}
+              {(() => {
+                const evidence = a.headline
+                  ? evidenceByHeadline?.[a.headline]
+                  : undefined;
+                if (!evidence || evidence.length === 0) return null;
+                return (
+                  <Disclosure
+                    className="mt-1"
+                    label="Why this — what the AI answers showed"
+                    labelOpen="Hide the measured evidence"
+                  >
+                    <PromptEvidenceList prompts={evidence} />
+                  </Disclosure>
+                );
+              })()}
               {runId ? (
                 <ActionButton action={a} runId={runId} />
               ) : a.growth_phase_label ? (

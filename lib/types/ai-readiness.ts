@@ -687,6 +687,10 @@ export interface OutreachMove {
   cited_on_category_query?: boolean;
   headline: string;
   why: string;
+  /** Measured reason to work this host: the losing category queries whose
+   *  grounded answers cited it (win-plan join, ≤3). [] when the win plan
+   *  grounded no losing query here — never an inferred list. */
+  losing_queries?: string[] | null;
   first_move?: string | null;
   pitch_recipient?: string | null;
   // How achievable this move is for an emerging brand — drives sort/grouping.
@@ -2010,6 +2014,8 @@ export type AgentCenterAuditResponse =
  * produced; the backend attaches these via real joins only (basis stamped). */
 export interface ReportSummaryPromptEvidence {
   query: string;
+  /** Generator stamp (llm_winnable/llm_scenario) — spec-matched by construction. */
+  prompt_source?: string | null;
   axis?: string | null;
   provider?: string | null;
   reason?: string | null;
