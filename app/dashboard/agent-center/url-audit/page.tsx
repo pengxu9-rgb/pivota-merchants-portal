@@ -664,7 +664,15 @@ export default function UrlAuditPage() {
           {perSku.length > 0 ? (
             condensedSummary ? (
               <>
-                <ReportSummaryView summary={condensedSummary} />
+                <ReportSummaryView
+                  summary={condensedSummary}
+                  runId={
+                    // activeRunId last: a history-reopened run whose response
+                    // echoes a null audit_run_id still keeps its export button
+                    // (#170 review P2).
+                    result?.run_id ?? result?.audit_run_id ?? activeRunId ?? null
+                  }
+                />
                 <Disclosure
                   className="px-1"
                   label="View the full report"

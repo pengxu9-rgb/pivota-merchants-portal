@@ -2061,6 +2061,25 @@ class ApiClient {
     return res.data?.data ?? res.data;
   }
 
+  /** Export a completed URL-audit run as a leadership deck (PPTX).
+   *  Free tier gets a single watermarked preview slide; paid tier gets the
+   *  full deck (its LLM executive summary bills credits at 1.6x actual token
+   *  usage — one charge per run, re-exports replay). 402 = top up/upgrade. */
+  async exportReportDeck(
+    runId: string,
+  ): Promise<{ blob: Blob; billingMode: string | null; creditsCharged: number }> {
+    const res = await this.client.post(
+      `/api/merchant-center/audit/url-readiness/${encodeURIComponent(runId)}/deck`,
+      null,
+      { timeout: 60_000, responseType: 'blob' },
+    );
+    return {
+      blob: res.data as Blob,
+      billingMode: res.headers?.['x-pivota-billing-mode'] ?? null,
+      creditsCharged: Number(res.headers?.['x-pivota-credits-charged'] ?? 0) || 0,
+    };
+  }
+
   /**
    * Ask a freeform question about a completed audit. The backend answers it
    * grounded ONLY in that run's audit data (ungrounded DeepSeek — it can't
