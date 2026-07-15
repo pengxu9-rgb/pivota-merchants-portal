@@ -55,9 +55,11 @@ export function WeeklyReauditSwitch() {
           <div>
             <div className="text-sm font-medium">Weekly re-audit</div>
             <p className="merchant-text-muted mt-0.5 max-w-xl text-xs leading-snug">
-              Re-runs this audit every week on the same products and emails you
-              what changed. Each run bills standard credits; runs are skipped
-              (never silently drained) if your balance can&apos;t cover one.
+              Re-runs this audit every week on the same products (starting
+              after your first completed audit) and emails you what changed.
+              Each run bills standard credits; on the free plan a run is
+              skipped — and you&apos;re emailed, never silently drained — if
+              your balance can&apos;t cover it.
             </p>
           </div>
         </div>
