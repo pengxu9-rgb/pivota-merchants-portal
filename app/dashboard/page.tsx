@@ -181,6 +181,7 @@ export default function DashboardPage() {
   const [readinessError, setReadinessError] = useState<string | null>(null);
   const [storesLoading, setStoresLoading] = useState(false);
   const [pspsLoading, setPspsLoading] = useState(false);
+  const [billingLoaded, setBillingLoaded] = useState(false);
   const [qualityLoading, setQualityLoading] = useState(false);
   const [merchantId, setMerchantId] = useState('');
   const loadSeqRef = useRef(0);
@@ -190,6 +191,10 @@ export default function DashboardPage() {
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [connectedStores, setConnectedStores] = useState<any[]>([]);
   const [connectedPSPs, setConnectedPSPs] = useState<any[]>([]);
+  // null = unknown/not-yet-loaded. `false` means the merchant is billed only
+  // through the platform (App Store / exempt / read-only) — they never run
+  // merchant-native checkout, so the "add a payment setup" reminder is N/A.
+  const [offPlatformBilling, setOffPlatformBilling] = useState<boolean | null>(null);
 
   useEffect(() => {
     const id = localStorage.getItem('merchant_id') || '';
@@ -207,6 +212,7 @@ export default function DashboardPage() {
     setQualityLoading(true);
     setStoresLoading(Boolean(currentMerchantId));
     setPspsLoading(Boolean(currentMerchantId));
+    setBillingLoaded(!currentMerchantId);
 
     const statsPromise = apiClient.getAnalyticsDashboard().then((payload) => {
       if (payload?.error) {
@@ -236,6 +242,17 @@ export default function DashboardPage() {
           return [];
         })
       : Promise.resolve([]);
+
+    // off_platform_billing === false marks App Store / exempt / read-only
+    // merchants, who are billed only through the platform and never run
+    // merchant-native checkout. On any failure we leave it null (unknown) so the
+    // reminder degrades to its normal behaviour rather than being hidden.
+    const billingPromise = currentMerchantId
+      ? apiClient
+          .getBillingPlans()
+          .then((res) => (res?.off_platform_billing === false ? false : true))
+          .catch(() => null)
+      : Promise.resolve<boolean | null>(null);
 
     void statsPromise
       .then((payload) => {
@@ -339,6 +356,16 @@ export default function DashboardPage() {
         if (loadSeq !== loadSeqRef.current) return;
         setPspsLoading(false);
       });
+
+    void billingPromise
+      .then((offPlatform) => {
+        if (loadSeq !== loadSeqRef.current) return;
+        setOffPlatformBilling(offPlatform);
+      })
+      .finally(() => {
+        if (loadSeq !== loadSeqRef.current) return;
+        setBillingLoaded(true);
+      });
   };
 
   const handleRefresh = () => {
@@ -393,9 +420,13 @@ export default function DashboardPage() {
   const activePSPs = connectedPSPs.filter((psp) => psp?.is_active);
   const liveReadyActivePSPs = activePSPs.filter((psp) => psp?.live_charge_ready);
   const needsChannelSetup = connectedStores.length === 0;
-  const needsPaymentSetup = activePSPs.length === 0;
+  // Read-only merchants (App Store / exempt) hand checkout to the storefront and
+  // never run merchant-native payments, so they don't need a PSP — showing them
+  // "add a payment setup" reads as a broken/incomplete setup (Shopify 2.1.1).
+  const isReadOnlyMerchant = offPlatformBilling === false;
+  const needsPaymentSetup = activePSPs.length === 0 && !isReadOnlyMerchant;
   const overviewRefreshing = statsLoading || qualityLoading;
-  const setupReadinessLoaded = !loading && !storesLoading && !pspsLoading;
+  const setupReadinessLoaded = !loading && !storesLoading && !pspsLoading && billingLoaded;
   const showSetupReminder = setupReadinessLoaded && (needsChannelSetup || needsPaymentSetup);
   const hasStatsData = Boolean(stats);
   const totalOrdersValue = stats?.totalOrders ?? 0;
@@ -463,7 +494,7 @@ export default function DashboardPage() {
         ? t('dashboard.overview.hero.lead.content', {
             count: qualityNeedsAttention,
           })
-        : connectedStores.length === 0 || activePSPs.length === 0
+        : needsChannelSetup || needsPaymentSetup
           ? t('dashboard.overview.hero.lead.setup')
           : t('dashboard.overview.hero.lead.default');
 
@@ -607,7 +638,7 @@ export default function DashboardPage() {
     },
     {
       title: t('dashboard.overview.panels.channelReadiness.title'),
-      tone: connectedStores.length > 0 && activePSPs.length > 0 ? 'success' : 'warning',
+      tone: connectedStores.length > 0 && !needsPaymentSetup ? 'success' : 'warning',
       value: `${readyVariants || totalProductsValue}`,
       supporting: t('dashboard.overview.panels.channelReadiness.supporting', {
         channels: connectedStores.length,
@@ -616,7 +647,7 @@ export default function DashboardPage() {
       detail:
         connectedStores.length === 0
           ? t('dashboard.overview.panels.channelReadiness.detail.connectChannel')
-          : activePSPs.length === 0
+          : needsPaymentSetup
             ? t('dashboard.overview.panels.channelReadiness.detail.addPayment')
             : t('dashboard.overview.panels.channelReadiness.detail.ready'),
       href: '/dashboard/integrations',
@@ -647,7 +678,7 @@ export default function DashboardPage() {
           cta: t('dashboard.overview.opportunities.openCatalogHealth'),
         }
       : null,
-    connectedStores.length === 0 || activePSPs.length === 0
+    needsChannelSetup || needsPaymentSetup
       ? {
           title: t('dashboard.overview.opportunities.completeSetup.title'),
           detail:
@@ -764,17 +795,21 @@ export default function DashboardPage() {
               : t('dashboard.overview.common.activePaymentSetups.other', {
                   count: activePSPs.length,
                 })
-            : t('dashboard.overview.support.paymentSetup.detail.needsAttention'),
+            : isReadOnlyMerchant
+              ? t('dashboard.overview.support.paymentSetup.detail.notRequired')
+              : t('dashboard.overview.support.paymentSetup.detail.needsAttention'),
       meta:
         activePSPs.length > 0
           ? t('dashboard.overview.support.paymentSetup.meta.liveReady', {
               liveReady: liveReadyActivePSPs.length,
               active: activePSPs.length,
             })
-          : t('dashboard.overview.support.paymentSetup.meta.addSetup'),
+          : isReadOnlyMerchant
+            ? t('dashboard.overview.support.paymentSetup.meta.notRequired')
+            : t('dashboard.overview.support.paymentSetup.meta.addSetup'),
       href: '/dashboard/integrations',
       cta:
-        activePSPs.length > 0
+        activePSPs.length > 0 || isReadOnlyMerchant
           ? t('dashboard.overview.support.paymentSetup.cta.review')
           : t('dashboard.overview.support.paymentSetup.cta.connect'),
     },
