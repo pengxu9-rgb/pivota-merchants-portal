@@ -55,7 +55,13 @@ function flatten(perSku: AgentCenterPerSkuReport[]): Row[] {
 }
 
 function toCsv(rows: Row[]): string {
-  const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  // Quote + neutralize spreadsheet formula injection (=+-@ leaders): Excel
+  // strips CSV quotes on import, so AI-named "competitors" or merchant
+  // custom prompts could otherwise execute as formulas (review P2).
+  const esc = (v: string) => {
+    const safe = /^[=+\-@]/.test(v) ? `'${v}` : v;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
   const head = 'query,product,axis,spec_matched,outcome,engines,competitors';
   return [
     head,
