@@ -527,6 +527,10 @@ export default function UrlAuditPage() {
     FEATURE_FLAGS.REPORT_SUMMARY_VIEW ? (
       <>
         {detailBlocks.overview}
+        {/* Verification feedback: the weekly switch at page-bottom was
+            effectively invisible — under the overview it's the natural
+            'keep measuring this' follow-on. */}
+        <WeeklyReauditSwitch />
         {detailBlocks.narrative}
         {detailBlocks.getCited}
         {/* The heavy diagnostics tier — highlighted so merchants can't miss
@@ -565,8 +569,11 @@ export default function UrlAuditPage() {
 
       {/* Re-open a past visibility check (subject_type=merchant_url). Renders
           null when there's no history yet. */}
-      {/* Wave-3 B1: fixed-weekly re-audit opt-in (decision: on/off only). */}
-      <WeeklyReauditSwitch />
+      {/* Flag-off (legacy layout) keeps the switch beside run history; the
+          re-layout renders it under the overview card — but only when a
+          result is on screen, so with no run displayed the bottom spot
+          still carries it (review: flag-on + no-result rendered NO switch). */}
+      {!FEATURE_FLAGS.REPORT_SUMMARY_VIEW || !result ? <WeeklyReauditSwitch /> : null}
       <RecentAuditsPanel
         subjectType="merchant_url"
         title="Past visibility checks"
