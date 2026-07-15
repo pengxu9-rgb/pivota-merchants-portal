@@ -14,7 +14,9 @@
  * this view; this is the read-first layer, not a replacement.
  */
 
-import { ArrowRight, Gauge, ListChecks, Search } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowRight, Download, Gauge, ListChecks, Loader2, Search } from 'lucide-react';
+import { apiClient } from '@/lib/api-client';
 import { StatusBadge, SurfaceCard } from '@/components/ui/merchant-primitives';
 import { Disclosure } from '@/components/ui/Disclosure';
 import {
@@ -110,7 +112,61 @@ function FindingRow({ finding }: { finding: ReportSummaryFinding }) {
   );
 }
 
-export function ReportSummaryView({ summary }: { summary: ReportSummary }) {
+function ExportDeckButton({ runId }: { runId: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function exportDeck() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { blob } = await apiClient.exportReportDeck(runId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pivota-ai-readiness-${runId}.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      const status = (e as { response?: { status?: number } })?.response?.status;
+      setError(
+        status === 402
+          ? 'Not enough credits — top up or upgrade on the Billing page.'
+          : "Couldn't export the deck right now — try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={exportDeck}
+        disabled={busy}
+        className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--merchant-line)] px-2.5 py-1.5 text-xs font-semibold transition hover:border-[color:var(--merchant-accent,#6366f1)] disabled:opacity-50"
+      >
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+        {busy ? 'Exporting…' : 'Export deck (PPT)'}
+      </button>
+      {error ? <p className="max-w-56 text-right text-[11px] text-red-700">{error}</p> : null}
+    </div>
+  );
+}
+
+export function ReportSummaryView({
+  summary,
+  runId,
+}: {
+  summary: ReportSummary;
+  /** Enables the PPT export button (free tier gets a watermarked preview
+   *  slide; paid tier gets the full deck, credits billed by the backend). */
+  runId?: string | null;
+}) {
   const score = summary.score ?? {};
   const display = formatDisplayScore(score.display);
   const label = bandLabel(score.band);
@@ -126,7 +182,11 @@ export function ReportSummaryView({ summary }: { summary: ReportSummary }) {
   return (
     <div className="space-y-4">
       {/* Page 1 — score + verdict. */}
-      <SurfaceCard eyebrow="Your AI-readiness" strong>
+      <SurfaceCard
+        eyebrow="Your AI-readiness"
+        strong
+        action={runId ? <ExportDeckButton runId={runId} /> : undefined}
+      >
         <div className="space-y-3 px-5 py-4">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-baseline gap-1">
