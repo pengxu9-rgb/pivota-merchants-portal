@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.1",
+  "contract_version": "1.2",
   "audit_run_id": "audit-1",
   "generated_at": "2026-07-15T00:00:00+00:00",
   "subject": {
@@ -33,7 +33,15 @@
       "raw": 5,
       "previous_audit_run_id": "audit-0",
       "days_since_last_audit": 14
-    }
+    },
+    "weakest_dimension": {
+      "key": "routability",
+      "label": "routability",
+      "raw": 20,
+      "display": 2.0
+    },
+    "unmeasured_excluded": [],
+    "explainer": "How this score works: each product is scored on its weakest measured dimension, and the brand score averages your products. Weakest measured dimension this run: routability (2.0/10)."
   },
   "verdict": {
     "headline": "GlowLab is invisible to AI shopping agents today.",
