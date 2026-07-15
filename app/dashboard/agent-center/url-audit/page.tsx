@@ -157,8 +157,12 @@ export default function UrlAuditPage() {
   const [customPromptsText, setCustomPromptsText] = useState('');
   // Per-product prompts, one raw text blob per URL row (kept index-aligned
   // with productUrls). Sent as custom_prompts_by_url — probed inside that
-  // product's audit context and pinned into its weekly basis.
+  // product's audit context and pinned into its weekly basis. The open flags
+  // live in React state (not the DOM) so row removal can't leak a panel's
+  // open state onto the row that shifts into its index, and clearing the
+  // textarea can't collapse the panel mid-edit.
   const [skuPromptsText, setSkuPromptsText] = useState<string[]>(['']);
+  const [skuPromptsOpen, setSkuPromptsOpen] = useState<boolean[]>([false]);
   const [loading, setLoading] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -196,6 +200,8 @@ export default function UrlAuditPage() {
     setProductUrls((prev) => prev.map((u, idx) => (idx === i ? v : u)));
   const setSkuPromptsAt = (i: number, v: string) =>
     setSkuPromptsText((prev) => prev.map((t, idx) => (idx === i ? v : t)));
+  const toggleSkuPromptsAt = (i: number) =>
+    setSkuPromptsOpen((prev) => prev.map((o, idx) => (idx === i ? !o : o)));
   const addUrl = () => {
     setProductUrls((prev) =>
       prev.length >= MAX_PRODUCT_URLS_PAID ? prev : [...prev, ''],
@@ -203,12 +209,18 @@ export default function UrlAuditPage() {
     setSkuPromptsText((prev) =>
       prev.length >= MAX_PRODUCT_URLS_PAID ? prev : [...prev, ''],
     );
+    setSkuPromptsOpen((prev) =>
+      prev.length >= MAX_PRODUCT_URLS_PAID ? prev : [...prev, false],
+    );
   };
   const removeUrl = (i: number) => {
     setProductUrls((prev) =>
       prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i),
     );
     setSkuPromptsText((prev) =>
+      prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i),
+    );
+    setSkuPromptsOpen((prev) =>
       prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i),
     );
   };
@@ -300,10 +312,14 @@ export default function UrlAuditPage() {
   // carries the source SKU); fall back to flattening the per-SKU lists for runs
   // that predate the rollup. Empty until a run is on screen — an honest nothing.
   const suggestedPrompts = useMemo(() => {
+    // Fold ALL whitespace (incl. embedded newlines) to single spaces — the
+    // textarea parses per line, so a newline inside a query would split it
+    // into two prompts and break the derived "added" state.
+    const clean = (q: unknown) => String(q || '').replace(/\s+/g, ' ').trim();
     const rollup = result?.brand_rollup?.suggested_prompts;
     if (rollup?.has_prompts && (rollup.prompts?.length ?? 0) > 0) {
       return rollup.prompts.map((p) => ({
-        query: (p.query || '').trim(),
+        query: clean(p.query),
         sku: p.sku ?? null,
       })).filter((p) => p.query);
     }
@@ -311,7 +327,7 @@ export default function UrlAuditPage() {
     const out: { query: string; sku: string | null }[] = [];
     for (const r of result?.per_sku_reports ?? []) {
       for (const s of r.suggested_prompts ?? []) {
-        const q = (s.query || '').trim();
+        const q = clean(s.query);
         const key = q.toLowerCase();
         if (!q || seen.has(key)) continue;
         seen.add(key);
@@ -332,7 +348,11 @@ export default function UrlAuditPage() {
   const addSuggestedPrompt = (query: string) => {
     const q = query.trim();
     if (!q || customPromptKeys.has(q.toLowerCase()) || promptSlotsFull) return;
-    setCustomPromptsText([...customPromptsParsed, q].join('\n'));
+    // APPEND to the raw text (don't rebuild from the parsed list) so a chip
+    // click never rewrites/normalizes lines the merchant typed by hand.
+    setCustomPromptsText((prev) =>
+      prev.trim() ? `${prev.replace(/\s+$/, '')}\n${q}` : q,
+    );
   };
 
   const run = async () => {
@@ -803,29 +823,41 @@ export default function UrlAuditPage() {
                 </div>
                 {/* Per-product prompts: probed inside THIS product's audit —
                     results join its per-prompt table and win plan — and pinned
-                    into its basis so weekly re-runs keep testing them. */}
-                <details className="ml-9" open={(skuPromptsText[i] ?? '') !== '' || undefined}>
-                  <summary className="merchant-text-muted cursor-pointer select-none text-[11px] hover:opacity-100">
-                    Prompts to test for this product{' '}
-                    (optional · one per line, up to {MAX_SKU_PROMPTS_PER_PRODUCT})
-                  </summary>
-                  <div className="space-y-1 pt-1">
-                    <textarea
-                      value={skuPromptsText[i] ?? ''}
-                      onChange={(e) => setSkuPromptsAt(i, e.target.value)}
-                      disabled={loading}
-                      rows={2}
-                      placeholder={'collagen jelly for red-eye flights\nvegan collagen for sensitive stomachs'}
-                      aria-label={`Prompts to test for product ${i + 1}`}
-                      className="w-full rounded-lg border border-[color:var(--merchant-line)] bg-transparent px-3 py-1.5 font-mono text-xs outline-none focus:border-[color:var(--merchant-accent,#6366f1)]"
-                    />
-                    <p className="merchant-text-muted text-[11px]">
-                      Tested inside this product&apos;s audit — the results join
-                      its prompt table and win plan, and re-runs keep testing
-                      exactly these prompts so you can track them week over week.
-                    </p>
-                  </div>
-                </details>
+                    into its basis so weekly re-runs keep testing them. A panel
+                    with text stays visible (its prompts WILL be sent); the
+                    toggle only hides an empty one. */}
+                <div className="ml-9 space-y-1">
+                  {(skuPromptsText[i] ?? '') === '' ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleSkuPromptsAt(i)}
+                      className="merchant-text-muted cursor-pointer select-none text-[11px] hover:opacity-100"
+                    >
+                      {skuPromptsOpen[i] ? '▾' : '▸'} Prompts to test for this
+                      product (optional · one per line, up to{' '}
+                      {MAX_SKU_PROMPTS_PER_PRODUCT})
+                    </button>
+                  ) : null}
+                  {skuPromptsOpen[i] || (skuPromptsText[i] ?? '') !== '' ? (
+                    <div className="space-y-1">
+                      <textarea
+                        value={skuPromptsText[i] ?? ''}
+                        onChange={(e) => setSkuPromptsAt(i, e.target.value)}
+                        disabled={loading}
+                        rows={2}
+                        placeholder={'collagen jelly for red-eye flights\nvegan collagen for sensitive stomachs'}
+                        aria-label={`Prompts to test for product ${i + 1}`}
+                        className="w-full rounded-lg border border-[color:var(--merchant-line)] bg-transparent px-3 py-1.5 font-mono text-xs outline-none focus:border-[color:var(--merchant-accent,#6366f1)]"
+                      />
+                      <p className="merchant-text-muted text-[11px]">
+                        Tested inside this product&apos;s audit — the results
+                        join its prompt table and win plan, and re-runs keep
+                        testing exactly these prompts so you can track them
+                        week over week.
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             ))}
             {skuPromptsError ? (
