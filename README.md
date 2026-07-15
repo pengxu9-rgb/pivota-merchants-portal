@@ -24,7 +24,9 @@ Open [http://localhost:3000](http://localhost:3000) with your browser.
 
 ## Deployment
 
-This app is deployed on Vercel at [https://agent.pivota.cc](https://agent.pivota.cc)
+This app (the merchant portal) is deployed on Vercel at [https://merchant.pivota.cc](https://merchant.pivota.cc).
+
+Note: `agent.pivota.cc` is a different surface — the shopper-facing "Pivota Shopping AI" and canonical product pages (`agent.pivota.cc/products/sig_*`), not this portal.
 
 ## Tech Stack
 
