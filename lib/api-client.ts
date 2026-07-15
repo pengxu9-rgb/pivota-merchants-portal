@@ -2029,6 +2029,23 @@ class ApiClient {
     return Array.isArray(data) ? data : [];
   }
 
+  /** Summary-only fetch of a completed URL-visibility run — just {status,
+   *  run_id, audit_run_id, report_summary}. For surfaces (the homepage hero)
+   *  that need the condensed contract and must not pull the full report. */
+  async getUrlAuditRunSummary(
+    runId: string,
+  ): Promise<{
+    status?: string;
+    run_id?: string | null;
+    report_summary?: import('./types/ai-readiness').ReportSummary | null;
+  }> {
+    const res = await this.client.get(
+      `/api/merchant-center/audit/url-readiness/${encodeURIComponent(runId)}`,
+      { params: { summary_only: true }, timeout: 20_000 },
+    );
+    return res.data?.data ?? res.data;
+  }
+
   /** Fetch a completed URL-visibility (wedge) run by id, to re-open it in the
    *  AI Visibility history. Returns the full result when the run succeeded, or a
    *  `{ status }` marker ('running' | 'failed') otherwise. */

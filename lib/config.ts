@@ -90,4 +90,10 @@ export const FEATURE_FLAGS = {
   // when off, the report page renders exactly as before.
   REPORT_SUMMARY_VIEW:
     (process.env.NEXT_PUBLIC_FEATURE_REPORT_SUMMARY_VIEW || 'false').toLowerCase() === 'true',
+  // "AI readiness first" IA: the readiness group leads the sidebar, the
+  // Workflows group hides (flag off restores today's order), and the Overview
+  // page leads with the AI-readiness hero (latest visibility score, or the
+  // run-your-first-check funnel when there's no audit yet).
+  AI_READINESS_HOME:
+    (process.env.NEXT_PUBLIC_FEATURE_AI_READINESS_HOME || 'false').toLowerCase() === 'true',
 };

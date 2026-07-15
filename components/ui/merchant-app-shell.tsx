@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { cx } from "@/lib/cx";
+import { FEATURE_FLAGS } from "@/lib/config";
 import {
   aiReadinessNavigation,
   isNavigationItemActive,
@@ -255,28 +256,54 @@ export function MerchantAppShell({
         </div>
 
         <nav className="mt-2 flex-1 space-y-4 overflow-y-auto pr-1">
-          <NavigationGroup
-            label={t("shell.navigate")}
-            items={primaryNavigation}
-            pathname={pathname}
-            onNavigate={() => setSidebarOpen(false)}
-            collapsed={sidebarCollapsed}
-          />
-          <NavigationGroup
-            label="AI readiness"
-            items={aiReadinessNavigation}
-            pathname={pathname}
-            onNavigate={() => setSidebarOpen(false)}
-            collapsed={sidebarCollapsed}
-            catalogSynced={catalogSynced}
-          />
-          <NavigationGroup
-            label={t("shell.workflows")}
-            items={workflowNavigation}
-            pathname={pathname}
-            onNavigate={() => setSidebarOpen(false)}
-            collapsed={sidebarCollapsed}
-          />
+          {/* "AI readiness first" IA (AI_READINESS_HOME): the readiness journey
+              leads the sidebar — a merchant's first question is whether AI can
+              recommend them — and the low-engagement Workflows group hides
+              (hidden, not deleted: flag off restores today's order exactly). */}
+          {FEATURE_FLAGS.AI_READINESS_HOME ? (
+            <>
+              <NavigationGroup
+                label="AI readiness"
+                items={aiReadinessNavigation}
+                pathname={pathname}
+                onNavigate={() => setSidebarOpen(false)}
+                collapsed={sidebarCollapsed}
+                catalogSynced={catalogSynced}
+              />
+              <NavigationGroup
+                label={t("shell.navigate")}
+                items={primaryNavigation}
+                pathname={pathname}
+                onNavigate={() => setSidebarOpen(false)}
+                collapsed={sidebarCollapsed}
+              />
+            </>
+          ) : (
+            <>
+              <NavigationGroup
+                label={t("shell.navigate")}
+                items={primaryNavigation}
+                pathname={pathname}
+                onNavigate={() => setSidebarOpen(false)}
+                collapsed={sidebarCollapsed}
+              />
+              <NavigationGroup
+                label="AI readiness"
+                items={aiReadinessNavigation}
+                pathname={pathname}
+                onNavigate={() => setSidebarOpen(false)}
+                collapsed={sidebarCollapsed}
+                catalogSynced={catalogSynced}
+              />
+              <NavigationGroup
+                label={t("shell.workflows")}
+                items={workflowNavigation}
+                pathname={pathname}
+                onNavigate={() => setSidebarOpen(false)}
+                collapsed={sidebarCollapsed}
+              />
+            </>
+          )}
         </nav>
 
         <div className="space-y-0.5 border-t border-[color:var(--merchant-line)] px-2 pt-3">
