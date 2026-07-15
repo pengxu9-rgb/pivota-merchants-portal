@@ -58,7 +58,9 @@ export function LayoutPreviewClient() {
   > = {};
   for (const a of summary.top_actions ?? []) {
     const prompts = actionSupportingPrompts(a);
-    if (a?.headline && prompts.length > 0) evidenceByHeadline[a.headline] = prompts;
+    if (a?.headline && prompts.length > 0) {
+      evidenceByHeadline[`${a.primary_gap ?? ''}|${a.headline}`] = prompts;
+    }
   }
 
   return (

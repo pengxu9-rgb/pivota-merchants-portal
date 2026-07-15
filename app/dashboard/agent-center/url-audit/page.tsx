@@ -338,6 +338,8 @@ export default function UrlAuditPage() {
   // Measured evidence per Start-here action (contract 1.1: niche-first —
   // spec-matched losses lead, head terms only when they're all that was
   // measured). Keyed by the action headline the panel renders.
+  // Keyed on gap|headline (the producer's own dedup key) so two actions
+  // sharing a headline across different gaps can never swap evidence.
   const actionEvidence: Record<
     string,
     NonNullable<ReturnType<typeof actionSupportingPrompts>>
@@ -345,7 +347,9 @@ export default function UrlAuditPage() {
   if (FEATURE_FLAGS.REPORT_SUMMARY_VIEW) {
     for (const a of result?.report_summary?.top_actions ?? []) {
       const prompts = actionSupportingPrompts(a);
-      if (a?.headline && prompts.length > 0) actionEvidence[a.headline] = prompts;
+      if (a?.headline && prompts.length > 0) {
+        actionEvidence[`${a.primary_gap ?? ''}|${a.headline}`] = prompts;
+      }
     }
   }
 

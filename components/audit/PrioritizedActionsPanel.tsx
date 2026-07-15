@@ -177,7 +177,7 @@ export function PrioritizedActionsPanel({
               ) : null}
               {(() => {
                 const evidence = a.headline
-                  ? evidenceByHeadline?.[a.headline]
+                  ? evidenceByHeadline?.[`${a.primary_gap ?? ''}|${a.headline}`]
                   : undefined;
                 if (!evidence || evidence.length === 0) return null;
                 return (
