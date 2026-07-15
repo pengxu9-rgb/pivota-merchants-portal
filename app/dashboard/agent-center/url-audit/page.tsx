@@ -577,7 +577,7 @@ export default function UrlAuditPage() {
       <PageHeader
         eyebrow="Per-product · no catalog sync"
         title="See how AI sees your products"
-        description="Paste up to 20 product links (5 on the free plan) and we'll audit each one — how AI shopping agents (Gemini + ChatGPT) cite it, which competitors and channels they surface instead, and what to do about it. No catalog sync required. Connect your store for the full-catalog audit with availability + agent checkout."
+        description="Paste your product links — up to 5 per audit on the free plan (first 2 audits free), up to 20 per audit on paid plans and we'll audit each one — how AI shopping agents (Gemini + ChatGPT) cite it, which competitors and channels they surface instead, and what to do about it. No catalog sync required. Connect your store for the full-catalog audit with availability + agent checkout."
       />
 
       {/* Re-open a past visibility check (subject_type=merchant_url). Renders
@@ -650,9 +650,9 @@ export default function UrlAuditPage() {
             <label className="block text-sm font-medium">
               Product URLs{' '}
               <span className="merchant-text-muted font-normal">
-                (up to {MAX_PRODUCT_URLS_FREE} free · up to{' '}
-                {MAX_PRODUCT_URLS_PAID} on paid plans — one comparable set
-                for weekly tracking)
+                (up to {MAX_PRODUCT_URLS_FREE} products per audit on the
+                free plan · up to {MAX_PRODUCT_URLS_PAID} on paid plans — one
+                comparable set for weekly tracking)
               </span>
             </label>
             {productUrls.map((u, i) => (
