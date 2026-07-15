@@ -28,14 +28,34 @@ import {
   pickLatestSucceededRunId,
   summaryRenderable,
 } from '@/lib/audit/reportSummary';
-import type {
-  ReportSummary,
-  UrlReadinessAuditResponse,
-} from '@/lib/types/ai-readiness';
+import type { ReportSummary } from '@/lib/types/ai-readiness';
 
 const URL_AUDIT_HREF = '/dashboard/agent-center/url-audit';
 
 type HeroState = 'loading' | 'empty' | 'summary';
+
+// Per-run summaries are immutable, so a sessionStorage cache turns repeat
+// Overview visits into zero fetches (review round 2 — the hero previously
+// re-pulled on every mount; it now also uses the summary_only endpoint, so
+// even a cold visit never downloads the full report).
+const HERO_CACHE_PREFIX = 'pivota.report_summary.';
+
+function readCachedSummary(runId: string): ReportSummary | null {
+  try {
+    const raw = sessionStorage.getItem(HERO_CACHE_PREFIX + runId);
+    return raw ? (JSON.parse(raw) as ReportSummary) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedSummary(runId: string, summary: ReportSummary): void {
+  try {
+    sessionStorage.setItem(HERO_CACHE_PREFIX + runId, JSON.stringify(summary));
+  } catch {
+    /* quota/private mode — cache is best-effort */
+  }
+}
 
 export function AiReadinessHomeHero() {
   const [state, setState] = useState<HeroState>('loading');
@@ -45,17 +65,20 @@ export function AiReadinessHomeHero() {
     let cancelled = false;
     (async () => {
       try {
-        const runs = await apiClient.listAuditRuns(5, 'merchant_url');
+        const runs = await apiClient.listAuditRuns(10, 'merchant_url');
         const runId = pickLatestSucceededRunId(runs);
         if (!runId) {
           if (!cancelled) setState('empty');
           return;
         }
-        const detail = await apiClient.getUrlAuditRunDetail(runId);
+        const cached = readCachedSummary(runId);
         const s =
-          (detail as UrlReadinessAuditResponse | null)?.report_summary ?? null;
+          cached ??
+          (await apiClient.getUrlAuditRunSummary(runId))?.report_summary ??
+          null;
         if (cancelled) return;
         if (s && summaryRenderable(s)) {
+          if (!cached) writeCachedSummary(runId, s);
           setSummary(s);
           setState('summary');
         } else {
@@ -85,12 +108,12 @@ export function AiReadinessHomeHero() {
             <p className="max-w-2xl text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
               Paste a few product links and see how Gemini + ChatGPT cite them —
               which competitors win instead, and what to do about it. No catalog
-              sync, and your first checks are free.
+              sync required.
             </p>
           </div>
           <div className="shrink-0">
             <MerchantLinkButton href={URL_AUDIT_HREF} icon={ScanEye}>
-              Run a free visibility check
+              Check my AI visibility
             </MerchantLinkButton>
           </div>
         </div>

@@ -19,11 +19,11 @@ export function HomeHeroPreviewClient() {
   const [originals] = useState(() => {
     const client = apiClient as unknown as {
       listAuditRuns: unknown;
-      getUrlAuditRunDetail: unknown;
+      getUrlAuditRunSummary: unknown;
     };
     const orig = {
       listAuditRuns: client.listAuditRuns,
-      getUrlAuditRunDetail: client.getUrlAuditRunDetail,
+      getUrlAuditRunSummary: client.getUrlAuditRunSummary,
     };
     client.listAuditRuns = () =>
       Promise.resolve(
@@ -31,7 +31,7 @@ export function HomeHeroPreviewClient() {
           ? [{ run_id: 'audit-1', status: 'succeeded' }]
           : [],
       );
-    client.getUrlAuditRunDetail = () =>
+    client.getUrlAuditRunSummary = () =>
       Promise.resolve({ status: 'succeeded', report_summary: summaryFixture });
     return orig;
   });
@@ -40,10 +40,10 @@ export function HomeHeroPreviewClient() {
     () => () => {
       const client = apiClient as unknown as {
         listAuditRuns: unknown;
-        getUrlAuditRunDetail: unknown;
+        getUrlAuditRunSummary: unknown;
       };
       client.listAuditRuns = originals.listAuditRuns;
-      client.getUrlAuditRunDetail = originals.getUrlAuditRunDetail;
+      client.getUrlAuditRunSummary = originals.getUrlAuditRunSummary;
     },
     [originals],
   );

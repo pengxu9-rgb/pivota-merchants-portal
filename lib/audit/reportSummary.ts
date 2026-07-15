@@ -104,15 +104,31 @@ export const SUBSCORE_LABEL: Record<string, string> = {
   category_visibility: 'Category visibility',
 };
 
-/** The run the homepage hero should open: newest succeeded run with an id.
- * merchant_audit_runs status vocabulary is 'succeeded' (never 'completed');
- * anything else is running/failed and can't carry a summary yet. */
+/** The run the homepage hero should open: newest completed, non-failed run
+ * with an id. Backend vocabulary (db COMPLETED_RUN_STATUSES): successful runs
+ * write status='succeeded'; 'completed' exists only on pre-stage-era legacy
+ * rows. Mirroring RecentAuditsPanel, a stamped completed_at with a non-failed
+ * status also counts — a matched legacy run simply degrades to the funnel
+ * when its detail carries no report_summary. */
 export function pickLatestSucceededRunId(
-  runs: Array<{ run_id?: string | null; status?: string | null }> | null | undefined,
+  runs:
+    | Array<{
+        run_id?: string | null;
+        status?: string | null;
+        completed_at?: string | null;
+      }>
+    | null
+    | undefined,
 ): string | null {
   for (const run of runs ?? []) {
-    if (!run) continue;
-    if ((run.status || '').toLowerCase() === 'succeeded' && run.run_id) {
+    if (!run || !run.run_id) continue;
+    const status = (run.status || '').toLowerCase();
+    if (status === 'failed') continue;
+    if (
+      status === 'succeeded' ||
+      status === 'completed' ||
+      Boolean(run.completed_at)
+    ) {
       return run.run_id;
     }
   }

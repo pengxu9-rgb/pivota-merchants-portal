@@ -85,7 +85,7 @@ test("measuredSubscores drops unmeasured axes", () => {
 });
 
 
-test("pickLatestSucceededRunId honours the 'succeeded' status vocabulary", async () => {
+test("pickLatestSucceededRunId matches the backend's completed vocabulary", async () => {
   const { pickLatestSucceededRunId } = await import("../lib/audit/reportSummary.ts");
   assert.equal(
     pickLatestSucceededRunId([
@@ -93,11 +93,24 @@ test("pickLatestSucceededRunId honours the 'succeeded' status vocabulary", async
       { run_id: "r-done", status: "succeeded" },
       { run_id: "r-older", status: "succeeded" },
     ]),
-    "r-done", // newest-first list → first succeeded wins
+    "r-done", // newest-first list → first completed wins
   );
-  // 'completed' is NOT a real status in merchant_audit_runs — never match it.
+  // Backend COMPLETED_RUN_STATUSES includes legacy 'completed' rows; a
+  // stamped completed_at with a non-failed status also counts (mirrors
+  // RecentAuditsPanel). Failed runs never match, even with completed_at.
   assert.equal(
     pickLatestSucceededRunId([{ run_id: "r1", status: "completed" }]),
+    "r1",
+  );
+  assert.equal(
+    pickLatestSucceededRunId([
+      { run_id: "r-f", status: "failed", completed_at: "2026-07-15" },
+      { run_id: "r2", status: null, completed_at: "2026-07-15" },
+    ]),
+    "r2",
+  );
+  assert.equal(
+    pickLatestSucceededRunId([{ run_id: "r3", status: null, completed_at: null }]),
     null,
   );
   assert.equal(pickLatestSucceededRunId([{ run_id: null, status: "succeeded" }]), null);
