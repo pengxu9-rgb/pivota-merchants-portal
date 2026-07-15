@@ -96,4 +96,7 @@ export const FEATURE_FLAGS = {
   // run-your-first-check funnel when there's no audit yet).
   AI_READINESS_HOME:
     (process.env.NEXT_PUBLIC_FEATURE_AI_READINESS_HOME || 'false').toLowerCase() === 'true',
+  // Wave-3 B2: read-only share links (needs backend AUDIT_SHARE_LINKS_ENABLED too).
+  SHARE_LINK:
+    (process.env.NEXT_PUBLIC_FEATURE_SHARE_LINK || 'false').toLowerCase() === 'true',
 };

@@ -2029,6 +2029,25 @@ class ApiClient {
     return Array.isArray(data) ? data : [];
   }
 
+  /** Wave-3 B2: mint (idempotent) / revoke the read-only share link. */
+  async createAuditShareLink(
+    runId: string,
+  ): Promise<{ token: string; share_path: string; expires_at?: string }> {
+    const res = await this.client.post(
+      `/api/merchant-center/audit/url-readiness/${encodeURIComponent(runId)}/share`,
+      null,
+      { timeout: 15_000 },
+    );
+    return res.data?.data ?? res.data;
+  }
+
+  async revokeAuditShareLink(runId: string): Promise<void> {
+    await this.client.delete(
+      `/api/merchant-center/audit/url-readiness/${encodeURIComponent(runId)}/share`,
+      { timeout: 15_000 },
+    );
+  }
+
   /** APM (auto re-audit) settings — wave-3 B1's fixed-weekly switch reads
    *  and writes these existing endpoints. 404 = never configured (off). */
   async getApmConfig(): Promise<{ enabled?: boolean; cadence_days?: number } | null> {
