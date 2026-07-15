@@ -677,6 +677,10 @@ export interface SkuIntelligence {
 
 // Off-platform outreach move derived from a host AI cites instead of you.
 export interface OutreachMove {
+  /** 1.3 serve-time registry pitch path (draft_ready | submission_only | target_only). */
+  pitch_state?: string | null;
+  pitch_email?: string | null;
+  pitch_submission_url?: string | null;
   host: string;
   host_type: string;
   host_subtype?: string | null;
@@ -2024,6 +2028,8 @@ export interface ReportSummaryPromptEvidence {
 }
 
 export interface ReportSummaryAction {
+  /** 1.3 — which dimension this action lifts (direction only, no estimates). */
+  impact?: { dimension?: string | null; label?: string | null } | null;
   action_id?: string | null;
   headline?: string | null;
   why_this_first?: string | null;
@@ -2077,6 +2083,24 @@ export interface ReportSummaryScore {
   explainer?: string | null;
 }
 
+/** Contract 1.3 — verbatim reaudit_delta passthrough (movements keep their
+ * merchant-safe labels + materiality verdicts computed at run time). */
+export interface ReportSummarySinceLastAudit {
+  is_first_audit?: boolean;
+  days_since_last?: number | null;
+  headline?: string | null;
+  movements?: {
+    signal?: string;
+    label?: string;
+    from?: number | null;
+    to?: number | null;
+    material?: boolean;
+    direction?: 'improved' | 'regressed' | 'stable' | string;
+  }[];
+  material_movements?: number;
+  basis_same?: boolean | null;
+}
+
 export interface ReportSummarySkuRow {
   sku_key?: string | null;
   sku_title?: string | null;
@@ -2104,6 +2128,7 @@ export interface ReportSummary {
     explanation?: string | null;
     primary_gap?: string | null;
   };
+  since_last_audit?: ReportSummarySinceLastAudit | null;
   top_findings?: ReportSummaryFinding[];
   top_actions?: ReportSummaryAction[];
   competitive_snapshot?: {

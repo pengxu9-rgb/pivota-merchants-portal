@@ -22,6 +22,56 @@ import {
 } from '@/lib/audit/reportSummary';
 import type { ReportSummary } from '@/lib/types/ai-readiness';
 
+/** Wave-1 A1: the time dimension, one line under the score. Movements are
+ * rendered VERBATIM from the contract (labels + materiality were computed
+ * at run time); absent field -> nothing (runs predating the attach). */
+function SinceLastAudit({
+  since,
+}: {
+  since: NonNullable<ReportSummary['since_last_audit']>;
+}) {
+  if (since.is_first_audit) {
+    return (
+      <p className="merchant-text-muted px-5 pb-2 text-xs">
+        {since.headline ?? 'Baseline established — re-audit to see movement.'}
+      </p>
+    );
+  }
+  const movements = (since.movements ?? []).filter((m) => m && m.label);
+  if (movements.length === 0 && !since.headline) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-5 pb-2 text-xs">
+      <span className="font-semibold">
+        Since your last audit
+        {typeof since.days_since_last === 'number'
+          ? ` (${since.days_since_last}d ago)`
+          : ''}
+        :
+      </span>
+      {movements.map((m, i) => (
+        <span
+          key={i}
+          className={
+            m.material
+              ? m.direction === 'improved'
+                ? 'rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700'
+                : 'rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-700'
+              : 'merchant-text-muted'
+          }
+        >
+          {m.label} {m.from ?? '—'}→{m.to ?? '—'}
+          {m.material ? (m.direction === 'improved' ? ' ▲' : ' ▼') : ''}
+        </span>
+      ))}
+      {since.basis_same === false ? (
+        <span className="merchant-text-muted">
+          (different prompt set than last run — compare loosely)
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 /** The score's info mark (user request): the "why is my score this number"
  * reason stays hidden behind a small ⓘ next to the score — hover shows a
  * native tooltip, click/keyboard toggles an accessible popover with the
@@ -118,4 +168,10 @@ export function AuditScoreStrip({
       {runId ? <ExportDeckButton runId={runId} /> : null}
     </div>
   );
+}
+
+export function AuditScoreStripFooter({ summary }: { summary: ReportSummary }) {
+  return summary.since_last_audit ? (
+    <SinceLastAudit since={summary.since_last_audit} />
+  ) : null;
 }
