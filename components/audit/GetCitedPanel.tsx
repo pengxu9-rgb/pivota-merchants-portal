@@ -158,8 +158,21 @@ function buildRedditPaths(tracked: TrackedSubreddit[], category: string): Starte
 }
 
 /** A single channel row with an outbound link + a Pivota draft-outreach button. */
+/** mailto bodies have a ~2KB practical ceiling in many clients; CJK encodes
+ * at ~9 bytes/char, so cap the ENCODED length (never cut mid-%XX escape) —
+ * the full draft stays available via the Copy button above. */
+function encodedBodyWithinBudget(draft: string, budget = 1800): string {
+  let out = '';
+  for (const ch of draft) {
+    const enc = encodeURIComponent(ch);
+    if (out.length + enc.length > budget) break;
+    out += enc;
+  }
+  return out;
+}
+
 function ChannelRow({
-  kind, title, host, url, realism, how, runId, channelHost, channelLever, channelType, query, badge, losingQueries,
+  kind, title, host, url, realism, how, runId, channelHost, channelLever, channelType, query, badge, losingQueries, pitchSubmissionUrl, pitchEmail,
 }: {
   kind: Kind;
   title: string;
@@ -266,7 +279,7 @@ function ChannelRow({
                   <a
                     href={`mailto:${pitchEmail}?subject=${encodeURIComponent(
                       `Pitch: ${channelHost ?? host ?? title}`,
-                    )}&body=${encodeURIComponent(st.draft.slice(0, 1600))}`}
+                    )}&body=${encodedBodyWithinBudget(st.draft)}`}
                     className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-[color:var(--merchant-accent,#6366f1)] hover:underline"
                   >
                     Email to {pitchEmail}

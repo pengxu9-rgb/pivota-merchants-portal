@@ -52,15 +52,16 @@ function SinceLastAudit({
         <span
           key={i}
           className={
-            m.material
-              ? m.direction === 'improved'
-                ? 'rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700'
-                : 'rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-700'
-              : 'merchant-text-muted'
+            m.is_material && m.direction === 'improved'
+              ? 'rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700'
+              : m.is_material && m.direction === 'regressed'
+                ? 'rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-700'
+                : 'merchant-text-muted'
           }
         >
           {m.label} {m.from ?? '—'}→{m.to ?? '—'}
-          {m.material ? (m.direction === 'improved' ? ' ▲' : ' ▼') : ''}
+          {m.is_material && m.direction === 'improved' ? ' ▲' : ''}
+          {m.is_material && m.direction === 'regressed' ? ' ▼' : ''}
         </span>
       ))}
       {since.basis_same === false ? (

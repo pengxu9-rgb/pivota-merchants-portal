@@ -2094,7 +2094,7 @@ export interface ReportSummarySinceLastAudit {
     label?: string;
     from?: number | null;
     to?: number | null;
-    material?: boolean;
+    is_material?: boolean;
     direction?: 'improved' | 'regressed' | 'stable' | string;
   }[];
   material_movements?: number;

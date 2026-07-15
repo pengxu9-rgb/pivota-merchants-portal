@@ -196,16 +196,16 @@
         "label": "AI visibility",
         "from": 20,
         "to": 33,
-        "material": true,
-        "direction": "improved"
+        "direction": "improved",
+        "is_material": true
       },
       {
         "signal": "attribution",
         "label": "Attribution",
         "from": 46,
         "to": 44,
-        "material": false,
-        "direction": "stable"
+        "direction": "stable",
+        "is_material": false
       }
     ],
     "material_movements": 1,

@@ -54,12 +54,18 @@ const moves: OutreachMove[] = [
 export function LayoutPreviewClient() {
   const evidenceByHeadline: Record<
     string,
-    ReturnType<typeof actionSupportingPrompts>
+    {
+      prompts: ReturnType<typeof actionSupportingPrompts>;
+      impact: { dimension?: string | null; label?: string | null } | null;
+    }
   > = {};
   for (const a of summary.top_actions ?? []) {
     const prompts = actionSupportingPrompts(a);
-    if (a?.headline && prompts.length > 0) {
-      evidenceByHeadline[`${a.primary_gap ?? ''}|${a.headline}`] = prompts;
+    if (a?.headline && (prompts.length > 0 || a.impact)) {
+      evidenceByHeadline[`${a.primary_gap ?? ''}|${a.headline}`] = {
+        prompts,
+        impact: a.impact ?? null,
+      };
     }
   }
 
