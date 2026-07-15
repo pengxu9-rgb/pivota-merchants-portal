@@ -81,8 +81,8 @@ export default async function ShopifyInstallSuccessPage({
         <p style={p}>
           Your Shopify store is now linked to Pivota. We&rsquo;ll read your catalog,
           orders, fulfillments, and discounts (read-only) to score AI-readiness and
-          surface performance analytics. Pivota never modifies your products or orders
-          and never processes checkout.
+          surface performance analytics. This connection is read-only &mdash; it
+          can&rsquo;t change your products or orders.
         </p>
         <p style={p}>
           {claimToken
