@@ -57,7 +57,11 @@ import type {
   UrlReadinessAuditResponse,
 } from '@/lib/types/ai-readiness';
 
-const MAX_PRODUCT_URLS = 5;
+// Tiered cap (mirrors backend WEDGE_MAX_PRODUCTS_FREE/PAID): free = 5,
+// paid = 20 — so a >5-SKU merchant can keep ONE comparable weekly set
+// instead of rotating products between runs.
+const MAX_PRODUCT_URLS_FREE = 5;
+const MAX_PRODUCT_URLS_PAID = 20;
 const MAX_CUSTOM_PROMPTS = 10;
 
 // Model naming for the header lives on the BACKEND now — `methodology`
@@ -178,7 +182,7 @@ export default function UrlAuditPage() {
     setProductUrls((prev) => prev.map((u, idx) => (idx === i ? v : u)));
   const addUrl = () =>
     setProductUrls((prev) =>
-      prev.length >= MAX_PRODUCT_URLS ? prev : [...prev, ''],
+      prev.length >= MAX_PRODUCT_URLS_PAID ? prev : [...prev, ''],
     );
   const removeUrl = (i: number) =>
     setProductUrls((prev) =>
@@ -564,7 +568,7 @@ export default function UrlAuditPage() {
       <PageHeader
         eyebrow="Per-product · no catalog sync"
         title="See how AI sees your products"
-        description="Paste up to 5 product links and we'll audit each one — how AI shopping agents (Gemini + ChatGPT) cite it, which competitors and channels they surface instead, and what to do about it. No catalog sync required. Connect your store for the full-catalog audit with availability + agent checkout."
+        description="Paste up to 20 product links (5 on the free plan) and we'll audit each one — how AI shopping agents (Gemini + ChatGPT) cite it, which competitors and channels they surface instead, and what to do about it. No catalog sync required. Connect your store for the full-catalog audit with availability + agent checkout."
       />
 
       {/* Re-open a past visibility check (subject_type=merchant_url). Renders
@@ -639,7 +643,9 @@ export default function UrlAuditPage() {
             <label className="block text-sm font-medium">
               Product URLs{' '}
               <span className="merchant-text-muted font-normal">
-                (up to {MAX_PRODUCT_URLS} — your hero SKUs)
+                (up to {MAX_PRODUCT_URLS_FREE} free · up to{' '}
+                {MAX_PRODUCT_URLS_PAID} on paid plans — one comparable set
+                for weekly tracking)
               </span>
             </label>
             {productUrls.map((u, i) => (
@@ -668,7 +674,7 @@ export default function UrlAuditPage() {
                 ) : null}
               </div>
             ))}
-            {productUrls.length < MAX_PRODUCT_URLS ? (
+            {productUrls.length < MAX_PRODUCT_URLS_PAID ? (
               <button
                 type="button"
                 onClick={addUrl}
