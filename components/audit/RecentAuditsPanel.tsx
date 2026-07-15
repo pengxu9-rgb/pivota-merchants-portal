@@ -40,11 +40,19 @@ function RunRow({
   itemNoun: string;
   onOpen: () => void;
 }) {
-  const done = !!run.completed_at;
+  // A failed run also stamps completed_at, so `completed_at` alone can't mean
+  // "openable". Treat failed distinctly: it's terminal but has no report to
+  // open, so it shows a clear failed badge and stays non-clickable (opening it
+  // would be a silent dead-end — the run produced no result).
+  const failed = (run.status || '').toLowerCase() === 'failed';
+  const done = !!run.completed_at && !failed;
   const verdict = run.verdict_labels?.[0];
   const n = run.product_keys?.length || 0;
   const subline =
-    [n > 0 ? `${n} ${itemNoun}${n === 1 ? '' : 's'}` : null, verdict]
+    [
+      n > 0 ? `${n} ${itemNoun}${n === 1 ? '' : 's'}` : null,
+      failed ? "didn't finish — re-run" : verdict,
+    ]
       .filter(Boolean)
       .join(' · ') || '—';
   return (
@@ -63,7 +71,11 @@ function RunRow({
         <div className="text-sm font-medium text-slate-800">{formatWhen(run.requested_at)}</div>
         <div className="truncate text-xs text-slate-500">{subline}</div>
       </div>
-      {!done ? (
+      {failed ? (
+        <span className="shrink-0 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-medium text-rose-700">
+          failed
+        </span>
+      ) : !done ? (
         <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
           {run.status || 'running'}
         </span>
