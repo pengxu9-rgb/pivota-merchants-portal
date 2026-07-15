@@ -614,10 +614,14 @@ Object.assign(enMessages, {
     "Refreshing payment setup",
   "dashboard.overview.support.paymentSetup.detail.needsAttention":
     "Payment setup still needs attention",
+  "dashboard.overview.support.paymentSetup.detail.notRequired":
+    "Not required — checkout runs through your storefront",
   "dashboard.overview.support.paymentSetup.meta.liveReady":
     "{liveReady}/{active} live-ready",
   "dashboard.overview.support.paymentSetup.meta.addSetup":
     "Add payment setup to turn ready products into completed orders.",
+  "dashboard.overview.support.paymentSetup.meta.notRequired":
+    "Read-only connection — buyers check out on your storefront.",
   "dashboard.overview.support.paymentSetup.cta.review":
     "Review payment setup",
   "dashboard.overview.support.paymentSetup.cta.connect": "Connect payments",
