@@ -692,6 +692,13 @@ export interface OutreachMove {
   // How achievable this move is for an emerging brand — drives sort/grouping.
   // Lead with reachable/diy; de-emphasize 'hard' (major-publisher) moves.
   realism?: 'reachable' | 'diy' | 'onboarding' | 'hard' | 'investigate' | string | null;
+  // Evidence weight behind this move. 'single_sighting' = one grounded answer
+  // cited the host in this run's sample (a lead to verify, not a proven
+  // channel — empirically these often don't recur on re-audit); 'repeated' =
+  // multiple citations or a standing endorsement. signal_note carries the
+  // honest caveat copy for single sightings.
+  signal_strength?: 'single_sighting' | 'repeated' | string | null;
+  signal_note?: string | null;
 }
 
 /**
