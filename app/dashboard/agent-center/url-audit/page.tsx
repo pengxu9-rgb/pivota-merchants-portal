@@ -1,9 +1,11 @@
 'use client';
 
+import Link from 'next/link';
+
 /**
  * Tier-1 URL-audit wedge — the low-friction front door to AI Commerce Readiness.
  *
- * Merchant-CURATED: you give us your brand site + up to 5 product URLs (your
+ * Merchant-CURATED: you give us your brand site + product URLs — 5 free / 20 paid (your
  * hero SKUs); we fetch each for clean data and audit each as ITS OWN per-product
  * report — how AI shopping agents (grounded search) cite it, which
  * competitors are cited instead, and the action plan to win. No catalog sync.
@@ -57,7 +59,11 @@ import type {
   UrlReadinessAuditResponse,
 } from '@/lib/types/ai-readiness';
 
-const MAX_PRODUCT_URLS = 5;
+// Tiered cap (mirrors backend WEDGE_MAX_PRODUCTS_FREE/PAID): free = 5,
+// paid = 20 — so a >5-SKU merchant can keep ONE comparable weekly set
+// instead of rotating products between runs.
+const MAX_PRODUCT_URLS_FREE = 5;
+const MAX_PRODUCT_URLS_PAID = 20;
 const MAX_CUSTOM_PROMPTS = 10;
 
 // Model naming for the header lives on the BACKEND now — `methodology`
@@ -147,6 +153,9 @@ export default function UrlAuditPage() {
   const [loading, setLoading] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // Set alongside `error` when the backend's 422 carries an upgrade_path
+  // (product_cap_exceeded) — renders the upsell as a CLICKABLE link, not prose.
+  const [errorUpgradePath, setErrorUpgradePath] = useState<string | null>(null);
   // Non-error info (e.g. "still running — saved to history"): grounded per-SKU
   // probes can run past the browser poll budget, but the run is durable.
   const [notice, setNotice] = useState<string | null>(null);
@@ -178,7 +187,7 @@ export default function UrlAuditPage() {
     setProductUrls((prev) => prev.map((u, idx) => (idx === i ? v : u)));
   const addUrl = () =>
     setProductUrls((prev) =>
-      prev.length >= MAX_PRODUCT_URLS ? prev : [...prev, ''],
+      prev.length >= MAX_PRODUCT_URLS_PAID ? prev : [...prev, ''],
     );
   const removeUrl = (i: number) =>
     setProductUrls((prev) =>
@@ -216,6 +225,7 @@ export default function UrlAuditPage() {
     setLoading(true);
     setElapsedSec(0);
     setError(null);
+    setErrorUpgradePath(null);
     setNotice(null);
     setResult(null);
     try {
@@ -268,6 +278,9 @@ export default function UrlAuditPage() {
             "We couldn't read a product from those URLs. Make sure each link opens a single product page.") +
             (unresolved ? ` (${unresolved})` : ''),
         );
+        if (typeof detail?.upgrade_path === 'string' && detail.upgrade_path) {
+          setErrorUpgradePath(detail.upgrade_path);
+        }
       } else {
         setError(e?.message || 'Audit failed. Please try again.');
       }
@@ -564,7 +577,7 @@ export default function UrlAuditPage() {
       <PageHeader
         eyebrow="Per-product · no catalog sync"
         title="See how AI sees your products"
-        description="Paste up to 5 product links and we'll audit each one — how AI shopping agents (Gemini + ChatGPT) cite it, which competitors and channels they surface instead, and what to do about it. No catalog sync required. Connect your store for the full-catalog audit with availability + agent checkout."
+        description="Paste up to 20 product links (5 on the free plan) and we'll audit each one — how AI shopping agents (Gemini + ChatGPT) cite it, which competitors and channels they surface instead, and what to do about it. No catalog sync required. Connect your store for the full-catalog audit with availability + agent checkout."
       />
 
       {/* Re-open a past visibility check (subject_type=merchant_url). Renders
@@ -637,7 +650,9 @@ export default function UrlAuditPage() {
             <label className="block text-sm font-medium">
               Product URLs{' '}
               <span className="merchant-text-muted font-normal">
-                (up to {MAX_PRODUCT_URLS} — your hero SKUs)
+                (up to {MAX_PRODUCT_URLS_FREE} free · up to{' '}
+                {MAX_PRODUCT_URLS_PAID} on paid plans — one comparable set
+                for weekly tracking)
               </span>
             </label>
             {productUrls.map((u, i) => (
@@ -666,7 +681,7 @@ export default function UrlAuditPage() {
                 ) : null}
               </div>
             ))}
-            {productUrls.length < MAX_PRODUCT_URLS ? (
+            {productUrls.length < MAX_PRODUCT_URLS_PAID ? (
               <button
                 type="button"
                 onClick={addUrl}
@@ -738,7 +753,20 @@ export default function UrlAuditPage() {
         <SurfaceCard>
           <div className="flex items-start gap-3 px-5 py-4 text-sm text-red-700">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{error}</span>
+            <span>
+              {error}
+              {errorUpgradePath ? (
+                <>
+                  {' '}
+                  <Link
+                    href={errorUpgradePath}
+                    className="font-semibold text-[color:var(--merchant-accent,#6366f1)] underline"
+                  >
+                    Upgrade now
+                  </Link>
+                </>
+              ) : null}
+            </span>
           </div>
         </SurfaceCard>
       ) : null}
