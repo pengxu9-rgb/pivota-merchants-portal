@@ -33,7 +33,7 @@ const ok = (cond, msg) => {
 };
 
 console.log('envelope:');
-ok(summary.contract_version === '1.0', 'contract_version 1.0');
+ok(['1.0', '1.1'].includes(summary.contract_version), 'contract_version 1.x');
 ok(typeof summary.audit_run_id === 'string', 'audit_run_id present');
 ok(summary.subject?.type === 'brand', 'subject.type brand');
 

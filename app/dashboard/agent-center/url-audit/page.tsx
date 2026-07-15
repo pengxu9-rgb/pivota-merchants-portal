@@ -30,9 +30,9 @@ import {
 import { apiClient } from '@/lib/api-client';
 import { FEATURE_FLAGS } from '@/lib/config';
 import { stashVisibilityHandoff } from '@/lib/visibility-handoff';
-import { summaryRenderable } from '@/lib/audit/reportSummary';
-import { Disclosure } from '@/components/ui/Disclosure';
-import { ReportSummaryView } from '@/components/audit/ReportSummaryView';
+import { actionSupportingPrompts, summaryRenderable } from '@/lib/audit/reportSummary';
+import { DetailDisclosureCard } from '@/components/ui/DetailDisclosureCard';
+import { AuditScoreStrip } from '@/components/audit/AuditScoreStrip';
 import {
   MerchantButton,
   PageHeader,
@@ -326,25 +326,51 @@ export default function UrlAuditPage() {
   const storeConnected = result?.merchant_context?.store_connected ?? false;
   const fullySetUp = isPaid && storeConnected;
 
-  // Report Summary Contract v1 — the condensed 3-page first view. Only leads
-  // the page when the flag is on AND the backend summary carries a score or a
-  // verdict (a degraded/null summary must not replace the report with a blank
-  // hero). Flag off → the page renders exactly as before.
-  const condensedSummary =
+  // Re-layout (partner feedback round 2): no parallel summary sections — the
+  // full report IS the layout. The contract contributes exactly one new
+  // element (the score strip) plus per-action measured evidence; flag off →
+  // the page renders exactly as before. A run predating the contract simply
+  // gets no strip.
+  const stripSummary =
     FEATURE_FLAGS.REPORT_SUMMARY_VIEW && summaryRenderable(result?.report_summary)
       ? result?.report_summary ?? null
       : null;
+  // Measured evidence per Start-here action (contract 1.1: niche-first —
+  // spec-matched losses lead, head terms only when they're all that was
+  // measured). Keyed by the action headline the panel renders.
+  // Keyed on gap|headline (the producer's own dedup key) so two actions
+  // sharing a headline across different gaps can never swap evidence.
+  const actionEvidence: Record<
+    string,
+    NonNullable<ReturnType<typeof actionSupportingPrompts>>
+  > = {};
+  if (FEATURE_FLAGS.REPORT_SUMMARY_VIEW) {
+    for (const a of result?.report_summary?.top_actions ?? []) {
+      const prompts = actionSupportingPrompts(a);
+      if (a?.headline && prompts.length > 0) {
+        actionEvidence[`${a.primary_gap ?? ''}|${a.headline}`] = prompts;
+      }
+    }
+  }
 
-  // The full per-product detail stack (unchanged). With the condensed view on,
-  // this whole stack collapses behind "View the full report".
-  const perSkuDetail =
-    result && perSku.length > 0 ? (
-      <>
+  // The report's sections, split into named blocks so the flag can reorder
+  // them without touching their contents. Flag off = today's exact order;
+  // flag on = first screen (overview+strip, narrative, start-here, get-cited)
+  // with the heavy per-product diagnostics behind a highlighted expander.
+  const detailBlocks =
+    result && perSku.length > 0 ? {
+      overview: (
         <SurfaceCard
           eyebrow="AI visibility · per product"
           title="How AI sees each of your products"
           description={result.audited_url || undefined}
         >
+          {stripSummary ? (
+            <AuditScoreStrip
+              summary={stripSummary}
+              runId={result.run_id ?? result.audit_run_id ?? activeRunId ?? null}
+            />
+          ) : null}
           <div className="space-y-2 px-5 py-4">
             <p className="text-sm">
               <span className="font-semibold">{citedCount}</span> of{' '}
@@ -397,7 +423,9 @@ export default function UrlAuditPage() {
             ) : null}
           </div>
         </SurfaceCard>
-
+      ),
+      narrative: (
+        <>
         {/* The insight layer: headline story, what's working, where you're
             losing, prioritized actions + answer-quality — before the
             per-product detail. */}
@@ -408,8 +436,12 @@ export default function UrlAuditPage() {
         <PrioritizedActionsPanel
           actions={result.merchant_narrative?.prioritized_actions}
           runId={result.run_id ?? result.audit_run_id ?? null}
+          evidenceByHeadline={actionEvidence}
         />
-
+        </>
+      ),
+      skuCards: (
+        <>
         {/* One card per pasted product — its own analysis + action plan. */}
         <div className="space-y-3">
           {perSku.map((r, i) => (
@@ -426,7 +458,10 @@ export default function UrlAuditPage() {
             />
           ))}
         </div>
-
+        </>
+      ),
+      getCited: (
+        <>
         {/* Get cited on the INDEPENDENT external sources AI trusts, per
             engine — the third-party evidence agents actually cite. */}
         {(() => {
@@ -465,11 +500,44 @@ export default function UrlAuditPage() {
             />
           );
         })()}
-
+        </>
+      ),
+      customPrompts: (
+        <>
         {/* The merchant's own test prompts, if any (brand-level). */}
         <CustomPromptsPanel prompts={result.custom_prompts} />
+        </>
+      ),
+    } : null;
+
+  const perSkuDetail = detailBlocks ? (
+    FEATURE_FLAGS.REPORT_SUMMARY_VIEW ? (
+      <>
+        {detailBlocks.overview}
+        {detailBlocks.narrative}
+        {detailBlocks.getCited}
+        {/* The heavy diagnostics tier — highlighted so merchants can't miss
+            that a click reveals the full depth (partner feedback). Hidden,
+            never unmounted. */}
+        <DetailDisclosureCard
+          title="Full product-level diagnostics"
+          subtitle="Per-product scorecards, engine playbooks, the verbatim AI answers we probed, channel routing, and your custom prompts."
+          badge={`${perSku.length} product${perSku.length === 1 ? '' : 's'}`}
+        >
+          {detailBlocks.skuCards}
+          {detailBlocks.customPrompts}
+        </DetailDisclosureCard>
       </>
-    ) : null;
+    ) : (
+      <>
+        {detailBlocks.overview}
+        {detailBlocks.narrative}
+        {detailBlocks.skuCards}
+        {detailBlocks.getCited}
+        {detailBlocks.customPrompts}
+      </>
+    )
+  ) : null;
 
   return (
     <div className="space-y-6">
@@ -662,28 +730,7 @@ export default function UrlAuditPage() {
       {result ? (
         <div ref={resultRef} className="space-y-4">
           {perSku.length > 0 ? (
-            condensedSummary ? (
-              <>
-                <ReportSummaryView
-                  summary={condensedSummary}
-                  runId={
-                    // activeRunId last: a history-reopened run whose response
-                    // echoes a null audit_run_id still keeps its export button
-                    // (#170 review P2).
-                    result?.run_id ?? result?.audit_run_id ?? activeRunId ?? null
-                  }
-                />
-                <Disclosure
-                  className="px-1"
-                  label="View the full report"
-                  labelOpen="Hide the full report"
-                >
-                  <div className="space-y-4">{perSkuDetail}</div>
-                </Disclosure>
-              </>
-            ) : (
-              perSkuDetail
-            )
+            perSkuDetail
           ) : report && agg ? (
             <>
           <SurfaceCard

@@ -66,6 +66,19 @@ function MoveCard({ m, muted }: { m: OutreachMove; muted?: boolean }) {
         </div>
       </div>
       {m.why && !muted ? <div className="mt-1 text-xs opacity-70">{m.why}</div> : null}
+      {m.losing_queries && m.losing_queries.length > 0 && !muted ? (
+        // The measured reason to work this host (win-plan join): the losing
+        // category queries whose grounded answers cited it.
+        <div className="mt-1 text-[11px] leading-snug">
+          <span className="opacity-60">Queries you lost where this source grounded the answer: </span>
+          {m.losing_queries.map((q, qi) => (
+            <span key={qi}>
+              {qi > 0 ? ' · ' : ''}
+              &ldquo;{q}&rdquo;
+            </span>
+          ))}
+        </div>
+      ) : null}
       {m.signal_strength === 'single_sighting' && m.signal_note && !muted ? (
         <div className="mt-1 text-[11px] italic text-slate-500">{m.signal_note}</div>
       ) : null}

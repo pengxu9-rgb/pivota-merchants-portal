@@ -159,7 +159,7 @@ function buildRedditPaths(tracked: TrackedSubreddit[], category: string): Starte
 
 /** A single channel row with an outbound link + a Pivota draft-outreach button. */
 function ChannelRow({
-  kind, title, host, url, realism, how, runId, channelHost, channelLever, channelType, query, badge,
+  kind, title, host, url, realism, how, runId, channelHost, channelLever, channelType, query, badge, losingQueries,
 }: {
   kind: Kind;
   title: string;
@@ -173,6 +173,10 @@ function ChannelRow({
   channelType: Kind;
   query?: string | null;
   badge?: { label: string; cls: string };
+  /** Measured reason to work this channel: the losing category queries whose
+   *  grounded answers cited it (backend win-plan join). Absent → no line,
+   *  never an inferred one. */
+  losingQueries?: string[] | null;
 }) {
   const [st, setSt] = useState<{ loading?: boolean; done?: boolean; draft?: string | null; error?: string | null; copied?: boolean }>({});
   const Meta = KIND_META[kind];
@@ -220,6 +224,17 @@ function ChannelRow({
         ) : null}
       </div>
       {how ? <p className="mt-1 text-[11px] leading-snug opacity-70">{how}</p> : null}
+      {losingQueries && losingQueries.length > 0 ? (
+        <p className="mt-1 text-[11px] leading-snug">
+          <span className="opacity-60">Queries you lost where this source grounded the answer: </span>
+          {losingQueries.map((q, qi) => (
+            <span key={qi}>
+              {qi > 0 ? ' · ' : ''}
+              &ldquo;{q}&rdquo;
+            </span>
+          ))}
+        </p>
+      ) : null}
 
       {runId ? (
         st.done ? (
@@ -358,6 +373,7 @@ function EngineGroup({
               channelLever={m.lever || leverFor(k)}
               channelType={k}
               query={category}
+              losingQueries={m.losing_queries}
             />
           );
         })}
