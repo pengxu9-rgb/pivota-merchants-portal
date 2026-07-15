@@ -7,7 +7,7 @@
  * and "view full report" sections all behave and read the same.
  */
 
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { cx } from '@/lib/cx';
 
@@ -29,12 +29,14 @@ export function Disclosure({
   buttonClassName?: string;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const regionId = useId();
   return (
     <div className={className}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
+        aria-controls={regionId}
         className={cx(
           'inline-flex items-center gap-1 text-xs font-medium text-[color:var(--merchant-accent,#6366f1)] transition hover:opacity-80',
           buttonClassName,
@@ -47,7 +49,12 @@ export function Disclosure({
           <ChevronDown className="h-3.5 w-3.5" />
         )}
       </button>
-      {open ? <div className="mt-2">{children}</div> : null}
+      {/* hidden, not unmounted: collapsing must never destroy the children's
+          internal state (open drawers, in-flight action state) — the panels
+          this wraps were always-mounted before the condensed view existed. */}
+      <div id={regionId} hidden={!open} className="mt-2">
+        {children}
+      </div>
     </div>
   );
 }

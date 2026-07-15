@@ -185,7 +185,7 @@ export function ReportSummaryView({ summary }: { summary: ReportSummary }) {
             {findings.length > 0 ? (
               <ul className="space-y-2.5">
                 {findings.map((f, i) => (
-                  <FindingRow key={f.kind || i} finding={f} />
+                  <FindingRow key={f.finding_id ?? i} finding={f} />
                 ))}
               </ul>
             ) : null}
