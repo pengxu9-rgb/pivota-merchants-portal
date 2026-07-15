@@ -41,6 +41,7 @@ import { PerSkuReportCard } from '@/components/audit/PerSkuReportCard';
 import { CustomPromptsPanel } from '@/components/audit/CustomPromptsPanel';
 import { GetCitedPanel } from '@/components/audit/GetCitedPanel';
 import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
+import { OutreachOutcomesPanel } from '@/components/audit/OutreachOutcomesPanel';
 import { PrioritizedActionsPanel } from '@/components/audit/PrioritizedActionsPanel';
 import type {
   AgentCenterBdReport,
@@ -723,6 +724,11 @@ export default function UrlAuditPage() {
                       {p.action_items[0].title}
                     </p>
                   ) : null}
+                  {/* Audit→action→outcome loop (legacy per-product location):
+                      what changed at the hosts the prior audit told this product
+                      to target. Self-hides on the first audit / when outcomes
+                      aren't measurable, so it only appears on a re-audit. */}
+                  <OutreachOutcomesPanel outcomes={p.merchant_view?.outreach_outcomes} />
                 </div>
               ))}
             </div>

@@ -222,6 +222,9 @@ export interface AgentCenterBdMerchantView {
     } | null;
   };
   pivota_value_prop: AgentCenterBdReport['what_pivota_changes'];
+  /** Audit→action→outcome loop (legacy per-product location; per-SKU reports
+   * carry it top-level as `AgentCenterPerSkuAuditResponse.outreach_outcomes`). */
+  outreach_outcomes?: AgentCenterOutreachOutcomes | null;
 }
 
 export interface AgentCenterBdIndustryContext {
@@ -736,6 +739,86 @@ export interface WhereYoureLosing {
     competitors?: Array<{ name: string; times_named: number }>;
     note?: string | null;
   };
+}
+
+// Audit→action→outcome loop: what changed at the hosts your last audit told you
+// to target. Attached by the backend at TOP-LEVEL `outreach_outcomes` on per-SKU
+// (production) reports and at `merchant_view.outreach_outcomes` on legacy
+// per-product reports. The backend authors every merchant-facing string
+// (`what_changed`, `note`, `basis_note`, `merchant_action.note`) under strict
+// honesty rules — NO causation is ever claimed — so the panel renders them
+// verbatim rather than re-deriving copy.
+export type OutreachOutcomeClass =
+  | 'won'
+  | 'progress'
+  | 'no_change'
+  | 'no_longer_grounded'
+  | 'not_comparable';
+
+export interface OutreachOutcomeSignalsSide {
+  endorsed: boolean;
+  names_you: boolean;
+  citation_role: string | null;
+  prompts_cited_count: number | null;
+  /** Present on the `current` side only, and only for query-keyed targets. */
+  grounds_this_query?: boolean | null;
+  query_still_losing?: boolean | null;
+}
+
+// A neutral FACT (never causation) about the merchant's own task queue: the
+// prior target host had a task the merchant marked done. Fair to surface
+// ("you marked this done N days before this run") but it does not prove the
+// outreach caused the change.
+export interface OutreachOutcomeMerchantAction {
+  title: string;
+  marked_done_at: string | null;
+  days_before_current_run: number | null;
+  note: string;
+}
+
+export interface OutreachOutcomeTarget {
+  host: string;
+  /** null for host-only (outreach-move) targets that carry no query context. */
+  query: string | null;
+  axis: string | null;
+  target_source: 'win_plan' | 'outreach_move' | 'win_plan+outreach_move';
+  outcome: OutreachOutcomeClass;
+  /** Machine key, e.g. "query_now_cited" / "host_now_endorses" /
+   * "still_grounds_without_naming" / "absent_from_query_grounding" /
+   * "query_not_probed" / "basis_changed". Copy lives in `what_changed`. */
+  reason: string;
+  what_changed: string;
+  signals: {
+    prior: OutreachOutcomeSignalsSide;
+    current: OutreachOutcomeSignalsSide;
+  };
+  merchant_action: OutreachOutcomeMerchantAction | null;
+}
+
+export interface OutreachOutcomeSummary {
+  won: number;
+  progress: number;
+  no_change: number;
+  no_longer_grounded: number;
+  not_comparable: number;
+}
+
+export interface AgentCenterOutreachOutcomes {
+  /** True → no prior audit, so there are no targets to compare yet. */
+  is_first_audit: boolean;
+  /** False when either side lacked the data — render nothing / a soft note. */
+  available: boolean;
+  /** The no-causation framing (when available) or why it's unavailable. */
+  note: string | null;
+  /** Echo of measurement_basis.same — when false, only basis-independent
+   * (endorsement) transitions are claimed; per-query targets are not_comparable. */
+  comparable: boolean | null;
+  basis_note: string | null;
+  targets: OutreachOutcomeTarget[];
+  summary: OutreachOutcomeSummary;
+  /** Prior "closed doors" (a competitor owns them) — never targets, surfaced
+   * so their absence from the target list is an honest stated fact. */
+  closed_channels_excluded: string[];
 }
 
 export interface UrlReadinessAuditResponse {
@@ -1823,6 +1906,11 @@ export interface AgentCenterPerSkuAuditResponse {
    * pre-Fix-3/4 runs omit them. */
   merchant_narrative?: AgentCenterMerchantNarrative | null;
   win_plan?: AgentCenterWinPlan | null;
+  /** Audit→action→outcome loop: what changed at the hosts the prior audit told
+   * the merchant to target. Optional + best-effort on the backend (omitted on
+   * first audit / pre-loop runs, degrades to available:false rather than
+   * sinking the report). */
+  outreach_outcomes?: AgentCenterOutreachOutcomes | null;
   legacy_verdict: string;
   cost_summary: AgentCenterCostSummary;
 }

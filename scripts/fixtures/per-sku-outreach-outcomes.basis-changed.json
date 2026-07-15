@@ -1,0 +1,183 @@
+{
+  "audit_mode": "per_sku",
+  "outreach_outcomes": {
+    "is_first_audit": false,
+    "available": true,
+    "note": "What changed at the hosts your last audit told you to target. These are observed re-audit facts \u2014 they do not prove any outreach you ran caused them.",
+    "comparable": false,
+    "basis_note": "The prompt set changed between these runs (measurement basis refreshed), so score movement partly reflects the new questions.",
+    "targets": [
+      {
+        "host": "hwahae.com",
+        "query": "best hair care",
+        "axis": "category",
+        "target_source": "win_plan",
+        "outcome": "won",
+        "reason": "host_now_endorses",
+        "what_changed": "hwahae.com now names you on a category query \u2014 it moved into your endorsement set.",
+        "signals": {
+          "prior": {
+            "endorsed": false,
+            "names_you": false,
+            "citation_role": "independent_endorsement",
+            "prompts_cited_count": 1
+          },
+          "current": {
+            "endorsed": true,
+            "names_you": true,
+            "citation_role": "independent_endorsement",
+            "prompts_cited_count": 3,
+            "grounds_this_query": false,
+            "query_still_losing": true
+          }
+        },
+        "merchant_action": {
+          "title": "Pitch hwahae.com for best hair care",
+          "marked_done_at": "2026-07-11T00:00:00+00:00",
+          "days_before_current_run": 3,
+          "note": "You marked \u201cPitch hwahae.com for best hair care\u201d done 3 days before this run."
+        }
+      },
+      {
+        "host": "allure.com",
+        "query": "best hair care",
+        "axis": "category",
+        "target_source": "win_plan",
+        "outcome": "not_comparable",
+        "reason": "basis_changed",
+        "what_changed": "The prompt set changed between these runs, so no per-query claim is made for allure.com.",
+        "signals": {
+          "prior": {
+            "endorsed": false,
+            "names_you": false,
+            "citation_role": "independent_endorsement",
+            "prompts_cited_count": 1
+          },
+          "current": {
+            "endorsed": false,
+            "names_you": false,
+            "citation_role": "independent_endorsement",
+            "prompts_cited_count": 2,
+            "grounds_this_query": true,
+            "query_still_losing": true
+          }
+        },
+        "merchant_action": null
+      },
+      {
+        "host": "byrdie.com",
+        "query": "best k-beauty serum",
+        "axis": "category",
+        "target_source": "win_plan",
+        "outcome": "not_comparable",
+        "reason": "basis_changed",
+        "what_changed": "The prompt set changed between these runs, so no per-query claim is made for byrdie.com.",
+        "signals": {
+          "prior": {
+            "endorsed": false,
+            "names_you": false,
+            "citation_role": "independent_endorsement",
+            "prompts_cited_count": 1
+          },
+          "current": {
+            "endorsed": false,
+            "names_you": false,
+            "citation_role": null,
+            "prompts_cited_count": null,
+            "grounds_this_query": false,
+            "query_still_losing": true
+          }
+        },
+        "merchant_action": null
+      },
+      {
+        "host": "cultbeauty.com",
+        "query": "best vitamin c serum",
+        "axis": "category",
+        "target_source": "win_plan",
+        "outcome": "not_comparable",
+        "reason": "basis_changed",
+        "what_changed": "The prompt set changed between these runs, so no per-query claim is made for cultbeauty.com.",
+        "signals": {
+          "prior": {
+            "endorsed": false,
+            "names_you": false,
+            "citation_role": "independent_endorsement",
+            "prompts_cited_count": 1
+          },
+          "current": {
+            "endorsed": false,
+            "names_you": false,
+            "citation_role": null,
+            "prompts_cited_count": null,
+            "grounds_this_query": false,
+            "query_still_losing": false
+          }
+        },
+        "merchant_action": null
+      },
+      {
+        "host": "goodhousekeeping.com",
+        "query": "best hair care",
+        "axis": "category",
+        "target_source": "win_plan",
+        "outcome": "not_comparable",
+        "reason": "basis_changed",
+        "what_changed": "The prompt set changed between these runs, so no per-query claim is made for goodhousekeeping.com.",
+        "signals": {
+          "prior": {
+            "endorsed": false,
+            "names_you": false,
+            "citation_role": "independent_endorsement",
+            "prompts_cited_count": 1
+          },
+          "current": {
+            "endorsed": false,
+            "names_you": true,
+            "citation_role": "independent_endorsement",
+            "prompts_cited_count": 2,
+            "grounds_this_query": true,
+            "query_still_losing": true
+          }
+        },
+        "merchant_action": null
+      },
+      {
+        "host": "reddit.com",
+        "query": null,
+        "axis": null,
+        "target_source": "outreach_move",
+        "outcome": "not_comparable",
+        "reason": "basis_changed",
+        "what_changed": "The prompt set changed between these runs, so no per-query claim is made for reddit.com.",
+        "signals": {
+          "prior": {
+            "endorsed": false,
+            "names_you": false,
+            "citation_role": "independent_endorsement",
+            "prompts_cited_count": 1
+          },
+          "current": {
+            "endorsed": false,
+            "names_you": false,
+            "citation_role": "independent_endorsement",
+            "prompts_cited_count": 1,
+            "grounds_this_query": null,
+            "query_still_losing": null
+          }
+        },
+        "merchant_action": null
+      }
+    ],
+    "summary": {
+      "won": 1,
+      "progress": 0,
+      "no_change": 0,
+      "no_longer_grounded": 0,
+      "not_comparable": 5
+    },
+    "closed_channels_excluded": [
+      "hair.com"
+    ]
+  }
+}
