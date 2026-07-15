@@ -569,13 +569,11 @@ export default function UrlAuditPage() {
 
       {/* Re-open a past visibility check (subject_type=merchant_url). Renders
           null when there's no history yet. */}
-      {/* Flag-off (legacy layout) keeps the switch beside run history; the
-          re-layout renders it under the overview card — but only when the
-          per-SKU detail is on screen (detailBlocks non-null), so otherwise
-          the bottom spot still carries it. Gating on `result` alone missed
-          the brand-verdict result (result present, perSku empty): flag-on
-          rendered NO switch at all. */}
-      {!FEATURE_FLAGS.REPORT_SUMMARY_VIEW || !detailBlocks ? <WeeklyReauditSwitch /> : null}
+      {/* Product rule (founder, 2026-07-16): the weekly switch exists ONLY
+          inside a run view — 're-run THIS set weekly' needs a set on screen.
+          Result displayed -> compact top-right (re-layout) or this
+          full-width one (legacy flag-off). No result -> no switch anywhere. */}
+      {!FEATURE_FLAGS.REPORT_SUMMARY_VIEW && detailBlocks ? <WeeklyReauditSwitch /> : null}
       <RecentAuditsPanel
         subjectType="merchant_url"
         title="Past visibility checks"
