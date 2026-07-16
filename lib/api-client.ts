@@ -2173,6 +2173,15 @@ class ApiClient {
     status: 'success' | 'exists' | string;
     task_id?: string;
     draft?: string | null;
+    /** WHERE the draft goes: the merchant's own product page (kind
+     * 'own_page', with its URL) or the outreach channel (kind 'channel',
+     * with target_host). Absent on pre-placement runs. */
+    placement?: {
+      kind?: 'own_page' | 'channel' | string;
+      label?: string | null;
+      url?: string | null;
+      target_host?: string | null;
+    } | null;
     credits_charged?: number;
   }> {
     const res = await this.client.post(
