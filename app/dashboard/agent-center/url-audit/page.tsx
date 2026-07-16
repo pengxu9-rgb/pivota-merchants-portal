@@ -22,6 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
+  Check,
   Globe,
   Info,
   Link2,
@@ -65,6 +66,10 @@ import type {
 const MAX_PRODUCT_URLS_FREE = 5;
 const MAX_PRODUCT_URLS_PAID = 20;
 const MAX_CUSTOM_PROMPTS = 10;
+// Per-product prompts (mirrors backend WEDGE_CUSTOM_PROMPTS_PER_SKU/_TOTAL):
+// probed inside that product's audit context + pinned into its weekly basis.
+const MAX_SKU_PROMPTS_PER_PRODUCT = 2;
+const MAX_SKU_PROMPTS_TOTAL = 10;
 
 // Model naming for the header lives on the BACKEND now — `methodology`
 // carries display-ready `grounded_search_label` / `provider_run_summary`
@@ -150,6 +155,14 @@ export default function UrlAuditPage() {
   const [productUrls, setProductUrls] = useState<string[]>(['']);
   // Optional merchant test prompts ("Your prompts"), one per line, probed once.
   const [customPromptsText, setCustomPromptsText] = useState('');
+  // Per-product prompts, one raw text blob per URL row (kept index-aligned
+  // with productUrls). Sent as custom_prompts_by_url — probed inside that
+  // product's audit context and pinned into its weekly basis. The open flags
+  // live in React state (not the DOM) so row removal can't leak a panel's
+  // open state onto the row that shifts into its index, and clearing the
+  // textarea can't collapse the panel mid-edit.
+  const [skuPromptsText, setSkuPromptsText] = useState<string[]>(['']);
+  const [skuPromptsOpen, setSkuPromptsOpen] = useState<boolean[]>([false]);
   const [loading, setLoading] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -185,14 +198,32 @@ export default function UrlAuditPage() {
 
   const setUrlAt = (i: number, v: string) =>
     setProductUrls((prev) => prev.map((u, idx) => (idx === i ? v : u)));
-  const addUrl = () =>
+  const setSkuPromptsAt = (i: number, v: string) =>
+    setSkuPromptsText((prev) => prev.map((t, idx) => (idx === i ? v : t)));
+  const toggleSkuPromptsAt = (i: number) =>
+    setSkuPromptsOpen((prev) => prev.map((o, idx) => (idx === i ? !o : o)));
+  const addUrl = () => {
     setProductUrls((prev) =>
       prev.length >= MAX_PRODUCT_URLS_PAID ? prev : [...prev, ''],
     );
-  const removeUrl = (i: number) =>
+    setSkuPromptsText((prev) =>
+      prev.length >= MAX_PRODUCT_URLS_PAID ? prev : [...prev, ''],
+    );
+    setSkuPromptsOpen((prev) =>
+      prev.length >= MAX_PRODUCT_URLS_PAID ? prev : [...prev, false],
+    );
+  };
+  const removeUrl = (i: number) => {
     setProductUrls((prev) =>
       prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i),
     );
+    setSkuPromptsText((prev) =>
+      prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i),
+    );
+    setSkuPromptsOpen((prev) =>
+      prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i),
+    );
+  };
 
   const cleanedUrls = productUrls.map((u) => u.trim()).filter(Boolean);
 
@@ -215,7 +246,114 @@ export default function UrlAuditPage() {
       ? `Too many prompts: ${customPromptsParsed.length} / ${MAX_CUSTOM_PROMPTS} max.`
       : null;
 
-  const canRun = cleanedUrls.length > 0 && !loading && !customPromptsError;
+  // Per-product prompts: parse each row's blob (one per line, trimmed,
+  // case-insensitive deduped) and build the URL-keyed request map. Rows whose
+  // URL is blank are a validation error (never a silent drop); duplicate URLs
+  // merge with the same dedupe the backend applies.
+  const skuPromptsParsed = useMemo(
+    () =>
+      skuPromptsText.map((t) => {
+        const seen = new Set<string>();
+        const out: string[] = [];
+        for (const line of t.split(/\r?\n/)) {
+          const q = line.trim();
+          if (!q) continue;
+          const key = q.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push(q);
+        }
+        return out;
+      }),
+    [skuPromptsText],
+  );
+  const skuPromptsByUrl = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (let i = 0; i < productUrls.length; i++) {
+      const url = (productUrls[i] ?? '').trim();
+      const prompts = skuPromptsParsed[i] ?? [];
+      if (!url || prompts.length === 0) continue;
+      const merged = map[url] ?? (map[url] = []);
+      for (const q of prompts) {
+        if (!merged.some((m) => m.toLowerCase() === q.toLowerCase())) {
+          merged.push(q);
+        }
+      }
+    }
+    return map;
+  }, [productUrls, skuPromptsParsed]);
+  const skuPromptsError = useMemo(() => {
+    for (let i = 0; i < skuPromptsParsed.length; i++) {
+      const prompts = skuPromptsParsed[i] ?? [];
+      if (prompts.length > MAX_SKU_PROMPTS_PER_PRODUCT) {
+        return `Up to ${MAX_SKU_PROMPTS_PER_PRODUCT} prompts per product (product ${i + 1} has ${prompts.length}).`;
+      }
+      if (prompts.length > 0 && !(productUrls[i] ?? '').trim()) {
+        return `Product ${i + 1} has prompts but no URL — add the URL or remove its prompts.`;
+      }
+    }
+    const lists = Object.values(skuPromptsByUrl);
+    if (lists.some((l) => l.length > MAX_SKU_PROMPTS_PER_PRODUCT)) {
+      return `Up to ${MAX_SKU_PROMPTS_PER_PRODUCT} prompts per product (two rows share the same URL).`;
+    }
+    const total = lists.reduce((n, l) => n + l.length, 0);
+    if (total > MAX_SKU_PROMPTS_TOTAL) {
+      return `Up to ${MAX_SKU_PROMPTS_TOTAL} per-product prompts across the set (you have ${total}).`;
+    }
+    return null;
+  }, [skuPromptsParsed, skuPromptsByUrl, productUrls]);
+
+  const canRun =
+    cleanedUrls.length > 0 && !loading && !customPromptsError && !skuPromptsError;
+
+  // Adopt-from-suggestions (win-the-specific-long-tail Step 3, wedge edition):
+  // the loaded run's computed-but-unprobed winnable niches, offered as one-click
+  // chips beside the prompts box. Prefer the brand rollup (deduped + ranked,
+  // carries the source SKU); fall back to flattening the per-SKU lists for runs
+  // that predate the rollup. Empty until a run is on screen — an honest nothing.
+  const suggestedPrompts = useMemo(() => {
+    // Fold ALL whitespace (incl. embedded newlines) to single spaces — the
+    // textarea parses per line, so a newline inside a query would split it
+    // into two prompts and break the derived "added" state.
+    const clean = (q: unknown) => String(q || '').replace(/\s+/g, ' ').trim();
+    const rollup = result?.brand_rollup?.suggested_prompts;
+    if (rollup?.has_prompts && (rollup.prompts?.length ?? 0) > 0) {
+      return rollup.prompts.map((p) => ({
+        query: clean(p.query),
+        sku: p.sku ?? null,
+      })).filter((p) => p.query);
+    }
+    const seen = new Set<string>();
+    const out: { query: string; sku: string | null }[] = [];
+    for (const r of result?.per_sku_reports ?? []) {
+      for (const s of r.suggested_prompts ?? []) {
+        const q = clean(s.query);
+        const key = q.toLowerCase();
+        if (!q || seen.has(key)) continue;
+        seen.add(key);
+        out.push({ query: q, sku: r.identity?.name ?? r.sku_title ?? null });
+      }
+    }
+    return out;
+  }, [result]);
+
+  // Append one suggested niche to the prompts textarea (case-insensitive
+  // dedupe + slot cap). "Added" state is DERIVED from the parsed list, so
+  // hand-deleting a line makes its chip addable again.
+  const customPromptKeys = useMemo(
+    () => new Set(customPromptsParsed.map((p) => p.toLowerCase())),
+    [customPromptsParsed],
+  );
+  const promptSlotsFull = customPromptsParsed.length >= MAX_CUSTOM_PROMPTS;
+  const addSuggestedPrompt = (query: string) => {
+    const q = query.trim();
+    if (!q || customPromptKeys.has(q.toLowerCase()) || promptSlotsFull) return;
+    // APPEND to the raw text (don't rebuild from the parsed list) so a chip
+    // click never rewrites/normalizes lines the merchant typed by hand.
+    setCustomPromptsText((prev) =>
+      prev.trim() ? `${prev.replace(/\s+$/, '')}\n${q}` : q,
+    );
+  };
 
   const run = async () => {
     if (cleanedUrls.length === 0) {
@@ -234,6 +372,8 @@ export default function UrlAuditPage() {
         website: website.trim() || undefined,
         brand: brand.trim() || undefined,
         customPrompts: customPromptsParsed.length > 0 ? customPromptsParsed : undefined,
+        customPromptsByUrl:
+          Object.keys(skuPromptsByUrl).length > 0 ? skuPromptsByUrl : undefined,
         onProgress: ({ elapsedMs }) =>
           setElapsedSec(Math.round(elapsedMs / 1000)),
       });
@@ -656,31 +796,73 @@ export default function UrlAuditPage() {
               </span>
             </label>
             {productUrls.map((u, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 opacity-50" />
-                  <input
-                    type="url"
-                    value={u}
-                    onChange={(e) => setUrlAt(i, e.target.value)}
-                    placeholder="https://yourbrand.com/products/your-bestseller"
-                    disabled={loading}
-                    className="w-full rounded-lg border border-[color:var(--merchant-line)] bg-transparent py-2 pl-9 pr-3 text-sm outline-none focus:border-[color:var(--merchant-accent,#6366f1)]"
-                  />
+              <div key={i} className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 opacity-50" />
+                    <input
+                      type="url"
+                      value={u}
+                      onChange={(e) => setUrlAt(i, e.target.value)}
+                      placeholder="https://yourbrand.com/products/your-bestseller"
+                      disabled={loading}
+                      className="w-full rounded-lg border border-[color:var(--merchant-line)] bg-transparent py-2 pl-9 pr-3 text-sm outline-none focus:border-[color:var(--merchant-accent,#6366f1)]"
+                    />
+                  </div>
+                  {productUrls.length > 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => removeUrl(i)}
+                      disabled={loading}
+                      aria-label="Remove product URL"
+                      className="rounded-md border border-[color:var(--merchant-line)] p-2 opacity-70 hover:opacity-100"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : null}
                 </div>
-                {productUrls.length > 1 ? (
-                  <button
-                    type="button"
-                    onClick={() => removeUrl(i)}
-                    disabled={loading}
-                    aria-label="Remove product URL"
-                    className="rounded-md border border-[color:var(--merchant-line)] p-2 opacity-70 hover:opacity-100"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                ) : null}
+                {/* Per-product prompts: probed inside THIS product's audit —
+                    results join its per-prompt table and win plan — and pinned
+                    into its basis so weekly re-runs keep testing them. A panel
+                    with text stays visible (its prompts WILL be sent); the
+                    toggle only hides an empty one. */}
+                <div className="ml-9 space-y-1">
+                  {(skuPromptsText[i] ?? '') === '' ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleSkuPromptsAt(i)}
+                      className="merchant-text-muted cursor-pointer select-none text-[11px] hover:opacity-100"
+                    >
+                      {skuPromptsOpen[i] ? '▾' : '▸'} Prompts to test for this
+                      product (optional · one per line, up to{' '}
+                      {MAX_SKU_PROMPTS_PER_PRODUCT})
+                    </button>
+                  ) : null}
+                  {skuPromptsOpen[i] || (skuPromptsText[i] ?? '') !== '' ? (
+                    <div className="space-y-1">
+                      <textarea
+                        value={skuPromptsText[i] ?? ''}
+                        onChange={(e) => setSkuPromptsAt(i, e.target.value)}
+                        disabled={loading}
+                        rows={2}
+                        placeholder={'collagen jelly for red-eye flights\nvegan collagen for sensitive stomachs'}
+                        aria-label={`Prompts to test for product ${i + 1}`}
+                        className="w-full rounded-lg border border-[color:var(--merchant-line)] bg-transparent px-3 py-1.5 font-mono text-xs outline-none focus:border-[color:var(--merchant-accent,#6366f1)]"
+                      />
+                      <p className="merchant-text-muted text-[11px]">
+                        Tested inside this product&apos;s audit — the results
+                        join its prompt table and win plan, and re-runs keep
+                        testing exactly these prompts so you can track them
+                        week over week.
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             ))}
+            {skuPromptsError ? (
+              <p className="text-xs text-red-700">{skuPromptsError}</p>
+            ) : null}
             {productUrls.length < MAX_PRODUCT_URLS_PAID ? (
               <button
                 type="button"
@@ -723,6 +905,50 @@ export default function UrlAuditPage() {
                 cited you, the sources it used, and which competitors it named.
               </p>
             )}
+            {/* Adopt-from-suggestions: the loaded run's computed-but-unprobed
+                winnable niches as one-click chips. Adopted prompts ride every
+                weekly re-run of this set. Nothing on screen → no chips. */}
+            {suggestedPrompts.length > 0 ? (
+              <div className="space-y-1.5 pt-1">
+                <p className="merchant-text-muted text-xs">
+                  Niches we built from your products but didn&apos;t test in
+                  this audit — click to test them next (they ride your weekly
+                  re-runs too):
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {suggestedPrompts.map((s, i) => {
+                    const isAdded = customPromptKeys.has(s.query.toLowerCase());
+                    return (
+                      <button
+                        key={`sugg-${i}`}
+                        type="button"
+                        onClick={() => addSuggestedPrompt(s.query)}
+                        disabled={loading || isAdded || promptSlotsFull}
+                        title={s.sku ? `via ${s.sku}` : undefined}
+                        className={
+                          isAdded
+                            ? 'inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700'
+                            : 'inline-flex items-center gap-1 rounded-full border border-[color:var(--merchant-line)] bg-white/60 px-2.5 py-1 text-[11px] font-medium text-[color:var(--merchant-accent,#6366f1)] hover:bg-indigo-50 disabled:opacity-50'
+                        }
+                      >
+                        {isAdded ? (
+                          <Check className="h-3 w-3" />
+                        ) : (
+                          <Plus className="h-3 w-3" />
+                        )}
+                        {s.query}
+                      </button>
+                    );
+                  })}
+                </div>
+                {promptSlotsFull ? (
+                  <p className="merchant-text-muted text-xs">
+                    Prompt list full ({MAX_CUSTOM_PROMPTS} max) — remove a line
+                    above to add another suggestion.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
