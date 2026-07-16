@@ -23,9 +23,21 @@ interface ActionState {
   loading?: boolean;
   done?: boolean;
   draft?: string | null;
+  placement?: {
+    kind?: string;
+    label?: string | null;
+    url?: string | null;
+    target_host?: string | null;
+  } | null;
   error?: string | null;
   copied?: boolean;
 }
+
+// Pitch-shaped first moves ("get cited there: pitch them…") confused merchants
+// clicking the on-page draft button — "what is our target media?" The media
+// target lives in the Get-cited panel below; say so instead of leaving the
+// on-page draft to answer a question it can't.
+const PITCH_SHAPED = /\bpitch\b|\bget cited\b|\bcited there\b/i;
 
 function ActionButton({
   action,
@@ -52,7 +64,11 @@ function ActionButton({
         growthPhase: action.growth_phase,
         primaryGap: action.primary_gap,
       });
-      setSt({ done: true, draft: res?.draft ?? null });
+      setSt({
+        done: true,
+        draft: res?.draft ?? null,
+        placement: res?.placement ?? null,
+      });
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status;
       setSt({
@@ -96,10 +112,39 @@ function ActionButton({
               </button>
             </div>
             <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed">{st.draft}</p>
-            <p className="mt-1.5 border-t border-[color:var(--merchant-line)] pt-1.5 text-[10px] leading-snug opacity-55">
-              Publish this on your store or paste it into the channel. Connect your store to
-              let Pivota publish &amp; distribute automatically.
+            <p className="mt-1.5 border-t border-[color:var(--merchant-line)] pt-1.5 text-[10px] leading-snug opacity-70">
+              {st.placement?.url && /^https?:\/\//.test(st.placement.url) ? (
+                <>
+                  <span className="font-semibold">Where:</span> paste this into{' '}
+                  <a
+                    href={st.placement.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline"
+                  >
+                    {st.placement.url.replace(/^https?:\/\//, '')}
+                  </a>
+                  {action.sku_title ? <> — the page for {action.sku_title}</> : null}.
+                </>
+              ) : st.placement?.target_host ? (
+                <>
+                  <span className="font-semibold">Where:</span> send this to{' '}
+                  {st.placement.target_host}.
+                </>
+              ) : (
+                <>Publish this on your store or paste it into the channel.</>
+              )}{' '}
+              <span className="opacity-70">
+                Connect your store to let Pivota publish &amp; distribute automatically.
+              </span>
             </p>
+            {PITCH_SHAPED.test(action.first_move || '') ? (
+              <p className="mt-1 text-[10px] leading-snug opacity-70">
+                This draft strengthens your own page. The <span className="font-semibold">media
+                target</span> for this ask — with a ready-to-send pitch — is in{' '}
+                <span className="font-semibold">Get cited on independent sources</span> below.
+              </p>
+            ) : null}
           </div>
         ) : (
           <p className="mt-1 text-[11px] leading-snug opacity-55">
