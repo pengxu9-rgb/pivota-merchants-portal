@@ -1213,7 +1213,14 @@ export interface EnginePlaybook {
   has_signal?: boolean;
   primary_gap?: 'gemini' | 'chatgpt' | string | null;
   engines?: Record<string, EnginePlaybookEngine>;
-  divergence?: { query: string; won: string[]; lost: string[] }[];
+  divergence?: {
+    query: string;
+    won: string[];
+    lost: string[];
+    /** Generator stamp (llm_winnable/llm_scenario/merchant_custom) — exempt
+     * from the broad-head display gate, mirroring the backend classifier. */
+    prompt_source?: string | null;
+  }[];
   divergence_note?: string | null;
 }
 
