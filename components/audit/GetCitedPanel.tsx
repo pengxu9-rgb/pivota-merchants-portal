@@ -101,7 +101,69 @@ function suggestSubreddits(category: string): string[] {
   return out.slice(0, 4);
 }
 
-interface Starter { kind: Kind; title: string; url: string; how: string }
+interface Starter {
+  kind: Kind;
+  title: string;
+  url: string;
+  how: string;
+  /** The MEASURED shopper question this starter answers — seeds the
+   * draft-outreach call so the merchant gets a community answer for the
+   * exact ask they lose, not generic category copy. */
+  query?: string;
+}
+
+// Mirrors win_plan_builder's broad-head shapes (display gate only): a head
+// term ("best headphones") must never seed an "answer this question"
+// community row — that's the big-budget fight the report tells merchants to
+// park. Generator-stamped prompts (spec-matched / merchant-authored) are
+// exempt, same as the backend classifier.
+const BROAD_HEAD_PREFIXES = ['best ', 'top ', 'popular ', 'what is '];
+// u-flag + Unicode classes: JS \w is ASCII-only, so "what 保湿精华 should i
+// buy" would dodge the gate the backend applies (K-beauty queries are a core
+// vertical).
+const WHAT_SHOULD_I_BUY = /^what\s[\p{L}\p{N}_\- ]{1,40}\sshould\si\sbuy\??$/iu;
+const NEVER_HEAD_SOURCES = new Set(['llm_winnable', 'llm_scenario', 'merchant_custom']);
+function isBroadHeadQuery(q: string, promptSource?: string | null): boolean {
+  if (promptSource && NEVER_HEAD_SOURCES.has(promptSource.toLowerCase())) return false;
+  const t = q.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!t) return true;
+  if (WHAT_SHOULD_I_BUY.test(t)) return true;
+  return t.split(' ').length <= 3 && BROAD_HEAD_PREFIXES.some((p) => t.startsWith(p));
+}
+
+/** The specific shopper questions this audit MEASURED as losses for one
+ * engine: per-engine divergence entries first (this engine graded "lost"),
+ * then the outreach moves' per-host losing queries (niche-first upstream).
+ * Deduped + head-gated. These beat asking a model for fresh topics: each is
+ * pinned in the weekly basis, so answering it shows up as a measured flip on
+ * the next audit. */
+function measuredLostQuestions(
+  engineKey: string,
+  divergence: { query: string; won: string[]; lost: string[]; prompt_source?: string | null }[] | undefined,
+  moves: OutreachMove[],
+  cap = 2,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (q?: string | null, src?: string | null) => {
+    const t = (q || '').replace(/\s+/g, ' ').trim();
+    if (!t || seen.has(t.toLowerCase()) || isBroadHeadQuery(t, src)) return;
+    seen.add(t.toLowerCase());
+    // Backend /actions/start caps query at 300 chars — an over-long measured
+    // question (merchant-authored prompts have no per-entry cap) would 422
+    // the draft button forever.
+    out.push(t.slice(0, 300));
+  };
+  for (const d of divergence || []) {
+    if ((d?.lost || []).includes(engineKey)) push(d.query, d.prompt_source);
+  }
+  for (const m of moves) for (const q of m.losing_queries || []) push(q);
+  return out.slice(0, cap);
+}
+
+function shortQ(q: string, max = 64): string {
+  return q.length > max ? q.slice(0, max - 1) + '…' : q;
+}
 
 // Build the Community paths: real tracked subreddits/threads first (grounded),
 // then category-suggested subreddits, then a search catch-all. The more concrete
@@ -148,12 +210,6 @@ function buildRedditPaths(tracked: TrackedSubreddit[], category: string): Starte
     });
   }
 
-  out.push({
-    kind: 'community',
-    title: 'Search Reddit for your topic',
-    url: `https://www.reddit.com/search/?q=${enc(catQ)}`,
-    how: 'Find the exact threads where shoppers ask about this category.',
-  });
   return out.slice(0, 6);
 }
 
@@ -369,7 +425,7 @@ function EngineGroup({
   category: string;
   brand: string;
   runId?: string | null;
-  starters: { kind: Kind; title: string; url: string; how: string }[];
+  starters: Starter[];
 }) {
   // Channels this engine actually cites (grounded by providers); fall back to a
   // type→engine heuristic when we have no provider data for the host.
@@ -422,7 +478,7 @@ function EngineGroup({
             channelHost={s.title}
             channelLever={leverFor(s.kind)}
             channelType={s.kind}
-            query={category || brand}
+            query={s.query || category || brand}
           />
         ))}
       </div>
@@ -498,16 +554,52 @@ export function GetCitedPanel({
 
   // Multiple actionable paths per engine — the more a merchant can follow, the
   // more evidence AI picks up. ChatGPT leans community/Reddit; both reward KOLs.
-  // Community paths lead with the specific subreddits/threads AI already cites.
+  // Community paths lead with the specific subreddits/threads AI already cites,
+  // then the MEASURED questions this audit lost — the exact threads to find and
+  // the exact questions to answer (each is pinned in the weekly basis, so an
+  // answered question shows up as a measured flip on the next audit). The
+  // generic search rows survive only as the nothing-specific fallback.
+  const chatgptQuestions = measuredLostQuestions('chatgpt', enginePlaybook?.divergence, list);
+  const geminiQuestions = measuredLostQuestions('gemini', enginePlaybook?.divergence, list);
   const chatgptStarters: Starter[] = [
     ...buildRedditPaths(redditSubreddits || [], category),
-    { kind: 'community', title: 'Quora — answer category questions', url: `https://www.quora.com/search?q=${enc(catQ)}`, how: 'Write genuinely helpful answers where your product fits.' },
+    ...chatgptQuestions.flatMap((q): Starter[] => [
+      {
+        kind: 'community',
+        title: `Reddit — the threads asking: “${shortQ(q)}”`,
+        url: `https://www.reddit.com/search/?q=${enc(q)}`,
+        how: 'A question you measurably lose on ChatGPT — add a genuine, disclosed answer where shoppers ask it.',
+        query: q,
+      },
+      {
+        kind: 'community',
+        title: `Quora — answer: “${shortQ(q)}”`,
+        url: `https://www.quora.com/search?q=${enc(q)}`,
+        how: 'Write the genuinely helpful answer — ChatGPT grounds on threads like this.',
+        query: q,
+      },
+    ]),
+    ...(chatgptQuestions.length === 0
+      ? [
+          { kind: 'community' as Kind, title: 'Search Reddit for your topic', url: `https://www.reddit.com/search/?q=${enc(catQ)}`, how: 'Find the exact threads where shoppers ask about this category.' },
+          { kind: 'community' as Kind, title: 'Quora — answer category questions', url: `https://www.quora.com/search?q=${enc(catQ)}`, how: 'Write genuinely helpful answers where your product fits.' },
+        ]
+      : []),
     { kind: 'kol', title: 'YouTube creators — get reviewed', url: `https://www.youtube.com/results?search_query=${enc(catQ + ' review')}`, how: 'Find creators reviewing this category and offer a gifting/review collab.' },
     { kind: 'kol', title: 'TikTok creators', url: `https://www.tiktok.com/search?q=${enc(catQ)}`, how: 'Short-form reviews build the community signal ChatGPT picks up.' },
   ];
-  const geminiStarters = [
-    { kind: 'reviews' as Kind, title: 'Get into "best of" roundups', url: `https://www.google.com/search?q=${enc('best ' + catQ)}`, how: 'Find the review roundups Google ranks for this category and pitch to be included.' },
-    { kind: 'kol' as Kind, title: 'Instagram creators', url: `https://www.google.com/search?q=${enc('instagram ' + catQ + ' creator')}`, how: 'Creator posts that get indexed feed Google-trusted signals.' },
+  const geminiStarters: Starter[] = [
+    ...geminiQuestions.map((q): Starter => ({
+      kind: 'reviews',
+      // ChannelRow prefixes task headlines with "Get cited on ", so the
+      // title must compose ("Get cited on Pages ranking for …").
+      title: `Pages ranking for “${shortQ(q)}”`,
+      url: `https://www.google.com/search?q=${enc(q)}`,
+      how: 'The pages Google ranks for this exact ask are where Gemini grounds it — pitch them to include you.',
+      query: q,
+    })),
+    { kind: 'reviews', title: 'Get into "best of" roundups', url: `https://www.google.com/search?q=${enc('best ' + catQ)}`, how: 'Find the review roundups Google ranks for this category and pitch to be included.' },
+    { kind: 'kol', title: 'Instagram creators', url: `https://www.google.com/search?q=${enc('instagram ' + catQ + ' creator')}`, how: 'Creator posts that get indexed feed Google-trusted signals.' },
   ];
 
   const ep = enginePlaybook?.engines || {};
