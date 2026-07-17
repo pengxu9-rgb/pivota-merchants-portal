@@ -363,6 +363,10 @@ class ApiClient {
 
   async updateProfile(data: any) {
     const response = await this.client.put(API_CONFIG.ENDPOINTS.UPDATE_PROFILE, data);
+    // Mirror only server-confirmed values into the stored user, never the
+    // optimistic form input — a stub/failed persist must not change what the
+    // portal believes the login email is.
+    const confirmed = response.data?.data || {};
     if (typeof window !== 'undefined') {
       try {
         const storedUser = localStorage.getItem('merchant_user');
@@ -372,8 +376,8 @@ class ApiClient {
             'merchant_user',
             JSON.stringify({
               ...parsed,
-              business_name: data.business_name || parsed.business_name,
-              email: data.contact_email || parsed.email,
+              business_name: confirmed.business_name || parsed.business_name,
+              email: confirmed.contact_email || parsed.email,
             })
           );
         }

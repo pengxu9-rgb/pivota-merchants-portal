@@ -352,6 +352,8 @@ const enMessages: MessageCatalog = {
   "settings.preferencesSaveFailed":
     "Notification preferences could not be saved. Please try again.",
   "settings.savedSuccess": "Settings saved successfully!",
+  "settings.loginEmailChanged":
+    "Your login email has been changed. Please sign in again with your new email address.",
   "settings.savedPartial":
     "Settings saved partially. Review the warnings on this page and retry the failed section.",
   "settings.saveFailedPrefix": "Failed to save: {message}",
@@ -1607,6 +1609,7 @@ const localeOverridesRaw: Record<Exclude<MerchantPortalLanguage, "en">, PartialL
     "settings.profileSaveFailed": "企业资料保存失败，请重试。",
     "settings.preferencesSaveFailed": "通知偏好保存失败，请重试。",
     "settings.savedSuccess": "设置已成功保存！",
+    "settings.loginEmailChanged": "登录邮箱已更改，请使用新邮箱重新登录。",
     "settings.savedPartial": "设置已部分保存。请查看本页警告并重试失败部分。",
     "settings.saveFailedPrefix": "保存失败：{message}",
     "settings.profileCardTitle": "企业资料",
