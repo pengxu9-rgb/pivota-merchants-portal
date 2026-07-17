@@ -14,6 +14,7 @@ import { AuditScoreStrip, AuditScoreStripFooter } from '@/components/audit/Audit
 import { ShareOfVoiceBars } from '@/components/audit/ShareOfVoiceBars';
 import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
 import { PrioritizedActionsPanel } from '@/components/audit/PrioritizedActionsPanel';
+import { GetCitedPanel } from '@/components/audit/GetCitedPanel';
 import { PerSkuReportCard } from '@/components/audit/PerSkuReportCard';
 import { SurfaceCard } from '@/components/ui/merchant-primitives';
 import { summaryRenderable } from '@/lib/audit/reportSummary';
@@ -62,6 +63,28 @@ export function SharedAuditClient({ token }: { token: string }) {
   const summary = data.report_summary ?? null;
   const perSku = data.per_sku_reports ?? [];
 
+  // Same derivations as the authed results page (url-audit/page.tsx), minus
+  // brand_report (not in the share allowlist) — the summary subject carries
+  // the merchant name instead. runId stays null, so every action affordance
+  // (draft outreach, tracked tasks) is absent by construction; the reader
+  // gets the channels + how-to-get-cited guidance, none of the controls.
+  const authHosts =
+    (data.authority_map as { hosts?: { host: string; providers?: string[] }[] } | undefined)
+      ?.hosts ?? [];
+  const enginesByHost: Record<string, string[]> = {};
+  for (const h of authHosts) {
+    if (h?.host) enginesByHost[h.host] = h.providers ?? [];
+  }
+  const enginePlaybook = perSku[0]?.engine_playbook ?? null;
+  const categoryHint =
+    perSku[0]?.product_competitiveness?.discovery?.missed?.[0] ??
+    enginePlaybook?.divergence?.[0]?.query ??
+    null;
+  const redditSubreddits = (
+    (data.authority_map as { skus?: { reddit?: { subreddits?: unknown[] } }[] } | undefined)
+      ?.skus ?? []
+  ).flatMap((s) => s?.reddit?.subreddits ?? []);
+
   return (
     <div className="mx-auto max-w-5xl space-y-4 px-4 py-8">
       <p className="merchant-text-muted text-xs">
@@ -81,6 +104,18 @@ export function SharedAuditClient({ token }: { token: string }) {
       <PrioritizedActionsPanel
         actions={data.merchant_narrative?.prioritized_actions}
         runId={null}
+      />
+      <GetCitedPanel
+        moves={data.where_youre_losing?.outreach_moves}
+        pitchTargets={data.where_youre_losing?.pitch_targets}
+        closedChannels={data.where_youre_losing?.closed_channels}
+        closedChannelsNote={data.where_youre_losing?.closed_channels_note}
+        enginesByHost={enginesByHost}
+        enginePlaybook={enginePlaybook}
+        categoryHint={categoryHint}
+        brand={summary?.subject?.merchant_name ?? null}
+        runId={null}
+        redditSubreddits={redditSubreddits as Parameters<typeof GetCitedPanel>[0]['redditSubreddits']}
       />
       <div className="space-y-3">
         {perSku.map((r, i) => (
