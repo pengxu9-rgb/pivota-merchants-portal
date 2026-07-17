@@ -171,6 +171,14 @@ export default function SettingsPage() {
         setPreferencesError(t('settings.preferencesSaveFailed'));
       }
 
+      if (profileResult.status === 'fulfilled' && profileResult.value?.login_email_changed) {
+        // The login credential moved server-side; the current session's token
+        // and stored user are stale. Force a fresh sign-in with the new email.
+        alert(t('settings.loginEmailChanged'));
+        apiClient.logout();
+        return;
+      }
+
       if (profileResult.status === 'fulfilled' && preferencesResult.status === 'fulfilled') {
         alert(profileResult.value.message || t('settings.savedSuccess'));
       } else if (profileResult.status === 'fulfilled' || preferencesResult.status === 'fulfilled') {
