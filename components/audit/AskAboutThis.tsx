@@ -35,10 +35,13 @@ function buildChips(report: AgentCenterPerSkuReport): Chip[] {
   const pc = report.product_competitiveness;
   if (!pc || pc.grounding_unavailable || !pc.has_discovery) return [];
 
+  // `discovery` is typed required but can be absent on older/sparse payloads
+  // even when has_discovery is set — no measurements means no chips, not a throw.
   const d = pc.discovery;
-  const total = d.total;
+  if (!d) return [];
+  const total = d.total ?? 0;
   const recommended = d.appeared_recommended ?? 0;
-  const listing = d.appeared_listing ?? d.appeared;
+  const listing = d.appeared_listing ?? d.appeared ?? 0;
   const topCompetitor = d.top_competitors?.[0]?.name || null;
   const competitors = (d.top_competitors || []).slice(0, 4).map((c) => c.name);
   const topChannel = (report.channel_appearance?.channels || [])

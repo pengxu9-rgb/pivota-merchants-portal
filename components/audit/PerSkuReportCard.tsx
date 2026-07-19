@@ -99,7 +99,7 @@ function DimensionCell({
   unavailable,
 }: {
   label: string;
-  score: SkuDimensionScore;
+  score?: SkuDimensionScore | null;
   highlight?: boolean;
   unavailable?: boolean;
 }) {
@@ -115,8 +115,9 @@ function DimensionCell({
       </div>
     );
   }
-  const band = score.band ?? bandFromScore(score.score);
-  const bandLabel = score.band_label ?? BAND_LABEL[band] ?? '';
+  // A missing dimension (sparse payload) renders as unscored, never throws.
+  const band = score?.band ?? bandFromScore(score?.score);
+  const bandLabel = score?.band_label ?? BAND_LABEL[band] ?? '';
   return (
     <div
       className={`rounded border px-2 py-1.5 ${
@@ -128,7 +129,7 @@ function DimensionCell({
       <div className="text-[10px] uppercase tracking-wide opacity-60">{label}</div>
       <div className="flex items-baseline gap-1.5">
         <span className={`text-lg font-bold ${bandTextClass(band)}`}>
-          {score.score == null ? '—' : score.score}
+          {score?.score == null ? '—' : score.score}
         </span>
         {bandLabel ? (
           <span className={`text-[10px] font-semibold ${bandTextClass(band)}`}>
@@ -136,8 +137,8 @@ function DimensionCell({
           </span>
         ) : null}
       </div>
-      {score.meaning ? (
-        <div className="mt-0.5 text-[10px] leading-snug opacity-60">{score.meaning}</div>
+      {score?.meaning ? (
+        <div className="mt-0.5 text-[10px] leading-snug opacity-60">{score?.meaning}</div>
       ) : null}
     </div>
   );
@@ -245,20 +246,20 @@ export function PerSkuReportCard({
         {expanded ? (
           <div className="mt-3 space-y-3">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <DimensionCell label="Cited by AI" score={report.scores.citation} highlight />
+              <DimensionCell label="Cited by AI" score={report.scores?.citation} highlight />
               <DimensionCell
                 label="Identity"
-                score={report.scores.identity}
+                score={report.scores?.identity}
                 unavailable={!catalogDimensionsAvailable}
               />
               <DimensionCell
                 label="Content"
-                score={report.scores.content_richness}
+                score={report.scores?.content_richness}
                 unavailable={!catalogDimensionsAvailable}
               />
               <DimensionCell
                 label="Routability"
-                score={report.scores.routability}
+                score={report.scores?.routability}
                 unavailable={!catalogDimensionsAvailable}
               />
             </div>

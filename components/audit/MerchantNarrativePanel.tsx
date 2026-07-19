@@ -98,13 +98,17 @@ function FindabilityEndorsementSplit({
   narrative: AgentCenterMerchantNarrative;
   authorityMap?: AgentCenterAuthorityMap | null;
 }) {
+  // Sparse-payload safety: `whats_working` / `where_youre_losing` are typed
+  // required, but older/hand-patched narratives can arrive without them — an
+  // unguarded access here crashed the whole report page.
   const summary = authorityMap?.host_attribution_summary;
-  const findabilityHosts = summary?.findability_hosts ?? narrative.whats_working.findability_hosts;
+  const findabilityHosts =
+    summary?.findability_hosts ?? narrative.whats_working?.findability_hosts ?? [];
   const endorsementHosts =
-    summary?.endorsement_hosts ?? narrative.where_youre_losing.endorsement_hosts;
+    summary?.endorsement_hosts ?? narrative.where_youre_losing?.endorsement_hosts ?? [];
   const recommendedForCategory =
     summary?.independently_recommended_for_category ??
-    narrative.where_youre_losing.independently_recommended_for_category;
+    narrative.where_youre_losing?.independently_recommended_for_category;
   const endorsementCategoryHosts =
     summary?.endorsement_category_hosts ?? (recommendedForCategory ? endorsementHosts : []);
   const surfacedOnlyViaOwnListing =
@@ -211,13 +215,14 @@ function FindabilityEndorsementSplit({
   );
 }
 
-function WhoAiCitesInsteadBlock({ block }: { block: WhoAiCitesInstead }) {
+function WhoAiCitesInsteadBlock({ block }: { block?: WhoAiCitesInstead | null }) {
+  if (!block) return null;
   if (!block.available) {
     return <p className="mt-2 text-xs italic text-slate-400">{block.note}</p>;
   }
   return (
     <div className="mt-2 space-y-2">
-      {block.competitors.length > 0 ? (
+      {(block.competitors?.length ?? 0) > 0 ? (
         <div>
           <div className="text-xs font-medium text-slate-600">What AI names instead of you</div>
           <div className="text-[11px] text-slate-400">
@@ -225,7 +230,7 @@ function WhoAiCitesInsteadBlock({ block }: { block: WhoAiCitesInstead }) {
             naming you — not all are competing brands. Tap any to look it up.
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-            {[...block.competitors]
+            {[...(block.competitors ?? [])]
               .sort((a, b) => (b.times_named || 0) - (a.times_named || 0))
               .map((c) => (
                 <span key={c.name} className="inline-flex items-center gap-1">
@@ -246,11 +251,11 @@ function WhoAiCitesInsteadBlock({ block }: { block: WhoAiCitesInstead }) {
           </div>
         </div>
       ) : null}
-      {block.cited_hosts.length > 0 ? (
+      {(block.cited_hosts?.length ?? 0) > 0 ? (
         <div>
           <div className="text-xs font-medium text-slate-600">Hosts AI cites</div>
           <div className="mt-1 flex flex-wrap gap-1.5">
-            {block.cited_hosts.map((h) => (
+            {block.cited_hosts?.map((h) => (
               <HostChip key={h.host} host={h.host} tone="findability" href={lookupHref(h.host)} />
             ))}
           </div>
@@ -295,9 +300,15 @@ export function MerchantNarrativePanel({
   if (!narrative) return null;
 
   const isReseller = merchantType === 'reseller';
+  // Sparse-payload safety: these sub-objects are typed required but can be
+  // absent on older/hand-patched narratives — each section self-hides instead
+  // of throwing (which crashed the whole report page).
   const w = narrative.whats_working;
+  const wyl = narrative.where_youre_losing;
+  const verifyPlain = narrative.verify_summary_plain;
+  const honestLimits = narrative.honest_limits ?? [];
   const showProbeCounts =
-    (w.branded_navigational_probes || 0) > 0 || (w.category_discovery_probes || 0) > 0;
+    (w?.branded_navigational_probes || 0) > 0 || (w?.category_discovery_probes || 0) > 0;
 
   return (
     <div className="space-y-4">
@@ -325,6 +336,7 @@ export function MerchantNarrativePanel({
       </div>
 
       {/* 2. What's working */}
+      {w ? (
       <Section icon={<CheckCircle2 className="h-4 w-4 text-green-600" />} title="What's working">
         <p className="text-sm text-slate-700">{w.summary}</p>
         {showProbeCounts ? (
@@ -336,30 +348,33 @@ export function MerchantNarrativePanel({
         {w.evidence_excerpt ? (
           <blockquote className="mt-2 border-l-2 border-slate-200 pl-3 text-xs italic text-slate-600">
             &ldquo;{w.evidence_excerpt.excerpt}&rdquo;
-            {w.evidence_excerpt.source_labels.length > 0 ? (
+            {(w.evidence_excerpt.source_labels?.length ?? 0) > 0 ? (
               <span className="not-italic text-slate-400">
                 {' '}
-                — {w.evidence_excerpt.source_labels.join(', ')}
+                — {w.evidence_excerpt.source_labels?.join(', ')}
               </span>
             ) : null}
           </blockquote>
         ) : null}
       </Section>
+      ) : null}
 
       {/* findability vs endorsement split (Fix 2 core) */}
       <FindabilityEndorsementSplit narrative={narrative} authorityMap={authorityMap} />
 
       {/* 3. Where you can grow + who AI cites instead + path to winning */}
+      {wyl ? (
       <Section
         icon={<Sprout className="h-4 w-4 text-indigo-600" />}
         title="Where you can grow"
       >
-        <p className="text-sm text-slate-700">{narrative.where_youre_losing.summary}</p>
-        <WhoAiCitesInsteadBlock block={narrative.where_youre_losing.who_ai_cites_instead} />
-        {narrative.where_youre_losing.win_plan_summary ? (
-          <WinPlanSummaryCallout summary={narrative.where_youre_losing.win_plan_summary} />
+        <p className="text-sm text-slate-700">{wyl.summary}</p>
+        <WhoAiCitesInsteadBlock block={wyl.who_ai_cites_instead} />
+        {wyl.win_plan_summary ? (
+          <WinPlanSummaryCallout summary={wyl.win_plan_summary} />
         ) : null}
       </Section>
+      ) : null}
 
       {/* 4. Per-product scorecard removed — it duplicated the richer, product-named
           "Your products" section (PerSkuCardList) with a worse label (bare variant
@@ -369,17 +384,17 @@ export function MerchantNarrativePanel({
           (checked > 0). When it was skipped, a standalone "did not run" section reads
           as low-quality; the honest caveat still appears in "What we didn't measure"
           below, so we stay truthful without headlining a non-result. */}
-      {narrative.verify_summary_plain.checked > 0 ? (
+      {(verifyPlain?.checked ?? 0) > 0 ? (
         <Section icon={<ShieldCheck className="h-4 w-4 text-slate-500" />} title="Answer-quality check">
-          <p className="text-sm text-slate-700">{narrative.verify_summary_plain.text}</p>
-          {narrative.verify_summary_plain.flagged_examples &&
-          narrative.verify_summary_plain.flagged_examples.length > 0 ? (
+          <p className="text-sm text-slate-700">{verifyPlain?.text}</p>
+          {verifyPlain?.flagged_examples &&
+          verifyPlain.flagged_examples.length > 0 ? (
             <div className="mt-3 space-y-2">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                 What DeepSeek flagged
               </div>
               <ul className="space-y-2">
-                {narrative.verify_summary_plain.flagged_examples.map((ex, i) => (
+                {verifyPlain.flagged_examples.map((ex, i) => (
                   <li
                     key={i}
                     className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm"
@@ -407,13 +422,13 @@ export function MerchantNarrativePanel({
       ) : null}
 
       {/* 6. Honest limits — render verbatim, no fabrication */}
-      {narrative.honest_limits.length > 0 ? (
+      {honestLimits.length > 0 ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
           <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
             <Info className="h-4 w-4" /> What we didn&apos;t measure
           </div>
           <ul className="list-disc space-y-1 pl-5 text-xs text-slate-500">
-            {narrative.honest_limits.map((l, i) => (
+            {honestLimits.map((l, i) => (
               <li key={i}>{l}</li>
             ))}
           </ul>

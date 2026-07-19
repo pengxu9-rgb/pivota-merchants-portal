@@ -31,9 +31,18 @@ export function agenticVerdict(report: AgentCenterPerSkuReport): AgenticVerdict 
     };
   }
 
+  // `discovery` is typed required but can be absent on older/sparse payloads
+  // even when has_discovery is set — treat that as unmeasured, never throw.
   const d = pc.discovery;
+  if (!d) {
+    return {
+      label: "Couldn't measure",
+      tone: 'muted',
+      meaning: 'This run carried no discovery measurements — re-run to measure.',
+    };
+  }
   const recommended = d.appeared_recommended ?? 0;
-  const listing = d.appeared_listing ?? d.appeared;
+  const listing = d.appeared_listing ?? d.appeared ?? 0;
 
   if (recommended > 0) {
     return {
