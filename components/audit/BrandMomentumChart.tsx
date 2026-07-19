@@ -251,15 +251,42 @@ function dotBg(band: Band): string {
 // ---------------------------------------------------------------------------
 // Data-loading wrapper. Fetches the previous completed run's brand_rollup
 // dimensions and renders the chart inside a SurfaceCard.
+//
+// Per-surface prior-run detail fetch: the readiness page reads a raw run row
+// (`getAuditRunDetail` → report_jsonb.brand_rollup.dimensions) while the
+// AI-Visibility page reads the shaped url-readiness envelope
+// (`getUrlAuditRunDetail` → brand_rollup.dimensions at the top level). The
+// fetcher is selected by `subjectType` so callers just say which surface they
+// are, and both paths soft-fail to null (first-measurement state) on any
+// missing field — never fabricate a delta.
 // ---------------------------------------------------------------------------
+async function fetchPriorDimensionsForRun(
+  runId: string,
+  subjectType: string,
+): Promise<BrandDimensionStats | null> {
+  if (subjectType === 'merchant_url') {
+    const detail = (await apiClient.getUrlAuditRunDetail(runId)) as {
+      brand_rollup?: { dimensions?: BrandDimensionStats | null } | null;
+    };
+    return detail?.brand_rollup?.dimensions ?? null;
+  }
+  const detail = await apiClient.getAuditRunDetail(runId);
+  return detail?.report_jsonb?.brand_rollup?.dimensions ?? null;
+}
+
 export function BrandMomentumPanel({
   rollup,
   currentRunId,
   subjectType = 'merchant',
+  fetchPriorDimensions,
 }: {
   rollup: AgentCenterBrandRollup;
   currentRunId?: string | null;
+  /** Scopes the run history AND selects the per-surface detail fetch:
+   *  'merchant' (readiness, default) or 'merchant_url' (AI-Visibility). */
   subjectType?: string;
+  /** Override the prior-run dimensions fetch entirely (dev previews/tests). */
+  fetchPriorDimensions?: (runId: string) => Promise<BrandDimensionStats | null>;
 }) {
   const [prior, setPrior] = useState<BrandDimensionStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -296,9 +323,10 @@ export function BrandMomentumPanel({
           if (!cancelled) setLoading(false);
           return;
         }
-        const detail = await apiClient.getAuditRunDetail(priorRunId);
-        const dims = detail?.report_jsonb?.brand_rollup?.dimensions ?? null;
-        if (!cancelled) setPrior(dims);
+        const dims = fetchPriorDimensions
+          ? await fetchPriorDimensions(priorRunId)
+          : await fetchPriorDimensionsForRun(priorRunId, subjectType);
+        if (!cancelled) setPrior(dims ?? null);
       } catch {
         // Soft-fail to the first-measurement state — never fabricate a delta.
         if (!cancelled) setPrior(null);
@@ -309,6 +337,7 @@ export function BrandMomentumPanel({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentRunId, subjectType]);
 
   if (!rollup?.dimensions) return null;

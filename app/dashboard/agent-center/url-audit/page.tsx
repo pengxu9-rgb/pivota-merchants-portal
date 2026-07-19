@@ -55,6 +55,8 @@ import { GetCitedPanel } from '@/components/audit/GetCitedPanel';
 import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
 import { OutreachOutcomesPanel } from '@/components/audit/OutreachOutcomesPanel';
 import { PrioritizedActionsPanel } from '@/components/audit/PrioritizedActionsPanel';
+import { EngineDiscoverySplitChart } from '@/components/audit/EngineDiscoverySplitChart';
+import { BrandMomentumPanel } from '@/components/audit/BrandMomentumChart';
 import type {
   AgentCenterBdReport,
   AgentCenterBdVerdictLabel,
@@ -597,6 +599,29 @@ export default function UrlAuditPage() {
         </SurfaceCard>
         </ReportSectionBoundary>
       ),
+      // #189 charts on the AI-Visibility surface (founder direction): the
+      // overall-analysis payoff right with the overview — engine split
+      // (Gemini vs ChatGPT discovery rate per product) + momentum dumbbells
+      // (previous URL check → this one). BrandMomentumPanel scopes its
+      // prior-run fetch to this page's run kind (subject_type='merchant_url'
+      // history + the shaped url-readiness detail). Each self-hides without
+      // data (single run → first-measurement state; no dimensions → nothing).
+      charts: (
+        <>
+          <ReportSectionBoundary section="url-audit-engine-split" silent>
+            <EngineDiscoverySplitChart reports={perSku} />
+          </ReportSectionBoundary>
+          {result.brand_rollup ? (
+            <ReportSectionBoundary section="url-audit-momentum" silent>
+              <BrandMomentumPanel
+                rollup={result.brand_rollup}
+                currentRunId={result.run_id ?? result.audit_run_id ?? activeRunId ?? null}
+                subjectType="merchant_url"
+              />
+            </ReportSectionBoundary>
+          ) : null}
+        </>
+      ),
       narrative: (
         <>
         {/* The insight layer: headline story, what's working, where you're
@@ -697,6 +722,7 @@ export default function UrlAuditPage() {
     FEATURE_FLAGS.REPORT_SUMMARY_VIEW ? (
       <>
         {detailBlocks.overview}
+        {detailBlocks.charts}
         {detailBlocks.narrative}
         {detailBlocks.getCited}
         {/* The heavy diagnostics tier — highlighted so merchants can't miss
@@ -719,6 +745,7 @@ export default function UrlAuditPage() {
     ) : (
       <>
         {detailBlocks.overview}
+        {detailBlocks.charts}
         {detailBlocks.narrative}
         {detailBlocks.skuCards}
         {detailBlocks.getCited}
