@@ -57,14 +57,23 @@ export function ProductCompetitivenessPanel({
   const pc = report.product_competitiveness;
   if (!pc) return null;
 
-  const { discovery, branded } = pc;
-  const total = discovery.total;
+  // `discovery` / `branded` are typed as required, but older or re-typed runs
+  // (e.g. a readiness report served through the URL-audit envelope) can carry a
+  // sparse `product_competitiveness` that predates them. Guard both so a missing
+  // sub-object degrades to the "couldn't measure" state instead of throwing an
+  // unguarded `discovery.total` / `branded.total` (client-side crash).
+  const discovery = pc.discovery;
+  const branded = pc.branded;
+  const total = discovery?.total ?? 0;
   // Prefer the honest split; fall back to the combined `appeared` only when an
   // older payload didn't carry it (then we say so).
   const hasSplit =
-    discovery.appeared_recommended != null || discovery.appeared_listing != null;
-  const recommended = discovery.appeared_recommended ?? 0;
-  const listing = discovery.appeared_listing ?? discovery.appeared;
+    discovery?.appeared_recommended != null || discovery?.appeared_listing != null;
+  const recommended = discovery?.appeared_recommended ?? 0;
+  const listing = discovery?.appeared_listing ?? discovery?.appeared ?? 0;
+  // A truthy pc with no discovery slice can't be scored — treat it like the
+  // grounding-unavailable state so the panel shows an honest empty message.
+  const hasDiscoveryData = !!discovery && pc.has_discovery;
 
   return (
     <div className="mt-3 rounded-md border border-[color:var(--merchant-line)] bg-white/40 px-3 py-3">
@@ -79,7 +88,7 @@ export function ProductCompetitivenessPanel({
           discovery searches without citing sources (a temporary grounding
           hiccup), so there&apos;s nothing reliable to score. Re-run to measure.
         </p>
-      ) : !pc.has_discovery ? (
+      ) : !hasDiscoveryData ? (
         <p className="mt-1 text-xs leading-relaxed opacity-70">
           We couldn&apos;t test discovery searches for this product yet — we
           need a clearer product category to probe demand like &ldquo;best{' '}
@@ -150,14 +159,14 @@ export function ProductCompetitivenessPanel({
             </div>
           ) : null}
 
-          {discovery.top_competitors.length > 0 ? (
+          {(discovery?.top_competitors?.length ?? 0) > 0 ? (
             <div className="mt-3">
               <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide opacity-70">
                 <Trophy className="h-3.5 w-3.5" />
                 AI recommends instead
               </div>
               <div className="mt-1 flex flex-wrap gap-1.5">
-                {discovery.top_competitors.map((c) => (
+                {discovery?.top_competitors?.map((c) => (
                   <span
                     key={c.name}
                     className="rounded-full border border-[color:var(--merchant-line)] px-2 py-0.5 text-xs"
@@ -170,13 +179,13 @@ export function ProductCompetitivenessPanel({
             </div>
           ) : null}
 
-          {discovery.missed.length > 0 ? (
+          {(discovery?.missed?.length ?? 0) > 0 ? (
             <div className="mt-3">
               <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
                 Searches you&apos;re missing
               </div>
               <ul className="mt-1 space-y-0.5 text-xs opacity-80">
-                {discovery.missed.slice(0, 4).map((q, i) => (
+                {discovery?.missed?.slice(0, 4).map((q, i) => (
                   <li key={i} className="truncate">
                     &ldquo;{q}&rdquo;
                   </li>
@@ -187,9 +196,9 @@ export function ProductCompetitivenessPanel({
         </>
       )}
 
-      {branded.total > 0 ? (
+      {(branded?.total ?? 0) > 0 ? (
         <p className="mt-3 text-[11px] opacity-55">
-          Branded searches (your name): {branded.appeared}/{branded.total} — low
+          Branded searches (your name): {branded?.appeared ?? 0}/{branded?.total ?? 0} — low
           value; few shoppers search a product by name in AI, and those who do
           already found you elsewhere.
         </p>
