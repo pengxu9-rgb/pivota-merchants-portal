@@ -33,7 +33,7 @@ import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { SurfaceCard } from '@/components/ui/merchant-primitives';
 import { ReportSectionBoundary } from '@/components/audit/ReportSectionBoundary';
-import { VisibilityTrendChart } from '@/components/audit/VisibilityTrendChart';
+import { MomentumTrend, windowTrendPoints } from '@/components/audit/MomentumTrend';
 import { BrandMomentumPanel } from '@/components/audit/BrandMomentumChart';
 import type { AgentCenterBrandRollup } from '@/lib/types/ai-readiness';
 import type { VisibilityTrackingResponse } from '@/lib/types/visibility-tracking';
@@ -79,10 +79,11 @@ export function MomentumCard({
     };
   }, [reloadKey, subjectType]);
 
-  const pointCount = data?.points?.length ?? 0;
-  // ≥3 comparable-history points → lines earn their place; below that a
-  // 2-point line is a worse dumbbell, so the dumbbells carry the card alone.
-  const showTrend = !error && pointCount >= 3;
+  // Gate the trend on the WINDOWED depth (latest check per day, last N) —
+  // 29 checks clustered across two days are still a 2-point story, and a
+  // 2-point line is a worse dumbbell.
+  const windowedCount = windowTrendPoints(data).points.length;
+  const showTrend = !error && windowedCount >= 3;
   const hasDumbbells = !!rollup?.dimensions;
 
   // Nothing measurable on either axis → no card at all (never an empty shell,
@@ -97,18 +98,14 @@ export function MomentumCard({
       eyebrow="AI visibility · momentum"
       description={
         showTrend
-          ? 'Your visibility over time, and what moved since your previous check.'
+          ? 'Your recent visibility checks, and what moved since your previous one.'
           : 'What moved since your previous check. Trend lines appear once three checks are tracked.'
       }
     >
       <div className="space-y-5 px-5 py-4">
         {showTrend ? (
           <ReportSectionBoundary section="momentum-trend" silent>
-            <VisibilityTrendChart
-              embedded
-              subjectType={subjectType}
-              tracking={{ data, loading, error }}
-            />
+            <MomentumTrend data={data} />
           </ReportSectionBoundary>
         ) : null}
         {hasDumbbells && rollup ? (
