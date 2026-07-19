@@ -51,6 +51,8 @@ import { OutreachOutcomesPanel } from '@/components/audit/OutreachOutcomesPanel'
 import { IntegrationCtaPanel } from '@/components/audit/IntegrationCtaPanel';
 import { RecentAuditsPanel } from '@/components/audit/RecentAuditsPanel';
 import { AuditReadinessBanner } from '@/components/audit/AuditReadinessBanner';
+import { EngineDiscoverySplitChart } from '@/components/audit/EngineDiscoverySplitChart';
+import { BrandMomentumPanel } from '@/components/audit/BrandMomentumChart';
 import {
   readVisibilityHandoff,
   clearVisibilityHandoff,
@@ -2633,6 +2635,9 @@ export function PerSkuAuditReportRenderer({
           authorityMap={report.authority_map}
           runId={report.audit_run_id}
         />
+        {/* Engine split — discovery rate by SKU (Gemini vs ChatGPT, grouped
+            bars). Returns null when no SKU carries per-model discovery data. */}
+        <EngineDiscoverySplitChart reports={report.per_sku_reports} />
       </Zone>
 
       {/* ZONE 2 — How can I improve? */}
@@ -2696,6 +2701,14 @@ export function PerSkuAuditReportRenderer({
         <OutreachOutcomesPanel outcomes={report.outreach_outcomes} />
         {/* Outreach proof-of-lift: which pitched hosts now cite you (the closed loop). */}
         <MerchantOutreachPanel />
+        {/* Momentum — baseline → current dumbbells for the four readiness
+            dimensions. Self-fetches the previous run's brand_rollup medians;
+            renders the first-measurement state when there's no prior run. */}
+        <BrandMomentumPanel
+          rollup={report.brand_rollup}
+          currentRunId={report.audit_run_id}
+          subjectType="merchant"
+        />
         <PerformanceZone tracking={report.brand_rollup.tracking} />
         {/* Step 5 (re-test loop v1): the on-demand "did my fix work?" — re-test the
             queries you're losing via the custom-prompt path. Returns null when

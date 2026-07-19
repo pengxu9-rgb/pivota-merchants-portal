@@ -162,6 +162,42 @@
         "verified": 4,
         "flagged": 1,
         "citation_positive_candidates": 6
+      },
+      "product_competitiveness": {
+        "has_discovery": true,
+        "discovery": {
+          "appeared": 3,
+          "total": 8,
+          "rate": 0.375,
+          "appeared_recommended": 1,
+          "appeared_listing": 2,
+          "missed": [
+            "best collagen jelly for dry skin"
+          ],
+          "top_competitors": [
+            {
+              "name": "Anua",
+              "query_count": 4
+            }
+          ]
+        },
+        "branded": {
+          "appeared": 2,
+          "total": 2,
+          "rate": 1
+        },
+        "by_model": {
+          "gemini": {
+            "appeared": 3,
+            "total": 8,
+            "rate": 0.375
+          },
+          "chatgpt": {
+            "appeared": 1,
+            "total": 8,
+            "rate": 0.125
+          }
+        }
       }
     }
   ],
@@ -204,22 +240,42 @@
       "identity": {
         "median": 72,
         "p25": 72,
-        "p75": 72
+        "p75": 72,
+        "band": "ready",
+        "band_label": "Ready",
+        "dimension_label": "Identity",
+        "total_count": 1,
+        "above_count": 1
       },
       "content_richness": {
         "median": 55,
         "p25": 55,
-        "p75": 55
+        "p75": 55,
+        "band": "partial",
+        "band_label": "Needs work",
+        "dimension_label": "Content",
+        "total_count": 1,
+        "above_count": 1
       },
       "routability": {
         "median": 48,
         "p25": 48,
-        "p75": 48
+        "p75": 48,
+        "band": "partial",
+        "band_label": "Needs work",
+        "dimension_label": "Routability",
+        "total_count": 1,
+        "above_count": 1
       },
       "citation": {
         "median": 35,
         "p25": 35,
-        "p75": 35
+        "p75": 35,
+        "band": "blocked",
+        "band_label": "Not yet visible",
+        "dimension_label": "Citation",
+        "total_count": 1,
+        "above_count": 1
       }
     },
     "winning_skus_by_citation": [
