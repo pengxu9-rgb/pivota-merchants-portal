@@ -38,6 +38,7 @@ import {
   PageHeader,
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
+import { DetailDisclosureCard } from '@/components/ui/DetailDisclosureCard';
 import { MerchantTaskQueuePanel } from '@/components/audit/MerchantTaskQueuePanel';
 import { ExecutorApprovalPanel } from '@/components/audit/ExecutorApprovalPanel';
 import { MerchantOutreachPanel } from '@/components/audit/MerchantOutreachPanel';
@@ -2603,11 +2604,14 @@ export function PerSkuAuditReportRenderer({
         {costSummaryProviderNames(report.cost_summary)}.
       </div>
 
-      {/* ZONE 1 — Am I winning? */}
+      {/* ZONE 1 — Am I winning? (overall analysis leads the report)
+          Founder direction (2026-07-19): lead with the brand-level verdict +
+          the momentum/engine charts (#189), NOT the per-product scorecards. The
+          per-SKU drill-down now lives collapsed at the bottom of the report. */}
       <Zone
         n={1}
         question="Am I winning?"
-        subtitle="Where you stand with AI shopping agents — the brand summary, then each product."
+        subtitle="Where you stand with AI shopping agents — the brand-level analysis."
       >
         <BrandRollupCover
           rollup={report.brand_rollup}
@@ -2626,33 +2630,50 @@ export function PerSkuAuditReportRenderer({
           authorityMap={report.authority_map}
           merchantType={report.brand_rollup.merchant_type}
         />
-        {/* Per-product drill-down — the scores BEHIND the brand summary above.
-            Moved up from the bottom of the report (it used to sit under the action
-            plan in Zone 3, far from the brand analysis it details, reading as a
-            duplicate scorecard). Each card carries the per-SKU 'what to do next'. */}
-        <PerSkuCardList
-          reports={report.per_sku_reports}
-          authorityMap={report.authority_map}
-          runId={report.audit_run_id}
-        />
-        {/* Engine split — discovery rate by SKU (Gemini vs ChatGPT, grouped
-            bars). Returns null when no SKU carries per-model discovery data. */}
+        {/* #189 charts — the overall-analysis payoff, surfaced at the top with the
+            brand rollup (founder direction). Engine split = discovery rate by SKU
+            (Gemini vs ChatGPT); Momentum = baseline→current dumbbells across the
+            four readiness dimensions. Each returns null when it lacks data. */}
         <EngineDiscoverySplitChart reports={report.per_sku_reports} />
+        <BrandMomentumPanel
+          rollup={report.brand_rollup}
+          currentRunId={report.audit_run_id}
+          subjectType="merchant"
+        />
       </Zone>
 
-      {/* ZONE 2 — How can I improve? */}
+      {/* ZONE 2 — What do I do next? (next best actions lead, right after the
+          overall analysis — founder direction). Pairs the win-plan (the
+          per-losing-query targets + one-click pitches) with the live action
+          plan so the highest-leverage moves are front-and-center. */}
       <Zone
         n={2}
-        question="How can I improve?"
-        subtitle="The highest-leverage places to grow your AI visibility."
+        question="What do I do next?"
+        subtitle="Your next best actions — the win-plan and your live task queue."
       >
         {/* C2 — two-axis framing: set the competitive lens by merchant_type
             (brand → compete on product; retailer → win the buy destination +
-            stocking signals) before the win-plan + channel surfaces below. */}
+            stocking signals) before the win-plan below. */}
         <CompetitiveLensBanner merchantType={report.brand_rollup.merchant_type} />
         {/* Fix 4 — how to win the recommendation: per-losing-query targets +
             one-click pitches. Returns null when there's no plan. */}
         <WinPlanPanel winPlan={report.win_plan} skuLabels={skuLabels} />
+        {/* Action plan — the persisted task queue is the single source of truth
+            for "what to do / what's done", incl. Pivota-handled work (the "On
+            Pivota" lane). */}
+        {/* W5 P7 — when the merchant has turned OFF auto-execute, executor runs
+            park for approval here. Renders null when auto-execute is on or the
+            queue is empty. */}
+        <ExecutorApprovalPanel auditRunId={report.audit_run_id} />
+        <MerchantTaskQueuePanel />
+      </Zone>
+
+      {/* ZONE 3 — How can I improve? */}
+      <Zone
+        n={3}
+        question="How can I improve?"
+        subtitle="The highest-leverage places to grow your AI visibility."
+      >
         {/* Issue #902 — GSC-connect / onboarding CTA (returns null when fully
             integrated + GSC connected). */}
         <IntegrationCtaPanel integration={report.brand_rollup.integration} />
@@ -2671,24 +2692,6 @@ export function PerSkuAuditReportRenderer({
         <CustomPromptsPanel prompts={report.custom_prompts} />
       </Zone>
 
-      {/* ZONE 3 — What do I do next? (and what's already been done) */}
-      <Zone
-        n={3}
-        question="What do I do next?"
-        subtitle="Your live action plan — what's on you, and what Pivota is handling."
-      >
-        {/* Action plan — the persisted task queue is the single source of truth
-            for "what to do / what's done", incl. Pivota-handled work (the "On
-            Pivota" lane). The standalone executor-activity feed was removed: it
-            showed unscoped, stale internal agent runs ("34d ago") that confused
-            more than they helped; Pivota's work now lives here as tagged tasks. */}
-        {/* W5 P7 — when the merchant has turned OFF auto-execute, executor runs
-            park for approval here. Renders null when auto-execute is on or the
-            queue is empty. */}
-        <ExecutorApprovalPanel auditRunId={report.audit_run_id} />
-        <MerchantTaskQueuePanel />
-      </Zone>
-
       {/* ZONE 4 — Is it working? */}
       <Zone
         n={4}
@@ -2701,14 +2704,6 @@ export function PerSkuAuditReportRenderer({
         <OutreachOutcomesPanel outcomes={report.outreach_outcomes} />
         {/* Outreach proof-of-lift: which pitched hosts now cite you (the closed loop). */}
         <MerchantOutreachPanel />
-        {/* Momentum — baseline → current dumbbells for the four readiness
-            dimensions. Self-fetches the previous run's brand_rollup medians;
-            renders the first-measurement state when there's no prior run. */}
-        <BrandMomentumPanel
-          rollup={report.brand_rollup}
-          currentRunId={report.audit_run_id}
-          subjectType="merchant"
-        />
         <PerformanceZone tracking={report.brand_rollup.tracking} />
         {/* Step 5 (re-test loop v1): the on-demand "did my fix work?" — re-test the
             queries you're losing via the custom-prompt path. Returns null when
@@ -2719,6 +2714,26 @@ export function PerSkuAuditReportRenderer({
           customPromptCount={customPromptCount}
         />
       </Zone>
+
+      {/* Per-product detail — the scores BEHIND the brand analysis above. Founder
+          direction (2026-07-19): move the per-SKU drill-down to the BOTTOM,
+          collapsed by default, so the report leads with the overall analysis +
+          next best actions. Mirrors the AI-visibility page's DetailDisclosureCard
+          pattern (content hidden, never unmounted — internal state preserved).
+          Each card still carries the per-SKU 'what to do next'. */}
+      <DetailDisclosureCard
+        title="Per-product diagnostics"
+        subtitle="The per-SKU scorecards behind the brand analysis — Identity / Content / Routability / Citation, plus each product's next step."
+        badge={`${report.per_sku_reports.length} product${
+          report.per_sku_reports.length === 1 ? '' : 's'
+        }`}
+      >
+        <PerSkuCardList
+          reports={report.per_sku_reports}
+          authorityMap={report.authority_map}
+          runId={report.audit_run_id}
+        />
+      </DetailDisclosureCard>
     </div>
   );
 }
