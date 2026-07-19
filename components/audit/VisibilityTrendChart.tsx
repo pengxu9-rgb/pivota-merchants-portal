@@ -25,7 +25,7 @@
  * every point still renders its dot.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   ResponsiveContainer,
   LineChart,
@@ -295,6 +295,8 @@ export function VisibilityTrendChart({
   limit = 50,
   reloadKey,
   subjectType = 'merchant',
+  embedded = false,
+  tracking,
 }: {
   limit?: number;
   /** Bump to refetch (e.g. after a new audit completes). */
@@ -306,24 +308,40 @@ export function VisibilityTrendChart({
    * passes 'merchant_url' so the chart reflects the audits run there.
    */
   subjectType?: 'merchant' | 'merchant_url';
+  /** Render without the SurfaceCard shell — for composition inside a parent
+   *  card (the unified Momentum card on the AI-Visibility page). */
+  embedded?: boolean;
+  /** Parent-controlled tracking state. When provided, the component renders
+   *  from it and skips its own fetch (the parent already fetched to decide
+   *  layout — one request, one source of truth). */
+  tracking?: {
+    data: VisibilityTrackingResponse | null;
+    loading: boolean;
+    error: string | null;
+  };
 }) {
-  const [data, setData] = useState<VisibilityTrackingResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const controlled = tracking !== undefined;
+  const [ownData, setOwnData] = useState<VisibilityTrackingResponse | null>(null);
+  const [ownLoading, setOwnLoading] = useState(true);
+  const [ownError, setOwnError] = useState<string | null>(null);
+  const data = controlled ? tracking.data : ownData;
+  const loading = controlled ? tracking.loading : ownLoading;
+  const error = controlled ? tracking.error : ownError;
   const [showProviders, setShowProviders] = useState(false);
   // '' = the brand-average lens; otherwise a per_sku key. A stale key (refetch
   // dropped the SKU) falls back to the average lens rather than a blank chart.
   const [selectedSku, setSelectedSku] = useState('');
 
   useEffect(() => {
+    if (controlled) return; // parent owns the fetch
     let cancelled = false;
-    setLoading(true);
-    setError(null);
+    setOwnLoading(true);
+    setOwnError(null);
     apiClient
       .getVisibilityTracking(limit, subjectType)
       .then((res) => {
         if (cancelled) return;
-        setData(res);
+        setOwnData(res);
       })
       .catch((e: unknown) => {
         if (cancelled) return;
@@ -331,15 +349,15 @@ export function VisibilityTrendChart({
           (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
           (e as Error)?.message ||
           'Could not load your visibility trend.';
-        setError(typeof msg === 'string' ? msg : 'Could not load your visibility trend.');
+        setOwnError(typeof msg === 'string' ? msg : 'Could not load your visibility trend.');
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setOwnLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [limit, reloadKey, subjectType]);
+  }, [limit, reloadKey, subjectType, controlled]);
 
   // The SKU lens: per_sku entries sorted most-covered first, mirroring the
   // dropdown order. Only offered when there are >=2 SKUs — with one, the
@@ -516,39 +534,80 @@ export function VisibilityTrendChart({
       </select>
     ) : null;
 
+  // Card shell: standalone renders the full SurfaceCard; embedded (inside the
+  // unified Momentum card) renders a slim section — small header row with the
+  // description + controls, no duplicate card chrome.
+  const Shell = ({
+    description,
+    action,
+    children,
+  }: {
+    description?: string;
+    action?: ReactNode;
+    children: ReactNode;
+  }) =>
+    embedded ? (
+      <div>
+        <div className="mb-1 flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--merchant-muted)]">
+              <LineChartIcon className="h-3.5 w-3.5" />
+              Visibility over time
+            </div>
+            {description ? (
+              <p className="mt-0.5 max-w-prose text-xs text-[color:var(--merchant-muted)]">
+                {description}
+              </p>
+            ) : null}
+          </div>
+          {action ?? null}
+        </div>
+        {children}
+      </div>
+    ) : (
+      <SurfaceCard
+        title="Visibility over time"
+        eyebrow="AI visibility · trend"
+        description={description}
+        action={action}
+      >
+        {children}
+      </SurfaceCard>
+    );
+
   // --- Loading ---------------------------------------------------------------
   if (loading) {
     return (
-      <SurfaceCard title="Visibility over time" eyebrow="AI visibility · trend">
+      <Shell>
         <div className="flex items-center justify-center gap-2 px-5 py-16 text-[color:var(--merchant-muted)]">
           <Loader2 className="h-4 w-4 animate-spin" />
           <span className="text-sm">Loading your visibility trend…</span>
         </div>
-      </SurfaceCard>
+      </Shell>
     );
   }
 
   // --- Error -----------------------------------------------------------------
   if (error) {
     return (
-      <SurfaceCard title="Visibility over time" eyebrow="AI visibility · trend">
+      <Shell>
         <div className="px-5 py-8 text-sm text-[color:var(--merchant-critical)]">
           {error}
         </div>
-      </SurfaceCard>
+      </Shell>
     );
   }
 
   // --- No data yet (points: []) ---------------------------------------------
   if (points.length === 0) {
     return (
-      <SurfaceCard title="Visibility over time" eyebrow="AI visibility · trend">
+      <Shell>
         <EmptyState
           icon={LineChartIcon}
           title="No visibility history yet"
           description="Run your first AI visibility check to start tracking how AI shopping agents see your products over time."
         />
-      </SurfaceCard>
+      </Shell>
     );
   }
 
@@ -556,9 +615,7 @@ export function VisibilityTrendChart({
   if (isBaseline) {
     const only = points[points.length - 1];
     return (
-      <SurfaceCard
-        title="Visibility over time"
-        eyebrow="AI visibility · trend"
+      <Shell
         description={
           selectedSeries
             ? `${selectedSeries.title || 'This product'} has one measured check so far — a starting line, not a trend.`
@@ -595,7 +652,7 @@ export function VisibilityTrendChart({
             </span>
           </p>
         </div>
-      </SurfaceCard>
+      </Shell>
     );
   }
 
@@ -630,9 +687,7 @@ export function VisibilityTrendChart({
   ];
 
   return (
-    <SurfaceCard
-      title="Visibility over time"
-      eyebrow="AI visibility · trend"
+    <Shell
       description={
         selectedSeries
           ? `${selectedSeries.title || 'This product'} — its own scores from the ${points.length} of ${totalRuns} checks that measured it, not the brand average. Lines still connect only same-prompt-set checks.`
@@ -872,7 +927,7 @@ export function VisibilityTrendChart({
           </p>
         )}
       </div>
-    </SurfaceCard>
+    </Shell>
   );
 }
 

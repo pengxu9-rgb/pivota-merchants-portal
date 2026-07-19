@@ -47,7 +47,6 @@ import {
 import { RecentAuditsPanel } from '@/components/audit/RecentAuditsPanel';
 import { WeeklyReauditSwitch } from '@/components/audit/WeeklyReauditSwitch';
 import { AuditQuotaLine } from '@/components/audit/AuditQuotaLine';
-import { VisibilityTrendChart } from '@/components/audit/VisibilityTrendChart';
 import { BuyCreditsCard } from '@/components/billing/BuyCreditsCard';
 import { PerSkuReportCard } from '@/components/audit/PerSkuReportCard';
 import { CustomPromptsPanel } from '@/components/audit/CustomPromptsPanel';
@@ -55,6 +54,8 @@ import { GetCitedPanel } from '@/components/audit/GetCitedPanel';
 import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
 import { OutreachOutcomesPanel } from '@/components/audit/OutreachOutcomesPanel';
 import { PrioritizedActionsPanel } from '@/components/audit/PrioritizedActionsPanel';
+import { EngineDiscoverySplitChart } from '@/components/audit/EngineDiscoverySplitChart';
+import { MomentumCard } from '@/components/audit/MomentumCard';
 import type {
   AgentCenterBdReport,
   AgentCenterBdVerdictLabel,
@@ -597,6 +598,29 @@ export default function UrlAuditPage() {
         </SurfaceCard>
         </ReportSectionBoundary>
       ),
+      // #189 charts on the AI-Visibility surface (founder direction): the
+      // overall-analysis payoff right with the overview — engine split
+      // (Gemini vs ChatGPT discovery rate per product) + the unified Momentum
+      // card (round 2): the visibility-over-time trend and the dimension
+      // dumbbells merged into ONE card, adaptive by history depth (≤2 tracked
+      // checks → dumbbells only; ≥3 → trend leads, dumbbells beneath). The
+      // card owns the tracking fetch and scopes everything to this page's run
+      // kind (subject_type='merchant_url'). Each self-hides without data.
+      charts: (
+        <>
+          <ReportSectionBoundary section="url-audit-engine-split" silent>
+            <EngineDiscoverySplitChart reports={perSku} />
+          </ReportSectionBoundary>
+          <ReportSectionBoundary section="url-audit-momentum" silent>
+            <MomentumCard
+              rollup={result.brand_rollup}
+              currentRunId={result.run_id ?? result.audit_run_id ?? activeRunId ?? null}
+              subjectType="merchant_url"
+              reloadKey={historyReloadKey}
+            />
+          </ReportSectionBoundary>
+        </>
+      ),
       narrative: (
         <>
         {/* The insight layer: headline story, what's working, where you're
@@ -697,6 +721,7 @@ export default function UrlAuditPage() {
     FEATURE_FLAGS.REPORT_SUMMARY_VIEW ? (
       <>
         {detailBlocks.overview}
+        {detailBlocks.charts}
         {detailBlocks.narrative}
         {detailBlocks.getCited}
         {/* The heavy diagnostics tier — highlighted so merchants can't miss
@@ -719,6 +744,7 @@ export default function UrlAuditPage() {
     ) : (
       <>
         {detailBlocks.overview}
+        {detailBlocks.charts}
         {detailBlocks.narrative}
         {detailBlocks.skuCards}
         {detailBlocks.getCited}
@@ -752,12 +778,10 @@ export default function UrlAuditPage() {
         reloadKey={historyReloadKey}
       />
 
-      {/* Visibility-over-time trend (the pinned-basis payoff). Refetches when a
-          new check completes. Self-manages its own empty/baseline states, so it
-          renders on a first-time page too (as a "run your first check" nudge).
-          subjectType='merchant_url' scopes the series to the URL checks run on
-          THIS page — the default ('merchant') trends catalog audits instead. */}
-      <VisibilityTrendChart reloadKey={historyReloadKey} subjectType="merchant_url" />
+      {/* The visibility-over-time trend now lives INSIDE the unified Momentum
+          card in the report view (round 2 merge — one card, one header, trend
+          + dimension dumbbells adaptive by history depth), so the standalone
+          trend block is gone from the page chrome. */}
 
       <SurfaceCard title="Audit your products">
         <div className="space-y-4 px-5 py-4">
