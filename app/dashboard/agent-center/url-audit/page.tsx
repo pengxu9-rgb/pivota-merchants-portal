@@ -35,6 +35,7 @@ import { FEATURE_FLAGS } from '@/lib/config';
 import { stashVisibilityHandoff } from '@/lib/visibility-handoff';
 import { actionSupportingPrompts, summaryRenderable } from '@/lib/audit/reportSummary';
 import { DetailDisclosureCard } from '@/components/ui/DetailDisclosureCard';
+import { ReportSectionBoundary } from '@/components/audit/ReportSectionBoundary';
 import { AuditScoreStrip, AuditScoreStripFooter } from '@/components/audit/AuditScoreStrip';
 import { ShareOfVoiceBars } from '@/components/audit/ShareOfVoiceBars';
 import { PromptExplorer } from '@/components/audit/PromptExplorer';
@@ -523,6 +524,7 @@ export default function UrlAuditPage() {
   const detailBlocks =
     result && perSku.length > 0 ? {
       overview: (
+        <ReportSectionBoundary section="url-audit-overview">
         <SurfaceCard
           eyebrow="AI visibility · per product"
           title="How AI sees each of your products"
@@ -593,45 +595,56 @@ export default function UrlAuditPage() {
             ) : null}
           </div>
         </SurfaceCard>
+        </ReportSectionBoundary>
       ),
       narrative: (
         <>
         {/* The insight layer: headline story, what's working, where you're
             losing, prioritized actions + answer-quality — before the
             per-product detail. */}
-        <MerchantNarrativePanel narrative={result.merchant_narrative} />
+        <ReportSectionBoundary section="url-audit-narrative">
+          <MerchantNarrativePanel narrative={result.merchant_narrative} />
+        </ReportSectionBoundary>
 
         {/* The ranked first moves the backend computes — the bridge from
             the brand narrative into the per-product cards below. */}
-        <PrioritizedActionsPanel
-          actions={result.merchant_narrative?.prioritized_actions}
-          runId={result.run_id ?? result.audit_run_id ?? null}
-          evidenceByHeadline={actionEvidence}
-        />
+        <ReportSectionBoundary section="url-audit-prioritized-actions">
+          <PrioritizedActionsPanel
+            actions={result.merchant_narrative?.prioritized_actions}
+            runId={result.run_id ?? result.audit_run_id ?? null}
+            evidenceByHeadline={actionEvidence}
+          />
+        </ReportSectionBoundary>
         </>
       ),
       skuCards: (
         <>
-        {/* One card per pasted product — its own analysis + action plan. */}
+        {/* One card per pasted product — its own analysis + action plan.
+            Each card gets its own boundary so one sparse SKU payload can't
+            hide its siblings. */}
         <div className="space-y-3">
           {perSku.map((r, i) => (
-            <PerSkuReportCard
+            <ReportSectionBoundary
               key={r.sku_key || i}
-              report={r}
-              index={i}
-              catalogDimensionsAvailable={catalogAvail}
-              runId={result.run_id ?? result.audit_run_id ?? null}
-              pdpUrl={
-                result.audited_products?.find((p) => p.sku_key === r.sku_key)
-                  ?.pdp_url ?? null
-              }
-            />
+              section={`url-audit-sku-card-${i}`}
+            >
+              <PerSkuReportCard
+                report={r}
+                index={i}
+                catalogDimensionsAvailable={catalogAvail}
+                runId={result.run_id ?? result.audit_run_id ?? null}
+                pdpUrl={
+                  result.audited_products?.find((p) => p.sku_key === r.sku_key)
+                    ?.pdp_url ?? null
+                }
+              />
+            </ReportSectionBoundary>
           ))}
         </div>
         </>
       ),
       getCited: (
-        <>
+        <ReportSectionBoundary section="url-audit-get-cited">
         {/* Get cited on the INDEPENDENT external sources AI trusts, per
             engine — the third-party evidence agents actually cite. */}
         {(() => {
@@ -670,13 +683,13 @@ export default function UrlAuditPage() {
             />
           );
         })()}
-        </>
+        </ReportSectionBoundary>
       ),
       customPrompts: (
-        <>
+        <ReportSectionBoundary section="url-audit-custom-prompts" silent>
         {/* The merchant's own test prompts, if any (brand-level). */}
         <CustomPromptsPanel prompts={result.custom_prompts} />
-        </>
+        </ReportSectionBoundary>
       ),
     } : null;
 
@@ -696,7 +709,9 @@ export default function UrlAuditPage() {
         >
           {/* Wave-2 A3: the prompt-centric view first — one filterable table
               of every probed prompt (incl. wins) before the per-card deep dive. */}
-          <PromptExplorer perSku={perSku} />
+          <ReportSectionBoundary section="url-audit-prompt-explorer">
+            <PromptExplorer perSku={perSku} />
+          </ReportSectionBoundary>
           {detailBlocks.skuCards}
           {detailBlocks.customPrompts}
         </DetailDisclosureCard>
@@ -1011,7 +1026,7 @@ export default function UrlAuditPage() {
           {perSku.length > 0 ? (
             perSkuDetail
           ) : report && agg ? (
-            <>
+            <ReportSectionBoundary section="url-audit-legacy-brand-verdict">
           <SurfaceCard
             eyebrow="Brand verdict"
             title={report.merchant_name}
@@ -1099,29 +1114,30 @@ export default function UrlAuditPage() {
               ))}
             </div>
           </SurfaceCard>
-            </>
+            </ReportSectionBoundary>
           ) : null}
 
           {/* Honest, upfront disclosure of what this free sample did + didn't do. */}
           {methodology ? (
+            <ReportSectionBoundary section="url-audit-methodology" silent>
             <SurfaceCard eyebrow="Methodology" title="How we measured this">
               <div className="space-y-3 px-5 py-4 text-sm">
                 <p>{methodology.what_we_checked}</p>
                 <ul className="space-y-1.5">
-                  {methodology.limitations.map((lim, i) => (
+                  {(methodology.limitations ?? []).map((lim, i) => (
                     <li key={i} className="flex items-start gap-2">
                       <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-60" />
                       <span className="merchant-text-muted text-xs">{lim}</span>
                     </li>
                   ))}
                 </ul>
-                {methodology.unresolved_urls.length > 0 ? (
+                {(methodology.unresolved_urls?.length ?? 0) > 0 ? (
                   <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     We couldn&apos;t read a product from{' '}
-                    {methodology.unresolved_urls.length} of the URLs you gave
+                    {methodology.unresolved_urls?.length} of the URLs you gave
                     us, so they weren&apos;t audited:
                     <ul className="mt-1 list-disc pl-4">
-                      {methodology.unresolved_urls.map((u, i) => (
+                      {methodology.unresolved_urls?.map((u, i) => (
                         <li key={i} className="break-all">
                           {u.url}
                           {u.reason ? ` — ${u.reason}` : ''}
@@ -1132,6 +1148,7 @@ export default function UrlAuditPage() {
                 ) : null}
               </div>
             </SurfaceCard>
+            </ReportSectionBoundary>
           ) : null}
 
           {/* Next step — tailored to the merchant's state. A subscribed +

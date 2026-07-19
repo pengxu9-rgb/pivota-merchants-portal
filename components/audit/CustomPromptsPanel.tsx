@@ -86,21 +86,21 @@ export function CustomPromptsPanel({
                 ) : null}
               </div>
 
-              {p.cited && p.cited_sources.length > 0 ? (
+              {p.cited && (p.cited_sources?.length ?? 0) > 0 ? (
                 <div className="mt-2 text-xs">
                   <span className="opacity-60">You were cited via: </span>
                   <span className="font-medium text-green-800">
-                    {p.cited_sources.join(', ')}
+                    {p.cited_sources?.join(', ')}
                   </span>
                 </div>
               ) : null}
 
-              {p.competitors.length > 0 ? (
+              {(p.competitors?.length ?? 0) > 0 ? (
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                   <span className="text-xs opacity-60">
                     {p.cited ? 'Also named:' : 'Lane owned by:'}
                   </span>
-                  {p.competitors.map((c) => (
+                  {p.competitors?.map((c) => (
                     <span
                       key={c}
                       className="rounded border border-[color:var(--merchant-line)] bg-white/60 px-1.5 py-0.5 text-[11px]"
@@ -112,10 +112,10 @@ export function CustomPromptsPanel({
               ) : null}
 
               {!p.cited &&
-              p.competitors.length === 0 &&
-              p.grounding_sources.length > 0 ? (
+              (p.competitors?.length ?? 0) === 0 &&
+              (p.grounding_sources?.length ?? 0) > 0 ? (
                 <div className="mt-1.5 text-xs opacity-60">
-                  Grounded in: {p.grounding_sources.join(', ')}
+                  Grounded in: {p.grounding_sources?.join(', ')}
                 </div>
               ) : null}
 

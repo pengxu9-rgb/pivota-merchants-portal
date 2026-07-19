@@ -119,11 +119,13 @@ export function OutreachOutcomesPanel({
   outcomes?: AgentCenterOutreachOutcomes | null;
 }) {
   // No fabrication: nothing to show on a first audit or when the backend
-  // couldn't measure outcomes (either side lacked the data).
+  // couldn't measure outcomes (either side lacked the data). `targets` /
+  // `summary` are typed required but can be absent on sparse payloads —
+  // treat missing as empty, never throw.
   if (!outcomes || outcomes.is_first_audit || !outcomes.available) return null;
-  if (outcomes.targets.length === 0) return null;
+  if ((outcomes.targets?.length ?? 0) === 0) return null;
 
-  const summaryChips = SUMMARY_ORDER.filter((k) => outcomes.summary[k] > 0);
+  const summaryChips = SUMMARY_ORDER.filter((k) => (outcomes.summary?.[k] ?? 0) > 0);
   const notComparable = outcomes.comparable === false;
 
   return (
@@ -149,7 +151,7 @@ export function OutreachOutcomesPanel({
                 className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${meta.badge}`}
               >
                 <Icon className="h-3 w-3" />
-                {outcomes.summary[k]} {meta.label.toLowerCase()}
+                {outcomes.summary?.[k]} {meta.label.toLowerCase()}
               </span>
             );
           })}
@@ -169,7 +171,7 @@ export function OutreachOutcomesPanel({
       ) : null}
 
       <ul className="mt-3 space-y-1.5">
-        {outcomes.targets.map((t) => (
+        {outcomes.targets?.map((t) => (
           <TargetRow key={`${t.host}::${t.query ?? ''}`} target={t} />
         ))}
       </ul>
@@ -177,12 +179,12 @@ export function OutreachOutcomesPanel({
       {/* Closed doors — a competitor owns them, so no pitch can win a citation.
           Surfaced (not silently dropped) so their absence from the list above
           has an honest answer. */}
-      {outcomes.closed_channels_excluded.length > 0 ? (
+      {(outcomes.closed_channels_excluded?.length ?? 0) > 0 ? (
         <p className="mt-2 flex items-start gap-1.5 text-[11px] italic text-slate-400">
           <CircleSlash className="mt-0.5 h-3 w-3 shrink-0" />
           <span>
             Excluded — a competitor owns{' '}
-            {outcomes.closed_channels_excluded.join(', ')}, so no pitch there can
+            {outcomes.closed_channels_excluded?.join(', ')}, so no pitch there can
             win a citation.
           </span>
         </p>

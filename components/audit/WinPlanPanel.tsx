@@ -264,11 +264,11 @@ function LosingQueryCard({
         </div>
       </div>
 
-      {q.competitor_benchmark.length > 0 ? (
+      {(q.competitor_benchmark?.length ?? 0) > 0 ? (
         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
           <Swords className="h-3.5 w-3.5 text-rose-500" />
           <span>Winning today:</span>
-          {q.competitor_benchmark.map((c) => (
+          {q.competitor_benchmark?.map((c) => (
             <a
               key={c}
               href={`https://www.google.com/search?q=${encodeURIComponent(c)}`}
@@ -283,13 +283,13 @@ function LosingQueryCard({
         </div>
       ) : null}
 
-      {q.grounds_in.length > 0 ? (
+      {(q.grounds_in?.length ?? 0) > 0 ? (
         <div className="mt-2">
           <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
             Get cited in
           </div>
           <ul className="mt-1 space-y-1.5">
-            {q.grounds_in.map((t) => (
+            {q.grounds_in?.map((t) => (
               <TargetRow
                 key={t.host}
                 target={t}
@@ -316,7 +316,7 @@ function SkuPlanBlock({
   // win-plan's own rows only carry the raw sku_title, e.g. "2 Box").
   label?: { name: string; variant?: string };
 }) {
-  if (plan.losing_queries.length === 0) return null;
+  if ((plan.losing_queries?.length ?? 0) === 0) return null;
   return (
     <div className="space-y-2 rounded-lg border border-indigo-200 bg-white/70 p-3">
       {/* Product banner — anchors this group of losing queries to one product so
@@ -332,7 +332,7 @@ function SkuPlanBlock({
         ) : null}
       </div>
       <div className="space-y-2">
-        {plan.losing_queries.map((q, i) => (
+        {plan.losing_queries?.map((q, i) => (
           <LosingQueryCard
             key={`${q.query}-${i}`}
             q={q}
@@ -352,12 +352,14 @@ export function WinPlanPanel({
   winPlan?: AgentCenterWinPlan | null;
   skuLabels?: Record<string, { name: string; variant?: string }>;
 }) {
-  // No fabrication: render nothing when there's no plan at all.
+  // No fabrication: render nothing when there's no plan at all. `rollup` /
+  // `sku_plans` are typed required but can be absent on sparse payloads —
+  // treat missing as empty, never throw.
   if (!winPlan || !winPlan.available) return null;
 
-  const roll = winPlan.rollup;
-  const hostCount = roll.independent_hosts_to_win.length;
-  const pitchCount = roll.pitch_ready_hosts.length;
+  const roll = winPlan.rollup ?? ({} as AgentCenterWinPlan['rollup']);
+  const hostCount = roll.independent_hosts_to_win?.length ?? 0;
+  const pitchCount = roll.pitch_ready_hosts?.length ?? 0;
 
   return (
     <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50/30 p-4">
@@ -391,7 +393,7 @@ export function WinPlanPanel({
       ) : null}
 
       <div className="mt-3 space-y-4">
-        {winPlan.sku_plans.map((plan) => (
+        {winPlan.sku_plans?.map((plan) => (
           <SkuPlanBlock key={plan.sku_key} plan={plan} label={skuLabels?.[plan.sku_key]} />
         ))}
       </div>

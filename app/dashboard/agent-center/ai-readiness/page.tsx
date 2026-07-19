@@ -39,6 +39,7 @@ import {
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
 import { DetailDisclosureCard } from '@/components/ui/DetailDisclosureCard';
+import { ReportSectionBoundary } from '@/components/audit/ReportSectionBoundary';
 import { MerchantTaskQueuePanel } from '@/components/audit/MerchantTaskQueuePanel';
 import { ExecutorApprovalPanel } from '@/components/audit/ExecutorApprovalPanel';
 import { MerchantOutreachPanel } from '@/components/audit/MerchantOutreachPanel';
@@ -2567,11 +2568,17 @@ export function PerSkuAuditReportRenderer({
   // historical report's live action plan + outreach below aren't mistaken for it.
   savedRunViewedAt?: string | null;
 }) {
+  // Sparse-payload safety: `per_sku_reports` / `brand_rollup` are typed as
+  // required, but older or hand-patched runs (e.g. the re-typed demo rows) can
+  // arrive without them — an unguarded access here crashes the WHOLE report
+  // (client-side exception), so both get safe locals.
+  const perSkuReports = report.per_sku_reports ?? [];
+  const rollup = (report.brand_rollup ?? {}) as AgentCenterBrandRollup;
   // sku_key -> recognizable product label, built once from per_sku_reports (the
   // only structure carrying identity.name). Threaded into sections whose own data
   // only has the raw sku_title (win-plan) so they stop showing bare "2 Box".
   const skuLabels: Record<string, SkuLabelParts> = Object.fromEntries(
-    report.per_sku_reports.map((r) => [r.sku_key, skuLabelParts(r)]),
+    perSkuReports.map((r) => [r.sku_key, skuLabelParts(r)]),
   );
   // Step 4: a past run is an immutable snapshot, but the Action plan + Outreach
   // panels below self-fetch the merchant's CURRENT live state (the persistent
@@ -2599,8 +2606,8 @@ export function PerSkuAuditReportRenderer({
         </div>
       ) : null}
       <div className="text-xs text-slate-500">
-        Audited {report.per_sku_reports.length} product
-        {report.per_sku_reports.length === 1 ? '' : 's'} against{' '}
+        Audited {perSkuReports.length} product
+        {perSkuReports.length === 1 ? '' : 's'} against{' '}
         {costSummaryProviderNames(report.cost_summary)}.
       </div>
 
@@ -2613,33 +2620,45 @@ export function PerSkuAuditReportRenderer({
         question="Am I winning?"
         subtitle="Where you stand with AI shopping agents — the brand-level analysis."
       >
-        <BrandRollupCover
-          rollup={report.brand_rollup}
-          skuCount={report.per_sku_reports.length}
-          costSummary={report.cost_summary}
-        />
+        <ReportSectionBoundary section="readiness-brand-rollup">
+          <BrandRollupCover
+            rollup={rollup}
+            skuCount={perSkuReports.length}
+            costSummary={report.cost_summary}
+          />
+        </ReportSectionBoundary>
         {/* R3 — the retailer headline: is the STORE the AI-routed buy destination?
             Renders only for resellers (a D2C brand's findability already covers it). */}
-        <BuyDestinationPanel rollup={report.brand_rollup} />
+        <ReportSectionBoundary section="readiness-buy-destination" silent>
+          <BuyDestinationPanel rollup={rollup} />
+        </ReportSectionBoundary>
         {/* Step 2 — citation rate by question TYPE. Returns null on pre-Step-2 runs. */}
-        <CitationByIntentPanel rollup={report.brand_rollup} />
+        <ReportSectionBoundary section="readiness-citation-by-intent" silent>
+          <CitationByIntentPanel rollup={rollup} />
+        </ReportSectionBoundary>
         {/* Fix 3 — the merchant-grade narrative + Fix 2 findability/endorsement
             split. Returns null on pre-Fix-3 runs (best-effort backend field). */}
-        <MerchantNarrativePanel
-          narrative={report.merchant_narrative}
-          authorityMap={report.authority_map}
-          merchantType={report.brand_rollup.merchant_type}
-        />
+        <ReportSectionBoundary section="readiness-narrative">
+          <MerchantNarrativePanel
+            narrative={report.merchant_narrative}
+            authorityMap={report.authority_map}
+            merchantType={rollup.merchant_type}
+          />
+        </ReportSectionBoundary>
         {/* #189 charts — the overall-analysis payoff, surfaced at the top with the
             brand rollup (founder direction). Engine split = discovery rate by SKU
             (Gemini vs ChatGPT); Momentum = baseline→current dumbbells across the
             four readiness dimensions. Each returns null when it lacks data. */}
-        <EngineDiscoverySplitChart reports={report.per_sku_reports} />
-        <BrandMomentumPanel
-          rollup={report.brand_rollup}
-          currentRunId={report.audit_run_id}
-          subjectType="merchant"
-        />
+        <ReportSectionBoundary section="readiness-engine-split" silent>
+          <EngineDiscoverySplitChart reports={perSkuReports} />
+        </ReportSectionBoundary>
+        <ReportSectionBoundary section="readiness-momentum" silent>
+          <BrandMomentumPanel
+            rollup={rollup}
+            currentRunId={report.audit_run_id}
+            subjectType="merchant"
+          />
+        </ReportSectionBoundary>
       </Zone>
 
       {/* ZONE 2 — What do I do next? (next best actions lead, right after the
@@ -2654,10 +2673,12 @@ export function PerSkuAuditReportRenderer({
         {/* C2 — two-axis framing: set the competitive lens by merchant_type
             (brand → compete on product; retailer → win the buy destination +
             stocking signals) before the win-plan below. */}
-        <CompetitiveLensBanner merchantType={report.brand_rollup.merchant_type} />
+        <CompetitiveLensBanner merchantType={rollup.merchant_type} />
         {/* Fix 4 — how to win the recommendation: per-losing-query targets +
             one-click pitches. Returns null when there's no plan. */}
-        <WinPlanPanel winPlan={report.win_plan} skuLabels={skuLabels} />
+        <ReportSectionBoundary section="readiness-win-plan">
+          <WinPlanPanel winPlan={report.win_plan} skuLabels={skuLabels} />
+        </ReportSectionBoundary>
         {/* Action plan — the persisted task queue is the single source of truth
             for "what to do / what's done", incl. Pivota-handled work (the "On
             Pivota" lane). */}
@@ -2676,20 +2697,30 @@ export function PerSkuAuditReportRenderer({
       >
         {/* Issue #902 — GSC-connect / onboarding CTA (returns null when fully
             integrated + GSC connected). */}
-        <IntegrationCtaPanel integration={report.brand_rollup.integration} />
-        <WhereYouCanWinPanel data={report.brand_rollup.where_you_can_win} />
+        <ReportSectionBoundary section="readiness-integration-cta" silent>
+          <IntegrationCtaPanel integration={rollup.integration} />
+        </ReportSectionBoundary>
+        <ReportSectionBoundary section="readiness-where-you-can-win" silent>
+          <WhereYouCanWinPanel data={rollup.where_you_can_win} />
+        </ReportSectionBoundary>
         {/* C3 — reseller sourcing signal: winning products AI routes buyers to
             that the merchant doesn't carry. Returns null for non-resellers. */}
-        <WinningProductsNotCarriedPanel rollup={report.brand_rollup} />
+        <ReportSectionBoundary section="readiness-products-not-carried" silent>
+          <WinningProductsNotCarriedPanel rollup={rollup} />
+        </ReportSectionBoundary>
         {/* Win-the-specific-long-tail (Step 3): the engine's computed-but-unprobed
             winnable niches, 1-click addable to the prompts box for the next audit.
             Returns null on pre-Step-2 runs / when nothing un-probed remains. */}
-        <SuggestedPromptsPanel
-          data={report.brand_rollup.suggested_prompts}
-          onAddPrompts={onAddPrompts}
-          customPromptCount={customPromptCount}
-        />
-        <CustomPromptsPanel prompts={report.custom_prompts} />
+        <ReportSectionBoundary section="readiness-suggested-prompts" silent>
+          <SuggestedPromptsPanel
+            data={rollup.suggested_prompts}
+            onAddPrompts={onAddPrompts}
+            customPromptCount={customPromptCount}
+          />
+        </ReportSectionBoundary>
+        <ReportSectionBoundary section="readiness-custom-prompts" silent>
+          <CustomPromptsPanel prompts={report.custom_prompts} />
+        </ReportSectionBoundary>
       </Zone>
 
       {/* ZONE 4 — Is it working? */}
@@ -2701,18 +2732,24 @@ export function PerSkuAuditReportRenderer({
         {/* Audit→action→outcome loop: what changed at the hosts your last audit
             told you to target (won / progress / no_change / source-shifted).
             Returns null on the first audit / when outcomes aren't measurable. */}
-        <OutreachOutcomesPanel outcomes={report.outreach_outcomes} />
+        <ReportSectionBoundary section="readiness-outreach-outcomes" silent>
+          <OutreachOutcomesPanel outcomes={report.outreach_outcomes} />
+        </ReportSectionBoundary>
         {/* Outreach proof-of-lift: which pitched hosts now cite you (the closed loop). */}
         <MerchantOutreachPanel />
-        <PerformanceZone tracking={report.brand_rollup.tracking} />
+        <ReportSectionBoundary section="readiness-performance" silent>
+          <PerformanceZone tracking={rollup.tracking} />
+        </ReportSectionBoundary>
         {/* Step 5 (re-test loop v1): the on-demand "did my fix work?" — re-test the
             queries you're losing via the custom-prompt path. Returns null when
             there's nothing losing / no prompts box. */}
-        <RetestPanel
-          winPlan={report.win_plan}
-          onAddPrompts={onAddPrompts}
-          customPromptCount={customPromptCount}
-        />
+        <ReportSectionBoundary section="readiness-retest" silent>
+          <RetestPanel
+            winPlan={report.win_plan}
+            onAddPrompts={onAddPrompts}
+            customPromptCount={customPromptCount}
+          />
+        </ReportSectionBoundary>
       </Zone>
 
       {/* Per-product detail — the scores BEHIND the brand analysis above. Founder
@@ -2724,15 +2761,17 @@ export function PerSkuAuditReportRenderer({
       <DetailDisclosureCard
         title="Per-product diagnostics"
         subtitle="The per-SKU scorecards behind the brand analysis — Identity / Content / Routability / Citation, plus each product's next step."
-        badge={`${report.per_sku_reports.length} product${
-          report.per_sku_reports.length === 1 ? '' : 's'
+        badge={`${perSkuReports.length} product${
+          perSkuReports.length === 1 ? '' : 's'
         }`}
       >
-        <PerSkuCardList
-          reports={report.per_sku_reports}
-          authorityMap={report.authority_map}
-          runId={report.audit_run_id}
-        />
+        <ReportSectionBoundary section="readiness-per-sku-cards">
+          <PerSkuCardList
+            reports={perSkuReports}
+            authorityMap={report.authority_map}
+            runId={report.audit_run_id}
+          />
+        </ReportSectionBoundary>
       </DetailDisclosureCard>
     </div>
   );
@@ -3615,13 +3654,13 @@ function BrandRollupCover({
       <BrandModelStrip citationByProvider={rollup.citation_by_provider} />
       <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-indigo-900/80 sm:grid-cols-3">
         <div>
-          <strong>{rollup.winning_skus_by_citation.length}</strong> winning by citation
+          <strong>{rollup.winning_skus_by_citation?.length ?? 0}</strong> winning by citation
         </div>
         <div>
-          <strong>{rollup.winning_skus_by_band.length}</strong> winning by band
+          <strong>{rollup.winning_skus_by_band?.length ?? 0}</strong> winning by band
         </div>
         <div>
-          <strong>{rollup.blocked_skus.length}</strong> blocked
+          <strong>{rollup.blocked_skus?.length ?? 0}</strong> blocked
         </div>
       </div>
     </div>
@@ -4026,22 +4065,22 @@ function PerSkuCard({
       </button>
       <div className="px-4 pb-4">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <DimensionCell label="Identity" score={report.scores.identity} />
-          <DimensionCell label="Content" score={report.scores.content_richness} />
-          <DimensionCell label="Routability" score={report.scores.routability} />
-          <DimensionCell label="Citation" score={report.scores.citation} highlight />
+          <DimensionCell label="Identity" score={report.scores?.identity} />
+          <DimensionCell label="Content" score={report.scores?.content_richness} />
+          <DimensionCell label="Routability" score={report.scores?.routability} />
+          <DimensionCell label="Citation" score={report.scores?.citation} highlight />
         </div>
         <PerSkuModelStrip
           citationByProvider={report.citation_by_provider}
           modelsCited={report.models_cited}
         />
-        {report.primary_gaps.length > 0 ? (
+        {(report.primary_gaps?.length ?? 0) > 0 ? (
           <div className="mt-3">
             <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
               Primary gaps
             </div>
             <ul className="mt-1 space-y-1.5 text-xs">
-              {report.primary_gaps.slice(0, 3).map((gap, idx) => (
+              {report.primary_gaps?.slice(0, 3).map((gap, idx) => (
                 <li key={`${report.sku_key}-gap-${idx}`}>
                   <span className="font-medium">{gap.label}</span>
                   {gap.why ? (
@@ -4077,13 +4116,14 @@ function DimensionCell({
   highlight,
 }: {
   label: string;
-  score: SkuDimensionScore;
+  score?: SkuDimensionScore | null;
   highlight?: boolean;
 }) {
   // Prefer the backend's centralized band/meaning; fall back for older payloads.
-  const band = score.band ?? bandFromScore(score.score);
-  const bandLabel = score.band_label ?? BAND_LABEL[band] ?? '';
-  const dimLabel = score.dimension_label ?? label;
+  // A missing dimension (sparse payload) renders as unscored, never throws.
+  const band = score?.band ?? bandFromScore(score?.score);
+  const bandLabel = score?.band_label ?? BAND_LABEL[band] ?? '';
+  const dimLabel = score?.dimension_label ?? label;
   return (
     <div
       className={`rounded border px-2 py-1.5 ${
@@ -4094,21 +4134,21 @@ function DimensionCell({
     >
       <div
         className="flex items-center gap-1 text-[10px] uppercase tracking-wide opacity-60"
-        title={score.question || undefined}
+        title={score?.question || undefined}
       >
         <span>{dimLabel}{highlight ? ' · outcome' : ''}</span>
-        {score.question ? (
+        {score?.question ? (
           <span aria-hidden className="cursor-help opacity-50">ⓘ</span>
         ) : null}
       </div>
       <div className="flex items-baseline gap-1.5">
-        <span className={`text-lg font-bold ${bandTextClass(band)}`}>{score.score}</span>
+        <span className={`text-lg font-bold ${bandTextClass(band)}`}>{score?.score ?? "—"}</span>
         {bandLabel ? (
           <span className={`text-[10px] font-semibold ${bandTextClass(band)}`}>{bandLabel}</span>
         ) : null}
       </div>
-      {score.meaning ? (
-        <div className="mt-0.5 text-[10px] leading-snug opacity-60">{score.meaning}</div>
+      {score?.meaning ? (
+        <div className="mt-0.5 text-[10px] leading-snug opacity-60">{score?.meaning}</div>
       ) : null}
     </div>
   );
