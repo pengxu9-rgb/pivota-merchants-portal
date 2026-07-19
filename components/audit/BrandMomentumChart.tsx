@@ -279,6 +279,7 @@ export function BrandMomentumPanel({
   currentRunId,
   subjectType = 'merchant',
   fetchPriorDimensions,
+  embedded = false,
 }: {
   rollup: AgentCenterBrandRollup;
   currentRunId?: string | null;
@@ -287,6 +288,9 @@ export function BrandMomentumPanel({
   subjectType?: string;
   /** Override the prior-run dimensions fetch entirely (dev previews/tests). */
   fetchPriorDimensions?: (runId: string) => Promise<BrandDimensionStats | null>;
+  /** Render without the SurfaceCard shell — for composition inside a parent
+   *  card (the unified Momentum card on the AI-Visibility page). */
+  embedded?: boolean;
 }) {
   const [prior, setPrior] = useState<BrandDimensionStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -342,27 +346,30 @@ export function BrandMomentumPanel({
 
   if (!rollup?.dimensions) return null;
 
+  const body = loading ? (
+    <div className="flex items-center gap-2 py-6 text-sm text-[color:var(--merchant-muted)]">
+      <Loader2 className="h-4 w-4 animate-spin" />
+      <span>Checking your previous audit…</span>
+    </div>
+  ) : (
+    <>
+      <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--merchant-muted)]">
+        <TrendingUp className="h-3.5 w-3.5" />
+        Previous run → this run
+      </div>
+      <BrandMomentumChart current={rollup.dimensions} prior={prior} />
+    </>
+  );
+
+  // Embedded: the parent card owns the header/shell (unified Momentum card).
+  if (embedded) return <div>{body}</div>;
+
   return (
     <SurfaceCard
       title="Momentum — where you moved"
       description="Baseline → current for each readiness dimension. We compare this run against your previous audit; a dimension with no prior run shows its first measurement."
     >
-      <div className="px-5 py-4">
-        {loading ? (
-          <div className="flex items-center gap-2 py-6 text-sm text-[color:var(--merchant-muted)]">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span>Checking your previous audit…</span>
-          </div>
-        ) : (
-          <>
-            <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--merchant-muted)]">
-              <TrendingUp className="h-3.5 w-3.5" />
-              Previous run → this run
-            </div>
-            <BrandMomentumChart current={rollup.dimensions} prior={prior} />
-          </>
-        )}
-      </div>
+      <div className="px-5 py-4">{body}</div>
     </SurfaceCard>
   );
 }
