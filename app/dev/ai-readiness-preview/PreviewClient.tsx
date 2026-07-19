@@ -25,16 +25,86 @@ function previewListTasks(opts?: { statusFilter?: string }) {
   return Promise.resolve({ tasks });
 }
 
+// Momentum dumbbells self-fetch the PREVIOUS run's brand_rollup dimensions
+// (there's no `reaudit_delta` field to read). For the backend-less preview we
+// stub the two runs-list endpoints to serve one synthetic prior run whose
+// dimension medians sit below the fixture's current ones, so the dumbbells show
+// a real baseline → current delta.
+const PREVIEW_PRIOR_RUN_ID = 'fixture-prior-run';
+function previewListAuditRuns() {
+  return Promise.resolve([
+    // Current run (matches the fixture's audit_run_id), newest first…
+    {
+      run_id: reportFixture.audit_run_id,
+      requested_at: '2026-07-10T12:00:00Z',
+      completed_at: '2026-07-10T12:04:00Z',
+      status: 'completed',
+      product_keys: reportFixture.per_sku_reports.map((r) => r.sku_key),
+      verdict_labels: [],
+      visibility_score_avg: null,
+      attribution_score_avg: null,
+      category_visibility_score_avg: null,
+      audited_via_pivota_canonical_count: 0,
+    },
+    // …then the older run the momentum panel compares against.
+    {
+      run_id: PREVIEW_PRIOR_RUN_ID,
+      requested_at: '2026-06-28T12:00:00Z',
+      completed_at: '2026-06-28T12:05:00Z',
+      status: 'completed',
+      product_keys: reportFixture.per_sku_reports.map((r) => r.sku_key),
+      verdict_labels: [],
+      visibility_score_avg: null,
+      attribution_score_avg: null,
+      category_visibility_score_avg: null,
+      audited_via_pivota_canonical_count: 0,
+    },
+  ]);
+}
+function previewGetAuditRunDetail(runId: string) {
+  if (runId !== PREVIEW_PRIOR_RUN_ID) return Promise.resolve({});
+  return Promise.resolve({
+    stage: 'completed',
+    report_jsonb: {
+      brand_rollup: {
+        dimensions: {
+          identity: { median: 61, p25: 61, p75: 61 },
+          content_richness: { median: 42, p25: 42, p75: 42 },
+          routability: { median: 48, p25: 48, p75: 48 },
+          citation: { median: 22, p25: 22, p75: 22 },
+        },
+      },
+    },
+  });
+}
+
 export function AiReadinessPreviewClient() {
   const [original] = useState(() => {
-    const client = apiClient as unknown as { listMerchantTasks: unknown };
-    const orig = client.listMerchantTasks;
+    const client = apiClient as unknown as {
+      listMerchantTasks: unknown;
+      listAuditRuns: unknown;
+      getAuditRunDetail: unknown;
+    };
+    const orig = {
+      listMerchantTasks: client.listMerchantTasks,
+      listAuditRuns: client.listAuditRuns,
+      getAuditRunDetail: client.getAuditRunDetail,
+    };
     client.listMerchantTasks = previewListTasks;
+    client.listAuditRuns = previewListAuditRuns;
+    client.getAuditRunDetail = previewGetAuditRunDetail;
     return orig;
   });
   useEffect(
     () => () => {
-      (apiClient as unknown as { listMerchantTasks: unknown }).listMerchantTasks = original;
+      const client = apiClient as unknown as {
+        listMerchantTasks: unknown;
+        listAuditRuns: unknown;
+        getAuditRunDetail: unknown;
+      };
+      client.listMerchantTasks = original.listMerchantTasks;
+      client.listAuditRuns = original.listAuditRuns;
+      client.getAuditRunDetail = original.getAuditRunDetail;
     },
     [original],
   );
