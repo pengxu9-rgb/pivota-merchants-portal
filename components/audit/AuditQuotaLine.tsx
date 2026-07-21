@@ -13,9 +13,16 @@ import Link from 'next/link';
 export function AuditQuotaLine({
   remaining,
   isPaid,
+  canUpgrade = true,
 }: {
   remaining?: number | null;
   isPaid?: boolean;
+  /**
+   * False for off-platform (Shopify App Store / free) merchants, who have no
+   * in-app paid path. Suppresses the "upgrade" purchase prompt so the free app
+   * never sells in-app (Shopify App Store requirement).
+   */
+  canUpgrade?: boolean;
 }) {
   if (typeof remaining !== 'number' || isPaid) return null;
   if (remaining > 0) {
@@ -24,6 +31,9 @@ export function AuditQuotaLine({
         {remaining} free audit{remaining === 1 ? '' : 's'} left.
       </p>
     );
+  }
+  if (!canUpgrade) {
+    return <p className="merchant-text-muted text-xs">Free audits used.</p>;
   }
   return (
     <p className="flex flex-wrap items-center gap-1.5 text-xs">
