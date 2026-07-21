@@ -889,6 +889,16 @@ export interface UrlReadinessAuditResponse {
   free_audits_allowed: number;
   free_audits_used: number;
   free_audits_remaining: number;
+  /**
+   * SHARED VIEW ONLY (GET /api/public/audit-share/{token}) — the public page
+   * can't call the authed /tracking + /history endpoints, so the share body
+   * carries the momentum data inline: the merchant_url tracking series (run
+   * ids nulled, no per-SKU series) and the previous run's dimension medians
+   * (the dumbbell baseline). Absent on authed responses AND on shares where
+   * the history lookup failed (momentum is additive, never load-bearing).
+   */
+  visibility_tracking?: import('./visibility-tracking').VisibilityTrackingResponse | null;
+  prior_brand_dimensions?: BrandDimensionStats | null;
 }
 
 /**
