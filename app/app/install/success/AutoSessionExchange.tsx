@@ -12,7 +12,7 @@
  * fall back to the manual account-setup form so we never dead-end.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { API_CONFIG } from '@/lib/config';
 
@@ -36,9 +36,17 @@ export default function AutoSessionExchange({
   shop?: string;
 }) {
   const [failed, setFailed] = useState(false);
+  // The claim token is single-use: the backend consumes it on the first call.
+  // A one-shot ref guard keeps React 18 StrictMode's dev double-invoke from
+  // burning the token on a first request whose result is then discarded,
+  // leaving the second request to 400 into the fallback. Deliberately no
+  // `cancelled` flag — cancelling the only in-flight exchange would strand a
+  // token that has already been consumed server-side.
+  const startedRef = useRef(false);
 
   useEffect(() => {
-    let cancelled = false;
+    if (startedRef.current) return;
+    startedRef.current = true;
     (async () => {
       try {
         const res = await fetch(`${API_CONFIG.BASE_URL}/integrations/shopify/session`, {
@@ -48,19 +56,15 @@ export default function AutoSessionExchange({
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.token) throw new Error('exchange_failed');
-        if (cancelled) return;
         // Match the keys api-client reads for the merchant session.
         localStorage.setItem('merchant_token', data.token);
         localStorage.setItem('merchant_user', JSON.stringify(data.user ?? {}));
         localStorage.setItem('merchant_id', data.user?.merchant_id ?? '');
         window.location.replace('/dashboard');
       } catch {
-        if (!cancelled) setFailed(true);
+        setFailed(true);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
   }, [claimToken]);
 
   if (failed) {
