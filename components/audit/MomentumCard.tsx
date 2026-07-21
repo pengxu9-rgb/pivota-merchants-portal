@@ -35,7 +35,10 @@ import { SurfaceCard } from '@/components/ui/merchant-primitives';
 import { ReportSectionBoundary } from '@/components/audit/ReportSectionBoundary';
 import { MomentumTrend, windowTrendPoints } from '@/components/audit/MomentumTrend';
 import { BrandMomentumPanel } from '@/components/audit/BrandMomentumChart';
-import type { AgentCenterBrandRollup } from '@/lib/types/ai-readiness';
+import type {
+  AgentCenterBrandRollup,
+  BrandDimensionStats,
+} from '@/lib/types/ai-readiness';
 import type { VisibilityTrackingResponse } from '@/lib/types/visibility-tracking';
 
 export function MomentumCard({
@@ -43,18 +46,38 @@ export function MomentumCard({
   currentRunId,
   subjectType = 'merchant_url',
   reloadKey,
+  tracking,
+  priorDimensions,
 }: {
   rollup?: AgentCenterBrandRollup | null;
   currentRunId?: string | null;
   subjectType?: 'merchant' | 'merchant_url';
   /** Bump to refetch the tracking series (e.g. after a new check completes). */
   reloadKey?: number | string;
+  /** Pre-fetched tracking series (the PUBLIC shared view — no merchant JWT;
+   *  the share payload carries the series inline). When set — including
+   *  explicitly null for "no series" — the card never calls the authed
+   *  tracking endpoint. */
+  tracking?: VisibilityTrackingResponse | null;
+  /** Pre-fetched prior-run dimensions for the dumbbell baseline (shared view
+   *  companion to `tracking`); forwarded to BrandMomentumPanel so it skips
+   *  its authed run-list fetch. */
+  priorDimensions?: BrandDimensionStats | null;
 }) {
-  const [data, setData] = useState<VisibilityTrackingResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const prefetched = tracking !== undefined;
+  const [data, setData] = useState<VisibilityTrackingResponse | null>(
+    prefetched ? (tracking ?? null) : null,
+  );
+  const [loading, setLoading] = useState(!prefetched);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (prefetched) {
+      setData(tracking ?? null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -77,7 +100,8 @@ export function MomentumCard({
     return () => {
       cancelled = true;
     };
-  }, [reloadKey, subjectType]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadKey, subjectType, prefetched, tracking]);
 
   // Gate the trend on the WINDOWED depth (latest check per day, last N) —
   // 29 checks clustered across two days are still a 2-point story, and a
@@ -124,6 +148,7 @@ export function MomentumCard({
                 rollup={rollup}
                 currentRunId={currentRunId}
                 subjectType={subjectType}
+                prefetchedPrior={priorDimensions}
               />
             </div>
           </ReportSectionBoundary>

@@ -89,7 +89,8 @@ export interface TrackingSegment {
 }
 
 export interface VisibilityTrackingResponse {
-  merchant_id: string;
+  /** Absent on the shared-view inline series (never leaves the building). */
+  merchant_id?: string;
   /** True when there are <2 runs — nothing to trend yet (show a baseline note). */
   is_baseline_only: boolean;
   /** OLDEST → newest, one per completed audit. */

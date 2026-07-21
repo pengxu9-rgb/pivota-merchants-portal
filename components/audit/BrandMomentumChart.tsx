@@ -280,6 +280,7 @@ export function BrandMomentumPanel({
   subjectType = 'merchant',
   fetchPriorDimensions,
   embedded = false,
+  prefetchedPrior,
 }: {
   rollup: AgentCenterBrandRollup;
   currentRunId?: string | null;
@@ -291,11 +292,22 @@ export function BrandMomentumPanel({
   /** Render without the SurfaceCard shell — for composition inside a parent
    *  card (the unified Momentum card on the AI-Visibility page). */
   embedded?: boolean;
+  /** Pre-fetched prior dimensions (the PUBLIC shared view, whose reader has
+   *  no merchant JWT — the share payload carries them inline). When set —
+   *  including explicitly null for "no prior run" — the panel renders
+   *  synchronously and never calls the authed run-list endpoints. */
+  prefetchedPrior?: BrandDimensionStats | null;
 }) {
   const [prior, setPrior] = useState<BrandDimensionStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Pre-fetched prior renders synchronously — never a spinner frame.
+  const [loading, setLoading] = useState(prefetchedPrior === undefined);
 
   useEffect(() => {
+    if (prefetchedPrior !== undefined) {
+      setPrior(prefetchedPrior ?? null);
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setPrior(null);
@@ -342,7 +354,7 @@ export function BrandMomentumPanel({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRunId, subjectType]);
+  }, [currentRunId, subjectType, prefetchedPrior]);
 
   if (!rollup?.dimensions) return null;
 

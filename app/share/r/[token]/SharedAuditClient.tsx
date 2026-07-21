@@ -12,6 +12,9 @@ import { useEffect, useState } from 'react';
 import { API_CONFIG } from '@/lib/config';
 import { AuditScoreStrip, AuditScoreStripFooter } from '@/components/audit/AuditScoreStrip';
 import { ShareOfVoiceBars } from '@/components/audit/ShareOfVoiceBars';
+import { EngineDiscoverySplitChart } from '@/components/audit/EngineDiscoverySplitChart';
+import { MomentumCard } from '@/components/audit/MomentumCard';
+import { ReportSectionBoundary } from '@/components/audit/ReportSectionBoundary';
 import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
 import { PrioritizedActionsPanel } from '@/components/audit/PrioritizedActionsPanel';
 import { GetCitedPanel } from '@/components/audit/GetCitedPanel';
@@ -100,6 +103,23 @@ export function SharedAuditClient({ token }: { token: string }) {
           </>
         ) : null}
       </SurfaceCard>
+      {/* Same chart pair as the authed report (#189/#191), same position —
+          overview payoff before the narrative. The share payload carries the
+          momentum data inline (visibility_tracking + prior_brand_dimensions),
+          so neither chart ever calls an authed endpoint; each self-hides
+          without data. */}
+      <ReportSectionBoundary section="share-engine-split" silent>
+        <EngineDiscoverySplitChart reports={perSku} />
+      </ReportSectionBoundary>
+      <ReportSectionBoundary section="share-momentum" silent>
+        <MomentumCard
+          rollup={data.brand_rollup}
+          currentRunId={null}
+          subjectType="merchant_url"
+          tracking={data.visibility_tracking ?? null}
+          priorDimensions={data.prior_brand_dimensions ?? null}
+        />
+      </ReportSectionBoundary>
       <MerchantNarrativePanel narrative={data.merchant_narrative} />
       <PrioritizedActionsPanel
         actions={data.merchant_narrative?.prioritized_actions}
