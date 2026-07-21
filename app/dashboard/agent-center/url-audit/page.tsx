@@ -171,6 +171,10 @@ export default function UrlAuditPage() {
   // Set alongside `error` when the backend's 422 carries an upgrade_path
   // (product_cap_exceeded) — renders the upsell as a CLICKABLE link, not prose.
   const [errorUpgradePath, setErrorUpgradePath] = useState<string | null>(null);
+  // False until confirmed on the paid (off-platform) billing path; gates every
+  // in-app purchase/upgrade affordance on this page. Default hidden is the safe
+  // state for free / App Store merchants.
+  const [canPurchaseCredits, setCanPurchaseCredits] = useState(false);
   // Non-error info (e.g. "still running — saved to history"): grounded per-SKU
   // probes can run past the browser poll budget, but the run is durable.
   const [notice, setNotice] = useState<string | null>(null);
@@ -191,6 +195,25 @@ export default function UrlAuditPage() {
         if (cancelled || !p) return;
         if (p.website) setWebsite(p.website);
         if (p.business_name) setBrand(p.business_name);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Off-platform (Shopify App Store / free / exempt) merchants must never be
+  // shown an in-app purchase path — the backend returns
+  // `off_platform_billing: false` for them and 403s any credit top-up. Default
+  // to hidden until a successful response confirms this merchant is on the
+  // paid (off-platform Stripe) billing path, so a slow/failed lookup can never
+  // flash a "buy credits" CTA that would 403 (Shopify App Store review).
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .getBillingPlans()
+      .then((res) => {
+        if (!cancelled) setCanPurchaseCredits(res?.off_platform_billing !== false);
       })
       .catch(() => {});
     return () => {
@@ -583,6 +606,7 @@ export default function UrlAuditPage() {
             <AuditQuotaLine
               remaining={result.free_audits_remaining}
               isPaid={isPaid}
+              canUpgrade={canPurchaseCredits}
             />
             {!catalogAvail ? (
               <div className="flex items-start gap-2 rounded-md border border-[color:var(--merchant-line)] bg-white/40 px-3 py-2 text-xs">
@@ -1020,7 +1044,7 @@ export default function UrlAuditPage() {
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
               {error}
-              {errorUpgradePath ? (
+              {errorUpgradePath && canPurchaseCredits ? (
                 <>
                   {' '}
                   <Link
@@ -1086,6 +1110,7 @@ export default function UrlAuditPage() {
               <AuditQuotaLine
                 remaining={result?.free_audits_remaining}
                 isPaid={isPaid}
+                canUpgrade={canPurchaseCredits}
               />
             </div>
           </SurfaceCard>
@@ -1213,9 +1238,11 @@ export default function UrlAuditPage() {
                     </p>
                   </a>
                 ) : null}
-                {/* Pay-as-you-go / subscribe only when NOT already subscribed. */}
-                {!isPaid ? <BuyCreditsCard /> : null}
-                {!isPaid ? (
+                {/* Pay-as-you-go / subscribe only when NOT already subscribed
+                    AND the merchant is on the paid (off-platform) billing path.
+                    Free / App Store merchants get no in-app purchase path. */}
+                {!isPaid && canPurchaseCredits ? <BuyCreditsCard /> : null}
+                {!isPaid && canPurchaseCredits ? (
                   <a
                     href="/dashboard/billing"
                     className="flex-1 rounded-lg border border-[color:var(--merchant-line)] p-4 transition hover:border-[color:var(--merchant-accent,#6366f1)]"

@@ -222,6 +222,10 @@ export default function AiReadinessAuditPage() {
   // returns 402 premium_provider_subscription_required.
   const [premiumRequired, setPremiumRequired] =
     useState<PremiumProviderRequiredError | null>(null);
+  // False until confirmed on the paid (off-platform) billing path. Off-platform
+  // (Shopify App Store / free) merchants have no in-app purchase path, so we
+  // never show them a "subscribe to a paid plan" CTA. Default hidden is safe.
+  const [canPurchaseCredits, setCanPurchaseCredits] = useState(false);
 
   // Tiered audit model: free tier runs Gemini only; ChatGPT/Claude are premium
   // (paid plan). Gemini is always on (the free baseline); merchants opt into
@@ -248,6 +252,23 @@ export default function AiReadinessAuditPage() {
   // attach the authenticated merchant_id server-side. If a downstream
   // refactor surfaces the merchant id client-side, swap this for that.
   const merchantId = 'self';
+
+  // Resolve whether this merchant is on the paid (off-platform) billing path.
+  // `off_platform_billing: false` = Shopify App Store / free / exempt → no
+  // in-app purchase path, so the premium-provider paywall must not offer a
+  // "subscribe" CTA. Default hidden until a successful response confirms it.
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .getBillingPlans()
+      .then((res) => {
+        if (!cancelled) setCanPurchaseCredits(res?.off_platform_billing !== false);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -877,7 +898,10 @@ export default function AiReadinessAuditPage() {
       ) : null}
 
       {premiumRequired ? (
-        <PremiumProviderRequiredBanner error={premiumRequired} />
+        <PremiumProviderRequiredBanner
+          error={premiumRequired}
+          canPurchase={canPurchaseCredits}
+        />
       ) : null}
 
       {auditError ? (
@@ -1182,7 +1206,16 @@ function ProviderSelector({
   );
 }
 
-function PremiumProviderRequiredBanner({ error }: { error: PremiumProviderRequiredError }) {
+function PremiumProviderRequiredBanner({
+  error,
+  canPurchase = true,
+}: {
+  error: PremiumProviderRequiredError;
+  // False for off-platform (Shopify App Store / free) merchants: no in-app paid
+  // path, so we suppress the "subscribe" CTA and wording and steer them to the
+  // free Gemini audit instead.
+  canPurchase?: boolean;
+}) {
   const names =
     error.premiumProvidersRequested.map(providerLabel).join(' & ') || 'Premium models';
   const singular = error.premiumProvidersRequested.length === 1;
@@ -1192,8 +1225,8 @@ function PremiumProviderRequiredBanner({ error }: { error: PremiumProviderRequir
         <Lock className="h-5 w-5 text-amber-600" />
         <div className="flex-1">
           <div className="text-sm font-semibold text-amber-900">
-            {names} {singular ? 'is a premium model' : 'are premium models'} — subscribe to
-            run this audit
+            {names} {singular ? 'is a premium model' : 'are premium models'}
+            {canPurchase ? ' — subscribe to run this audit' : ''}
           </div>
           <p className="mt-1 text-xs text-amber-900/80">
             {error.message}
@@ -1201,12 +1234,14 @@ function PremiumProviderRequiredBanner({ error }: { error: PremiumProviderRequir
               ? ' Free accounts can run Gemini audits at no charge.'
               : ''}
           </p>
-          <a
-            href={error.billingUrl}
-            className="mt-3 inline-flex items-center gap-2 rounded-md bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-700"
-          >
-            Subscribe to a paid plan →
-          </a>
+          {canPurchase ? (
+            <a
+              href={error.billingUrl}
+              className="mt-3 inline-flex items-center gap-2 rounded-md bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-700"
+            >
+              Subscribe to a paid plan →
+            </a>
+          ) : null}
         </div>
       </div>
     </div>
