@@ -81,9 +81,9 @@ const enStore: StoreFormCopy = {
   oauthTitle: "Connect with Pivota (read-only) - recommended",
   oauthDescription:
     "One-click connection for catalog sync, AI-readiness, and analytics. Buyers are handed to your Shopify checkout (Shop Pay). Read-only - never changes your products or orders. No credentials needed.",
-  customTitle: "Use your own Shopify app - advanced",
+  customTitle: "Connect with a Shopify custom app",
   customDescription:
-    "Paste credentials from a custom app you create in your Shopify admin. Required for agent checkout with your own payment processor (needs the write_orders scope); also works as a fallback if one-click install is unavailable.",
+    "Create a custom app in your Shopify admin (Settings > Apps and sales channels > Develop apps), then paste its API credentials below. Pivota reads your catalog; add the write_orders scope to also complete agent checkout through your own payment processor.",
   advancedUseCustomApp: "Advanced: use your own custom app instead",
   backToOneClick: "← Use one-click Shopify connect instead",
   clientId: "Client ID",
@@ -126,8 +126,8 @@ const zhStore: StoreFormCopy = {
   storeDomainHint: "例如 mystore.myshopify.com",
   oauthTitle: "使用 Pivota 连接（只读）- 推荐",
   oauthDescription: "一键连接，用于目录同步、AI-readiness 和分析。买家将被引导至你的 Shopify 结账页（Shop Pay）。只读 —— 不会更改你的商品或订单。无需凭据。",
-  customTitle: "使用你自己的 Shopify app —— 高级",
-  customDescription: "粘贴你在 Shopify 后台自建 custom app 的凭据。如果你希望通过自有支付处理商进行 agent checkout（需要 write_orders 权限），则需要此项；当一键安装不可用时也可作为备用方式。",
+  customTitle: "使用 Shopify custom app 连接",
+  customDescription: "在 Shopify 后台创建 custom app（设置 > 应用和销售渠道 > 开发应用），然后在下方粘贴其 API 凭据。Pivota 会读取你的目录；添加 write_orders 权限即可通过自有支付处理商完成 agent checkout。",
   advancedUseCustomApp: "高级：改用你自己的 custom app",
   backToOneClick: "← 改用一键连接 Shopify",
   clientId: "Client ID",

@@ -36,9 +36,9 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
   
   // Form fields for different platforms
   const [shopifyDomain, setShopifyDomain] = useState('');
-  // OAuth (Pivota's public read-only Shopify app) is the default and recommended
-  // path; the custom-app form is an explicit opt-in behind the "Advanced" link.
-  const [shopifyConnectMode, setShopifyConnectMode] = useState<'oauth' | 'custom_token'>('oauth');
+  // Shopify connects via custom-app credentials only (client ID + secret from a
+  // custom app the merchant creates in their own Shopify admin). There is no
+  // public app-store install / OAuth handoff.
   const [shopifyClientId, setShopifyClientId] = useState('');
   const [shopifyClientSecret, setShopifyClientSecret] = useState('');
   
@@ -61,48 +61,8 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
 
   const selectedGuideKey = normalizeIntegrationGuideKey(platform);
 
-  // One-click connect: ask the backend for Shopify's authorize URL, then hand the
-  // browser to Shopify. The merchant never sees or copies an install link.
-  const handleShopifyOAuthConnect = async () => {
-    setLoading(true);
-    try {
-      const url =
-        `${baseUrl}${API_CONFIG.ENDPOINTS.SHOPIFY_OAUTH_START}` +
-        `?merchant_id=${encodeURIComponent(merchantId)}&shop=${encodeURIComponent(shopifyDomain.trim())}`;
-      const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('merchant_token')}` },
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        alert(`${copy.failedPrefix}: ${formatApiErrorPayload(data, 'Unknown error')}`);
-        setLoading(false);
-        return;
-      }
-
-      const authorizeUrl = data?.authorization_url || '';
-      if (!authorizeUrl) {
-        alert(copy.oauthStartFailed);
-        setLoading(false);
-        return;
-      }
-
-      // Full-page handoff to Shopify's consent screen; the OAuth callback brings
-      // the merchant back into the portal.
-      window.location.href = authorizeUrl;
-    } catch (error: any) {
-      alert(`${copy.errorPrefix}: ${formatApiError(error, 'Unknown error')}`);
-      setLoading(false);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (platform === 'shopify' && shopifyConnectMode === 'oauth') {
-      await handleShopifyOAuthConnect();
-      return;
-    }
 
     setLoading(true);
 
@@ -205,7 +165,6 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
     setPlatform('');
     setOpenGuideKey(null);
     setShopifyDomain('');
-    setShopifyConnectMode('oauth');
     setShopifyClientId('');
     setShopifyClientSecret('');
     setWixSiteId('');
@@ -266,7 +225,7 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
             </button>
           ) : null}
 
-          {/* Shopify Fields */}
+          {/* Shopify Fields — custom-app credentials only */}
           {platform === 'shopify' && (
             <>
               <div>
@@ -283,60 +242,36 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                 />
               </div>
 
-              {shopifyConnectMode === 'oauth' ? (
-                <>
-                  <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
-                    <div className="font-medium text-blue-900">{copy.oauthTitle}</div>
-                    <div className="mt-0.5">{copy.oauthDescription}</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShopifyConnectMode('custom_token')}
-                    className="self-start text-xs text-gray-500 underline hover:text-gray-700"
-                  >
-                    {copy.advancedUseCustomApp}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShopifyConnectMode('oauth');
-                      setShopifyClientId('');
-                      setShopifyClientSecret('');
-                    }}
-                    className="self-start text-xs text-blue-600 underline hover:text-blue-800"
-                  >
-                    {copy.backToOneClick}
-                  </button>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">{copy.clientId} *</label>
-                    <input
-                      type="text"
-                      value={shopifyClientId}
-                      onChange={(e) => setShopifyClientId(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
-                      placeholder={copy.clientIdPlaceholder}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">{copy.clientSecret} *</label>
-                    <input
-                      type="password"
-                      value={shopifyClientSecret}
-                      onChange={(e) => setShopifyClientSecret(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
-                      placeholder={copy.clientSecretPlaceholder}
-                      required
-                    />
-                    <p className="mt-1 text-xs text-gray-500">
-                      {copy.shopifyCredentialHelp}
-                    </p>
-                  </div>
-                </>
-              )}
+              <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+                <div className="font-medium text-blue-900">{copy.customTitle}</div>
+                <div className="mt-0.5">{copy.customDescription}</div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{copy.clientId} *</label>
+                <input
+                  type="text"
+                  value={shopifyClientId}
+                  onChange={(e) => setShopifyClientId(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
+                  placeholder={copy.clientIdPlaceholder}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{copy.clientSecret} *</label>
+                <input
+                  type="password"
+                  value={shopifyClientSecret}
+                  onChange={(e) => setShopifyClientSecret(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
+                  placeholder={copy.clientSecretPlaceholder}
+                  required
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  {copy.shopifyCredentialHelp}
+                </p>
+              </div>
             </>
           )}
 
@@ -525,28 +460,20 @@ export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchant
                 !platform ||
                 (platform === 'shopify' &&
                   (!shopifyDomain.trim() ||
-                    (shopifyConnectMode === 'custom_token' &&
-                      (!shopifyClientId.trim() || !shopifyClientSecret.trim()))))
+                    !shopifyClientId.trim() ||
+                    !shopifyClientSecret.trim()))
               }
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>
-                    {platform === 'shopify' && shopifyConnectMode === 'oauth'
-                      ? copy.redirectingToShopify
-                      : copy.connecting}
-                  </span>
+                  <span>{copy.connecting}</span>
                 </>
               ) : (
                 <>
                   <Store className="w-4 h-4" />
-                  <span>
-                    {platform === 'shopify' && shopifyConnectMode === 'oauth'
-                      ? copy.connectWithShopify
-                      : copy.connectStoreButton}
-                  </span>
+                  <span>{copy.connectStoreButton}</span>
                 </>
               )}
             </button>
