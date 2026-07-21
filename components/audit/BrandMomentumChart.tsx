@@ -299,7 +299,8 @@ export function BrandMomentumPanel({
   prefetchedPrior?: BrandDimensionStats | null;
 }) {
   const [prior, setPrior] = useState<BrandDimensionStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Pre-fetched prior renders synchronously — never a spinner frame.
+  const [loading, setLoading] = useState(prefetchedPrior === undefined);
 
   useEffect(() => {
     if (prefetchedPrior !== undefined) {
