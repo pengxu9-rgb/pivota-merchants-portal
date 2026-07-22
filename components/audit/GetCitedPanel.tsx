@@ -62,8 +62,10 @@ function cleanCategory(q?: string | null, brand?: string | null): string {
   // Iterative prefix-strip + punctuation trim (founder scan 2026-07-22: one
   // pass left garble like ", x or y?" from "which is better, x or y?", and a
   // too-short remnant polluted search URLs and outreach seeds).
-  let c = (q || '').toLowerCase().trim();
-  const PREFIX = /^\s*(best|top|recommended|what|which|the|is|are|a|an|better)\b[\s,.:;–—-]*/i;
+  const raw = (q || '').toLowerCase();
+  let c = raw.trim();
+  // (?!-) keeps hyphenated modifiers intact ("top-rated" is not the "top" prefix).
+  const PREFIX = /^\s*(best|top|recommended|what|which|the|is|are|a|an|better)\b(?!-)[\s,.:;–—-]*/i;
   for (let i = 0; i < 8 && PREFIX.test(c); i += 1) c = c.replace(PREFIX, '');
   c = c
     .replace(/\bfor\b.*$/i, '')
@@ -75,9 +77,15 @@ function cleanCategory(q?: string | null, brand?: string | null): string {
     .trim();
   // A remnant this short is garble, not a category — fall back to the brand.
   if (c.length < 3) c = '';
-  // A comparison remnant ("dji mini or hoverair x1", "x vs y") is a product
-  // matchup, not a category — a search seeded with it is noise.
-  if (/\b(or|vs\.?|versus)\b/i.test(c)) c = '';
+  // A comparison remnant is a product matchup, not a category — a search
+  // seeded with it is noise. "vs" is always a matchup; a bare "or" only
+  // counts when the RAW query carried comparison intent (which/better/
+  // compare), so legit categories like "day or night cream" survive
+  // (review catch).
+  if (
+    /\b(vs\.?|versus)\b/i.test(c)
+    || (/\bor\b/i.test(c) && /\b(which|better|compare|difference)\b/i.test(raw))
+  ) c = '';
   return c || (brand || '').trim();
 }
 
