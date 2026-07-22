@@ -632,27 +632,41 @@ export function GetCitedPanel({
    *  search rows to a cold-start-only fallback. */
   creatorVideosByHost?: Record<string, string[]>;
   /** Free-tier paywall (backend `actions_locked`): outreach moves + pitch
-   *  targets arrive emptied but the engine playbook may still carry signal,
-   *  so an explicit locked prop must short-circuit the whole panel — empty
-   *  arrays alone would leave a half-rendered playbook section. */
+   *  targets arrive emptied, but `closed_channels` (status, free-safe) is
+   *  NOT stripped — so the locked branch renders the locked card PLUS the
+   *  closed-doors section rather than short-circuiting the whole panel. An
+   *  explicit prop is required because empty arrays alone would fall into
+   *  the normal render and show a half-panel. */
   locked?: boolean;
   lockedCount?: number;
   upgradeCta?: ReactNode;
 }) {
-  if (locked) {
-    // Nothing was behind the lock for this section → hide, don't advertise.
-    if ((lockedCount ?? 0) === 0) return null;
-    return (
-      <LockedActionsCard
-        title="Get cited — outreach moves"
-        count={lockedCount ?? 0}
-        upgradeCta={upgradeCta}
-      />
-    );
-  }
   const list = (moves || []).filter((m) => m && m.host);
   const targets = (pitchTargets || []).filter((t) => t && t.host);
   const closed = (closedChannels || []).filter((c) => c && c.host);
+  if (locked) {
+    const showLockedCard = (lockedCount ?? 0) > 0;
+    // Closed doors are free-tier-safe status content ("rival-owned media,
+    // not worth a pitch") — keep them on screen even when the action layer
+    // is locked. Nothing locked AND no closed doors → hide, don't advertise.
+    if (!showLockedCard && closed.length === 0) return null;
+    return (
+      <div className="space-y-3">
+        {showLockedCard ? (
+          <LockedActionsCard
+            title="Get cited — outreach moves"
+            count={lockedCount ?? 0}
+            upgradeCta={upgradeCta}
+          />
+        ) : null}
+        {closed.length > 0 ? (
+          <div className="rounded-lg border border-[color:var(--merchant-line)] bg-white/50 px-4 py-3">
+            <ClosedDoorsSection closed={closed} closedChannelsNote={closedChannelsNote} />
+          </div>
+        ) : null}
+      </div>
+    );
+  }
   // A merchant whose category is dominated by rival-owned media may have few
   // channels to work and most needs the explanation — so a closed door alone is
   // enough to keep this section on screen.
@@ -774,22 +788,36 @@ export function GetCitedPanel({
 
       {closed.length > 0 ? (
         <div className="mt-5 border-t border-[color:var(--merchant-line)] pt-4">
-          <div className="flex items-center gap-1.5">
-            <Lock className="h-3.5 w-3.5 opacity-50" />
-            <div className="text-[11px] font-semibold uppercase tracking-wide opacity-55">
-              Closed doors — not worth a pitch
-            </div>
-          </div>
-          {closedChannelsNote ? (
-            <p className="mt-1 text-[11px] leading-snug opacity-60">{closedChannelsNote}</p>
-          ) : null}
-          <div className="mt-2.5 space-y-2">
-            {closed.map((c, i) => (
-              <ClosedDoor key={`${c.host}-closed-${i}`} c={c} />
-            ))}
-          </div>
+          <ClosedDoorsSection closed={closed} closedChannelsNote={closedChannelsNote} />
         </div>
       ) : null}
     </div>
+  );
+}
+
+function ClosedDoorsSection({
+  closed,
+  closedChannelsNote,
+}: {
+  closed: ClosedChannel[];
+  closedChannelsNote?: string | null;
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-1.5">
+        <Lock className="h-3.5 w-3.5 opacity-50" />
+        <div className="text-[11px] font-semibold uppercase tracking-wide opacity-55">
+          Closed doors — not worth a pitch
+        </div>
+      </div>
+      {closedChannelsNote ? (
+        <p className="mt-1 text-[11px] leading-snug opacity-60">{closedChannelsNote}</p>
+      ) : null}
+      <div className="mt-2.5 space-y-2">
+        {closed.map((c, i) => (
+          <ClosedDoor key={`${c.host}-closed-${i}`} c={c} />
+        ))}
+      </div>
+    </>
   );
 }

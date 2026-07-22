@@ -204,13 +204,17 @@ export function PrioritizedActionsPanel({
   upgradeCta?: ReactNode;
 }) {
   const items = (actions || []).filter((a) => a && (a.headline || a.first_move));
-  if (locked && items.length === 0) {
+  if (locked) {
+    // `locked` is authoritative — even if the backend contract were violated
+    // and actions arrived non-empty, never render real action content on a
+    // locked report (defense-in-depth, mirrors GetCitedPanel).
+    const count = Math.max(lockedCount ?? 0, items.length);
     // Nothing was behind the lock for this section → hide, don't advertise.
-    if ((lockedCount ?? 0) === 0) return null;
+    if (count === 0) return null;
     return (
       <LockedActionsCard
         title="Start here — your highest-impact moves"
-        count={lockedCount ?? 0}
+        count={count}
         teaserHeadline={lockedTeaserHeadline}
         upgradeCta={upgradeCta}
       />
