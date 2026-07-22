@@ -528,6 +528,21 @@ export default function UrlAuditPage() {
   const storeConnected = result?.merchant_context?.store_connected ?? false;
   const fullySetUp = isPaid && storeConnected;
 
+  // Upgrade CTA for locked action panels (free-tier paywall). Gated the same
+  // way as every purchase surface (#194): off-platform App Store / exempt
+  // merchants must never see an in-app purchase path — for them the locked
+  // card renders as a notice with no CTA.
+  const unlockActionsCta =
+    !isPaid && canPurchaseCredits ? (
+      <Link
+        href="/dashboard/billing"
+        className="inline-flex items-center gap-1.5 rounded-xl bg-[color:var(--merchant-brand)] px-3.5 py-2 text-sm font-medium text-white transition hover:bg-[color:var(--merchant-brand-strong)]"
+      >
+        Unlock the action plan
+        <ArrowRight className="h-4 w-4" />
+      </Link>
+    ) : null;
+
   // Re-layout (partner feedback round 2): no parallel summary sections — the
   // full report IS the layout. The contract contributes exactly one new
   // element (the score strip) plus per-action measured evidence; flag off →
@@ -681,6 +696,10 @@ export default function UrlAuditPage() {
             actions={result.merchant_narrative?.prioritized_actions}
             runId={result.run_id ?? result.audit_run_id ?? null}
             evidenceByHeadline={actionEvidence}
+            locked={result.actions_locked === true}
+            lockedCount={result.locked_counts?.prioritized_actions ?? 0}
+            lockedTeaserHeadline={result.locked_teaser_headline}
+            upgradeCta={unlockActionsCta}
           />
         </ReportSectionBoundary>
         </>
@@ -754,6 +773,12 @@ export default function UrlAuditPage() {
               runId={result.run_id ?? result.audit_run_id ?? null}
               redditSubreddits={redditSubreddits as Parameters<typeof GetCitedPanel>[0]['redditSubreddits']}
               creatorVideosByHost={creatorVideosByHost}
+              locked={result.actions_locked === true}
+              lockedCount={
+                (result.locked_counts?.outreach_moves ?? 0) +
+                (result.locked_counts?.pitch_targets ?? 0)
+              }
+              upgradeCta={unlockActionsCta}
             />
           );
         })()}
