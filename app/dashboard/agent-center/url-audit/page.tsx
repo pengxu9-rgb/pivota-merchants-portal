@@ -47,7 +47,6 @@ import {
 import { RecentAuditsPanel } from '@/components/audit/RecentAuditsPanel';
 import { WeeklyReauditSwitch } from '@/components/audit/WeeklyReauditSwitch';
 import { AuditQuotaLine } from '@/components/audit/AuditQuotaLine';
-import { BuyCreditsCard } from '@/components/billing/BuyCreditsCard';
 import { PerSkuReportCard } from '@/components/audit/PerSkuReportCard';
 import { CustomPromptsPanel } from '@/components/audit/CustomPromptsPanel';
 import { GetCitedPanel, extractCreatorVideosByHost } from '@/components/audit/GetCitedPanel';
@@ -1289,20 +1288,34 @@ export default function UrlAuditPage() {
                     </p>
                   </a>
                 ) : null}
-                {/* Pay-as-you-go / subscribe only when NOT already subscribed
-                    AND the merchant is on the paid (off-platform) billing path.
-                    Free / App Store merchants get no in-app purchase path. */}
-                {!isPaid && canPurchaseCredits ? <BuyCreditsCard /> : null}
+                {/* Free-tier upsell = SUBSCRIPTION, not credit top-ups
+                    (founder decision 2026-07-22: a small top-up can't unlock
+                    the action plan — the subscription is the product). Only
+                    when NOT already subscribed AND the merchant is on the
+                    paid (off-platform) billing path; free App Store
+                    merchants get no in-app purchase path. Credit top-ups
+                    remain a paid-tier overage tool on the billing page. */}
                 {!isPaid && canPurchaseCredits ? (
                   <a
                     href="/dashboard/billing"
-                    className="flex-1 rounded-lg border border-[color:var(--merchant-line)] p-4 transition hover:border-[color:var(--merchant-accent,#6366f1)]"
+                    className="flex-1 rounded-lg border-2 border-[color:var(--merchant-brand)] bg-[color:var(--merchant-brand-soft,#EEEDFE)] p-4 transition hover:brightness-[1.02]"
                   >
-                    <div className="text-sm font-semibold">Subscribe</div>
+                    {/* Price + product cap are hardcoded copy — if Starter's
+                        price_cents or WEDGE_MAX_PRODUCTS_PAID change, update
+                        here too (the billing page renders live plan data). */}
+                    <div className="text-sm font-semibold">
+                      Unlock the full action plan — Starter, $99/month
+                    </div>
                     <p className="merchant-text-muted mt-1 text-xs">
-                      Recurring audits + monitoring + more SKUs per run, so you
-                      catch visibility drops before they cost you sales.
+                      See every prioritized action and outreach move on this
+                      report (and every future one), audit up to 20 products
+                      per run, and keep weekly re-audits + monitoring running
+                      so you catch visibility drops before they cost sales.
                     </p>
+                    <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[color:var(--merchant-brand)]">
+                      See plans
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </span>
                   </a>
                 ) : null}
               </div>
