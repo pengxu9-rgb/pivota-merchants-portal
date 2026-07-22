@@ -224,8 +224,10 @@ export function PrioritizedActionsPanel({
                   ) : null;
                 })()}
               </div>
-              {a.sku_title ? (
-                <div className="mt-0.5 truncate text-[11px] opacity-55">{a.sku_title}</div>
+              {(a.sku_titles?.length ? a.sku_titles.join(' \u00b7 ') : a.sku_title) ? (
+                <div className="mt-0.5 truncate text-[11px] opacity-55">
+                  {a.sku_titles?.length ? a.sku_titles.join(' \u00b7 ') : a.sku_title}
+                </div>
               ) : null}
               {a.first_move ? (
                 <div className="mt-1 flex items-start gap-1 text-xs">

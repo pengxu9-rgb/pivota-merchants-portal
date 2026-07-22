@@ -50,7 +50,7 @@ import { AuditQuotaLine } from '@/components/audit/AuditQuotaLine';
 import { BuyCreditsCard } from '@/components/billing/BuyCreditsCard';
 import { PerSkuReportCard } from '@/components/audit/PerSkuReportCard';
 import { CustomPromptsPanel } from '@/components/audit/CustomPromptsPanel';
-import { GetCitedPanel } from '@/components/audit/GetCitedPanel';
+import { GetCitedPanel, extractCreatorVideosByHost } from '@/components/audit/GetCitedPanel';
 import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
 import { OutreachOutcomesPanel } from '@/components/audit/OutreachOutcomesPanel';
 import { PrioritizedActionsPanel } from '@/components/audit/PrioritizedActionsPanel';
@@ -734,6 +734,11 @@ export default function UrlAuditPage() {
             (result.authority_map as { skus?: { reddit?: { subreddits?: unknown[] } }[] } | undefined)
               ?.skus ?? []
           ).flatMap((s) => s?.reddit?.subreddits ?? []);
+          // The specific videos AI cited per creator host — the panel shows
+          // them on that host's row and drops the generic KOL search rows.
+          const creatorVideosByHost = extractCreatorVideosByHost(
+            result.authority_map as Parameters<typeof extractCreatorVideosByHost>[0],
+          );
           return (
             <GetCitedPanel
               moves={result.where_youre_losing?.outreach_moves}
@@ -748,6 +753,7 @@ export default function UrlAuditPage() {
               }
               runId={result.run_id ?? result.audit_run_id ?? null}
               redditSubreddits={redditSubreddits as Parameters<typeof GetCitedPanel>[0]['redditSubreddits']}
+              creatorVideosByHost={creatorVideosByHost}
             />
           );
         })()}
