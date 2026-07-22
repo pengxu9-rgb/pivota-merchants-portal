@@ -265,23 +265,24 @@ export default function MerchantSignup() {
 
   const steps = useMemo(
     () =>
-      signupSource === AUDIT_FUNNEL_SIGNUP_SOURCE &&
-      (currentStep === 'register' || currentStep === 'complete')
-        ? // Audit-funnel signups skip PSP + documents, so only show the two
-          // steps they will actually walk through. A funnel signup that is
-          // NOT auto-approved falls back into the psp/documents steps, and
-          // the header expands to the full four with it.
+      onboardingData.auto_approved === false ||
+      currentStep === 'psp' ||
+      currentStep === 'documents'
+        ? // A signup that is NOT auto-approved walks the full wizard —
+          // document upload is its path to approval — so show all four steps
+          // (kept through its completion screen for consistency).
           ([
-            { id: 'register', title: t('auth.registration.businessDetailsTitle'), icon: Store },
-            { id: 'complete', title: t('auth.complete.readyTitle'), icon: Rocket },
-          ] as const)
-        : ([
             { id: 'register', title: t('auth.registration.businessDetailsTitle'), icon: Store },
             { id: 'psp', title: t('auth.psp.title'), icon: CreditCard },
             { id: 'documents', title: t('auth.documents.recommendedTitle'), icon: FileText },
             { id: 'complete', title: t('auth.complete.readyTitle'), icon: Rocket },
+          ] as const)
+        : // Auto-approved signups (the norm) only walk register→complete.
+          ([
+            { id: 'register', title: t('auth.registration.businessDetailsTitle'), icon: Store },
+            { id: 'complete', title: t('auth.complete.readyTitle'), icon: Rocket },
           ] as const),
-    [currentStep, signupSource, t],
+    [currentStep, onboardingData.auto_approved, t],
   );
 
   const clearSignupSession = () => {
@@ -296,7 +297,20 @@ export default function MerchantSignup() {
   };
 
   const updateRegistrationField = (field: keyof RegistrationFormData, value: string) => {
-    setRegistrationForm((prev) => ({ ...prev, [field]: value }));
+    setRegistrationForm((prev) => {
+      const next = { ...prev, [field]: value };
+      // Switching to "I don't have a store" must not leave the placeholder
+      // 'https://' remnant in the url input — it isn't required anymore, but
+      // a non-empty partial value still fails the browser's type="url"
+      // validation and blocks submit.
+      if (field === 'operating_mode' && value === 'store_less' && prev.store_url.trim() === 'https://') {
+        next.store_url = '';
+      }
+      if (field === 'operating_mode' && value === 'storefront' && !prev.store_url.trim()) {
+        next.store_url = 'https://';
+      }
+      return next;
+    });
     if (error) setError('');
   };
 
@@ -346,12 +360,12 @@ export default function MerchantSignup() {
       };
       const response = await onboardingApi.register(payload);
 
-      // Audit-funnel fast path: an auto-approved merchant who came from the
-      // marketing URL-capture form skips PSP + documents (both already
-      // optional) and goes straight to completion — which auto-logs-in and
-      // lands them on the prefilled URL-audit form.
-      const skipToComplete =
-        signupSource === AUDIT_FUNNEL_SIGNUP_SOURCE && response.auto_approved === true;
+      // Auto-approved signups skip PSP + documents entirely (both were
+      // already optional) and go straight to completion — auto-login then
+      // lands on the dashboard, or on the prefilled URL-audit form for
+      // audit-funnel signups. Only a NON-approved signup still walks the
+      // PSP/documents steps, since document upload is its path to approval.
+      const skipToComplete = response.auto_approved === true;
 
       setOnboardingData({
         merchant_id: response.merchant_id,
