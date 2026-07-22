@@ -191,10 +191,11 @@ export function extractCreatorVideosByHost(
   }
   for (const host of Object.keys(out)) {
     const b = out[host];
-    b.aboutYou = b.aboutYou.slice(0, 5);
-    // A URL attributed about-you on one SKU must not linger as a pitch row
-    // from another SKU's unattributed pass.
+    // A URL attributed about-you on ANY SKU must not linger as a pitch row —
+    // filter against the FULL about-you list BEFORE capping, or a URL the cap
+    // drops from aboutYou could render under "not you yet" (review catch).
     b.pitch = b.pitch.filter((u) => !b.aboutYou.includes(u)).slice(0, 5);
+    b.aboutYou = b.aboutYou.slice(0, 5);
   }
   return out;
 }
