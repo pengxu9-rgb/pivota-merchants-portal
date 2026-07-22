@@ -843,10 +843,13 @@ export function GetCitedPanel({
     if (typeof e.measured === 'boolean') return e.measured;
     return e.status ? e.status !== 'couldnt_measure' : undefined;
   };
-  // Hosts cited with NO per-engine attribution — shown once, without an
-  // engine claim, instead of being heuristically guessed into a card.
+  // Hosts cited with no attribution to a RENDERED engine — shown once,
+  // without an engine claim, instead of being heuristically guessed into a
+  // card. "Rendered" (not "any") so a host attributed only to an engine we
+  // don't card (e.g. claude) still surfaces here rather than vanishing.
+  const RENDERED_ENGINES = ['gemini', 'chatgpt'];
   const unattributed = list
-    .filter((m) => (enginesByHost[m.host] || []).length === 0)
+    .filter((m) => !(enginesByHost[m.host] || []).some((p) => RENDERED_ENGINES.includes(p)))
     .sort((a, b) => (REALISM_META[a.realism || '']?.rank ?? 2.5) - (REALISM_META[b.realism || '']?.rank ?? 2.5));
 
   return (
