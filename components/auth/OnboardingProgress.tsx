@@ -22,7 +22,7 @@ export function OnboardingProgress({ steps, currentStep }: OnboardingProgressPro
 
   return (
     <div className="rounded-[26px] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-4 py-4">
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className={cx('grid gap-3', steps.length === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-4')}>
         {steps.map((step, index) => {
           const Icon = step.icon;
           const isComplete = index < currentStepIndex;

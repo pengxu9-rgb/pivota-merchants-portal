@@ -303,7 +303,11 @@ export default function MerchantSignup() {
       // 'https://' remnant in the url input — it isn't required anymore, but
       // a non-empty partial value still fails the browser's type="url"
       // validation and blocks submit.
-      if (field === 'operating_mode' && value === 'store_less' && prev.store_url.trim() === 'https://') {
+      if (
+        field === 'operating_mode' &&
+        value === 'store_less' &&
+        /^https?:\/{0,2}$/i.test(prev.store_url.trim())
+      ) {
         next.store_url = '';
       }
       if (field === 'operating_mode' && value === 'storefront' && !prev.store_url.trim()) {
