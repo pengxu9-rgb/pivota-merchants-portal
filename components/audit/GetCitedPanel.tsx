@@ -70,7 +70,15 @@ function cleanCategory(q?: string | null, brand?: string | null): string {
 // A tracked subreddit/thread from authority_map.skus[].reddit.subreddits[].
 interface TrackedSubreddit {
   name?: string | null;
-  threads?: { title?: string | null; url?: string | null; sentiment?: string | null }[];
+  threads?: {
+    title?: string | null;
+    url?: string | null;
+    sentiment?: string | null;
+    /** Backend attribution (pivota-backend#1560): this thread's content
+     *  covers the merchant (branded query, SKU-matched answer, or
+     *  brand-naming slug). Absent on older payloads. */
+    about_merchant?: boolean | null;
+  }[];
   recurring_objections?: string[];
 }
 
@@ -136,6 +144,18 @@ function suggestSubreddits(category: string): string[] {
  * the live HoverAir share report carried 8 cited YouTube videos while the
  * panel rendered a generic "YouTube creators" search link. Extracted here
  * (single implementation) and passed in by both report surfaces. */
+export interface CreatorEvidence {
+  /** Cited URLs whose content already covers THIS merchant (branded-query
+   *  grounding, SKU-matched answer, or brand-naming slug) — amplify targets. */
+  aboutYou: string[];
+  /** Cited URLs only seen covering the category — pitch-for-review targets. */
+  pitch: string[];
+  /** False on payloads predating evidence_urls_about_merchant: the split is
+   *  unknown, so the UI must keep a neutral label rather than claim
+   *  "doesn't cover you". */
+  attributed: boolean;
+}
+
 export function extractCreatorVideosByHost(
   authorityMap?: {
     skus?: {
@@ -143,24 +163,39 @@ export function extractCreatorVideosByHost(
         host?: string | null;
         host_type?: string | null;
         evidence_urls?: (string | null)[] | null;
+        evidence_urls_about_merchant?: (string | null)[] | null;
       }[] | null;
     }[] | null;
   } | null,
-): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
+): Record<string, CreatorEvidence> {
+  const isHttp = (u: unknown): u is string =>
+    typeof u === 'string' && /^https?:\/\//i.test(u);
+  const out: Record<string, CreatorEvidence> = {};
   for (const sku of authorityMap?.skus ?? []) {
     for (const h of sku?.authority_hosts ?? []) {
       const host = (h?.host || '').toLowerCase();
       if (!host || (h?.host_type || '').toLowerCase() !== 'creator') continue;
-      const urls = (h?.evidence_urls ?? []).filter(
-        (u): u is string => typeof u === 'string' && /^https?:\/\//i.test(u),
-      );
+      const urls = (h?.evidence_urls ?? []).filter(isHttp);
       if (!urls.length) continue;
-      const bucket = (out[host] ??= []);
-      for (const u of urls) if (!bucket.includes(u)) bucket.push(u);
+      const bucket = (out[host] ??= { aboutYou: [], pitch: [], attributed: false });
+      // Attribution is per-row: an old payload's rows lack the field entirely,
+      // and a mixed payload stays honest per URL.
+      const aboutRaw = h?.evidence_urls_about_merchant;
+      const about = new Set((aboutRaw ?? []).filter(isHttp));
+      if (aboutRaw !== undefined && aboutRaw !== null) bucket.attributed = true;
+      for (const u of urls) {
+        const list = about.has(u) ? bucket.aboutYou : bucket.pitch;
+        if (!list.includes(u) && !bucket.aboutYou.includes(u)) list.push(u);
+      }
     }
   }
-  for (const host of Object.keys(out)) out[host] = out[host].slice(0, 5);
+  for (const host of Object.keys(out)) {
+    const b = out[host];
+    b.aboutYou = b.aboutYou.slice(0, 5);
+    // A URL attributed about-you on one SKU must not linger as a pitch row
+    // from another SKU's unattributed pass.
+    b.pitch = b.pitch.filter((u) => !b.aboutYou.includes(u)).slice(0, 5);
+  }
   return out;
 }
 
@@ -251,11 +286,17 @@ function buildRedditPaths(tracked: TrackedSubreddit[], category: string): Starte
       // as two identical rows, whatever shape the junk takes.
       if (seen.has(title.toLowerCase())) continue;
       seen.add(title.toLowerCase());
+      // A thread about YOUR product that AI already cites is the conversation
+      // to own; a category thread is one to join. Old payloads (no
+      // about_merchant) keep the neutral copy.
+      const how = thread?.about_merchant === true
+        ? `This thread is about your product and AI already cites it${obj.length ? ` — address: ${obj.join(', ')}` : ''}. Join it with a genuine, disclosed reply.`
+        : `AI already cites this discussion${obj.length ? ` — address: ${obj.join(', ')}` : ''}. Add a genuine, disclosed reply.`;
       out.push({
         kind: 'community',
         title,
         url: thread.url,
-        how: `AI already cites this discussion${obj.length ? ` — address: ${obj.join(', ')}` : ''}. Add a genuine, disclosed reply.`,
+        how,
       });
     } else if (name) {
       out.push({
@@ -296,7 +337,7 @@ function encodedBodyWithinBudget(draft: string, budget = 1800): string {
 }
 
 function ChannelRow({
-  kind, title, host, url, realism, how, runId, channelHost, channelLever, channelType, query, badge, losingQueries, pitchSubmissionUrl, pitchEmail, evidenceLinks,
+  kind, title, host, url, realism, how, runId, channelHost, channelLever, channelType, query, badge, losingQueries, pitchSubmissionUrl, pitchEmail, evidenceGroups,
 }: {
   kind: Kind;
   title: string;
@@ -319,9 +360,10 @@ function ChannelRow({
    *  guessed URL never reaches here — registry-curated only. */
   pitchSubmissionUrl?: string | null;
   pitchEmail?: string | null;
-  /** Measured evidence for this channel: the specific cited URLs (e.g. the
-   *  exact videos AI grounded answers in). Absent → no line, never inferred. */
-  evidenceLinks?: string[] | null;
+  /** Measured evidence for this channel, grouped by relationship: the exact
+   *  cited URLs with a label saying what they mean (already covers you vs
+   *  pitch target). Absent → no line, never inferred. */
+  evidenceGroups?: { label: string; urls: string[] }[] | null;
 }) {
   const [st, setSt] = useState<{ loading?: boolean; done?: boolean; draft?: string | null; error?: string | null; copied?: boolean }>({});
   const Meta = KIND_META[kind];
@@ -384,10 +426,10 @@ function ChannelRow({
           ))}
         </p>
       ) : null}
-      {evidenceLinks && evidenceLinks.length > 0 ? (
-        <p className="mt-1 text-[11px] leading-snug">
-          <span className="opacity-60">The videos AI cited — start with these creators: </span>
-          {evidenceLinks.map((u, ui) => (
+      {(evidenceGroups || []).filter((g) => g.urls.length > 0).map((g, gi) => (
+        <p key={gi} className="mt-1 text-[11px] leading-snug">
+          <span className="opacity-60">{g.label} </span>
+          {g.urls.map((u, ui) => (
             <span key={ui}>
               {ui > 0 ? ' · ' : ''}
               <a href={u} target="_blank" rel="noopener noreferrer" className="font-medium text-[color:var(--merchant-accent,#6366f1)] hover:underline">
@@ -396,7 +438,7 @@ function ChannelRow({
             </span>
           ))}
         </p>
-      ) : null}
+      ))}
 
       {runId ? (
         st.done ? (
@@ -498,6 +540,31 @@ function PitchTargetsSection({ targets, runId, category }: {
   );
 }
 
+/** Label the measured creator URLs by relationship. Unattributed payloads
+ * (pre-split reports) keep the neutral label — never claim "doesn't cover
+ * you" without the measurement. */
+function creatorEvidenceGroups(ev?: CreatorEvidence): { label: string; urls: string[] }[] | undefined {
+  if (!ev) return undefined;
+  if (!ev.attributed) {
+    const all = [...ev.aboutYou, ...ev.pitch];
+    return all.length ? [{ label: 'The videos AI cited — start with these creators:', urls: all }] : undefined;
+  }
+  const groups: { label: string; urls: string[] }[] = [];
+  if (ev.aboutYou.length) {
+    groups.push({
+      label: 'Already covers you — engage these creators (comment, link them from your page, gift the newer model):',
+      urls: ev.aboutYou,
+    });
+  }
+  if (ev.pitch.length) {
+    groups.push({
+      label: 'Covers your category, not you yet — pitch these for a review:',
+      urls: ev.pitch,
+    });
+  }
+  return groups.length ? groups : undefined;
+}
+
 function EngineGroup({
   engineKey, label, howItCites, moves, enginesByHost, category, brand, runId, starters, creatorVideos = {},
 }: {
@@ -510,8 +577,9 @@ function EngineGroup({
   brand: string;
   runId?: string | null;
   starters: Starter[];
-  /** Measured cited videos per creator host — rendered on that host's row. */
-  creatorVideos?: Record<string, string[]>;
+  /** Measured cited videos per creator host — rendered on that host's row,
+   *  split into amplify (already covers you) vs pitch targets. */
+  creatorVideos?: Record<string, CreatorEvidence>;
 }) {
   // Channels this engine actually cites (grounded by providers); fall back to a
   // type→engine heuristic when we have no provider data for the host.
@@ -550,7 +618,7 @@ function EngineGroup({
               losingQueries={m.losing_queries}
               pitchSubmissionUrl={m.pitch_submission_url}
               pitchEmail={m.pitch_email}
-              evidenceLinks={creatorVideos[(m.host || '').toLowerCase()]}
+              evidenceGroups={creatorEvidenceGroups(creatorVideos[(m.host || '').toLowerCase()])}
             />
           );
         })}
@@ -630,7 +698,7 @@ export function GetCitedPanel({
   /** Measured cited videos per creator host (extractCreatorVideosByHost).
    *  Presence of ANY measured creator evidence demotes the generic KOL
    *  search rows to a cold-start-only fallback. */
-  creatorVideosByHost?: Record<string, string[]>;
+  creatorVideosByHost?: Record<string, CreatorEvidence>;
   /** Free-tier paywall (backend `actions_locked`): outreach moves + pitch
    *  targets arrive emptied, but `closed_channels` (status, free-safe) is
    *  NOT stripped — so the locked branch renders the locked card PLUS the
@@ -695,7 +763,9 @@ export function GetCitedPanel({
   // the generic ones are noise (founder review of the HoverAir share report).
   const hasMeasuredCreators =
     list.some((m) => kindOf(m) === 'kol')
-    || Object.values(creatorVideosByHost).some((v) => v && v.length > 0);
+    || Object.values(creatorVideosByHost).some(
+      (v) => v && v.aboutYou.length + v.pitch.length > 0,
+    );
   const chatgptStarters: Starter[] = [
     ...buildRedditPaths(redditSubreddits || [], category),
     ...chatgptQuestions.flatMap((q): Starter[] => [
