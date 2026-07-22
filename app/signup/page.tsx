@@ -265,13 +265,23 @@ export default function MerchantSignup() {
 
   const steps = useMemo(
     () =>
-      [
-        { id: 'register', title: t('auth.registration.businessDetailsTitle'), icon: Store },
-        { id: 'psp', title: t('auth.psp.title'), icon: CreditCard },
-        { id: 'documents', title: t('auth.documents.recommendedTitle'), icon: FileText },
-        { id: 'complete', title: t('auth.complete.readyTitle'), icon: Rocket },
-      ] as const,
-    [t],
+      signupSource === AUDIT_FUNNEL_SIGNUP_SOURCE &&
+      (currentStep === 'register' || currentStep === 'complete')
+        ? // Audit-funnel signups skip PSP + documents, so only show the two
+          // steps they will actually walk through. A funnel signup that is
+          // NOT auto-approved falls back into the psp/documents steps, and
+          // the header expands to the full four with it.
+          ([
+            { id: 'register', title: t('auth.registration.businessDetailsTitle'), icon: Store },
+            { id: 'complete', title: t('auth.complete.readyTitle'), icon: Rocket },
+          ] as const)
+        : ([
+            { id: 'register', title: t('auth.registration.businessDetailsTitle'), icon: Store },
+            { id: 'psp', title: t('auth.psp.title'), icon: CreditCard },
+            { id: 'documents', title: t('auth.documents.recommendedTitle'), icon: FileText },
+            { id: 'complete', title: t('auth.complete.readyTitle'), icon: Rocket },
+          ] as const),
+    [currentStep, signupSource, t],
   );
 
   const clearSignupSession = () => {
