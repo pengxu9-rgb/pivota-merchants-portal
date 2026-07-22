@@ -59,11 +59,33 @@ function leverFor(kind: Kind): string {
 }
 
 function cleanCategory(q?: string | null, brand?: string | null): string {
-  const c = (q || '')
-    .replace(/^\s*(best|top|recommended|what|which|the)\b/gi, '')
+  // Iterative prefix-strip + punctuation trim (founder scan 2026-07-22: one
+  // pass left garble like ", x or y?" from "which is better, x or y?", and a
+  // too-short remnant polluted search URLs and outreach seeds).
+  const raw = (q || '').toLowerCase();
+  let c = raw.trim();
+  // (?!-) keeps hyphenated modifiers intact ("top-rated" is not the "top" prefix).
+  const PREFIX = /^\s*(best|top|recommended|what|which|the|is|are|a|an|better)\b(?!-)[\s,.:;–—-]*/i;
+  for (let i = 0; i < 8 && PREFIX.test(c); i += 1) c = c.replace(PREFIX, '');
+  c = c
     .replace(/\bfor\b.*$/i, '')
     .replace(/\bshould i buy\b.*$/i, '')
+    .replace(/\bis better\b.*$/i, '')
+    .replace(/[?!.]+$/g, '')
+    .replace(/^[\s,.:;–—-]+|[\s,.:;–—-]+$/g, '')
+    .replace(/\s+/g, ' ')
     .trim();
+  // A remnant this short is garble, not a category — fall back to the brand.
+  if (c.length < 3) c = '';
+  // A comparison remnant is a product matchup, not a category — a search
+  // seeded with it is noise. "vs" is always a matchup; a bare "or" only
+  // counts when the RAW query carried comparison intent (which/better/
+  // compare), so legit categories like "day or night cream" survive
+  // (review catch).
+  if (
+    /\b(vs\.?|versus)\b/i.test(c)
+    || (/\bor\b/i.test(c) && /\b(which|better|compare|difference)\b/i.test(raw))
+  ) c = '';
   return c || (brand || '').trim();
 }
 
@@ -134,6 +156,11 @@ function suggestSubreddits(category: string): string[] {
   if (/supplement|vitamin|protein|collagen|nutrition/.test(c)) add('Supplements', 'Nutrition');
   if (/coffee|espresso/.test(c)) add('Coffee');
   if (/\btea\b|matcha/.test(c)) add('tea');
+  if (/\bdrone\b|quadcopter|fpv|flying camera/.test(c)) add('drones', 'fpv', 'Multicopter');
+  if (/headphone|earbud|speaker|\baudio\b|soundbar/.test(c)) add('headphones', 'BudgetAudiophile');
+  if (/camera(?!.*drone)|mirrorless|\bdslr\b/.test(c)) add('photography', 'AskPhotography');
+  if (/laptop|keyboard|monitor|\bmouse\b|charger|\bgadget\b/.test(c)) add('gadgets', 'BuyItForLife');
+  if (/dress|jacket|denim|sneaker|apparel|clothing|fashion/.test(c)) add('femalefashionadvice', 'malefashionadvice');
   if (/beauty|cosmetic|k-?beauty/.test(c) && out.length === 0) add('AsianBeauty', 'BeautyGuruChatter');
   return out.slice(0, 4);
 }
@@ -826,7 +853,15 @@ export function GetCitedPanel({
       how: 'The pages Google ranks for this exact ask are where Gemini grounds it — pitch them to include you.',
       query: q,
     })),
-    { kind: 'reviews', title: 'Get into "best of" roundups', url: `https://www.google.com/search?q=${enc('best ' + catQ)}`, how: 'Find the review roundups Google ranks for this category and pitch to be included.' },
+    // Cold-start fallback ONLY (same rule as the ChatGPT generic community
+    // rows): when measured lost questions exist, the specific pages-ranking
+    // rows above carry the plan, and this row points at the exact broad-head
+    // "best <category>" fight the report elsewhere tells merchants to park.
+    ...(geminiQuestions.length === 0
+      ? [
+          { kind: 'reviews' as Kind, title: 'Get into "best of" roundups', url: `https://www.google.com/search?q=${enc('best ' + catQ)}`, how: 'Find the review roundups Google ranks for this category and pitch to be included.' },
+        ]
+      : []),
     ...(hasMeasuredCreators
       ? []
       : [
