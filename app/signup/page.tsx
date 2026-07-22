@@ -13,6 +13,7 @@ import { useMerchantLanguage } from '@/components/portal/merchant-language-provi
 import { onboardingApi } from '@/lib/api';
 import { captureInviteRef } from '@/lib/invite-ref';
 import {
+  AUDIT_FUNNEL_SIGNUP_SOURCE,
   emptyPspDraft,
   emptyRegistrationDraft,
   type OnboardingData,
@@ -23,6 +24,26 @@ import {
   type SignupSessionState,
   type SignupStepId,
 } from '@/lib/onboarding';
+
+function sanitizeSignupSource(raw: string | null): string {
+  if (!raw) return '';
+  const normalized = raw.trim().toLowerCase().slice(0, 64);
+  return /^[a-z0-9_-]+$/.test(normalized) ? normalized : '';
+}
+
+function sanitizePrefillUrl(raw: string | null): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const url = new URL(withScheme);
+    if (!url.hostname.includes('.')) return '';
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
 
 function toPublicRegistrationDraft(formData: RegistrationFormData): PublicRegistrationDraft {
   const { password: _password, confirm_password: _confirmPassword, ...publicDraft } = formData;
@@ -80,6 +101,7 @@ function normalizeStoredSession(
   onboardingData: OnboardingData;
   registrationDraft: PublicRegistrationDraft;
   pspDraft: Pick<PSPFormData, 'pspType' | 'customPspName'>;
+  signupSource?: string;
 } | null {
   if (!rawValue) return null;
 
@@ -105,6 +127,8 @@ function normalizeStoredSession(
         pspType: parsed.pspDraft?.pspType || '',
         customPspName: parsed.pspDraft?.customPspName || '',
       },
+      signupSource:
+        typeof parsed.signupSource === 'string' ? parsed.signupSource : undefined,
     };
   } catch {
     return null;
@@ -113,6 +137,14 @@ function normalizeStoredSession(
 
 function normalizeEmail(value: string) {
   return (value || '').trim().toLowerCase();
+}
+
+function auditFunnelLandingPath(data: OnboardingData): string {
+  const params = new URLSearchParams();
+  if (data.store_url?.trim()) params.set('website', data.store_url.trim());
+  if (data.business_name?.trim()) params.set('brand', data.business_name.trim());
+  const query = params.toString();
+  return `/dashboard/agent-center/url-audit${query ? `?${query}` : ''}`;
 }
 
 export default function MerchantSignup() {
@@ -126,6 +158,7 @@ export default function MerchantSignup() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [hasHydrated, setHasHydrated] = useState(false);
+  const [signupSource, setSignupSource] = useState('');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -149,6 +182,27 @@ export default function MerchantSignup() {
       }));
     }
 
+    // Marketing-site prefill (e.g. pivota.cc/ai-readiness URL-capture form
+    // redirects here with ?source=ai-readiness-audit&store_url=...). Query
+    // params win over a stored draft — arriving with a URL expresses fresh
+    // intent for that URL.
+    const params = new URLSearchParams(window.location.search);
+    const prefillStoreUrl = sanitizePrefillUrl(params.get('store_url'));
+    const prefillBusinessName = (params.get('business_name') || '').trim().slice(0, 255);
+    const source = sanitizeSignupSource(params.get('source'));
+    if (source) {
+      setSignupSource(source);
+    } else if (stored?.signupSource) {
+      setSignupSource(stored.signupSource);
+    }
+    if (prefillStoreUrl || prefillBusinessName) {
+      setRegistrationForm((prev) => ({
+        ...prev,
+        ...(prefillStoreUrl ? { store_url: prefillStoreUrl, operating_mode: 'storefront' as const } : {}),
+        ...(prefillBusinessName ? { business_name: prefillBusinessName } : {}),
+      }));
+    }
+
     setHasHydrated(true);
   }, []);
 
@@ -163,10 +217,11 @@ export default function MerchantSignup() {
         pspType: pspForm.pspType,
         customPspName: pspForm.customPspName,
       },
+      ...(signupSource ? { signupSource } : {}),
     };
 
     sessionStorage.setItem(SIGNUP_SESSION_STORAGE_KEY, JSON.stringify(sessionState));
-  }, [currentStep, hasHydrated, onboardingData, pspForm.customPspName, pspForm.pspType, registrationForm]);
+  }, [currentStep, hasHydrated, onboardingData, pspForm.customPspName, pspForm.pspType, registrationForm, signupSource]);
 
   const panelAction = useMemo(
     () => (
@@ -210,13 +265,24 @@ export default function MerchantSignup() {
 
   const steps = useMemo(
     () =>
-      [
-        { id: 'register', title: t('auth.registration.businessDetailsTitle'), icon: Store },
-        { id: 'psp', title: t('auth.psp.title'), icon: CreditCard },
-        { id: 'documents', title: t('auth.documents.recommendedTitle'), icon: FileText },
-        { id: 'complete', title: t('auth.complete.readyTitle'), icon: Rocket },
-      ] as const,
-    [t],
+      onboardingData.auto_approved === false ||
+      currentStep === 'psp' ||
+      currentStep === 'documents'
+        ? // A signup that is NOT auto-approved walks the full wizard —
+          // document upload is its path to approval — so show all four steps
+          // (kept through its completion screen for consistency).
+          ([
+            { id: 'register', title: t('auth.registration.businessDetailsTitle'), icon: Store },
+            { id: 'psp', title: t('auth.psp.title'), icon: CreditCard },
+            { id: 'documents', title: t('auth.documents.recommendedTitle'), icon: FileText },
+            { id: 'complete', title: t('auth.complete.readyTitle'), icon: Rocket },
+          ] as const)
+        : // Auto-approved signups (the norm) only walk register→complete.
+          ([
+            { id: 'register', title: t('auth.registration.businessDetailsTitle'), icon: Store },
+            { id: 'complete', title: t('auth.complete.readyTitle'), icon: Rocket },
+          ] as const),
+    [currentStep, onboardingData.auto_approved, t],
   );
 
   const clearSignupSession = () => {
@@ -231,7 +297,24 @@ export default function MerchantSignup() {
   };
 
   const updateRegistrationField = (field: keyof RegistrationFormData, value: string) => {
-    setRegistrationForm((prev) => ({ ...prev, [field]: value }));
+    setRegistrationForm((prev) => {
+      const next = { ...prev, [field]: value };
+      // Switching to "I don't have a store" must not leave the placeholder
+      // 'https://' remnant in the url input — it isn't required anymore, but
+      // a non-empty partial value still fails the browser's type="url"
+      // validation and blocks submit.
+      if (
+        field === 'operating_mode' &&
+        value === 'store_less' &&
+        /^https?:\/{0,2}$/i.test(prev.store_url.trim())
+      ) {
+        next.store_url = '';
+      }
+      if (field === 'operating_mode' && value === 'storefront' && !prev.store_url.trim()) {
+        next.store_url = 'https://';
+      }
+      return next;
+    });
     if (error) setError('');
   };
 
@@ -277,8 +360,16 @@ export default function MerchantSignup() {
         // Store-less merchants may leave the storefront URL blank.
         store_url:
           operatingMode === 'store_less' ? '' : registrationForm.store_url,
+        ...(signupSource ? { signup_source: signupSource } : {}),
       };
       const response = await onboardingApi.register(payload);
+
+      // Auto-approved signups skip PSP + documents entirely (both were
+      // already optional) and go straight to completion — auto-login then
+      // lands on the dashboard, or on the prefilled URL-audit form for
+      // audit-funnel signups. Only a NON-approved signup still walks the
+      // PSP/documents steps, since document upload is its path to approval.
+      const skipToComplete = response.auto_approved === true;
 
       setOnboardingData({
         merchant_id: response.merchant_id,
@@ -291,12 +382,13 @@ export default function MerchantSignup() {
         auto_approved: response.auto_approved,
         confidence_score: response.confidence_score,
         message: response.message,
+        ...(skipToComplete ? { psp_type: 'setup_later' } : {}),
       });
       setRegistrationForm((prev) => ({
         ...prev,
         contact_email: normalizedEmail,
       }));
-      setCurrentStep('psp');
+      setCurrentStep(skipToComplete ? 'complete' : 'psp');
       setError('');
     } catch (err) {
       setError(getApiErrorMessage(err, t('auth.signup.registrationFailed')));
@@ -499,6 +591,11 @@ export default function MerchantSignup() {
           loginEmail={registrationForm.contact_email || onboardingData.contact_email}
           password={registrationForm.password}
           onClearSession={clearSignupSession}
+          postLoginPath={
+            signupSource === AUDIT_FUNNEL_SIGNUP_SOURCE
+              ? auditFunnelLandingPath(onboardingData)
+              : undefined
+          }
         />
       ) : null}
     </AuthShell>

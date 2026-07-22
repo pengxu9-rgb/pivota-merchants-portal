@@ -185,6 +185,26 @@ export default function UrlAuditPage() {
   const [loadingRunId, setLoadingRunId] = useState<string | null>(null);
   const [historyReloadKey, setHistoryReloadKey] = useState(0);
   const resultRef = useRef<HTMLDivElement | null>(null);
+  const queryPrefilledRef = useRef({ website: false, brand: false });
+
+  // Query-param prefill (?website=...&brand=...) — the audit signup funnel
+  // lands here right after registration with the URL the visitor entered on
+  // the marketing site. Runs before the async profile prefill and wins over
+  // it (the guard below stops the profile response clobbering these values).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const qsWebsite = (params.get('website') || '').trim();
+    const qsBrand = (params.get('brand') || '').trim();
+    if (qsWebsite) {
+      setWebsite(qsWebsite);
+      queryPrefilledRef.current.website = true;
+    }
+    if (qsBrand) {
+      setBrand(qsBrand);
+      queryPrefilledRef.current.brand = true;
+    }
+  }, []);
 
   // Prefill the brand site + name from the merchant's onboarding profile.
   useEffect(() => {
@@ -193,8 +213,8 @@ export default function UrlAuditPage() {
       .getProfile()
       .then((p: { website?: string; business_name?: string } | null) => {
         if (cancelled || !p) return;
-        if (p.website) setWebsite(p.website);
-        if (p.business_name) setBrand(p.business_name);
+        if (p.website && !queryPrefilledRef.current.website) setWebsite(p.website);
+        if (p.business_name && !queryPrefilledRef.current.brand) setBrand(p.business_name);
       })
       .catch(() => {});
     return () => {
