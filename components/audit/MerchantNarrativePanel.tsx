@@ -111,9 +111,13 @@ function FindabilityEndorsementSplit({
     narrative.where_youre_losing?.independently_recommended_for_category;
   const endorsementCategoryHosts =
     summary?.endorsement_category_hosts ?? (recommendedForCategory ? endorsementHosts : []);
-  const surfacedOnlyViaOwnListing =
-    summary?.surfaced_only_via_own_listing ??
-    (findabilityHosts.length > 0 && endorsementHosts.length === 0);
+  // The strong "Listed, not recommended" claim renders ONLY on the backend's
+  // measured flag. The old client-side inference (findability hosts present +
+  // zero endorsement hosts captured) over-claimed a negative verdict when
+  // endorsement data was merely missing from a sparse payload (founder scan
+  // 2026-07-22). Absent flag -> no badge; the endorsement card's own
+  // "No independent endorsement yet" line still tells the story.
+  const surfacedOnlyViaOwnListing = summary?.surfaced_only_via_own_listing === true;
   // C1 — the competitor channels AI routes buyers to instead of you, ranked, each
   // with a role label + how-to-compete action. Turns "who AI cites instead" into
   // an actionable competitive surface (shown for brands AND retailers).
