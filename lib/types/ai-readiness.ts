@@ -877,6 +877,18 @@ export interface UrlReadinessAuditResponse {
    * rendered only behind FEATURE_FLAGS.REPORT_SUMMARY_VIEW). Null when the
    * backend build failed; absent on runs that predate it. */
   report_summary?: ReportSummary | null;
+  /** Free-tier actions paywall (AUDIT_ACTIONS_PAYWALL_ENABLED): when true the
+   * action layers (prioritized_actions, outreach_moves, pitch_targets,
+   * top_actions, per-SKU playbooks) arrive EMPTIED; render locked panels from
+   * the counts + single teaser headline below instead of empty space. */
+  actions_locked?: boolean;
+  locked_counts?: {
+    prioritized_actions?: number;
+    outreach_moves?: number;
+    pitch_targets?: number;
+    top_actions?: number;
+  } | null;
+  locked_teaser_headline?: string | null;
   /** Per-SKU hero intelligence (legacy wedge shape). Absent on per_sku runs. */
   sku_intelligence?: SkuIntelligence | null;
   audit_run_id: string | null;

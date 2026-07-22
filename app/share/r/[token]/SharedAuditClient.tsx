@@ -126,9 +126,14 @@ export function SharedAuditClient({ token }: { token: string }) {
         />
       </ReportSectionBoundary>
       <MerchantNarrativePanel narrative={data.merchant_narrative} />
+      {/* Free-owner shares carry the paywall lock (no CTA on a public page —
+          the locked card degrades to a plain notice). */}
       <PrioritizedActionsPanel
         actions={data.merchant_narrative?.prioritized_actions}
         runId={null}
+        locked={data.actions_locked === true}
+        lockedCount={data.locked_counts?.prioritized_actions ?? 0}
+        lockedTeaserHeadline={data.locked_teaser_headline}
       />
       <GetCitedPanel
         moves={data.where_youre_losing?.outreach_moves}
@@ -142,6 +147,11 @@ export function SharedAuditClient({ token }: { token: string }) {
         runId={null}
         redditSubreddits={redditSubreddits as Parameters<typeof GetCitedPanel>[0]['redditSubreddits']}
         creatorVideosByHost={creatorVideosByHost}
+        locked={data.actions_locked === true}
+        lockedCount={
+          (data.locked_counts?.outreach_moves ?? 0) +
+          (data.locked_counts?.pitch_targets ?? 0)
+        }
       />
       <div className="space-y-3">
         {perSku.map((r, i) => (

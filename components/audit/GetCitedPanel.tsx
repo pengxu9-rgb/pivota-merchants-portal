@@ -12,7 +12,8 @@
  * the more places a merchant earns evidence, the more AI cites them.
  */
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
+import { LockedActionsCard } from '@/components/audit/LockedActionsCard';
 import {
   Globe, Star, Newspaper, Users, Megaphone, Store, ExternalLink,
   Sparkles, Loader2, Check, Copy, ArrowRight, Lock,
@@ -608,6 +609,9 @@ export function GetCitedPanel({
   runId,
   redditSubreddits,
   creatorVideosByHost = {},
+  locked,
+  lockedCount,
+  upgradeCta,
 }: {
   moves?: OutreachMove[] | null;
   /** Phase-4 T5: standing vertical pitch list (where_youre_losing.pitch_targets). */
@@ -627,7 +631,25 @@ export function GetCitedPanel({
    *  Presence of ANY measured creator evidence demotes the generic KOL
    *  search rows to a cold-start-only fallback. */
   creatorVideosByHost?: Record<string, string[]>;
+  /** Free-tier paywall (backend `actions_locked`): outreach moves + pitch
+   *  targets arrive emptied but the engine playbook may still carry signal,
+   *  so an explicit locked prop must short-circuit the whole panel — empty
+   *  arrays alone would leave a half-rendered playbook section. */
+  locked?: boolean;
+  lockedCount?: number;
+  upgradeCta?: ReactNode;
 }) {
+  if (locked) {
+    // Nothing was behind the lock for this section → hide, don't advertise.
+    if ((lockedCount ?? 0) === 0) return null;
+    return (
+      <LockedActionsCard
+        title="Get cited — outreach moves"
+        count={lockedCount ?? 0}
+        upgradeCta={upgradeCta}
+      />
+    );
+  }
   const list = (moves || []).filter((m) => m && m.host);
   const targets = (pitchTargets || []).filter((t) => t && t.host);
   const closed = (closedChannels || []).filter((c) => c && c.host);

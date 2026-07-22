@@ -9,7 +9,7 @@
  * distributing stays theirs (or a connected store/service) for now.
  */
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ListChecks, ArrowRight, Loader2, Check, Sparkles, Copy } from 'lucide-react';
 import type {
   NarrativePrioritizedAction,
@@ -17,6 +17,7 @@ import type {
 } from '@/lib/types/ai-readiness';
 import { apiClient } from '@/lib/api-client';
 import { Disclosure } from '@/components/ui/Disclosure';
+import { LockedActionsCard } from '@/components/audit/LockedActionsCard';
 import { PromptEvidenceList } from '@/components/audit/PromptEvidenceList';
 
 interface ActionState {
@@ -176,6 +177,10 @@ export function PrioritizedActionsPanel({
   actions,
   runId,
   evidenceByHeadline,
+  locked,
+  lockedCount,
+  lockedTeaserHeadline,
+  upgradeCta,
 }: {
   actions?: NarrativePrioritizedAction[] | null;
   runId?: string | null;
@@ -190,8 +195,27 @@ export function PrioritizedActionsPanel({
       impact: { dimension?: string | null; label?: string | null } | null;
     }
   >;
+  /** Free-tier paywall (backend `actions_locked`): the actions array arrives
+   *  emptied, so the locked card renders from these markers — an empty array
+   *  alone still means "nothing to show" and hides the panel. */
+  locked?: boolean;
+  lockedCount?: number;
+  lockedTeaserHeadline?: string | null;
+  upgradeCta?: ReactNode;
 }) {
   const items = (actions || []).filter((a) => a && (a.headline || a.first_move));
+  if (locked && items.length === 0) {
+    // Nothing was behind the lock for this section → hide, don't advertise.
+    if ((lockedCount ?? 0) === 0) return null;
+    return (
+      <LockedActionsCard
+        title="Start here — your highest-impact moves"
+        count={lockedCount ?? 0}
+        teaserHeadline={lockedTeaserHeadline}
+        upgradeCta={upgradeCta}
+      />
+    );
+  }
   if (items.length === 0) return null;
 
   return (
