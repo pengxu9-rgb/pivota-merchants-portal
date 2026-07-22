@@ -1298,8 +1298,11 @@ export default function UrlAuditPage() {
                 {!isPaid && canPurchaseCredits ? (
                   <a
                     href="/dashboard/billing"
-                    className="flex-1 rounded-lg border-2 border-[color:var(--merchant-brand)] bg-[color:var(--merchant-brand-soft,rgba(51,75,133,0.06))] p-4 transition hover:brightness-[1.02]"
+                    className="flex-1 rounded-lg border-2 border-[color:var(--merchant-brand)] bg-[color:var(--merchant-brand-soft,#EEEDFE)] p-4 transition hover:brightness-[1.02]"
                   >
+                    {/* Price + product cap are hardcoded copy — if Starter's
+                        price_cents or WEDGE_MAX_PRODUCTS_PAID change, update
+                        here too (the billing page renders live plan data). */}
                     <div className="text-sm font-semibold">
                       Unlock the full action plan — Starter, $99/month
                     </div>
