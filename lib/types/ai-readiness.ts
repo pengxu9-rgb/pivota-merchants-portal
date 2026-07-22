@@ -1228,6 +1228,9 @@ export interface EnginePlaybookEngine {
   total?: number;
   rate?: number | null;
   status?: 'invisible' | 'weak' | 'present' | 'couldnt_measure' | string;
+  /** Backend-stamped: this engine actually ran probes this audit. Absent on
+   *  older payloads — derive from status there. */
+  measured?: boolean;
   moves?: string[];
 }
 

@@ -567,7 +567,7 @@ function creatorEvidenceGroups(ev?: CreatorEvidence): { label: string; urls: str
 }
 
 function EngineGroup({
-  engineKey, label, howItCites, moves, enginesByHost, category, brand, runId, starters, creatorVideos = {},
+  engineKey, label, howItCites, moves, enginesByHost, category, brand, runId, starters, creatorVideos = {}, measured,
 }: {
   engineKey: string;
   label: string;
@@ -581,17 +581,35 @@ function EngineGroup({
   /** Measured cited videos per creator host — rendered on that host's row,
    *  split into amplify (already covers you) vs pitch targets. */
   creatorVideos?: Record<string, CreatorEvidence>;
+  /** false → engine wasn't probed this run (honest empty card); undefined →
+   *  measurement unknown (old payloads), render normally. */
+  measured?: boolean;
 }) {
-  // Channels this engine actually cites (grounded by providers); fall back to a
-  // type→engine heuristic when we have no provider data for the host.
+  // Channels this engine MEASURABLY cites (grounded by providers). Hosts with
+  // no provider attribution are NOT guessed into an engine card anymore — the
+  // old type→engine heuristic presented an inference as measured engine
+  // behavior (founder scan 2026-07-22); they render in the shared
+  // "engine not attributed" section instead.
   const cited = moves
-    .filter((m) => {
-      const provs = enginesByHost[m.host];
-      if (provs && provs.length) return provs.includes(engineKey);
-      const k = kindOf(m);
-      return engineKey === 'chatgpt' ? k === 'community' || k === 'kol' || k === 'reviews' : k !== 'community';
-    })
+    .filter((m) => (enginesByHost[m.host] || []).includes(engineKey))
     .sort((a, b) => (REALISM_META[a.realism || '']?.rank ?? 2.5) - (REALISM_META[b.realism || '']?.rank ?? 2.5));
+
+  // Honest state for an engine this run never probed: no advice, no starter
+  // rows — a fully-populated "Win ChatGPT" card on a Gemini-only run implied
+  // measurement that didn't happen. `measured` is unknown (old payloads
+  // without an engine entry) → keep the normal render.
+  if (measured === false) {
+    return (
+      <div className="rounded-md border border-dashed border-[color:var(--merchant-line)] bg-white/20 p-3">
+        <div className="text-xs font-bold opacity-70">Win {label}</div>
+        <p className="mt-1 text-[11px] leading-snug opacity-60">
+          Not measured on this run — this engine wasn&apos;t probed, so there&apos;s no
+          per-engine plan to show. Re-audit with a multi-engine coverage
+          profile to measure it.
+        </p>
+      </div>
+    );
+  }
 
   if (cited.length === 0 && starters.length === 0) return null;
 
@@ -817,6 +835,19 @@ export function GetCitedPanel({
   ];
 
   const ep = enginePlaybook?.engines || {};
+  // Engine measurement (backend `measured`, or derived from status on older
+  // payloads). Undefined when the payload has no entry for the engine at all.
+  const engineMeasured = (key: string): boolean | undefined => {
+    const e = ep[key];
+    if (!e) return undefined;
+    if (typeof e.measured === 'boolean') return e.measured;
+    return e.status ? e.status !== 'couldnt_measure' : undefined;
+  };
+  // Hosts cited with NO per-engine attribution — shown once, without an
+  // engine claim, instead of being heuristically guessed into a card.
+  const unattributed = list
+    .filter((m) => (enginesByHost[m.host] || []).length === 0)
+    .sort((a, b) => (REALISM_META[a.realism || '']?.rank ?? 2.5) - (REALISM_META[b.realism || '']?.rank ?? 2.5));
 
   return (
     <div className="rounded-lg border border-[color:var(--merchant-line)] bg-white/50 p-4">
@@ -842,6 +873,7 @@ export function GetCitedPanel({
           runId={runId}
           starters={geminiStarters}
           creatorVideos={creatorVideosByHost}
+          measured={engineMeasured('gemini')}
         />
         <EngineGroup
           engineKey="chatgpt"
@@ -854,8 +886,45 @@ export function GetCitedPanel({
           runId={runId}
           starters={chatgptStarters}
           creatorVideos={creatorVideosByHost}
+          measured={engineMeasured('chatgpt')}
         />
       </div>
+
+      {unattributed.length > 0 ? (
+        <div className="mt-3 rounded-md border border-[color:var(--merchant-line)] bg-white/30 p-3">
+          <div className="text-xs font-bold">Also cited for your category</div>
+          <p className="mt-0.5 text-[11px] leading-snug opacity-60">
+            AI grounded answers in these sources too, but this run didn&apos;t
+            attribute them to a specific engine — work them alongside the
+            per-engine plans above.
+          </p>
+          <div className="mt-2 space-y-1.5">
+            {unattributed.map((m, i) => {
+              const k = kindOf(m);
+              return (
+                <ChannelRow
+                  key={`${m.host}-un-${i}`}
+                  kind={k}
+                  title={m.host}
+                  host={m.host}
+                  url={`https://${m.host}`}
+                  realism={m.realism}
+                  how={m.first_move}
+                  runId={runId}
+                  channelHost={m.host}
+                  channelLever={m.lever || leverFor(k)}
+                  channelType={k}
+                  query={category}
+                  losingQueries={m.losing_queries}
+                  pitchSubmissionUrl={m.pitch_submission_url}
+                  pitchEmail={m.pitch_email}
+                  evidenceGroups={creatorEvidenceGroups(creatorVideosByHost[(m.host || '').toLowerCase()])}
+                />
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       {closed.length > 0 ? (
         <div className="mt-5 border-t border-[color:var(--merchant-line)] pt-4">
