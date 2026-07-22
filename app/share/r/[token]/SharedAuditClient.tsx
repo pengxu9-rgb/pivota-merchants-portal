@@ -17,7 +17,7 @@ import { MomentumCard } from '@/components/audit/MomentumCard';
 import { ReportSectionBoundary } from '@/components/audit/ReportSectionBoundary';
 import { MerchantNarrativePanel } from '@/components/audit/MerchantNarrativePanel';
 import { PrioritizedActionsPanel } from '@/components/audit/PrioritizedActionsPanel';
-import { GetCitedPanel } from '@/components/audit/GetCitedPanel';
+import { GetCitedPanel, extractCreatorVideosByHost } from '@/components/audit/GetCitedPanel';
 import { PerSkuReportCard } from '@/components/audit/PerSkuReportCard';
 import { SurfaceCard } from '@/components/ui/merchant-primitives';
 import { summaryRenderable } from '@/lib/audit/reportSummary';
@@ -87,6 +87,11 @@ export function SharedAuditClient({ token }: { token: string }) {
     (data.authority_map as { skus?: { reddit?: { subreddits?: unknown[] } }[] } | undefined)
       ?.skus ?? []
   ).flatMap((s) => s?.reddit?.subreddits ?? []);
+  // The specific videos AI cited per creator host — the panel shows them on
+  // that host's row and drops the generic KOL search rows.
+  const creatorVideosByHost = extractCreatorVideosByHost(
+    data.authority_map as Parameters<typeof extractCreatorVideosByHost>[0],
+  );
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 px-4 py-8">
@@ -136,6 +141,7 @@ export function SharedAuditClient({ token }: { token: string }) {
         brand={summary?.subject?.merchant_name ?? null}
         runId={null}
         redditSubreddits={redditSubreddits as Parameters<typeof GetCitedPanel>[0]['redditSubreddits']}
+        creatorVideosByHost={creatorVideosByHost}
       />
       <div className="space-y-3">
         {perSku.map((r, i) => (

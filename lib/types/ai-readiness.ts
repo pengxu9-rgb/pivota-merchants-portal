@@ -1823,6 +1823,10 @@ export interface NarrativeVerifyPlain {
 
 export interface NarrativePrioritizedAction {
   sku_title: string | null;
+  /** All SKUs a collapsed merchant-level action covers (e.g. one "get your 3
+   *  products indexed" action replacing three per-SKU repeats). Absent on
+   *  per-SKU actions and on reports generated before the collapse shipped. */
+  sku_titles?: string[] | null;
   primary_gap: string | null;
   headline: string;
   first_move: string | null;

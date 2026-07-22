@@ -83,6 +83,34 @@ function isRedditPermalink(url?: string | null): boolean {
   return !!url && /(^https?:\/\/)?(www\.)?reddit\.com\/r\/[^/]+\/comments\//i.test(url);
 }
 
+// Grounding metadata often stamps the DOMAIN as a source's title (Gemini
+// grounding chunks: title="reddit.com"), which rendered as the meaningless —
+// and duplicated — "Reddit thread: reddit.com" row (live HoverAir share
+// report). A bare-host title is junk; the permalink slug is the real topic.
+function isHostLikeTitle(t: string): boolean {
+  return /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(t.trim());
+}
+
+function redditThreadTitle(
+  thread: { title?: string | null; url?: string | null },
+  name: string | null,
+): string {
+  const t = (thread.title || '').trim();
+  if (t && !isHostLikeTitle(t)) return `Reddit thread: ${t.slice(0, 50)}`;
+  const slug = /\/comments\/[^/]+\/([^/?#]+)/i.exec(thread.url || '')?.[1];
+  let human = '';
+  try {
+    human = slug ? decodeURIComponent(slug).replace(/[_-]+/g, ' ').trim() : '';
+  } catch {
+    human = (slug || '').replace(/[_-]+/g, ' ').trim();
+  }
+  if (human) {
+    const topic = `“${human.slice(0, 60)}”`;
+    return name ? `r/${name}: ${topic}` : `Reddit thread: ${topic}`;
+  }
+  return name ? `r/${name} — a cited thread` : 'A cited Reddit thread';
+}
+
 // Category → a few relevant subreddits, so merchants get CONCRETE places to go
 // even when the audit didn't capture specific threads. Only suggests on a known
 // keyword (never guesses a wrong community for an unrelated category).
@@ -99,6 +127,40 @@ function suggestSubreddits(category: string): string[] {
   if (/\btea\b|matcha/.test(c)) add('tea');
   if (/beauty|cosmetic|k-?beauty/.test(c) && out.length === 0) add('AsianBeauty', 'BeautyGuruChatter');
   return out.slice(0, 4);
+}
+
+/** Measured creator evidence: the specific videos AI actually cited, per
+ * creator host (authority_map.skus[].authority_hosts[] rows with
+ * host_type "creator" carry evidence_urls). The audit HAD these all along —
+ * the live HoverAir share report carried 8 cited YouTube videos while the
+ * panel rendered a generic "YouTube creators" search link. Extracted here
+ * (single implementation) and passed in by both report surfaces. */
+export function extractCreatorVideosByHost(
+  authorityMap?: {
+    skus?: {
+      authority_hosts?: {
+        host?: string | null;
+        host_type?: string | null;
+        evidence_urls?: (string | null)[] | null;
+      }[] | null;
+    }[] | null;
+  } | null,
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const sku of authorityMap?.skus ?? []) {
+    for (const h of sku?.authority_hosts ?? []) {
+      const host = (h?.host || '').toLowerCase();
+      if (!host || (h?.host_type || '').toLowerCase() !== 'creator') continue;
+      const urls = (h?.evidence_urls ?? []).filter(
+        (u): u is string => typeof u === 'string' && /^https?:\/\//i.test(u),
+      );
+      if (!urls.length) continue;
+      const bucket = (out[host] ??= []);
+      for (const u of urls) if (!bucket.includes(u)) bucket.push(u);
+    }
+  }
+  for (const host of Object.keys(out)) out[host] = out[host].slice(0, 5);
+  return out;
 }
 
 interface Starter {
@@ -183,9 +245,14 @@ function buildRedditPaths(tracked: TrackedSubreddit[], category: string): Starte
     seen.add(key);
     const obj = (sub?.recurring_objections || []).filter(Boolean).slice(0, 2);
     if (thread?.url) {
+      const title = redditThreadTitle(thread, name);
+      // Belt-and-suspenders: two threads with junk titles must never render
+      // as two identical rows, whatever shape the junk takes.
+      if (seen.has(title.toLowerCase())) continue;
+      seen.add(title.toLowerCase());
       out.push({
         kind: 'community',
-        title: thread.title?.trim() ? `Reddit thread: ${thread.title.trim().slice(0, 50)}` : `r/${name} — a cited thread`,
+        title,
         url: thread.url,
         how: `AI already cites this discussion${obj.length ? ` — address: ${obj.join(', ')}` : ''}. Add a genuine, disclosed reply.`,
       });
@@ -228,7 +295,7 @@ function encodedBodyWithinBudget(draft: string, budget = 1800): string {
 }
 
 function ChannelRow({
-  kind, title, host, url, realism, how, runId, channelHost, channelLever, channelType, query, badge, losingQueries, pitchSubmissionUrl, pitchEmail,
+  kind, title, host, url, realism, how, runId, channelHost, channelLever, channelType, query, badge, losingQueries, pitchSubmissionUrl, pitchEmail, evidenceLinks,
 }: {
   kind: Kind;
   title: string;
@@ -251,6 +318,9 @@ function ChannelRow({
    *  guessed URL never reaches here — registry-curated only. */
   pitchSubmissionUrl?: string | null;
   pitchEmail?: string | null;
+  /** Measured evidence for this channel: the specific cited URLs (e.g. the
+   *  exact videos AI grounded answers in). Absent → no line, never inferred. */
+  evidenceLinks?: string[] | null;
 }) {
   const [st, setSt] = useState<{ loading?: boolean; done?: boolean; draft?: string | null; error?: string | null; copied?: boolean }>({});
   const Meta = KIND_META[kind];
@@ -309,6 +379,19 @@ function ChannelRow({
             <span key={qi}>
               {qi > 0 ? ' · ' : ''}
               &ldquo;{q}&rdquo;
+            </span>
+          ))}
+        </p>
+      ) : null}
+      {evidenceLinks && evidenceLinks.length > 0 ? (
+        <p className="mt-1 text-[11px] leading-snug">
+          <span className="opacity-60">The videos AI cited — start with these creators: </span>
+          {evidenceLinks.map((u, ui) => (
+            <span key={ui}>
+              {ui > 0 ? ' · ' : ''}
+              <a href={u} target="_blank" rel="noopener noreferrer" className="font-medium text-[color:var(--merchant-accent,#6366f1)] hover:underline">
+                Video {ui + 1}
+              </a>
             </span>
           ))}
         </p>
@@ -415,7 +498,7 @@ function PitchTargetsSection({ targets, runId, category }: {
 }
 
 function EngineGroup({
-  engineKey, label, howItCites, moves, enginesByHost, category, brand, runId, starters,
+  engineKey, label, howItCites, moves, enginesByHost, category, brand, runId, starters, creatorVideos = {},
 }: {
   engineKey: string;
   label: string;
@@ -426,6 +509,8 @@ function EngineGroup({
   brand: string;
   runId?: string | null;
   starters: Starter[];
+  /** Measured cited videos per creator host — rendered on that host's row. */
+  creatorVideos?: Record<string, string[]>;
 }) {
   // Channels this engine actually cites (grounded by providers); fall back to a
   // type→engine heuristic when we have no provider data for the host.
@@ -464,6 +549,7 @@ function EngineGroup({
               losingQueries={m.losing_queries}
               pitchSubmissionUrl={m.pitch_submission_url}
               pitchEmail={m.pitch_email}
+              evidenceLinks={creatorVideos[(m.host || '').toLowerCase()]}
             />
           );
         })}
@@ -521,6 +607,7 @@ export function GetCitedPanel({
   brand,
   runId,
   redditSubreddits,
+  creatorVideosByHost = {},
 }: {
   moves?: OutreachMove[] | null;
   /** Phase-4 T5: standing vertical pitch list (where_youre_losing.pitch_targets). */
@@ -536,6 +623,10 @@ export function GetCitedPanel({
   // Tracked subreddits/threads from authority_map.skus[].reddit.subreddits — when
   // present + clean, we link merchants to the SPECIFIC communities AI already cites.
   redditSubreddits?: TrackedSubreddit[];
+  /** Measured cited videos per creator host (extractCreatorVideosByHost).
+   *  Presence of ANY measured creator evidence demotes the generic KOL
+   *  search rows to a cold-start-only fallback. */
+  creatorVideosByHost?: Record<string, string[]>;
 }) {
   const list = (moves || []).filter((m) => m && m.host);
   const targets = (pitchTargets || []).filter((t) => t && t.host);
@@ -561,6 +652,14 @@ export function GetCitedPanel({
   // generic search rows survive only as the nothing-specific fallback.
   const chatgptQuestions = measuredLostQuestions('chatgpt', enginePlaybook?.divergence, list);
   const geminiQuestions = measuredLostQuestions('gemini', enginePlaybook?.divergence, list);
+  // Generic KOL search rows ("YouTube creators", "TikTok creators",
+  // "Instagram creators") are cold-start fallbacks ONLY. When the audit
+  // measured actual creator evidence — a cited creator host in the outreach
+  // moves, or specific cited videos — the specific rows carry the plan and
+  // the generic ones are noise (founder review of the HoverAir share report).
+  const hasMeasuredCreators =
+    list.some((m) => kindOf(m) === 'kol')
+    || Object.values(creatorVideosByHost).some((v) => v && v.length > 0);
   const chatgptStarters: Starter[] = [
     ...buildRedditPaths(redditSubreddits || [], category),
     ...chatgptQuestions.flatMap((q): Starter[] => [
@@ -585,8 +684,12 @@ export function GetCitedPanel({
           { kind: 'community' as Kind, title: 'Quora — answer category questions', url: `https://www.quora.com/search?q=${enc(catQ)}`, how: 'Write genuinely helpful answers where your product fits.' },
         ]
       : []),
-    { kind: 'kol', title: 'YouTube creators — get reviewed', url: `https://www.youtube.com/results?search_query=${enc(catQ + ' review')}`, how: 'Find creators reviewing this category and offer a gifting/review collab.' },
-    { kind: 'kol', title: 'TikTok creators', url: `https://www.tiktok.com/search?q=${enc(catQ)}`, how: 'Short-form reviews build the community signal ChatGPT picks up.' },
+    ...(hasMeasuredCreators
+      ? []
+      : [
+          { kind: 'kol' as Kind, title: 'YouTube creators — get reviewed', url: `https://www.youtube.com/results?search_query=${enc(catQ + ' review')}`, how: 'Find creators reviewing this category and offer a gifting/review collab.' },
+          { kind: 'kol' as Kind, title: 'TikTok creators', url: `https://www.tiktok.com/search?q=${enc(catQ)}`, how: 'Short-form reviews build the community signal ChatGPT picks up.' },
+        ]),
   ];
   const geminiStarters: Starter[] = [
     ...geminiQuestions.map((q): Starter => ({
@@ -599,7 +702,11 @@ export function GetCitedPanel({
       query: q,
     })),
     { kind: 'reviews', title: 'Get into "best of" roundups', url: `https://www.google.com/search?q=${enc('best ' + catQ)}`, how: 'Find the review roundups Google ranks for this category and pitch to be included.' },
-    { kind: 'kol', title: 'Instagram creators', url: `https://www.google.com/search?q=${enc('instagram ' + catQ + ' creator')}`, how: 'Creator posts that get indexed feed Google-trusted signals.' },
+    ...(hasMeasuredCreators
+      ? []
+      : [
+          { kind: 'kol' as Kind, title: 'Instagram creators', url: `https://www.google.com/search?q=${enc('instagram ' + catQ + ' creator')}`, how: 'Creator posts that get indexed feed Google-trusted signals.' },
+        ]),
   ];
 
   const ep = enginePlaybook?.engines || {};
@@ -627,6 +734,7 @@ export function GetCitedPanel({
           brand={brand || ''}
           runId={runId}
           starters={geminiStarters}
+          creatorVideos={creatorVideosByHost}
         />
         <EngineGroup
           engineKey="chatgpt"
@@ -638,6 +746,7 @@ export function GetCitedPanel({
           brand={brand || ''}
           runId={runId}
           starters={chatgptStarters}
+          creatorVideos={creatorVideosByHost}
         />
       </div>
 
