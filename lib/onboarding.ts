@@ -48,9 +48,16 @@ export interface SignupSessionState {
   onboardingData: OnboardingData;
   registrationDraft: PublicRegistrationDraft;
   pspDraft: Pick<PSPFormData, 'pspType' | 'customPspName'>;
+  signupSource?: string;
 }
 
 export const SIGNUP_SESSION_STORAGE_KEY = 'merchant_signup_flow_v1';
+
+// Acquisition source set by the marketing-site URL-capture form
+// (pivota.cc/ai-readiness). Registrations arriving with this source skip the
+// PSP + document steps after auto-approval and land directly on the URL-audit
+// form, prefilled with the store URL they entered on the marketing site.
+export const AUDIT_FUNNEL_SIGNUP_SOURCE = 'ai-readiness-audit';
 
 export const emptyRegistrationDraft: RegistrationFormData = {
   business_name: '',

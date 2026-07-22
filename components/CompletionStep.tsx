@@ -18,6 +18,9 @@ interface CompletionStepProps {
   loginEmail?: string;
   password?: string;
   onClearSession: () => void;
+  /** Where auto-login lands. Default '/dashboard'; the audit signup funnel
+   * passes the prefilled URL-audit form instead. */
+  postLoginPath?: string;
 }
 
 type CompletionState = 'authenticating' | 'ready' | 'manual';
@@ -32,6 +35,7 @@ export default function CompletionStep({
   loginEmail,
   password,
   onClearSession,
+  postLoginPath,
 }: CompletionStepProps) {
   const router = useRouter();
   const { t } = useMerchantLanguage();
@@ -88,7 +92,7 @@ export default function CompletionStep({
         }
 
         onClearSession();
-        router.push('/dashboard');
+        router.push(postLoginPath || '/dashboard');
       } catch (err) {
         if (cancelled) return;
 
@@ -105,7 +109,7 @@ export default function CompletionStep({
     return () => {
       cancelled = true;
     };
-  }, [loginEmail, onClearSession, password, router, t]);
+  }, [loginEmail, onClearSession, password, postLoginPath, router, t]);
 
   const handleContinueToLogin = () => {
     onClearSession();
