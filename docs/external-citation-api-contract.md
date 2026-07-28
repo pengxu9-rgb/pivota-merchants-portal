@@ -27,7 +27,16 @@ This contract closes those four gaps **as a deliberate surface**, not by un-gati
 The citation read is **one logical projection** (`CitationItem`, §3) exposed over two transports. Both read the **same** `index_eligible` gate and emit the **same** body — no transport-specific divergence.
 
 1. **REST — `GET /agent/v1/citation/{content_key}`** and **`GET /agent/v1/citation/search?q=…`**
-   New, citation-scoped routes (NOT a change to `get_pdp`). The single-item route is the canonical-URL target of `agent.pivota.cc/products/{content_key}`. Search wraps the slice-3 citable recall lane.
+   New, citation-scoped routes (NOT a change to `get_pdp`). The single-item route is keyed by `content_key` and RETURNS the canonical PDP URL, which is always the **signature** form `agent.pivota.cc/products/{sig_*}`. Search wraps the slice-3 citable recall lane.
+
+   > **There is no `content_key` form of the PDP URL.** An earlier draft of this
+   > document asserted `agent.pivota.cc/products/{content_key}` was the canonical
+   > target. Measured against prod 2026-07-26 it is a hard **HTTP 500** — 135
+   > requests over 133 distinct content_keys, plus 103 further distinct ids in an
+   > independent re-measurement, 103/103 dead with zero redirects. The gateway
+   > resolves on `catalog_products.pivota_signature_id`, so no `ck_*` id can match.
+   > `content_key` is the request KEY and the cite anchor; the **sig** is the URL.
+   > Fixed in pivota-backend#1592.
 2. **MCP — two read tools** on a (future) product-read door: `pivota.search_index(query, intent?)` and `pivota.get_product(content_key)`. Same body as REST. This is the surface a ChatGPT/Claude/Gemini agent calls natively. *(Door not built yet — see protocol-integration memory; this contract defines what it must return when it is.)*
 
 > **Why not just open `get_pdp`?** `get_pdp` is the *internal/agent.pivota.cc render* surface and carries commerce (`offers`/`price`). The citation contract is a **narrower, offer-aware projection** with attribution + governance baked in. Keeping them separate means the commerce read can stay offer-bearing while the citation read stays neutral, and each gets its own auth/rate posture.
@@ -56,7 +65,10 @@ The body an agent needs to **cite and route**, and nothing more. Offer-free by d
 
 ```jsonc
 {
-  "content_key": "sig_9f3a…",              // stable Pivota identity (cite anchor)
+  "content_key": "ck_9f3a…",               // stable Pivota identity (cite anchor).
+                                           // A ck_*, NOT a sig — an earlier draft
+                                           // put a sig here, which is where the
+                                           // ck-vs-sig URL confusion started.
   "title": "Hydrating Vitamin C Serum 30ml",
   "brand": "Acme Skin",
   "summary": "One line an agent can quote verbatim.",
@@ -75,7 +87,9 @@ The body an agent needs to **cite and route**, and nothing more. Offer-free by d
   // ── attribution (REQUIRED for the moat) ──
   "attribution": {
     "source": "Pivota",
-    "canonical_url": "https://agent.pivota.cc/products/sig_9f3a…",  // PDP_URL_PREFIX
+    "canonical_url": "https://agent.pivota.cc/products/sig_9f3a…",  // SIG form, or null
+    "url_renderable": true,                  // true | false | null — see field rules
+    "url_source": "self",                    // "self" | "elected_canonical" | null
     "cite_as": "Pivota — agent.pivota.cc",
     "attribution_required": true
   },
@@ -92,7 +106,10 @@ The body an agent needs to **cite and route**, and nothing more. Offer-free by d
 
 **Field rules**
 - `buyable=false` + `offers=null` + `catalog_track="citation"` is the invariant for an `index_eligible`-only row. Mirrors the slice-3 `_build_citable_items` shape (`offers=[]`, `buyable=False`).
-- `attribution.canonical_url` is **always** present and is the slice-anchor `PDP_URL_PREFIX + content_key`. This is how a citation becomes *Pivota's* citation.
+- The `attribution` **block** is always present. `attribution.canonical_url` is `PDP_URL_PREFIX + `**`pivota_signature_id`** — never `+ content_key`, which does not resolve (see §2) — and is **nullable**: `null` when the content_key has no minted sig and no elected sibling to borrow one from, because there is then no followable PDP to name. This is how a citation becomes *Pivota's* citation.
+- `attribution.attribution_required` and `cite_as` are **unconditional**, including when `canonical_url` is null. Attribution is owed to the SOURCE, which an agent can honour by name (`cite_as`) without a deep link. A null URL is not a licence to use the content uncredited.
+- `attribution.url_renderable` — **will that URL answer HTTP 200?** Both of `get_pdp_v2`'s gates, asked about the exact sig the URL is built from. `true` follow it; `false` quote and credit the CONTENT but do not emit the link; `null` there is no URL to characterise. It is a **signal, not a filter**: the row is still served, because ADR-007 slice 1 exists to keep offer-free rows *citable* and withholding them would make the citation floor uncitable. Measured 2026-07-26: 879 of 5,887 rows do not render, and every one used to be served with a URL and no warning. Added in pivota-backend#1593.
+- `attribution.url_source` — **which** URL you got: `"self"` (this content_key's own sig) or `"elected_canonical"` (a sibling's, substituted because this row's own PDP does not render but a renderable sibling holds the group's canonical URL). `null` when there is no URL. Disclosed rather than silently swapped: an agent should be able to tell whether the link points at the record it asked for or at that record's group canonical.
 - `substantiation.verify_coverage` is **disclosed, not hidden** — carries the honesty-seam fix (don't imply 100% when we sampled ~25%).
 - **Never** emitted on this projection: merchant id/email, internal scores beyond the public grade, take-rate / commercial-rank signals, raw competitor offers. Neutrality §5.
 
