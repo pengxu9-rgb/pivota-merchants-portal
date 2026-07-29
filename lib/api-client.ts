@@ -1297,17 +1297,73 @@ class ApiClient {
     });
   }
 
-  // Sync products by platform
+  // Sync products by platform.
+  //
+  // The backend no longer runs the sync inside the POST (it used to, and any
+  // store big enough to matter exceeded the edge's idle timeout: the connection
+  // died with ERR_CONNECTION_CLOSED / "API Error: undefined" while the sync
+  // quietly SUCCEEDED server-side — a merchant's first interaction with the
+  // product was a fake failure; both syncs of the 2026-07-29 Wix pilot hit it).
+  // The POST now answers `{status:'started', started_at, store_id}` immediately
+  // and this method polls GET /merchant/integrations/sync-status until the
+  // store's durable completion signal (`last_sync`) advances past started_at,
+  // then resolves with the same success shape callers always consumed — so the
+  // page handlers and their spinner logic need no change. A legacy backend (or
+  // ?wait=true) still returns the inline shape, which passes straight through.
   async syncPlatformProducts(platform: string) {
     const p = (platform || '').toLowerCase();
     const merchantId = localStorage.getItem('merchant_id') || '';
-    
+
     if (p === 'shopify') {
     return this.syncShopifyProducts(merchantId);
     }
     // Wix or others
     const response = await this.client.post(`/merchant/integrations/${p}/sync`);
-    return response.data;
+    const data = response.data;
+    if (data?.status !== 'started') {
+      return data; // inline/legacy contract — completed within the request
+    }
+
+    const startedAtMs = Date.parse(data.started_at || '') || Date.now();
+    const params = new URLSearchParams({ platform: p });
+    if (data.store_id) params.set('store_id', data.store_id);
+    const deadline = Date.now() + 4 * 60_000;
+
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      try {
+        const statusRes = await this.client.get(
+          `/merchant/integrations/sync-status?${params.toString()}`
+        );
+        const lastSyncMs = statusRes.data?.last_sync
+          ? Date.parse(statusRes.data.last_sync)
+          : 0;
+        // 5s tolerance absorbs clock skew between the POST's started_at stamp
+        // and the sync writer; both are the same server, so this is generous.
+        if (lastSyncMs && lastSyncMs >= startedAtMs - 5000) {
+          const count = statusRes.data?.product_count;
+          return {
+            status: 'success',
+            message:
+              typeof count === 'number'
+                ? `Synced ${count} products from ${platform}.`
+                : `${platform} products synced successfully.`,
+            product_count: count,
+            store_id: statusRes.data?.store_id,
+            platform: p,
+          };
+        }
+      } catch {
+        // Transient poll failures must not abort a sync that is still running.
+      }
+    }
+
+    // Honest timeout: the sync may still be running (or died server-side — the
+    // backend logs carry [portal-sync] lines either way). Never fabricate a
+    // success here; that would be the mirror image of the old fabricated error.
+    throw new Error(
+      'Sync is still running in the background — refresh this page in a minute to see the result.'
+    );
   }
   /**
    * Product quality preview & eval for enrichment workflow.
