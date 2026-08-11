@@ -12,9 +12,7 @@ import {
   Settings,
   ShoppingBag,
   Sparkles,
-  Store,
-  Tag,
-  Wallet,
+  Store, Wallet,
   Zap,
 } from "lucide-react";
 import { FEATURE_FLAGS } from "@/lib/config";
@@ -63,15 +61,6 @@ export const primaryNavigation: MerchantNavigationItem[] = [
     matchPrefixes: ["/dashboard/orders"],
     description: "Sales and refunds",
     descriptionKey: "shell.nav.ordersDesc",
-  },
-  {
-    label: "Promotions",
-    labelKey: "shell.nav.promotions",
-    href: "/dashboard/promotions",
-    icon: Tag,
-    matchPrefixes: ["/dashboard/promotions", "/portal/promotions"],
-    description: "Campaign planning",
-    descriptionKey: "shell.nav.promotionsDesc",
   },
   {
     label: "Analytics",
