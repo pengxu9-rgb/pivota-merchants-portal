@@ -33,7 +33,7 @@ export default function SettingsPage() {
   const [preferencesError, setPreferencesError] = useState('');
   const [languageStatus, setLanguageStatus] = useState('');
   const [languageError, setLanguageError] = useState('');
-  
+
   const [profile, setProfile] = useState({
     business_name: '',
     contact_email: '',
@@ -64,7 +64,6 @@ export default function SettingsPage() {
 
   useEffect(() => {
     // Initial settings hydration is route-scoped; re-fetching on every render is unnecessary.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     loadSettings();
   }, []);
 

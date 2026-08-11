@@ -39,7 +39,7 @@ export class ReportSectionBoundary extends Component<
   componentDidCatch(error: Error, info: ErrorInfo) {
     // Diagnostics only — never rethrow. Surfaced in console + a dev hook the
     // preview fuzz harness reads; production users just see the fallback.
-    // eslint-disable-next-line no-console
+
     console.error(
       `[report-section:${this.props.section}] render failed`,
       error,

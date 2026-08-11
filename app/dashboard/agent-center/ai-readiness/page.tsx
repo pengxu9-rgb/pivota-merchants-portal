@@ -376,7 +376,7 @@ export default function AiReadinessAuditPage() {
       return next;
     });
     setHandoffCount(matchedUrlCount);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [productsLoading, usableProducts]);
 
   const toggle = (p: CatalogProductRow) => {
@@ -1268,7 +1268,7 @@ function AuditReportRenderer({
     <div className="space-y-4">
       <div className="text-xs text-slate-500">
         Audit complete · {remaining} audit{remaining === 1 ? '' : 's'} left in
-        today's budget · run {new Date(report.timestamp).toLocaleString()}
+        today&apos;s budget · run {new Date(report.timestamp).toLocaleString()}
       </div>
 
       {pivotaCanonicalKeys && pivotaCanonicalKeys.length > 0 ? (
@@ -1284,12 +1284,12 @@ function AuditReportRenderer({
               <p className="mt-1 text-xs text-indigo-900/80">
                 These catalog rows had no merchant URL (no canonical_url
                 + no Shopify handle), so the audit probed{' '}
-                <code>agent.pivota.cc/products/sig_*</code> — Pivota's
+                <code>agent.pivota.cc/products/sig_*</code> — Pivota&apos;s
                 hosted AI-channel surface for these SKUs. Pivota canonical
                 PDPs are in the 30-90 day Google indexing arc
                 post-creation; expect 0/0 scores until indexing matures.
-                The score is the canonical surface's score, NOT your
-                storefront's.
+                The score is the canonical surface&apos;s score, NOT your
+                storefront&apos;s.
               </p>
               <p className="mt-2 text-[11px] font-mono text-indigo-700/70">
                 Affected product_keys:{' '}
@@ -1628,7 +1628,7 @@ function CompetitiveTable({
         </div>
         <div className="text-[11px] text-amber-900/70">
           Brands AI agents named in your category, ranked by frequency. ✓
-          means they have their own .com cited in grounding (= they're
+          means they have their own .com cited in grounding (= they&apos;re
           winning first-party AI traffic).
         </div>
       </div>
@@ -1852,8 +1852,8 @@ function CoOccurrenceBadge({
   if (fetch_status === 'blocked') {
     return (
       <div className="mt-2 rounded border border-slate-300 bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
-        <span className="font-semibold">Couldn't verify:</span> the host's
-        robots.txt blocks our fetch. The competitor list comes from Gemini's
+        <span className="font-semibold">Couldn&apos;t verify:</span> the host&apos;s
+        robots.txt blocks our fetch. The competitor list comes from Gemini&apos;s
         self-report, unverified against the article text.
       </div>
     );
@@ -1862,8 +1862,8 @@ function CoOccurrenceBadge({
   if (fetch_status === 'error') {
     return (
       <div className="mt-2 rounded border border-slate-300 bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
-        <span className="font-semibold">Couldn't verify:</span> couldn't fetch
-        the article. The competitor list is Gemini's self-report, unverified.
+        <span className="font-semibold">Couldn&apos;t verify:</span> couldn&apos;t fetch
+        the article. The competitor list is Gemini&apos;s self-report, unverified.
       </div>
     );
   }

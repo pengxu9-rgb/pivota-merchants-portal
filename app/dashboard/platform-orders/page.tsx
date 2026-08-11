@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FEATURE_FLAGS } from '@/lib/config';
 import { platformOnboardingApi } from '@/lib/api';
-import { RefreshCw, Upload, CheckCircle2, Activity } from 'lucide-react';
+import { RefreshCw, Upload, CheckCircle2, Activity, Package } from 'lucide-react';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 
 type Platform = 'amazon' | 'temu';

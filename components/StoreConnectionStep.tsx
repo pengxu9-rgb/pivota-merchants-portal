@@ -183,7 +183,7 @@ export default function StoreConnectionStep({ merchantId, storeUrl, onComplete, 
             <div className="text-sm text-purple-800">
               <p className="font-medium mb-1">Custom Website Integration</p>
               <p>
-                For custom websites, you'll use Pivota's API directly to create orders and process payments.
+                For custom websites, you&apos;ll use Pivota&apos;s API directly to create orders and process payments.
                 Your API key will be provided in the next step.
               </p>
             </div>
@@ -233,7 +233,7 @@ export default function StoreConnectionStep({ merchantId, storeUrl, onComplete, 
           onClick={onSkip}
           className="w-full px-4 py-3 border-2 border-slate-300 text-slate-700 font-medium rounded-lg hover:bg-slate-50"
         >
-          I'll Connect Later
+          I&apos;ll Connect Later
         </button>
       </div>
 
