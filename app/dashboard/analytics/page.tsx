@@ -218,7 +218,6 @@ export default function AnalyticsPage() {
   const [paidRevenueOverrideLoading, setPaidRevenueOverrideLoading] = useState(false);
 
   // Retry buttons reuse these loaders; keep the analytics refetch keyed to user-facing controls only.
-
   useEffect(() => {
     void (async () => {
       await loadAnalytics();
@@ -227,7 +226,6 @@ export default function AnalyticsPage() {
   }, [timeRange, metric, netMode, t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Commerce readiness and diagnostics are merchant-scoped boot data, not time-range dependent analytics.
-
   useEffect(() => {
     void (async () => {
       await loadCommerceFunnel();
@@ -237,7 +235,6 @@ export default function AnalyticsPage() {
   }, [t, funnelGroupBy, funnelFilters]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Trace loading should only follow the selected interaction id.
-
   useEffect(() => {
     if (!selectedInteractionId) {
       setInteractionTrace(null);

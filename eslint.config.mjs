@@ -10,8 +10,9 @@ const __dirname = dirname(__filename);
 const compat = new FlatCompat({ baseDirectory: __dirname });
 
 const eslintConfig = [
+  // node_modules is ignored by ESLint 9 by default; these are the build outputs.
   {
-    ignores: ['node_modules/**', '.next/**', 'out/**', 'build/**', 'next-env.d.ts'],
+    ignores: ['.next/**', 'out/**', 'build/**'],
   },
   ...compat.extends('next/core-web-vitals'),
 ];

@@ -376,7 +376,6 @@ export default function AiReadinessAuditPage() {
       return next;
     });
     setHandoffCount(matchedUrlCount);
-
   }, [productsLoading, usableProducts]);
 
   const toggle = (p: CatalogProductRow) => {

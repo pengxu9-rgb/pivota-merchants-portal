@@ -100,7 +100,6 @@ export function MomentumCard({
     return () => {
       cancelled = true;
     };
-
   }, [reloadKey, subjectType, prefetched, tracking]);
 
   // Gate the trend on the WINDOWED depth (latest check per day, last N) —
