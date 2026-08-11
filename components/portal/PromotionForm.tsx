@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
+  CREATABLE_PROMOTION_TYPES,
   Promotion,
   PromotionConfig,
   PromotionType,
@@ -246,7 +247,9 @@ export function PromotionForm({
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to save promotion.');
+        // Gateway/backend refusals arrive as { error: CODE, message: guidance } —
+        // show the guidance, not the code.
+        throw new Error(data.message || data.error || 'Failed to save promotion.');
       }
 
       onSubmitSuccess();
@@ -341,21 +344,33 @@ export function PromotionForm({
           <div className="space-y-2">
             <label className="text-sm font-medium text-[color:var(--merchant-muted-strong)]">Type</label>
             <div className="flex gap-2">
-              {(['FLASH_SALE', 'MULTI_BUY_DISCOUNT'] as PromotionType[]).map((t) => (
-                <button
-                  key={t}
-                  className={`px-3 py-2 rounded-full border text-sm ${
-                    type === t
-                      ? 'border-[color:var(--merchant-brand)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]'
-                      : 'border-[color:var(--merchant-line-strong)] text-[color:var(--merchant-muted-strong)]'
-                  }`}
-                  onClick={() => setType(t)}
-                  type="button"
-                >
-                  {t === 'FLASH_SALE' ? 'Flash sale' : 'Multi-buy discount'}
-                </button>
-              ))}
+              {(['FLASH_SALE', 'MULTI_BUY_DISCOUNT'] as PromotionType[]).map((t) => {
+                // Type is fixed after creation (the backend update contract has no
+                // type field); creation is limited to types the quote engine applies.
+                const disabled =
+                  mode === 'edit' ? t !== type : !CREATABLE_PROMOTION_TYPES.includes(t);
+                return (
+                  <button
+                    key={t}
+                    className={`px-3 py-2 rounded-full border text-sm ${
+                      type === t
+                        ? 'border-[color:var(--merchant-brand)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]'
+                        : 'border-[color:var(--merchant-line-strong)] text-[color:var(--merchant-muted-strong)]'
+                    } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+                    onClick={() => setType(t)}
+                    disabled={disabled}
+                    type="button"
+                  >
+                    {t === 'FLASH_SALE' ? 'Flash sale' : 'Multi-buy discount'}
+                  </button>
+                );
+              })}
             </div>
+            <p className="text-xs text-[color:var(--merchant-muted)]">
+              {mode === 'create'
+                ? 'Flash sales and free shipping are created in Shopify — they sync in automatically and apply through Shopify’s own pricing. Only multi-buy discounts can be created here.'
+                : 'Type is set when a promotion is created and can’t be changed.'}
+            </p>
           </div>
 
           <div className="space-y-2">
