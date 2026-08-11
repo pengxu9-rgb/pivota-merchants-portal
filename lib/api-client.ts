@@ -1611,11 +1611,6 @@ class ApiClient {
     return response.data;
   }
 
-  async enable2FA() {
-    const response = await this.client.post('/merchant/security/enable-2fa');
-    return response.data;
-  }
-
   async getApiCredentials() {
     const response = await this.client.get('/merchant/api-credentials');
     return response.data?.data || response.data;
