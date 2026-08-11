@@ -1,4 +1,18 @@
 export type PromotionType = 'FLASH_SALE' | 'MULTI_BUY_DISCOUNT';
+
+/**
+ * Promo types a merchant can CREATE here. Mirrors the backend gate
+ * (pivota-backend PR #1728, PROMO_TYPE_NOT_APPLIED_AT_QUOTE): the infra quote
+ * engine applies only MULTI_BUY_DISCOUNT, so a manually created FLASH_SALE
+ * would display to shoppers but never change a price. Flash sales and free
+ * shipping belong in Shopify — they apply inside Shopify's own pricing and
+ * sync in automatically (which is why FLASH_SALE stays in PromotionType:
+ * synced promos of that type are still listed and edited).
+ */
+export const CREATABLE_PROMOTION_TYPES: readonly PromotionType[] = [
+  'MULTI_BUY_DISCOUNT',
+] as const;
+
 export type Channel = 'web' | 'app' | 'creator_agents';
 
 export interface PromotionScope {

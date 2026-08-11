@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
+  CREATABLE_PROMOTION_TYPES,
   Promotion,
   PromotionConfig,
   PromotionType,
@@ -161,6 +162,16 @@ export function PromotionForm({
   const handleSubmit = async () => {
     setError(null);
     const errs: string[] = [];
+    // Gate the payload, not just the button: state can carry a non-creatable
+    // type into create mode (e.g. opening "New promotion" while editing a
+    // synced FLASH_SALE), and the disabled pill cannot catch that.
+    if (mode === 'create' && !CREATABLE_PROMOTION_TYPES.includes(type)) {
+      setError(
+        `${type === 'FLASH_SALE' ? 'Flash sale' : type} promotions are created in Shopify, not here — ` +
+          'they sync in automatically and apply through Shopify’s own pricing.'
+      );
+      return;
+    }
     if (!name.trim()) errs.push('Name is required.');
     if (!startAt || !endAt) errs.push('Start and end times are required.');
     const s = new Date(startAt);
@@ -246,7 +257,20 @@ export function PromotionForm({
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to save promotion.');
+        // Deliberate refusals (400) carry merchant-facing guidance in `message`
+        // — e.g. PROMO_TYPE_NOT_APPLIED_AT_QUOTE. Show it. For 5xx the upstream
+        // puts raw exception text in `message` (backend INTERNAL_ERROR embeds
+        // str(e); the gateway falls back to err.message, which can name env vars
+        // or internal hosts), so show only the code there.
+        const detail =
+          res.status === 400
+            ? data.message || data.error
+            : data.error;
+        throw new Error(
+          typeof detail === 'string' && detail
+            ? detail
+            : 'Failed to save promotion.'
+        );
       }
 
       onSubmitSuccess();
@@ -341,21 +365,33 @@ export function PromotionForm({
           <div className="space-y-2">
             <label className="text-sm font-medium text-[color:var(--merchant-muted-strong)]">Type</label>
             <div className="flex gap-2">
-              {(['FLASH_SALE', 'MULTI_BUY_DISCOUNT'] as PromotionType[]).map((t) => (
-                <button
-                  key={t}
-                  className={`px-3 py-2 rounded-full border text-sm ${
-                    type === t
-                      ? 'border-[color:var(--merchant-brand)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]'
-                      : 'border-[color:var(--merchant-line-strong)] text-[color:var(--merchant-muted-strong)]'
-                  }`}
-                  onClick={() => setType(t)}
-                  type="button"
-                >
-                  {t === 'FLASH_SALE' ? 'Flash sale' : 'Multi-buy discount'}
-                </button>
-              ))}
+              {(['FLASH_SALE', 'MULTI_BUY_DISCOUNT'] as PromotionType[]).map((t) => {
+                // Type is fixed after creation (the backend update contract has no
+                // type field); creation is limited to types the quote engine applies.
+                const disabled =
+                  mode === 'edit' ? t !== type : !CREATABLE_PROMOTION_TYPES.includes(t);
+                return (
+                  <button
+                    key={t}
+                    className={`px-3 py-2 rounded-full border text-sm ${
+                      type === t
+                        ? 'border-[color:var(--merchant-brand)] bg-[color:var(--merchant-brand-soft)] text-[color:var(--merchant-brand)]'
+                        : 'border-[color:var(--merchant-line-strong)] text-[color:var(--merchant-muted-strong)]'
+                    } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+                    onClick={() => setType(t)}
+                    disabled={disabled}
+                    type="button"
+                  >
+                    {t === 'FLASH_SALE' ? 'Flash sale' : 'Multi-buy discount'}
+                  </button>
+                );
+              })}
             </div>
+            <p className="text-xs text-[color:var(--merchant-muted)]">
+              {mode === 'create'
+                ? 'Flash sales and free shipping are created in Shopify — they sync in automatically and apply through Shopify’s own pricing. Only multi-buy discounts can be created here.'
+                : 'Type is set when a promotion is created and can’t be changed.'}
+            </p>
           </div>
 
           <div className="space-y-2">
