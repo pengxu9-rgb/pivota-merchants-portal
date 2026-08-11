@@ -9,7 +9,9 @@ export type PromotionType = 'FLASH_SALE' | 'MULTI_BUY_DISCOUNT';
  * sync in automatically (which is why FLASH_SALE stays in PromotionType:
  * synced promos of that type are still listed and edited).
  */
-export const CREATABLE_PROMOTION_TYPES: PromotionType[] = ['MULTI_BUY_DISCOUNT'];
+export const CREATABLE_PROMOTION_TYPES: readonly PromotionType[] = [
+  'MULTI_BUY_DISCOUNT',
+] as const;
 
 export type Channel = 'web' | 'app' | 'creator_agents';
 

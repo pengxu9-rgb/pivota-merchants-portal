@@ -162,6 +162,16 @@ export function PromotionForm({
   const handleSubmit = async () => {
     setError(null);
     const errs: string[] = [];
+    // Gate the payload, not just the button: state can carry a non-creatable
+    // type into create mode (e.g. opening "New promotion" while editing a
+    // synced FLASH_SALE), and the disabled pill cannot catch that.
+    if (mode === 'create' && !CREATABLE_PROMOTION_TYPES.includes(type)) {
+      setError(
+        `${type === 'FLASH_SALE' ? 'Flash sale' : type} promotions are created in Shopify, not here — ` +
+          'they sync in automatically and apply through Shopify’s own pricing.'
+      );
+      return;
+    }
     if (!name.trim()) errs.push('Name is required.');
     if (!startAt || !endAt) errs.push('Start and end times are required.');
     const s = new Date(startAt);
@@ -247,9 +257,20 @@ export function PromotionForm({
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        // Gateway/backend refusals arrive as { error: CODE, message: guidance } —
-        // show the guidance, not the code.
-        throw new Error(data.message || data.error || 'Failed to save promotion.');
+        // Deliberate refusals (400) carry merchant-facing guidance in `message`
+        // — e.g. PROMO_TYPE_NOT_APPLIED_AT_QUOTE. Show it. For 5xx the upstream
+        // puts raw exception text in `message` (backend INTERNAL_ERROR embeds
+        // str(e); the gateway falls back to err.message, which can name env vars
+        // or internal hosts), so show only the code there.
+        const detail =
+          res.status === 400
+            ? data.message || data.error
+            : data.error;
+        throw new Error(
+          typeof detail === 'string' && detail
+            ? detail
+            : 'Failed to save promotion.'
+        );
       }
 
       onSubmitSuccess();

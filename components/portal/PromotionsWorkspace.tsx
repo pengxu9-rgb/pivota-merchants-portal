@@ -376,6 +376,11 @@ export function PromotionsWorkspace() {
 
       {showForm ? (
         <PromotionForm
+          // Remount on target change: the form hydrates from `initial` only when
+          // it is set, so without this, switching from editing a promotion to
+          // "New promotion" would carry that promotion's type, name and dates
+          // into the create form.
+          key={`${formMode}-${selectedPromo?.id ?? 'new'}`}
           mode={formMode}
           initial={selectedPromo}
           onCancel={() => setShowForm(false)}
