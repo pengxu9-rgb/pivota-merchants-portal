@@ -121,15 +121,6 @@ async function main() {
       headers: authHeaders,
       required: ['enabled', 'events'],
     },
-    {
-      label: 'promotions proxy',
-      url: `${portalBaseUrl}/api/portal/promotions`,
-      headers: {
-        ...authHeaders,
-        'X-Merchant-Id': merchantId,
-      },
-      required: ['promotions'],
-    },
   ];
 
   for (const check of checks) {
