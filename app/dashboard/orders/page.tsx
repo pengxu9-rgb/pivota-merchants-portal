@@ -11,6 +11,23 @@ import {
   StatusBadge,
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
+import {
+  formatMoney,
+  formatProcessingTime,
+  normalizeOrderSummary,
+  normalizeRefundTotals,
+  parseTimestamp,
+  refundTone,
+  type RefundOrderSummary,
+  type RefundTotals,
+} from '@/lib/refund-summary';
+
+const REFUND_TONE_CLASSES: Record<string, string> = {
+  success: 'bg-green-100 text-green-800',
+  warning: 'bg-yellow-100 text-yellow-800',
+  error: 'bg-red-100 text-red-800',
+  info: 'bg-gray-100 text-gray-800',
+};
 
 export default function OrdersPage() {
   const { t } = useMerchantLanguage();
@@ -33,6 +50,8 @@ export default function OrdersPage() {
   // Refund state
   const [showRefundDialog, setShowRefundDialog] = useState(false);
   const [refundHistory, setRefundHistory] = useState<any[]>([]);
+  const [refundOrderSummary, setRefundOrderSummary] = useState<RefundOrderSummary | null>(null);
+  const [refundTotals, setRefundTotals] = useState<RefundTotals | null>(null);
   const [afterSalesCases, setAfterSalesCases] = useState<any[]>([]);
   const [afterSalesLoading, setAfterSalesLoading] = useState(false);
   const [approvingCaseId, setApprovingCaseId] = useState<string | null>(null);
@@ -108,9 +127,15 @@ export default function OrdersPage() {
     try {
       const result = await apiClient.getOrderRefunds(orderId);
       setRefundHistory(result.refunds || []);
+      // The endpoint also returns authoritative order/refund totals; keep them
+      // rather than re-deriving the same figures on the client.
+      setRefundOrderSummary(normalizeOrderSummary(result.order_summary));
+      setRefundTotals(normalizeRefundTotals(result.refund_summary));
     } catch (error: any) {
       console.error('Failed to load refund history:', error);
       setRefundHistory([]);
+      setRefundOrderSummary(null);
+      setRefundTotals(null);
     }
   };
 
@@ -179,7 +204,12 @@ export default function OrdersPage() {
     setSelectedOrder(order);
     setShowOrderModal(true);
     setShowShippingForm(false);
-    
+    // Drop the previous order's refund figures so they cannot flash against
+    // this order while the request is in flight.
+    setRefundHistory([]);
+    setRefundOrderSummary(null);
+    setRefundTotals(null);
+
     // Load refund history
     const orderId = order.data?.order_id || order.order_id;
     if (orderId) {
@@ -269,6 +299,23 @@ export default function OrdersPage() {
   };
   const orderItems = normalizeItems(orderData?.items);
   const shippingAddress = normalizeAddress(orderData?.shipping_address);
+
+  // Refund figures. The refunds endpoint is authoritative (it reconciles
+  // orders.total_refunded against the refund_records rows); the client-side
+  // subtraction is only the fallback for when that call failed.
+  const refundCurrency = refundOrderSummary?.currency || 'USD';
+  const clientRefundable =
+    (Number(orderData?.total) || 0) - (Number(orderData?.total_refunded) || 0);
+  const refundableAmount = refundOrderSummary
+    ? refundOrderSummary.refundable_amount
+    : Math.max(0, clientRefundable);
+  const alreadyRefunded = refundOrderSummary
+    ? refundOrderSummary.total_refunded
+    : Number(orderData?.total_refunded) || 0;
+  const formatTimestamp = (value: unknown) => {
+    const parsed = parseTimestamp(value);
+    return parsed ? parsed.toLocaleString() : null;
+  };
 
   return (
     <div className="space-y-6">
@@ -700,7 +747,7 @@ export default function OrdersPage() {
                 <div className="border-t pt-4 mt-4">
                   <div className="flex justify-between items-center mb-3">
                     <h3 className="font-semibold">Refunds</h3>
-                    {((Number(orderData.total) || 0) - (Number(orderData.total_refunded) || 0)) > 0 && (
+                    {refundableAmount > 0 && (
                       <button
                         onClick={() => setShowRefundDialog(true)}
                         className="flex items-center space-x-2 text-red-600 hover:text-red-800 font-medium text-sm"
@@ -710,54 +757,124 @@ export default function OrdersPage() {
                       </button>
                     )}
                   </div>
-                  
-                  {/* Refund Summary */}
+
+                  {/* Order refund summary (order_summary from the refunds endpoint) */}
                   <div className="bg-gray-50 p-3 rounded mb-3 text-sm">
                     <div className="flex justify-between">
                       <span className="text-gray-600">Refundable:</span>
                       <span className="font-medium text-green-600">
-                        ${((Number(orderData.total) || 0) - (Number(orderData.total_refunded) || 0)).toFixed(2)}
+                        {formatMoney(refundableAmount, refundCurrency)}
                       </span>
                     </div>
-                    {(Number(orderData.total_refunded) || 0) > 0 && (
+                    {alreadyRefunded > 0 && (
                       <div className="flex justify-between mt-1">
                         <span className="text-gray-600">Already Refunded:</span>
                         <span className="font-medium text-red-600">
-                          ${(Number(orderData.total_refunded) || 0).toFixed(2)}
+                          {formatMoney(alreadyRefunded, refundCurrency)}
                         </span>
                       </div>
                     )}
+                    {refundOrderSummary && (
+                      <>
+                        <div className="flex justify-between mt-1">
+                          <span className="text-gray-600">Order Total:</span>
+                          <span className="font-medium">
+                            {formatMoney(refundOrderSummary.total_amount, refundCurrency)}
+                          </span>
+                        </div>
+                        {refundOrderSummary.payment_status && (
+                          <div className="flex justify-between mt-1">
+                            <span className="text-gray-600">Payment Status:</span>
+                            <span className="font-medium capitalize">
+                              {refundOrderSummary.payment_status.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
-                  
+
+                  {/* Refund totals (refund_summary from the refunds endpoint) */}
+                  {refundTotals && refundTotals.total_refunds > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                      <div className="bg-gray-50 rounded p-2">
+                        <p className="text-xs text-gray-600">Refunds</p>
+                        <p className="text-sm font-semibold">{refundTotals.total_refunds}</p>
+                      </div>
+                      <div className="bg-gray-50 rounded p-2">
+                        <p className="text-xs text-gray-600">Completed</p>
+                        <p className="text-sm font-semibold text-green-700">
+                          {formatMoney(refundTotals.completed_amount, refundCurrency)}
+                        </p>
+                      </div>
+                      <div className="bg-gray-50 rounded p-2">
+                        <p className="text-xs text-gray-600">Pending</p>
+                        <p className={`text-sm font-semibold ${refundTotals.pending_amount > 0 ? 'text-yellow-700' : ''}`}>
+                          {formatMoney(refundTotals.pending_amount, refundCurrency)}
+                        </p>
+                      </div>
+                      <div className="bg-gray-50 rounded p-2">
+                        <p className="text-xs text-gray-600">Failed</p>
+                        <p className={`text-sm font-semibold ${refundTotals.failed_count > 0 ? 'text-red-700' : ''}`}>
+                          {refundTotals.failed_count}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Refund History */}
                   {refundHistory.length > 0 && (
                     <div className="space-y-2">
                       <h4 className="text-sm font-medium text-gray-700">Refund History</h4>
-                      {refundHistory.map((refund: any, idx: number) => (
-                        <div key={idx} className="bg-white border rounded p-2 text-sm">
-                          <div className="flex justify-between">
-                            <span className="font-medium">${parseFloat(refund.amount).toFixed(2)}</span>
-                            <span className={`text-xs px-2 py-0.5 rounded ${
-                              refund.status === 'completed' ? 'bg-green-100 text-green-800' :
-                              refund.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-red-100 text-red-800'
-                            }`}>
-                              {refund.status}
-                            </span>
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {refund.reason && <span>Reason: {refund.reason}</span>}
-                            <span className="ml-2">
-                              {new Date(refund.created_at).toLocaleString()}
-                            </span>
-                          </div>
-                          {refund.error_message && (
-                            <div className="text-xs text-red-600 mt-1">
-                              Error: {refund.error_message}
+                      {refundHistory.map((refund: any, idx: number) => {
+                        const createdAt = formatTimestamp(refund.created_at ?? refund.created_at_formatted);
+                        const processedAt = formatTimestamp(refund.processed_at ?? refund.processed_at_formatted);
+                        const processingTime = formatProcessingTime(refund.processing_time_seconds);
+                        return (
+                          <div key={refund.refund_id || idx} className="bg-white border rounded p-2 text-sm">
+                            <div className="flex justify-between gap-2">
+                              <span className="font-medium">
+                                {formatMoney(refund.amount, refund.currency || refundCurrency)}
+                              </span>
+                              <span
+                                className={`text-xs px-2 py-0.5 rounded shrink-0 ${REFUND_TONE_CLASSES[refundTone(refund)]}`}
+                              >
+                                {refund.status}
+                              </span>
                             </div>
-                          )}
-                        </div>
-                      ))}
+                            {/* For failed refunds the backend sets status_message to the
+                                error text, which the error line below already shows. */}
+                            {refund.status_message && refund.status_message !== refund.error_message && (
+                              <div className="text-xs text-gray-600 mt-1">{refund.status_message}</div>
+                            )}
+                            <div className="text-xs text-gray-500 mt-1">
+                              {refund.reason && <span>Reason: {refund.reason}</span>}
+                              {createdAt && <span className="ml-2">{createdAt}</span>}
+                            </div>
+                            {(refund.created_by || processedAt || processingTime) && (
+                              <div className="text-xs text-gray-500 mt-1">
+                                {refund.created_by && <span>By: {refund.created_by}</span>}
+                                {processedAt && (
+                                  <span className={refund.created_by ? 'ml-2' : ''}>
+                                    Processed: {processedAt}
+                                  </span>
+                                )}
+                                {processingTime && <span className="ml-2">({processingTime})</span>}
+                              </div>
+                            )}
+                            {refund.psp_refund_id && (
+                              <div className="text-xs text-gray-500 mt-1 font-mono break-all">
+                                PSP ref: {refund.psp_refund_id}
+                              </div>
+                            )}
+                            {refund.error_message && (
+                              <div className="text-xs text-red-600 mt-1">
+                                Error: {refund.error_message}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -787,6 +904,7 @@ export default function OrdersPage() {
             const existing = Number(base?.total_refunded) || 0;
             return { ...base, total_refunded: Math.max(existing, refundedFromHistory) };
           })()}
+          summary={refundOrderSummary}
           onClose={() => setShowRefundDialog(false)}
           onRefund={handleRefund}
         />

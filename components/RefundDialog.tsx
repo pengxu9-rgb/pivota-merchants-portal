@@ -2,9 +2,18 @@
 
 import { useState } from 'react';
 import { X } from 'lucide-react';
+import { formatMoney, type RefundOrderSummary } from '@/lib/refund-summary';
 
 interface RefundDialogProps {
   order: any;
+  /**
+   * `order_summary` from GET /merchant/orders/{id}/refunds. When present its
+   * `refundable_amount` is authoritative — the backend reconciles
+   * orders.total_refunded against the refund_records rows, which the client
+   * subtraction below cannot do. Optional so the dialog still works if that
+   * call failed.
+   */
+  summary?: RefundOrderSummary | null;
   onClose: () => void;
   onRefund: (amount: number, reason: string) => Promise<void>;
 }
@@ -19,16 +28,20 @@ const REFUND_REASONS = {
   'other': 'Other'
 };
 
-export default function RefundDialog({ order, onClose, onRefund }: RefundDialogProps) {
+export default function RefundDialog({ order, summary, onClose, onRefund }: RefundDialogProps) {
   const [amount, setAmount] = useState<string>('');
   const [reason, setReason] = useState<string>('customer_request');
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Calculate refundable amount
-  const orderTotal = parseFloat(order.total || '0');
-  const totalRefunded = parseFloat(order.total_refunded || '0');
-  const maxRefundable = orderTotal - totalRefunded;
+  // Prefer the backend's reconciled figures; fall back to client arithmetic
+  // over the order row when the refunds endpoint did not answer.
+  const orderTotal = summary ? summary.total_amount : parseFloat(order.total || '0') || 0;
+  const totalRefunded = summary ? summary.total_refunded : parseFloat(order.total_refunded || '0') || 0;
+  const maxRefundable = summary
+    ? summary.refundable_amount
+    : Math.max(0, orderTotal - totalRefunded);
+  const currency = summary?.currency || 'USD';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,7 +55,7 @@ export default function RefundDialog({ order, onClose, onRefund }: RefundDialogP
     }
     
     if (refundAmount > maxRefundable) {
-      setError(`Amount exceeds refundable balance of $${maxRefundable.toFixed(2)}`);
+      setError(`Amount exceeds refundable balance of ${formatMoney(maxRefundable, currency)}`);
       return;
     }
     
@@ -95,15 +108,15 @@ export default function RefundDialog({ order, onClose, onRefund }: RefundDialogP
         <div className="bg-gray-50 p-3 rounded mb-4 text-sm">
           <div className="flex justify-between mb-1">
             <span className="text-gray-600">Order Total:</span>
-            <span className="font-medium">${orderTotal.toFixed(2)}</span>
+            <span className="font-medium">{formatMoney(orderTotal, currency)}</span>
           </div>
           <div className="flex justify-between mb-1">
             <span className="text-gray-600">Already Refunded:</span>
-            <span className="font-medium text-red-600">${totalRefunded.toFixed(2)}</span>
+            <span className="font-medium text-red-600">{formatMoney(totalRefunded, currency)}</span>
           </div>
           <div className="flex justify-between pt-2 border-t border-gray-200">
             <span className="text-gray-900 font-semibold">Refundable Amount:</span>
-            <span className="font-bold text-green-600">${maxRefundable.toFixed(2)}</span>
+            <span className="font-bold text-green-600">{formatMoney(maxRefundable, currency)}</span>
           </div>
         </div>
 
