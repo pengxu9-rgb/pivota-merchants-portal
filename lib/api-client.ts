@@ -312,6 +312,11 @@ class ApiClient {
     const response = await this.client.post(API_CONFIG.ENDPOINTS.LOGIN, {
       email: this.normalizeEmail(email),
       password,
+      // Pin the portal so the backend resolves the *merchant* membership.
+      // Without this, accounts that also have an employee identity (e.g. staff
+      // who are also merchants) get an employee/super_admin token, which 403s
+      // every /merchant/* call and silently degrades the dashboard.
+      portal: 'merchant',
     });
     
     // Store auth data
