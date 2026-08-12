@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import type { CSSProperties } from "react";
 
+import AutoSessionExchange from "./AutoSessionExchange";
+
 export const metadata: Metadata = {
   title: "Pivota installed — Success",
   description:
@@ -60,16 +62,12 @@ export default async function ShopifyInstallSuccessPage({
 }) {
   const { claim_token: claimToken, shop } = await searchParams;
 
-  // An App Store install creates a shell merchant with no user account, so sending
-  // the installer straight to /dashboard would dead-end them at a login they cannot
-  // pass. When the callback hands us a claim token, route them into account setup
-  // instead. Without one the store is already claimed, so plain sign-in is right.
-  const ctaHref = claimToken
-    ? `/app/install/claim?token=${encodeURIComponent(claimToken)}${
-        shop ? `&shop=${encodeURIComponent(shop)}` : ""
-      }`
-    : "/dashboard/integrations";
-  const ctaLabel = claimToken ? "Set up your Pivota account" : "Go to your Pivota dashboard";
+  // An App Store install creates a shell merchant with no user account. Rather
+  // than dead-ending the installer at a login they cannot pass, the OAuth
+  // callback hands us a one-time claim token — completed install = proof of shop
+  // control — which we exchange for a session automatically so the app "just
+  // works" in a fresh/incognito session (Shopify review item 1.1.1). Without a
+  // token the store is already claimed, so a plain dashboard link is right.
 
   return (
     <main style={wrap}>
@@ -86,12 +84,16 @@ export default async function ShopifyInstallSuccessPage({
         </p>
         <p style={p}>
           {claimToken
-            ? "One last step: set up your account to see your AI-readiness score and recommendations."
+            ? "Taking you to your dashboard to review your AI-readiness score and recommendations."
             : "Open the dashboard to review your AI-readiness score and recommendations."}
         </p>
-        <a href={ctaHref} style={btn}>
-          {ctaLabel}
-        </a>
+        {claimToken ? (
+          <AutoSessionExchange claimToken={claimToken} shop={shop} />
+        ) : (
+          <a href="/dashboard/integrations" style={btn}>
+            Go to your Pivota dashboard
+          </a>
+        )}
         <p style={muted}>
           Need help? Contact{" "}
           <a href="mailto:support@pivota.cc">support@pivota.cc</a>.
