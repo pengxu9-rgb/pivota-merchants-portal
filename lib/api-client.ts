@@ -1113,6 +1113,34 @@ class ApiClient {
     return response.data;
   }
 
+  /**
+   * Supplier evidence intake (OPTIONAL — a suggestion, never required). The
+   * merchant supplies VERIFIABLE EVIDENCE — an INCI ingredient list (pasted) OR a
+   * brand product-page URL we crawl for it — and Pivota verifies → substantiates →
+   * grades it into claim-safe, cited claims on the canonical record. Never the
+   * merchant's free-text copy; the serve gate is backend-owned.
+   *   POST /merchant/pdps/product/{platform}/{platform_product_id}/evidence
+   */
+  async submitMerchantSupplierEvidence(
+    platform: string,
+    platformProductId: string,
+    input: { rawInci?: string | null; brandUrl?: string | null }
+  ): Promise<{
+    status: string;
+    content_key: string | null;
+    served: boolean;
+    substantiated_claims: string[];
+    steps?: Record<string, string>;
+    crawl_source_url?: string;
+  }> {
+    const encodedId = encodeURIComponent(platformProductId);
+    const response = await this.client.post(
+      `/merchant/pdps/product/${platform}/${encodedId}/evidence`,
+      { raw_inci: input.rawInci || null, brand_url: input.brandUrl || null }
+    );
+    return response.data;
+  }
+
   async runMerchantBulkEnrichment(params?: { platform?: string; limit?: number }) {
     const response = await this.client.post('/merchant/products/enrichment/backfill', {
       platform: params?.platform,

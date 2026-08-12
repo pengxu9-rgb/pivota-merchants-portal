@@ -6,11 +6,13 @@
  *
  * A suggestion, never a gate: collapsed by default, opportunity-framed, fully
  * skippable. It lets a merchant (1) add positioning (stored `unverified` —
- * improves on-page copy) and (2) upload a lab / third-party test report whose
- * LLM-extracted CANDIDATE claims they review and confirm one at a time. Confirming
- * a candidate posts it with source_ref=<artifact_id>, which is what grades it
- * `substantiated` server-side and gets it cited to agents. Nothing is published
- * until the merchant confirms — the trust spine, surfaced honestly.
+ * improves on-page copy), (2) supply an ingredient (INCI) list or brand-page URL
+ * that Pivota verifies into grounded, cited "Contains X" claims, and (3) upload a
+ * lab / third-party test report whose LLM-extracted CANDIDATE claims they review
+ * and confirm one at a time. The merchant supplies EVIDENCE, never the served
+ * copy: the backend verifies → substantiates → grades it, and only substantiated
+ * claims are served to agents. Nothing is published as-authored — the trust spine,
+ * surfaced honestly.
  */
 
 import { useEffect, useState } from 'react';
@@ -20,6 +22,7 @@ import {
   ChevronDown,
   ChevronRight,
   FileText,
+  FlaskConical,
   Loader2,
   Plus,
   ShieldCheck,
@@ -81,6 +84,12 @@ export function ProductEvidencePanel({
   const [positioningText, setPositioningText] = useState('');
   const [savingPositioning, setSavingPositioning] = useState(false);
 
+  // ingredient (INCI) evidence intake — the strongest cheap lever: verified
+  // actives become grounded, cited claims. Paste the list or link the brand page.
+  const [inciText, setInciText] = useState('');
+  const [brandUrl, setBrandUrl] = useState('');
+  const [submittingInci, setSubmittingInci] = useState(false);
+
   // lab-report intake
   const [labFile, setLabFile] = useState<File | null>(null);
   const [labText, setLabText] = useState('');
@@ -137,6 +146,47 @@ export function ProductEvidencePanel({
       setError(err?.message || 'Could not save positioning.');
     } finally {
       setSavingPositioning(false);
+    }
+  }
+
+  async function handleSubmitInci() {
+    const inci = inciText.trim();
+    const url = brandUrl.trim();
+    if (!inci && !url) return;
+    setSubmittingInci(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiClient.submitMerchantSupplierEvidence(platform, platformProductId, {
+        rawInci: inci || null,
+        brandUrl: url || null,
+      });
+      const n = res.substantiated_claims?.length || 0;
+      if (res.status === 'ok' && n > 0) {
+        setInciText('');
+        setBrandUrl('');
+        setNotice(
+          res.served
+            ? `Verified ${n} ingredient-backed claim${n === 1 ? '' : 's'} — now cited to agents and live on this product’s agent PDP.`
+            : `Verified ${n} ingredient-backed claim${n === 1 ? '' : 's'} — cited to agents (goes live on the next refresh).`
+        );
+        await loadEvidence();
+      } else if (res.status === 'rejected_not_inci') {
+        setError('That didn’t look like an ingredient (INCI) list. Paste the full ingredients, comma-separated.');
+      } else if (res.status === 'not_found') {
+        setError('Couldn’t match this product in the catalog yet — try again after it syncs.');
+      } else if (res.status === 'no_evidence') {
+        setError('No ingredients found. Paste an INCI list, or a brand product-page URL we can read.');
+      } else {
+        // status ok but nothing net-new was substantiated (e.g. already on file).
+        setNotice('Ingredients saved — no new verifiable claims were derived from them.');
+        await loadEvidence();
+      }
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      setError(detail || err?.message || 'Could not submit ingredients.');
+    } finally {
+      setSubmittingInci(false);
     }
   }
 
@@ -210,9 +260,9 @@ export function ProductEvidencePanel({
               <span className="font-normal text-gray-400">· optional</span>
             </h2>
             <p className="mt-0.5 text-xs text-gray-500">
-              Add lab results or positioning so agents cite this product with grounded,
-              attributable claims. Only substantiated claims are served — nothing is
-              published until you confirm it.
+              Add ingredients, lab results, or positioning so agents cite this product
+              with grounded, attributable claims. Only substantiated claims are served —
+              nothing is published until you confirm it.
             </p>
           </div>
         </div>
@@ -325,6 +375,49 @@ export function ProductEvidencePanel({
                     <Plus className="h-3 w-3" />
                   )}
                   Add positioning
+                </MerchantButton>
+              </div>
+
+              {/* Ingredients (INCI) — the strongest cheap lever. Verified actives
+                  become grounded, cited "Contains X" claims. Merchant supplies
+                  EVIDENCE (the list, or a page we crawl), never free-text copy;
+                  only what the backend can substantiate is served. */}
+              <div className="space-y-2 rounded-md border border-slate-100 p-3">
+                <div className="flex items-center gap-1.5">
+                  <FlaskConical className="h-3.5 w-3.5 text-emerald-600" />
+                  <span className="text-xs font-medium text-gray-700">Ingredients (INCI)</span>
+                </div>
+                <p className="text-[11px] text-gray-500">
+                  Paste the ingredient list, or link the brand product page — we verify
+                  the actives and turn them into grounded, cited claims. Nothing you type
+                  is published as-is; only what we can substantiate is served.
+                </p>
+                <textarea
+                  value={inciText}
+                  onChange={(e) => setInciText(e.target.value)}
+                  rows={3}
+                  placeholder="Water, Niacinamide, Glycerin, Snail Secretion Filtrate, …"
+                  className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-800 focus:border-blue-400 focus:outline-none"
+                />
+                <input
+                  type="url"
+                  value={brandUrl}
+                  onChange={(e) => setBrandUrl(e.target.value)}
+                  placeholder="…or paste the brand product-page URL"
+                  className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-800 focus:border-blue-400 focus:outline-none"
+                />
+                <MerchantButton
+                  type="button"
+                  onClick={handleSubmitInci}
+                  disabled={submittingInci || (!inciText.trim() && !brandUrl.trim())}
+                  className="inline-flex items-center gap-1 text-xs"
+                >
+                  {submittingInci ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="h-3 w-3" />
+                  )}
+                  Verify ingredients
                 </MerchantButton>
               </div>
 
