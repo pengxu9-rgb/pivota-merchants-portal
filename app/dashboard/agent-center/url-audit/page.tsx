@@ -31,6 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { sanitizeFunnelAuditRunId } from '@/lib/onboarding';
 import { FEATURE_FLAGS } from '@/lib/config';
 import { stashVisibilityHandoff } from '@/lib/visibility-handoff';
 import { actionSupportingPrompts, summaryRenderable } from '@/lib/audit/reportSummary';
@@ -203,6 +204,43 @@ export default function UrlAuditPage() {
       setBrand(qsBrand);
       queryPrefilledRef.current.brand = true;
     }
+  }, []);
+
+  // Claim the run the marketing funnel created before this merchant existed.
+  //
+  // HERE rather than at signup, because the claim's domain gate reads the
+  // merchant's bound domains, and those come from the onboarding `website`
+  // the registration step writes. By the time this page loads the merchant is
+  // authenticated AND that row exists, which are both preconditions.
+  //
+  // WHAT THIS BUYS TODAY, precisely: an ownership record. The run stops being
+  // publicly readable and nobody else can claim it. It does NOT yet populate
+  // anything the merchant sees — a claimed funnel run carries no report_jsonb,
+  // the public read 404s once it has an owner, and recent_runs_for_merchant
+  // excludes the public_funnel lane — so the merchant still runs the audit
+  // below. Surfacing a claimed run is a separate change in the backend; there
+  // is deliberately no UI here announcing a benefit that does not arrive.
+  //
+  // ENTIRELY BEST-EFFORT. Every failure mode is expected in normal use — 404
+  // for an unknown, foreign or already-claimed run (the backend makes those
+  // deliberately indistinguishable), 403 when the domain is not bound, 409 on
+  // a double-claim — and none of them should interrupt a merchant who came
+  // here to run an audit. A claim that does not land costs them nothing they
+  // can see; an error dialog costs them the page.
+  const claimAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (claimAttemptedRef.current) return;
+    // Sanitized HERE too, not only in the signup path: this page is reachable
+    // by hand with any query string, and "validated at the boundary" has to be
+    // true of every route that reaches the API, not just the one we authored.
+    const runId = sanitizeFunnelAuditRunId(
+      new URLSearchParams(window.location.search).get('audit_run_id'),
+    );
+    if (!runId) return;
+    claimAttemptedRef.current = true;
+
+    apiClient.claimFunnelAuditRun(runId).catch(() => null);
   }, []);
 
   // Prefill the brand site + name from the merchant's onboarding profile.
