@@ -44,6 +44,12 @@ const SIGNAL_LABEL: Record<string, string> = {
   commerce_checkout_route: 'Checkout route observed',
   commerce_cartability: 'Cart observed',
 };
+// NOTE: only acceptance_signal is reachable in this lane today — the commerce
+// probe refuses prospect merchants, so the three commerce_* rows never appear
+// on a funnel run. If that changes, re-read their writers before trusting the
+// labels: CommercePlatform.platform admits "unknown" and CartObservation
+// .status admits "unavailable"/"blocked", so "identified" and "Cart observed"
+// would need the same neutralising the checkout row already got.
 
 const EVIDENCE_LABEL: Record<string, string> = {
   tested: 'tested live',
@@ -127,11 +133,18 @@ export function FunnelChecksPanel() {
                   ))}
                 </dl>
               ) : (
-                // The probe drains on a ~5-minute cadence, so a check claimed
-                // moments ago routinely has nothing yet. Saying so beats an
-                // empty block that reads like a failure.
+                // States the RECORD, not a state of the world. The response
+                // carries no run status, so the client cannot tell "probe
+                // still running" from "probe finished and found nothing" — and
+                // the second is permanent for most stores: the funnel lane is
+                // UCP-only, and a store that does not advertise UCP yields a
+                // succeeded receipt with no evidence row, forever. Claiming
+                // "we haven't heard back yet" would tell roughly nine
+                // merchants in ten something untrue for the life of their
+                // account, and contradict the teaser they saw a minute
+                // earlier, which correctly said agent_ready: false.
                 <p className="mt-1 text-sm text-slate-500">
-                  We haven&apos;t heard back from this store&apos;s endpoint yet.
+                  No protocol signals on record for this check.
                 </p>
               )}
             </li>
