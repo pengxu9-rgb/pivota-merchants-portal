@@ -21,6 +21,8 @@ import {
   type PublicRegistrationDraft,
   type RegistrationFormData,
   SIGNUP_SESSION_STORAGE_KEY,
+  auditFunnelLandingPath,
+  sanitizeFunnelAuditRunId,
   type SignupSessionState,
   type SignupStepId,
 } from '@/lib/onboarding';
@@ -102,6 +104,8 @@ function normalizeStoredSession(
   registrationDraft: PublicRegistrationDraft;
   pspDraft: Pick<PSPFormData, 'pspType' | 'customPspName'>;
   signupSource?: string;
+  /** The funnel run minted before this merchant existed; claimed after login. */
+  funnelAuditRunId?: string;
 } | null {
   if (!rawValue) return null;
 
@@ -129,6 +133,10 @@ function normalizeStoredSession(
       },
       signupSource:
         typeof parsed.signupSource === 'string' ? parsed.signupSource : undefined,
+      funnelAuditRunId:
+        typeof parsed.funnelAuditRunId === 'string'
+          ? parsed.funnelAuditRunId
+          : undefined,
     };
   } catch {
     return null;
@@ -137,14 +145,6 @@ function normalizeStoredSession(
 
 function normalizeEmail(value: string) {
   return (value || '').trim().toLowerCase();
-}
-
-function auditFunnelLandingPath(data: OnboardingData): string {
-  const params = new URLSearchParams();
-  if (data.store_url?.trim()) params.set('website', data.store_url.trim());
-  if (data.business_name?.trim()) params.set('brand', data.business_name.trim());
-  const query = params.toString();
-  return `/dashboard/agent-center/url-audit${query ? `?${query}` : ''}`;
 }
 
 export default function MerchantSignup() {
@@ -159,6 +159,7 @@ export default function MerchantSignup() {
   const [error, setError] = useState('');
   const [hasHydrated, setHasHydrated] = useState(false);
   const [signupSource, setSignupSource] = useState('');
+  const [funnelAuditRunId, setFunnelAuditRunId] = useState('');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -189,11 +190,18 @@ export default function MerchantSignup() {
     const params = new URLSearchParams(window.location.search);
     const prefillStoreUrl = sanitizePrefillUrl(params.get('store_url'));
     const prefillBusinessName = (params.get('business_name') || '').trim().slice(0, 255);
+    // UUID-shaped only: this value is echoed into a URL and then into a path
+    // segment, so it is validated at the boundary rather than trusted because
+    // it arrived from our own marketing site.
+    const qsRunId = sanitizeFunnelAuditRunId(params.get('audit_run_id'));
+    if (qsRunId) setFunnelAuditRunId(qsRunId);
     const source = sanitizeSignupSource(params.get('source'));
     if (source) {
       setSignupSource(source);
+      if (stored?.funnelAuditRunId) setFunnelAuditRunId(stored.funnelAuditRunId);
     } else if (stored?.signupSource) {
       setSignupSource(stored.signupSource);
+      if (stored.funnelAuditRunId) setFunnelAuditRunId(stored.funnelAuditRunId);
     }
     if (prefillStoreUrl || prefillBusinessName) {
       setRegistrationForm((prev) => ({
@@ -218,10 +226,11 @@ export default function MerchantSignup() {
         customPspName: pspForm.customPspName,
       },
       ...(signupSource ? { signupSource } : {}),
+      ...(funnelAuditRunId ? { funnelAuditRunId } : {}),
     };
 
     sessionStorage.setItem(SIGNUP_SESSION_STORAGE_KEY, JSON.stringify(sessionState));
-  }, [currentStep, hasHydrated, onboardingData, pspForm.customPspName, pspForm.pspType, registrationForm, signupSource]);
+  }, [currentStep, funnelAuditRunId, hasHydrated, onboardingData, pspForm.customPspName, pspForm.pspType, registrationForm, signupSource]);
 
   const panelAction = useMemo(
     () => (
@@ -593,7 +602,11 @@ export default function MerchantSignup() {
           onClearSession={clearSignupSession}
           postLoginPath={
             signupSource === AUDIT_FUNNEL_SIGNUP_SOURCE
-              ? auditFunnelLandingPath(onboardingData)
+              ? auditFunnelLandingPath({
+                  storeUrl: onboardingData.store_url,
+                  businessName: onboardingData.business_name,
+                  funnelAuditRunId,
+                })
               : undefined
           }
         />

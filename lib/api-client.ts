@@ -1695,6 +1695,29 @@ class ApiClient {
     return response.data;
   }
 
+  /**
+   * Claim the anonymous audit run the marketing funnel created for this
+   * visitor, so the check they watched before registering becomes theirs
+   * instead of being re-run from scratch.
+   *
+   * Every failure is NON-FATAL by design and the caller carries on with a
+   * normal audit:
+   *   404 — unknown id, another lane's run, or already claimed (the backend
+   *         makes those indistinguishable on purpose)
+   *   403 — the domain is not bound to this merchant yet
+   *   409 — someone already claimed it
+   * A merchant who cannot claim has lost nothing they can see; a merchant
+   * blocked by an error dialog has.
+   */
+  async claimFunnelAuditRun(
+    runId: string,
+  ): Promise<{ claimed: boolean; audit_run_id: string }> {
+    const response = await this.client.post(
+      `/api/merchant-center/audit/claim/${encodeURIComponent(runId)}`,
+    );
+    return response.data;
+  }
+
   // Billing (self-serve subscription) methods.
   // The backend derives the merchant from the JWT (no merchantId in the path);
   // the request interceptor already attaches `Authorization: Bearer <token>`.

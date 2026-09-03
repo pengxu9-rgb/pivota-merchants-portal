@@ -185,6 +185,7 @@ export default function UrlAuditPage() {
   const [historyReloadKey, setHistoryReloadKey] = useState(0);
   const resultRef = useRef<HTMLDivElement | null>(null);
   const queryPrefilledRef = useRef({ website: false, brand: false });
+  const [claimedFunnelRunId, setClaimedFunnelRunId] = useState<string | null>(null);
 
   // Query-param prefill (?website=...&brand=...) — the audit signup funnel
   // lands here right after registration with the URL the visitor entered on
@@ -203,6 +204,35 @@ export default function UrlAuditPage() {
       setBrand(qsBrand);
       queryPrefilledRef.current.brand = true;
     }
+  }, []);
+
+  // Claim the run the marketing funnel created before this merchant existed.
+  //
+  // HERE rather than at signup, because the claim's domain gate reads the
+  // merchant's bound domains, and those come from the onboarding `website`
+  // the registration step writes. By the time this page loads the merchant is
+  // authenticated AND that row exists, which are both preconditions.
+  //
+  // ENTIRELY BEST-EFFORT. Every failure mode is expected in normal use — 404
+  // for an unknown, foreign or already-claimed run (the backend makes those
+  // deliberately indistinguishable), 403 when the domain is not bound, 409 on
+  // a double-claim — and none of them should interrupt a merchant who came
+  // here to run an audit. A claim that does not land costs them nothing they
+  // can see; an error dialog costs them the page.
+  const claimAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (claimAttemptedRef.current) return;
+    const runId = (new URLSearchParams(window.location.search).get('audit_run_id') || '').trim();
+    if (!runId) return;
+    claimAttemptedRef.current = true;
+
+    apiClient
+      .claimFunnelAuditRun(runId)
+      .catch(() => null)
+      .then((result) => {
+        if (result?.claimed) setClaimedFunnelRunId(result.audit_run_id);
+      });
   }, []);
 
   // Prefill the brand site + name from the merchant's onboarding profile.
