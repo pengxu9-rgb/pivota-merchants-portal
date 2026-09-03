@@ -126,3 +126,26 @@ export function auditFunnelLandingPath(input: {
   return `/dashboard/agent-center/url-audit${query ? `?${query}` : ''}`;
 }
 
+/**
+ * Which funnel run id a signup should use: the one in the URL, else the one
+ * left in the session draft.
+ *
+ * QUERY WINS, and that is the whole point. Arriving with an audit_run_id is
+ * fresh intent — the visitor just ran a check. A stored id is a leftover from
+ * an earlier attempt in the same tab, and letting it win means a visitor who
+ * goes back, corrects a typo and resubmits a DIFFERENT domain carries the old
+ * domain's run forward. The claim then fails forever: that run's domain is
+ * not the one they registered, so the bound-domain gate refuses it, silently,
+ * every time.
+ */
+export function resolveFunnelAuditRunId(
+  fromQuery: string | null | undefined,
+  fromSession: string | null | undefined,
+): string {
+  return (
+    sanitizeFunnelAuditRunId(fromQuery) ||
+    sanitizeFunnelAuditRunId(fromSession) ||
+    ''
+  );
+}
+

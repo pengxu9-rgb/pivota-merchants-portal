@@ -76,3 +76,33 @@ test("the path still works for a non-funnel signup", () => {
 test("an empty input yields the bare path, not a dangling ?", () => {
   assert.equal(auditFunnelLandingPath({}), "/dashboard/agent-center/url-audit");
 });
+
+// ---- which id a signup uses -------------------------------------------------
+//
+// The bug this covers: reading the stored id inside the `source` branch made a
+// STALE run override a fresh one. Every marketing-funnel arrival carries
+// `source`, so it fired on the realistic path — go back, fix a typo, resubmit a
+// different domain — and the claim then 403s forever against a domain the
+// merchant never registered. Silent, and no test drove it.
+
+test("the query id wins over a stale session id", async (t) => {
+  const { resolveFunnelAuditRunId } = await import("../lib/onboarding.ts");
+  const fresh = "ce70de2f-c47d-4394-a875-277c85b3e70f";
+  const stale = "b43a3eb8-f79b-4be7-9dae-cf7a63f94f62";
+  assert.equal(resolveFunnelAuditRunId(fresh, stale), fresh);
+});
+
+test("the session id is used only when the query has none", async () => {
+  const { resolveFunnelAuditRunId } = await import("../lib/onboarding.ts");
+  const stored = "b43a3eb8-f79b-4be7-9dae-cf7a63f94f62";
+  assert.equal(resolveFunnelAuditRunId(null, stored), stored);
+  assert.equal(resolveFunnelAuditRunId("", stored), stored);
+  // ...and a junk query value must not shadow a good stored one, nor pass through
+  assert.equal(resolveFunnelAuditRunId("../../x", stored), stored);
+});
+
+test("neither source yields empty, never a partial value", async () => {
+  const { resolveFunnelAuditRunId } = await import("../lib/onboarding.ts");
+  assert.equal(resolveFunnelAuditRunId(null, null), "");
+  assert.equal(resolveFunnelAuditRunId("junk", "also-junk"), "");
+});

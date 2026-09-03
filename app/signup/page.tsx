@@ -22,6 +22,7 @@ import {
   type RegistrationFormData,
   SIGNUP_SESSION_STORAGE_KEY,
   auditFunnelLandingPath,
+  resolveFunnelAuditRunId,
   sanitizeFunnelAuditRunId,
   type SignupSessionState,
   type SignupStepId,
@@ -194,14 +195,21 @@ export default function MerchantSignup() {
     // segment, so it is validated at the boundary rather than trusted because
     // it arrived from our own marketing site.
     const qsRunId = sanitizeFunnelAuditRunId(params.get('audit_run_id'));
-    if (qsRunId) setFunnelAuditRunId(qsRunId);
+    // ONE resolution, query first — matching store_url's rule above and
+    // the comment that says query params win. Reading the stored id inside
+    // the `source` branch let a STALE run override a fresh one: a visitor
+    // who goes back, fixes a typo and resubmits a different domain arrives
+    // with a new id, and the previous domain's run would silently win. The
+    // claim then 403s forever, because that run's domain is not the one
+    // they registered.
+    setFunnelAuditRunId(
+      qsRunId || sanitizeFunnelAuditRunId(stored?.funnelAuditRunId) || '',
+    );
     const source = sanitizeSignupSource(params.get('source'));
     if (source) {
       setSignupSource(source);
-      if (stored?.funnelAuditRunId) setFunnelAuditRunId(stored.funnelAuditRunId);
     } else if (stored?.signupSource) {
       setSignupSource(stored.signupSource);
-      if (stored.funnelAuditRunId) setFunnelAuditRunId(stored.funnelAuditRunId);
     }
     if (prefillStoreUrl || prefillBusinessName) {
       setRegistrationForm((prev) => ({
