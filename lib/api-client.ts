@@ -1696,6 +1696,29 @@ class ApiClient {
   }
 
   /**
+   * The funnel checks this merchant has claimed.
+   *
+   * Deterministic tier only — protocol facts, no scores and no findings,
+   * because a funnel run never went near the audit pipeline. Failures are the
+   * caller's to swallow: this decorates a page, it does not gate one.
+   */
+  async listClaimedFunnelChecks(): Promise<{
+    checks: Array<{
+      audit_run_id: string;
+      domain?: string | null;
+      checked_at?: string | null;
+      claimed_at?: string | null;
+      observed_signals: Array<{
+        signal: string;
+        evidence_level: 'detected' | 'tested' | null;
+      }>;
+    }>;
+  }> {
+    const response = await this.client.get('/api/merchant-center/audit/funnel-checks');
+    return response.data;
+  }
+
+  /**
    * Claim the anonymous audit run the marketing funnel created for this
    * visitor, so the check they watched before registering becomes theirs
    * instead of being re-run from scratch.

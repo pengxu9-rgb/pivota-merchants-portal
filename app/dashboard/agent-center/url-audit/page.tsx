@@ -30,6 +30,7 @@ import {
   Plus,
   X,
 } from 'lucide-react';
+import { FunnelChecksPanel } from '@/components/audit/FunnelChecksPanel';
 import { apiClient } from '@/lib/api-client';
 import { sanitizeFunnelAuditRunId } from '@/lib/onboarding';
 import { FEATURE_FLAGS } from '@/lib/config';
@@ -894,6 +895,12 @@ export default function UrlAuditPage() {
           card in the report view (round 2 merge — one card, one header, trend
           + dimension dumbbells adaptive by history depth), so the standalone
           trend block is gone from the page chrome. */}
+
+      {/* The check they ran on the marketing site before registering, now
+          theirs. Renders null when there is none, so a merchant who arrived
+          any other way sees no trace of it. Above the form because it is
+          context for the audit they are about to run, not a result. */}
+      <FunnelChecksPanel />
 
       <SurfaceCard title="Audit your products">
         <div className="space-y-4 px-5 py-4">
