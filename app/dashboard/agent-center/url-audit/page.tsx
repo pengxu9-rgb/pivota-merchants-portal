@@ -31,6 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import { FunnelChecksPanel } from '@/components/audit/FunnelChecksPanel';
+import { CitationByIntentPanel } from '@/components/audit/CitationByIntentPanel';
 import { apiClient } from '@/lib/api-client';
 import { sanitizeFunnelAuditRunId } from '@/lib/onboarding';
 import { FEATURE_FLAGS } from '@/lib/config';
@@ -676,6 +677,14 @@ export default function UrlAuditPage() {
                 </p>
               )
             ) : null}
+            {/* Where the citations actually came from, by question type,
+                each row carrying its own denominator. The strip above gives a
+                banded headline score and the line above it gives a cited/total
+                over PRODUCTS; neither can say the thing this panel says — that
+                a brand can be named in every branded question and a third of
+                category ones. Those are different problems with different
+                fixes. It self-hides on runs that predate citation_by_intent. */}
+            <CitationByIntentPanel rollup={result.brand_rollup} />
             <AuditQuotaLine
               remaining={result.free_audits_remaining}
               isPaid={isPaid}
@@ -1194,6 +1203,12 @@ export default function UrlAuditPage() {
               {agg.brand_verdict_explanation ? (
                 <p className="text-sm">{agg.brand_verdict_explanation}</p>
               ) : null}
+              {/* LEGACY branch — reached only when a run has no
+                  per_sku_reports. Modern runs render `perSkuDetail` above and
+                  never see these `/100` pills. The same panel is mounted on
+                  that path too; it is here as well so an old run gets the
+                  breakdown rather than three bare composites. */}
+              <CitationByIntentPanel rollup={result?.brand_rollup} />
               <div className="flex flex-wrap gap-2">
                 {scorePill('AI visibility', agg.avg_visibility)}
                 {scorePill('Your-URL attribution', agg.avg_attribution)}
@@ -1201,6 +1216,11 @@ export default function UrlAuditPage() {
               </div>
               <p className="merchant-text-muted text-xs">
                 {agg.products_succeeded}/{agg.products_count} products audited
+                {methodology?.queries_per_product
+                  ? ` · ${methodology.queries_per_product} queries each`
+                  : ''}
+                . Each score above is one number over that sample, not a
+                measurement of your whole catalogue.
               </p>
               <AuditQuotaLine
                 remaining={result?.free_audits_remaining}
