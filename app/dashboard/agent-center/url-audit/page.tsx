@@ -677,6 +677,14 @@ export default function UrlAuditPage() {
                 </p>
               )
             ) : null}
+            {/* Where the citations actually came from, by question type,
+                each row carrying its own denominator. The strip above gives a
+                banded headline score and the line above it gives a cited/total
+                over PRODUCTS; neither can say the thing this panel says — that
+                a brand can be named in every branded question and a third of
+                category ones. Those are different problems with different
+                fixes. It self-hides on runs that predate citation_by_intent. */}
+            <CitationByIntentPanel rollup={result.brand_rollup} />
             <AuditQuotaLine
               remaining={result.free_audits_remaining}
               isPaid={isPaid}
@@ -1195,16 +1203,11 @@ export default function UrlAuditPage() {
               {agg.brand_verdict_explanation ? (
                 <p className="text-sm">{agg.brand_verdict_explanation}</p>
               ) : null}
-              {/* The distribution leads, the composite follows.
-                  `avg_visibility` is a single number over a handful of
-                  products and queries; it moves several-fold on denominator
-                  choice and cannot say what this panel says plainly — that a
-                  brand can be named in every branded question and a third of
-                  category ones. Those are different problems with different
-                  fixes, and one figure hides both. The pills stay, because
-                  merchants have been reading them and an unexplained
-                  disappearance is its own confusion, but they now sit BELOW
-                  the breakdown and carry their denominator. */}
+              {/* LEGACY branch — reached only when a run has no
+                  per_sku_reports. Modern runs render `perSkuDetail` above and
+                  never see these `/100` pills. The same panel is mounted on
+                  that path too; it is here as well so an old run gets the
+                  breakdown rather than three bare composites. */}
               <CitationByIntentPanel rollup={result?.brand_rollup} />
               <div className="flex flex-wrap gap-2">
                 {scorePill('AI visibility', agg.avg_visibility)}

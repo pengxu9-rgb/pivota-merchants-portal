@@ -64,17 +64,33 @@ ok(
 );
 ok(/\(\{pct\}%\)/.test(panelSrc), 'shows the percentage alongside, not instead');
 
-console.log('it is mounted where the free tier can see it:');
+console.log('it is mounted on the path that actually renders:');
+// THE CHECK THIS FILE ORIGINALLY GOT WRONG. The first version asserted only
+// that the panel appeared somewhere in the file before the score pills. It
+// passed while the panel sat exclusively in the LEGACY branch
+// (`report && agg`, agg = brand_report.aggregate), which a modern run never
+// reaches — `perSku.length > 0` renders `perSkuDetail` instead. A browser
+// screenshot of a real run showed no panel at all while this file said green.
+//
+// So: assert it is inside the per-SKU `detailBlocks` object, which is the
+// branch every current run takes.
+const detailStart = urlAuditSrc.indexOf('const detailBlocks =');
+const detailEnd = urlAuditSrc.indexOf('const perSkuDetail =');
+ok(detailStart > -1 && detailEnd > detailStart, 'found the detailBlocks block');
+const detailBlock = urlAuditSrc.slice(detailStart, detailEnd);
 ok(
-  /CitationByIntentPanel/.test(urlAuditSrc),
-  'url-audit page mounts CitationByIntentPanel',
+  /<CitationByIntentPanel/.test(detailBlock),
+  'panel is mounted inside detailBlocks (the per-SKU path real runs render)',
 );
-// Ordering is the claim: the breakdown must precede the composite pills, or the
-// merchant reads the single number first and the panel becomes a footnote.
-const panelAt = urlAuditSrc.indexOf('<CitationByIntentPanel');
-const pillsAt = urlAuditSrc.indexOf("scorePill('AI visibility'");
-ok(panelAt > -1 && pillsAt > -1, 'both the panel and the score pills are present');
-ok(panelAt < pillsAt, 'the distribution is rendered BEFORE the composite pills');
+// And still present on the legacy path, so an old run is not left with three
+// bare composites.
+const legacyAt = urlAuditSrc.indexOf("scorePill('AI visibility'");
+ok(legacyAt > -1, 'legacy score pills still located');
+const legacyBlock = urlAuditSrc.slice(detailEnd);
+ok(
+  /<CitationByIntentPanel/.test(legacyBlock),
+  'panel is also mounted on the legacy path',
+);
 
 console.log('it self-hides rather than rendering an empty shell:');
 ok(/if \(!data\) return null;/.test(panelSrc), 'returns null when the field is absent');
