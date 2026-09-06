@@ -14,7 +14,8 @@
     "verify:indexing": "node scripts/verify-indexing-lane.mjs",
     "verify:closed-channels": "node scripts/verify-closed-channels-render.mjs",
     "verify:outreach": "node scripts/verify-outreach-outcomes-render.mjs",
-    "verify:summary": "node scripts/verify-report-summary-render.mjs"
+    "verify:summary": "node scripts/verify-report-summary-render.mjs",
+    "verify:citation-intent": "node scripts/verify-citation-by-intent-render.mjs"
   },
   "dependencies": {
     "@adyen/adyen-web": "^6.32.0",

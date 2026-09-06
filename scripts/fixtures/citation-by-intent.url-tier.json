@@ -1,0 +1,60 @@
+{
+  "_provenance": {
+    "run_id": "e89cc7ed-1c14-415e-a20c-3ebc2b95d08a",
+    "tier": "url_per_sku",
+    "captured": "2026-09-06",
+    "note": "Verbatim slice of a real free URL-tier audit (anukoofficial.com). The panel was previously reachable only from the connected-store surface; this fixture is the shape the FREE tier actually returns."
+  },
+  "citation_by_intent": {
+    "trust": {
+      "rate": 1.0,
+      "skus": 3,
+      "cited": 7,
+      "total": 7
+    },
+    "constraint": {
+      "rate": 0.857,
+      "skus": 2,
+      "cited": 6,
+      "total": 7
+    },
+    "navigational": {
+      "rate": 1.0,
+      "skus": 3,
+      "cited": 6,
+      "total": 6
+    },
+    "problem_jtbd": {
+      "rate": 0.6,
+      "skus": 3,
+      "cited": 6,
+      "total": 10
+    },
+    "category_head": {
+      "rate": 0.625,
+      "skus": 3,
+      "cited": 5,
+      "total": 8
+    }
+  },
+  "prompt_mix": {
+    "floor": 2,
+    "total": 38,
+    "branded": 13,
+    "by_axis": {
+      "trust": 7,
+      "constraint": 7,
+      "navigational": 6,
+      "problem_jtbd": 10,
+      "category_head": 8
+    },
+    "cap_share": 0.3,
+    "unbranded": 25,
+    "branded_axes": [
+      "navigational",
+      "trust"
+    ],
+    "branded_share": 0.342,
+    "unbranded_share": 0.658
+  }
+}

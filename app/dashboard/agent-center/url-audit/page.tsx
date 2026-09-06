@@ -31,6 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import { FunnelChecksPanel } from '@/components/audit/FunnelChecksPanel';
+import { CitationByIntentPanel } from '@/components/audit/CitationByIntentPanel';
 import { apiClient } from '@/lib/api-client';
 import { sanitizeFunnelAuditRunId } from '@/lib/onboarding';
 import { FEATURE_FLAGS } from '@/lib/config';
@@ -1194,6 +1195,17 @@ export default function UrlAuditPage() {
               {agg.brand_verdict_explanation ? (
                 <p className="text-sm">{agg.brand_verdict_explanation}</p>
               ) : null}
+              {/* The distribution leads, the composite follows.
+                  `avg_visibility` is a single number over a handful of
+                  products and queries; it moves several-fold on denominator
+                  choice and cannot say what this panel says plainly — that a
+                  brand can be named in every branded question and a third of
+                  category ones. Those are different problems with different
+                  fixes, and one figure hides both. The pills stay, because
+                  merchants have been reading them and an unexplained
+                  disappearance is its own confusion, but they now sit BELOW
+                  the breakdown and carry their denominator. */}
+              <CitationByIntentPanel rollup={result?.brand_rollup} />
               <div className="flex flex-wrap gap-2">
                 {scorePill('AI visibility', agg.avg_visibility)}
                 {scorePill('Your-URL attribution', agg.avg_attribution)}
@@ -1201,6 +1213,11 @@ export default function UrlAuditPage() {
               </div>
               <p className="merchant-text-muted text-xs">
                 {agg.products_succeeded}/{agg.products_count} products audited
+                {methodology?.queries_per_product
+                  ? ` · ${methodology.queries_per_product} queries each`
+                  : ''}
+                . Each score above is one number over that sample, not a
+                measurement of your whole catalogue.
               </p>
               <AuditQuotaLine
                 remaining={result?.free_audits_remaining}
