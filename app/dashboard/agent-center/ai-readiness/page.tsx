@@ -17,6 +17,7 @@
  *   - Free tier keeps the 2-audits-per-24h rate limit alongside credits.
  */
 
+import { RevenueRecovery } from '@/components/audit/RevenueRecovery';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
@@ -274,7 +275,13 @@ export default function AiReadinessAuditPage() {
     let cancelled = false;
     (async () => {
       try {
-        const list = await apiClient.getProducts();
+        const [auditProducts, storefrontProducts] = await Promise.all([
+          apiClient.getAuditProducts(), apiClient.getProducts().catch(() => []),
+        ]);
+        const list = auditProducts.map(product => ({
+          ...(storefrontProducts as CatalogProductRow[]).find(p => pickPlatform(p) === product.platform && pickPlatformProductId(p) === product.platform_product_id),
+          ...product,
+        }));
         if (cancelled) return;
         setProducts(Array.isArray(list) ? list : []);
       } catch (err) {
@@ -722,7 +729,7 @@ export default function AiReadinessAuditPage() {
           ) : usableProducts.length === 0 ? (
             <p className="text-sm text-slate-500">
               {products.length === 0
-                ? 'No products in your catalog yet. Connect Shopify on the integrations page first.'
+                ? 'No audit-ready products yet. Run a URL audit or connect your store to add products.'
                 : `${products.length} product(s) loaded but none have a usable platform + product ID — likely a catalog sync issue.`}
             </p>
           ) : (
@@ -914,12 +921,14 @@ export default function AiReadinessAuditPage() {
 
       {auditResult?.mode === 'per_sku' ? (
         <div ref={reportRef} className="space-y-6">
+          <RevenueRecovery runId={activeRunId || auditResult.payload.audit_run_id} />
+          <details className="rounded-xl border p-4"><summary className="cursor-pointer font-medium">Full product diagnostics and action workspace</summary>
           <PerSkuAuditReportRenderer
             report={auditResult.payload}
             onAddPrompts={addSuggestedPrompts}
             customPromptCount={customPromptsParsed.length}
             savedRunViewedAt={savedRunViewedAt}
-          />
+          /></details>
         </div>
       ) : null}
 
@@ -2412,9 +2421,7 @@ function PerformanceZone({
   if (hasTrend) return <BrandTrend tracking={tracking} />;
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4 text-sm text-slate-600">
-      <span className="font-medium text-slate-700">Baseline captured.</span> This is
-      your first comparable audit — run another after you act on the plan above and
-      your run-over-run AI-readiness lift shows up here.
+      <span className="font-medium text-slate-700">No comparison available.</span> Another audit can add a snapshot; improvement can only be assessed when the measurement basis matches.
     </div>
   );
 }
@@ -2640,7 +2647,7 @@ export function PerSkuAuditReportRenderer({
         </div>
       ) : null}
       <div className="text-xs text-slate-500">
-        Audited {perSkuReports.length} product
+        Saved results for {perSkuReports.length} product
         {perSkuReports.length === 1 ? '' : 's'} against{' '}
         {costSummaryProviderNames(report.cost_summary)}.
       </div>
@@ -3754,11 +3761,11 @@ function BrandTrend({ tracking }: { tracking?: AgentCenterBrandRollup['tracking'
             AI-readiness
           </span>{' '}
           {Math.round(prior)} &rarr; {Math.round(current)}{' '}
-          <span className={up ? 'font-semibold text-green-700' : 'font-semibold text-red-700'}>
-            {d === 0 ? 'no change' : `${up ? '+' : ''}${d}`}
+          <span className="font-semibold text-slate-600">
+            {`observed difference ${up ? '+' : ''}${d}`}
           </span>{' '}
           <span className="text-indigo-900/50">
-            since your last audit{days ? ` · ${days}d ago` : ''}
+            since your last audit{days ? ` · ${days}d ago` : ''}. Significance is not established.
           </span>
         </div>
         {pts.length >= 2 ? <Sparkline points={pts} /> : null}
@@ -3779,10 +3786,10 @@ function BrandTrend({ tracking }: { tracking?: AgentCenterBrandRollup['tracking'
                   {Math.round(r.prior)} &rarr; {Math.round(r.current)}{' '}
                   <span
                     className={
-                      eup ? 'font-semibold text-green-700' : 'font-semibold text-red-700'
+                      'font-semibold text-slate-600'
                     }
                   >
-                    {r.delta === 0 ? 'no change' : `${eup ? '+' : ''}${r.delta}`}
+                    {`observed difference ${eup ? '+' : ''}${r.delta}`}
                   </span>
                 </span>
                 {r.pts.length >= 2 ? (

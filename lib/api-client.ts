@@ -2109,6 +2109,23 @@ class ApiClient {
   /** Fetch one audit run's detail row (stage + report_jsonb). Used to recover a
    *  completed run by id — e.g. when a slow run's live poll hit its budget but
    *  the backend finished and the report is intact. */
+  async getRevenueRecovery(runId: string): Promise<import('../components/audit/RevenueRecovery').Recovery> {
+    const res = await this.client.get(`/api/audits/${encodeURIComponent(runId)}`, { params: { audience: 'revenue_recovery' }, timeout: 20_000 });
+    return res.data?.data || res.data;
+  }
+
+  async getAuditProducts(): Promise<{ product_key: string; platform: string; platform_product_id: string; title: string }[]> {
+    const products = [];
+    let offset: number | null = 0;
+    while (offset !== null) {
+      const res: { data: { products: { product_key: string; platform: string; platform_product_id: string; title: string }[]; next_offset: number | null } } = await this.client.get('/api/audits/products', { params: { offset, limit: 500 }, timeout: 20_000 });
+      const body = res.data;
+      products.push(...body.products);
+      offset = body.next_offset;
+    }
+    return products;
+  }
+
   async getAuditRunDetail(runId: string): Promise<{
     stage?: string;
     report_jsonb?: import('./types/ai-readiness').AgentCenterPerSkuAuditResponse;

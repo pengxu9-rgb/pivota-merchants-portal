@@ -50,7 +50,7 @@ function RunRow({
   const n = run.product_keys?.length || 0;
   const subline =
     [
-      n > 0 ? `${n} ${itemNoun}${n === 1 ? '' : 's'}` : null,
+      n > 0 ? `${n} ${itemNoun}${n === 1 ? '' : 's'} requested` : null,
       failed ? "didn't finish — re-run" : verdict,
     ]
       .filter(Boolean)

@@ -213,10 +213,10 @@ function MomentumRow({ row, showPrior }: { row: Row; showPrior: boolean }) {
         {delta != null ? (
           <span
             className={`text-[11px] font-semibold tabular-nums ${
-              delta > 0 ? 'text-green-700' : delta < 0 ? 'text-red-700' : 'text-slate-500'
+              'text-slate-500'
             }`}
           >
-            {delta === 0 ? 'no change' : `${delta > 0 ? '+' : ''}${delta}`}
+            Observed difference {delta > 0 ? '+' : ''}{delta}; significance not established
           </span>
         ) : null}
         {hasCurrent ? (
