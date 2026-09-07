@@ -635,14 +635,14 @@ export default function UrlAuditPage() {
         >
           <RevenueRecovery runId={result.run_id ?? result.audit_run_id ?? activeRunId} />
           {stripSummary ? (
-            <details className="p-4"><summary className="cursor-pointer text-sm">Legacy score diagnostics</summary>
+            <div className="p-4">
               <AuditScoreStrip
                 summary={stripSummary}
                 runId={result.run_id ?? result.audit_run_id ?? activeRunId ?? null}
               />
               <AuditScoreStripFooter summary={stripSummary} />
               <ShareOfVoiceBars summary={stripSummary} />
-            </details>
+            </div>
           ) : null}
           <div className="space-y-2 px-5 py-4">
             <p className="text-sm">

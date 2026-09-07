@@ -922,13 +922,12 @@ export default function AiReadinessAuditPage() {
       {auditResult?.mode === 'per_sku' ? (
         <div ref={reportRef} className="space-y-6">
           <RevenueRecovery runId={activeRunId || auditResult.payload.audit_run_id} />
-          <details className="rounded-xl border p-4"><summary className="cursor-pointer font-medium">Full product diagnostics and action workspace</summary>
           <PerSkuAuditReportRenderer
             report={auditResult.payload}
             onAddPrompts={addSuggestedPrompts}
             customPromptCount={customPromptsParsed.length}
             savedRunViewedAt={savedRunViewedAt}
-          /></details>
+          />
         </div>
       ) : null}
 
