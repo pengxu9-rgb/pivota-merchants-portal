@@ -844,7 +844,7 @@ export default function UrlAuditPage() {
             never unmounted. */}
         <DetailDisclosureCard
           title="Full product-level diagnostics"
-          subtitle="Per-product scorecards, engine playbooks, the verbatim AI answers we probed, channel routing, and your custom prompts."
+          subtitle="Per-product scorecards, engine playbooks, saved prompt evidence and excerpts, channel routing, and your custom prompts."
           badge={`${perSku.length} product${perSku.length === 1 ? '' : 's'}`}
         >
           {/* Wave-2 A3: the prompt-centric view first — one filterable table

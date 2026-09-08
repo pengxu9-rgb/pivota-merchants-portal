@@ -672,6 +672,7 @@ export default function AiReadinessAuditPage() {
       />
 
       <AuditReadinessBanner
+        pickerUnavailable={auditCatalogUnavailable}
         readiness={readiness}
         loading={readinessLoading}
         refreshing={readinessRefreshing}
@@ -735,7 +736,9 @@ export default function AiReadinessAuditPage() {
           ) : usableProducts.length === 0 ? (
             <p className="text-sm text-slate-500">
               {products.length === 0
-                ? 'No audit-ready products yet. Run a URL audit or connect your store to add products.'
+                ? auditCatalogUnavailable
+                  ? 'The audit product list is temporarily unavailable. Your saved reports remain accessible above.'
+                  : 'No audit-ready products yet. Run a URL audit or connect your store to add products.'
                 : `${products.length} product(s) loaded but none have a usable platform + product ID — likely a catalog sync issue.`}
             </p>
           ) : (
@@ -4142,7 +4145,7 @@ function PerSkuCard({
           </div>
         ) : null}
         {/* The honest agentic picture — recommended vs merely findable, the
-            verbatim AI answers, channels, and the strategic brief. Shared with
+            saved prompt evidence, channels, and the strategic brief. Shared with
             the url-audit surface so both read identically; degrades cleanly when
             a catalog SKU didn't probe discovery. */}
         <AgenticVisibilityPanels report={report} runId={runId} />

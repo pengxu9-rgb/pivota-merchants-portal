@@ -1,16 +1,9 @@
 'use client';
 
 /**
- * "See what AI actually answered" — the verbatim proof layer, folded in from the
- * retired hero SkuIntelligenceCard prompt matrix. Reads
- * report.opportunity.per_prompt[]: for each probed query it shows the per-engine
- * verdict, the VERBATIM cited_evidence.excerpt (the single richest, most-ignored
- * field — it literally shows what the AI said and who it recommended), and the
- * per-row substitution ("AI named X instead of you").
- *
- * Honest semantics: a "win" on a discovery query that was appearance_via_listing
- * is labelled "via your listing" (findability), not endorsement. Rows are
- * ordered to lead with the actionable discovery losses that carry an excerpt.
+ * Saved evidence for each probed query: provider verdicts, excerpts and sources.
+ * cited_evidence.excerpt may contain a source snippet or a diagnostic summary;
+ * the retained report does not establish that it is a complete AI answer.
  */
 
 import { useState } from 'react';
@@ -162,10 +155,10 @@ export function PromptEvidencePanel({
       >
         <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide opacity-70">
           <Quote className="h-3.5 w-3.5" />
-          See what AI actually answered
+          Saved prompt evidence
           <span className="font-normal lowercase opacity-60">
             · {rows.length} prompt{rows.length === 1 ? '' : 's'}
-            {withExcerpt > 0 ? `, ${withExcerpt} with the verbatim answer` : ''}
+            {withExcerpt > 0 ? `, ${withExcerpt} with saved excerpts` : ''}
           </span>
         </span>
         {open ? (
@@ -175,11 +168,14 @@ export function PromptEvidencePanel({
         )}
       </button>
       {open ? (
-        <ul className="px-3 pb-2">
-          {ordered.map((r, i) => (
-            <Row key={`${r.normalized_query || r.query}-${i}`} row={r} />
-          ))}
-        </ul>
+        <div className="px-3 pb-2">
+          <p className="mb-2 text-xs opacity-70">Saved excerpts may be source snippets or diagnostic summaries. They are not verified complete AI answers and do not establish whether the full answer mentioned your brand.</p>
+          <ul>
+            {ordered.map((r, i) => (
+              <Row key={`${r.normalized_query || r.query}-${i}`} row={r} />
+            ))}
+          </ul>
+        </div>
       ) : null}
     </div>
   );
