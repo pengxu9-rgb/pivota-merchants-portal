@@ -2180,8 +2180,18 @@ class ApiClient {
   async getApmConfig(): Promise<{ enabled?: boolean; cadence_days?: number } | null> {
     const res = await this.client.get('/api/merchant-center/audit/apm-config', {
       timeout: 15_000,
+      // Only the documented absence response means the schedule is off.
+      validateStatus: status => (status >= 200 && status < 300) || status === 404,
     });
-    return res.data?.data ?? res.data;
+    if (res.status === 404) {
+      if (res.data?.detail === 'APM config not found') return null;
+      throw new Error('Schedule settings endpoint unavailable');
+    }
+    const cfg = res.data?.data ?? res.data;
+    if (typeof cfg?.enabled !== 'boolean' || !Number.isFinite(cfg?.cadence_days)) {
+      throw new Error('Invalid schedule settings response');
+    }
+    return cfg;
   }
 
   async configureApm(params: {
