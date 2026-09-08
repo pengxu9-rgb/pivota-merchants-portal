@@ -633,7 +633,6 @@ export default function UrlAuditPage() {
             ) : undefined
           }
         >
-          <RevenueRecovery runId={result.run_id ?? result.audit_run_id ?? activeRunId} />
           {stripSummary ? (
             <div className="p-4">
               <AuditScoreStrip
@@ -644,6 +643,7 @@ export default function UrlAuditPage() {
               <ShareOfVoiceBars summary={stripSummary} />
             </div>
           ) : null}
+          <RevenueRecovery runId={result.run_id ?? result.audit_run_id ?? activeRunId} />
           <div className="space-y-2 px-5 py-4">
             <p className="text-sm">
               <span className="font-semibold">{citedCount}</span> of{' '}

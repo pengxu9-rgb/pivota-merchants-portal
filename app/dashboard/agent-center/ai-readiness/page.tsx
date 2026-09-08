@@ -921,6 +921,10 @@ export default function AiReadinessAuditPage() {
 
       {auditResult?.mode === 'per_sku' ? (
         <div ref={reportRef} className="space-y-6">
+          <nav aria-label="Audit next steps" className="flex flex-wrap gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm font-medium text-indigo-900">
+            <a className="underline" href="#audit-zone-2">Action plan, approvals and tasks</a>
+            <a className="underline" href="#audit-zone-4">Outreach results and re-test</a>
+          </nav>
           <RevenueRecovery runId={activeRunId || auditResult.payload.audit_run_id} />
           <PerSkuAuditReportRenderer
             report={auditResult.payload}
@@ -2388,7 +2392,7 @@ function Zone({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-4">
+    <section id={`audit-zone-${n}`} className="scroll-mt-6 space-y-4">
       <div className="flex items-baseline gap-3 border-b-2 border-indigo-100 pb-2">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">
           {n}
