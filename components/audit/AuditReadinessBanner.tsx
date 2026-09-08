@@ -80,7 +80,7 @@ export function AuditReadinessBanner({
                 </strong>{' '}
                 {pickerUnavailable
                   ? `${observed === 1 ? 'is' : 'are'} recorded, but currently unavailable in the product picker. These were`
-                  : `${observed === 1 ? 'is' : 'are'} ready to audit. These were`}
+                  : `${observed === 1 ? 'is' : 'are'} ready to audit. These were`}{' '}
                 discovered from your product pages, not synced from your store —
                 connect your store to audit your full catalog with richer
                 first-party data.

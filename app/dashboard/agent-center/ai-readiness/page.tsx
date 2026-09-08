@@ -877,8 +877,8 @@ export default function AiReadinessAuditPage() {
             </>
           ) : (
             <>
-              Credit-driven coverage. 1 audit credit = 1 SKU × 40 prompts.
-              Custom prompts consume prompt-credits at 1/40 the rate.
+              The cost preview above is the quote for your selected products, prompts and models.
+              Review it before starting the audit.
             </>
           )}
         </div>
@@ -2573,18 +2573,18 @@ function CitationByIntentPanel({ rollup }: { rollup: AgentCenterBrandRollup }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        How often AI named your products — by question type
+        Saved citation signals — by question type
       </div>
       <p className="mt-1 text-xs text-slate-500">
-        Of the questions we tested in each style, how often AI&apos;s answer <strong>named your
-        product or brand</strong> (not just a retailer that carries it). Problem/need questions
-        are how most AI shopping happens — usually the biggest room to grow.{' '}
-        <span className="text-slate-400">Green = named in ≥50% · amber = some · grey = none.</span>
+        Retained citation counts grouped by the report’s original question types.
+        These use the saved report’s citation rules; they do not establish a
+        response-level brand mention rate. Use the recovery table above for that
+        separate measure.
       </p>
       <div className="mt-3 space-y-2">
         {rows.map((r) => {
           const pct = Math.round((r.rate || 0) * 100);
-          const tone = pct >= 50 ? 'bg-green-500' : pct > 0 ? 'bg-amber-500' : 'bg-slate-300';
+          const tone = 'bg-slate-400';
           return (
             <div key={r.key} className="flex items-center gap-3">
               <div className="w-44 shrink-0">
@@ -2780,7 +2780,7 @@ export function PerSkuAuditReportRenderer({
       <Zone
         n={4}
         question="Is it working?"
-        subtitle="Your AI-readiness over time — the proof your changes moved the needle."
+        subtitle="Observed changes over time. Re-audits alone do not establish what caused a change."
       >
         {/* Audit→action→outcome loop: what changed at the hosts your last audit
             told you to target (won / progress / no_change / source-shifted).

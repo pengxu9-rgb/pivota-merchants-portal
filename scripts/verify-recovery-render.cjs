@@ -46,6 +46,13 @@ const render = data => renderToStaticMarkup(React.createElement(loaded.exports.R
   }});
   assert(!locked.includes('LOCKED-QUERY'));
   assert(locked.includes('paid plan'));
+  const unmatched = render({ ...fixtures[1], selection_gap: {
+    gaps: [], won_queries: [], lost_queries_without_product: [{ query: 'UNMATCHED-QUERY' }],
+    counts: { lost_queries: 1, won_queries: 0 }
+  }});
+  assert(unmatched.includes('<details open=""'));
+  assert(unmatched.includes('UNMATCHED-QUERY'));
+  assert(unmatched.includes('Review the existing action plan below'));
   const hostile = structuredClone(fixtures[1]);
   hostile.stages[0].findings[0].summary = '<script>alert(1)</script>';
   assert(render(hostile).includes('&lt;script&gt;'));
