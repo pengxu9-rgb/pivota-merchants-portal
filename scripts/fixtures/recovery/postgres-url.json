@@ -1,0 +1,192 @@
+{
+  "stages": [
+    {
+      "stage": "get_selected",
+      "status": "MEASURED",
+      "actions": [],
+      "findings": [
+        {
+          "type": "content_too_thin_to_cite",
+          "summary": "Content: Not yet visible \u2014 The listing is too thin for AI to describe this product.",
+          "severity": "high"
+        },
+        {
+          "type": "product_identity_unresolvable",
+          "summary": "Identity: Not yet visible \u2014 AI can't reliably tell which product this is.",
+          "severity": "high"
+        }
+      ]
+    },
+    {
+      "stage": "get_cited",
+      "status": "MEASURED",
+      "actions": [],
+      "findings": [
+        {
+          "type": "category_citation_weak",
+          "summary": "Citation: Needs work \u2014 AI mentions this product occasionally, but rarely as the answer.",
+          "severity": "medium"
+        }
+      ]
+    },
+    {
+      "stage": "convert_sales",
+      "status": "UNVERIFIED",
+      "actions": [],
+      "findings": [],
+      "unverified_reason": "No production observation exists for this stage yet: the browser commerce lane has never run against a live store."
+    }
+  ],
+  "audience": "revenue_recovery",
+  "headline": {
+    "kind": "distribution",
+    "note": "Per-dimension distribution with n. Not a composite score: averaging these describes no dimension.",
+    "dimensions": [
+      {
+        "n": 3,
+        "p25": 42,
+        "p75": 50,
+        "band": "partial",
+        "label": "Citation",
+        "median": 48,
+        "measures": "brand_ai_visibility",
+        "dimension": "citation",
+        "band_label": "Needs work",
+        "above_count": 2
+      },
+      {
+        "n": 3,
+        "p25": 20,
+        "p75": 23,
+        "band": "blocked",
+        "label": "Content",
+        "median": 23,
+        "measures": "brand_ai_visibility",
+        "dimension": "content_richness",
+        "band_label": "Not yet visible",
+        "above_count": 2
+      },
+      {
+        "n": 3,
+        "p25": 16,
+        "p75": 16,
+        "band": "blocked",
+        "label": "Identity",
+        "median": 16,
+        "measures": "brand_ai_visibility",
+        "dimension": "identity",
+        "band_label": "Not yet visible",
+        "above_count": 3
+      }
+    ],
+    "prompt_split": {
+      "basis": "citation_by_intent axes classified by prompt_mix.branded_axes; cited and answered are prompt counts, not SKU counts",
+      "branded": {
+        "axes": [
+          "navigational",
+          "trust"
+        ],
+        "rate": 0.769,
+        "cited": 10,
+        "answered": 13
+      },
+      "unbranded": {
+        "axes": [
+          "category_head",
+          "constraint",
+          "problem_jtbd"
+        ],
+        "rate": 0.76,
+        "cited": 19,
+        "answered": 25
+      },
+      "unclassified_axes": [],
+      "prompt_mix_version": 3,
+      "branded_prompt_count": 13,
+      "unbranded_prompt_count": 25,
+      "branded_axes_without_citation_data": []
+    },
+    "skus_audited": 3,
+    "dimensions_considered": 3
+  },
+  "selection": {
+    "unit": "product_provider_query_response",
+    "tiers": {
+      "dupe": {
+        "attempted": 1,
+        "source_visible": {
+          "n": 1,
+          "ci95": [
+            0,
+            0.7934506856227626
+          ],
+          "rate": 0.0,
+          "unknown": 0,
+          "positive": 0
+        },
+        "brand_mentioned": {
+          "n": 1,
+          "ci95": [
+            0,
+            0.7934506856227626
+          ],
+          "rate": 0.0,
+          "unknown": 0,
+          "positive": 0
+        },
+        "provider_failed": 0
+      },
+      "branded": {
+        "attempted": 0,
+        "source_visible": {
+          "n": 0,
+          "ci95": null,
+          "rate": null,
+          "unknown": 0,
+          "positive": 0
+        },
+        "brand_mentioned": {
+          "n": 0,
+          "ci95": null,
+          "rate": null,
+          "unknown": 0,
+          "positive": 0
+        },
+        "provider_failed": 0
+      },
+      "unbranded": {
+        "attempted": 1,
+        "source_visible": {
+          "n": 0,
+          "ci95": null,
+          "rate": null,
+          "unknown": 0,
+          "positive": 0
+        },
+        "brand_mentioned": {
+          "n": 0,
+          "ci95": null,
+          "rate": null,
+          "unknown": 0,
+          "positive": 0
+        },
+        "provider_failed": 1
+      }
+    },
+    "version": "1",
+    "providers": {
+      "gemini": 1,
+      "chatgpt": 1
+    },
+    "limitation": "Describes this sample only. Repeated queries and providers may be correlated; these intervals do not establish improvement or population coverage. Unknown answers are excluded, not counted as misses.",
+    "observations": 2,
+    "unclassified": 0,
+    "interval_method": "Wilson 95%, conditional on observed responses",
+    "mention_predicate": "explicit_answer_brand_mentioned_v1",
+    "unavailable_reason": null
+  },
+  "audit_run_id": "fc8f1827-2830-4d41-bdcb-024b4f4d8d3b",
+  "selection_gap": null,
+  "builder_version": "1.2.0",
+  "catalog_available": false
+}

@@ -17,6 +17,7 @@
  *   - Free tier keeps the 2-audits-per-24h rate limit alongside credits.
  */
 
+import { RevenueRecovery } from '@/components/audit/RevenueRecovery';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
@@ -183,6 +184,7 @@ export default function AiReadinessAuditPage() {
   const [products, setProducts] = useState<CatalogProductRow[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
   const [productsError, setProductsError] = useState<string | null>(null);
+  const [auditCatalogUnavailable, setAuditCatalogUnavailable] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set()); // key = "platform:source_id"
 
   // Pre-launch readiness (GET /api/audits/readiness) — surfaced as a banner so
@@ -274,8 +276,18 @@ export default function AiReadinessAuditPage() {
     let cancelled = false;
     (async () => {
       try {
-        const list = await apiClient.getProducts();
+        const [auditProducts, storefrontProducts] = await Promise.all([
+          apiClient.getAuditProducts().catch(error => {
+            if ((error as { response?: { status?: number } }).response?.status === 404) return null;
+            throw error;
+          }), apiClient.getProducts().catch(() => []),
+        ]);
+        const list = auditProducts ? auditProducts.map(product => ({
+          ...(storefrontProducts as CatalogProductRow[]).find(p => pickPlatform(p) === product.platform && pickPlatformProductId(p) === product.platform_product_id),
+          ...product,
+        })) : storefrontProducts;
         if (cancelled) return;
+        setAuditCatalogUnavailable(auditProducts === null);
         setProducts(Array.isArray(list) ? list : []);
       } catch (err) {
         if (cancelled) return;
@@ -660,6 +672,7 @@ export default function AiReadinessAuditPage() {
       />
 
       <AuditReadinessBanner
+        pickerUnavailable={auditCatalogUnavailable}
         readiness={readiness}
         loading={readinessLoading}
         refreshing={readinessRefreshing}
@@ -712,6 +725,7 @@ export default function AiReadinessAuditPage() {
         }
       >
         <div className="px-5 py-4">
+          {auditCatalogUnavailable ? <p className="mb-3 text-sm text-amber-800">Products discovered by URL audits are temporarily unavailable in this picker. You can still open past reports or <a className="underline" href="/dashboard/agent-center/url-audit">audit product URLs</a>.</p> : null}
           {productsLoading ? (
             <p className="text-sm text-slate-500">
               <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
@@ -722,7 +736,9 @@ export default function AiReadinessAuditPage() {
           ) : usableProducts.length === 0 ? (
             <p className="text-sm text-slate-500">
               {products.length === 0
-                ? 'No products in your catalog yet. Connect Shopify on the integrations page first.'
+                ? auditCatalogUnavailable
+                  ? 'The audit product list is temporarily unavailable. Your saved reports remain accessible above.'
+                  : 'No audit-ready products yet. Run a URL audit or connect your store to add products.'
                 : `${products.length} product(s) loaded but none have a usable platform + product ID — likely a catalog sync issue.`}
             </p>
           ) : (
@@ -861,8 +877,8 @@ export default function AiReadinessAuditPage() {
             </>
           ) : (
             <>
-              Credit-driven coverage. 1 audit credit = 1 SKU × 40 prompts.
-              Custom prompts consume prompt-credits at 1/40 the rate.
+              The cost preview above is the quote for your selected products, prompts and models.
+              Review it before starting the audit.
             </>
           )}
         </div>
@@ -914,6 +930,11 @@ export default function AiReadinessAuditPage() {
 
       {auditResult?.mode === 'per_sku' ? (
         <div ref={reportRef} className="space-y-6">
+          <nav aria-label="Audit next steps" className="flex flex-wrap gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm font-medium text-indigo-900">
+            <a className="underline" href="#audit-zone-2">Action plan, approvals and tasks</a>
+            <a className="underline" href="#audit-zone-4">Outreach results and re-test</a>
+          </nav>
+          <ReportSectionBoundary section="recovery-summary"><RevenueRecovery runId={activeRunId || auditResult.payload.audit_run_id} /></ReportSectionBoundary>
           <PerSkuAuditReportRenderer
             report={auditResult.payload}
             onAddPrompts={addSuggestedPrompts}
@@ -2380,7 +2401,7 @@ function Zone({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-4">
+    <section id={`audit-zone-${n}`} className="scroll-mt-6 space-y-4">
       <div className="flex items-baseline gap-3 border-b-2 border-indigo-100 pb-2">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">
           {n}
@@ -2412,9 +2433,7 @@ function PerformanceZone({
   if (hasTrend) return <BrandTrend tracking={tracking} />;
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4 text-sm text-slate-600">
-      <span className="font-medium text-slate-700">Baseline captured.</span> This is
-      your first comparable audit — run another after you act on the plan above and
-      your run-over-run AI-readiness lift shows up here.
+      <span className="font-medium text-slate-700">No comparison available.</span> Another audit can add a snapshot; improvement can only be assessed when the measurement basis matches.
     </div>
   );
 }
@@ -2554,18 +2573,18 @@ function CitationByIntentPanel({ rollup }: { rollup: AgentCenterBrandRollup }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        How often AI named your products — by question type
+        Saved citation signals — by question type
       </div>
       <p className="mt-1 text-xs text-slate-500">
-        Of the questions we tested in each style, how often AI&apos;s answer <strong>named your
-        product or brand</strong> (not just a retailer that carries it). Problem/need questions
-        are how most AI shopping happens — usually the biggest room to grow.{' '}
-        <span className="text-slate-400">Green = named in ≥50% · amber = some · grey = none.</span>
+        Retained citation counts grouped by the report’s original question types.
+        These use the saved report’s citation rules; they do not establish a
+        response-level brand mention rate. Use the recovery table above for that
+        separate measure.
       </p>
       <div className="mt-3 space-y-2">
         {rows.map((r) => {
           const pct = Math.round((r.rate || 0) * 100);
-          const tone = pct >= 50 ? 'bg-green-500' : pct > 0 ? 'bg-amber-500' : 'bg-slate-300';
+          const tone = 'bg-slate-400';
           return (
             <div key={r.key} className="flex items-center gap-3">
               <div className="w-44 shrink-0">
@@ -2640,7 +2659,7 @@ export function PerSkuAuditReportRenderer({
         </div>
       ) : null}
       <div className="text-xs text-slate-500">
-        Audited {perSkuReports.length} product
+        Saved results for {perSkuReports.length} product
         {perSkuReports.length === 1 ? '' : 's'} against{' '}
         {costSummaryProviderNames(report.cost_summary)}.
       </div>
@@ -2761,7 +2780,7 @@ export function PerSkuAuditReportRenderer({
       <Zone
         n={4}
         question="Is it working?"
-        subtitle="Your AI-readiness over time — the proof your changes moved the needle."
+        subtitle="Observed changes over time. Re-audits alone do not establish what caused a change."
       >
         {/* Audit→action→outcome loop: what changed at the hosts your last audit
             told you to target (won / progress / no_change / source-shifted).
@@ -3754,11 +3773,11 @@ function BrandTrend({ tracking }: { tracking?: AgentCenterBrandRollup['tracking'
             AI-readiness
           </span>{' '}
           {Math.round(prior)} &rarr; {Math.round(current)}{' '}
-          <span className={up ? 'font-semibold text-green-700' : 'font-semibold text-red-700'}>
-            {d === 0 ? 'no change' : `${up ? '+' : ''}${d}`}
+          <span className="font-semibold text-slate-600">
+            {`observed difference ${up ? '+' : ''}${d}`}
           </span>{' '}
           <span className="text-indigo-900/50">
-            since your last audit{days ? ` · ${days}d ago` : ''}
+            since your last audit{days ? ` · ${days}d ago` : ''}. Significance is not established.
           </span>
         </div>
         {pts.length >= 2 ? <Sparkline points={pts} /> : null}
@@ -3779,10 +3798,10 @@ function BrandTrend({ tracking }: { tracking?: AgentCenterBrandRollup['tracking'
                   {Math.round(r.prior)} &rarr; {Math.round(r.current)}{' '}
                   <span
                     className={
-                      eup ? 'font-semibold text-green-700' : 'font-semibold text-red-700'
+                      'font-semibold text-slate-600'
                     }
                   >
-                    {r.delta === 0 ? 'no change' : `${eup ? '+' : ''}${r.delta}`}
+                    {`observed difference ${eup ? '+' : ''}${r.delta}`}
                   </span>
                 </span>
                 {r.pts.length >= 2 ? (
@@ -4126,7 +4145,7 @@ function PerSkuCard({
           </div>
         ) : null}
         {/* The honest agentic picture — recommended vs merely findable, the
-            verbatim AI answers, channels, and the strategic brief. Shared with
+            saved prompt evidence, channels, and the strategic brief. Shared with
             the url-audit surface so both read identically; degrades cleanly when
             a catalog SKU didn't probe discovery. */}
         <AgenticVisibilityPanels report={report} runId={runId} />

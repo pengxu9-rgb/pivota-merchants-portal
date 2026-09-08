@@ -1,5 +1,6 @@
 'use client';
 
+import { RevenueRecovery } from '@/components/audit/RevenueRecovery';
 import Link from 'next/link';
 
 /**
@@ -633,15 +634,16 @@ export default function UrlAuditPage() {
           }
         >
           {stripSummary ? (
-            <>
+            <div className="p-4">
               <AuditScoreStrip
                 summary={stripSummary}
                 runId={result.run_id ?? result.audit_run_id ?? activeRunId ?? null}
               />
               <AuditScoreStripFooter summary={stripSummary} />
               <ShareOfVoiceBars summary={stripSummary} />
-            </>
+            </div>
           ) : null}
+          <ReportSectionBoundary section="recovery-summary"><RevenueRecovery runId={result.run_id ?? result.audit_run_id ?? activeRunId} /></ReportSectionBoundary>
           <div className="space-y-2 px-5 py-4">
             <p className="text-sm">
               <span className="font-semibold">{citedCount}</span> of{' '}
@@ -842,7 +844,7 @@ export default function UrlAuditPage() {
             never unmounted. */}
         <DetailDisclosureCard
           title="Full product-level diagnostics"
-          subtitle="Per-product scorecards, engine playbooks, the verbatim AI answers we probed, channel routing, and your custom prompts."
+          subtitle="Per-product scorecards, engine playbooks, saved prompt evidence and excerpts, channel routing, and your custom prompts."
           badge={`${perSku.length} product${perSku.length === 1 ? '' : 's'}`}
         >
           {/* Wave-2 A3: the prompt-centric view first — one filterable table

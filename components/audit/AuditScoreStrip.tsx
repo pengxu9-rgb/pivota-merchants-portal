@@ -50,20 +50,21 @@ function SinceLastAudit({
           : ''}
         :
       </span>
+      {since.basis_same !== true ? <span className="text-slate-500">Measurement basis unavailable — improvement is not established.</span> : null}
       {movements.map((m, i) => (
         <span
           key={i}
           className={
-            m.is_material && m.direction === 'improved'
+            since.basis_same === true && m.is_material && m.direction === 'improved'
               ? 'rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700'
-              : m.is_material && m.direction === 'regressed'
+              : since.basis_same === true && m.is_material && m.direction === 'regressed'
                 ? 'rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-700'
                 : 'merchant-text-muted'
           }
         >
           {m.label} {m.from ?? '—'}→{m.to ?? '—'}
-          {m.is_material && m.direction === 'improved' ? ' ▲' : ''}
-          {m.is_material && m.direction === 'regressed' ? ' ▼' : ''}
+          {since.basis_same === true && m.is_material && m.direction === 'improved' ? ' ▲' : ''}
+          {since.basis_same === true && m.is_material && m.direction === 'regressed' ? ' ▼' : ''}
         </span>
       ))}
       {since.basis_same === false ? (
