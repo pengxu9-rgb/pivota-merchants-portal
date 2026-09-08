@@ -38,7 +38,10 @@ export function WeeklyReauditSwitch({
         if (!cancelled) setEnabled(Boolean(cfg?.enabled && cfg?.cadence_days === 7));
       })
       .catch(() => {
-        if (!cancelled) setEnabled(false); // no config yet -> off
+        if (!cancelled) {
+          setEnabled(null);
+          setError("Couldn't load the schedule. Refresh the page before changing it.");
+        }
       });
     return () => {
       cancelled = true;
@@ -64,6 +67,7 @@ export function WeeklyReauditSwitch({
     <button
       type="button"
       role="switch"
+      aria-label={enabled === null ? 'Weekly re-audit status unknown' : 'Weekly re-audit'}
       aria-checked={enabled === true}
       onClick={toggle}
       disabled={busy || enabled === null}
@@ -116,6 +120,7 @@ export function WeeklyReauditSwitch({
         <button
           type="button"
           role="switch"
+          aria-label={enabled === null ? 'Weekly re-audit status unknown' : 'Weekly re-audit'}
           aria-checked={enabled === true}
           onClick={toggle}
           disabled={busy || enabled === null}
