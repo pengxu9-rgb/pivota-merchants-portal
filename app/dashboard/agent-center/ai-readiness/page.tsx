@@ -184,6 +184,7 @@ export default function AiReadinessAuditPage() {
   const [products, setProducts] = useState<CatalogProductRow[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
   const [productsError, setProductsError] = useState<string | null>(null);
+  const [auditCatalogUnavailable, setAuditCatalogUnavailable] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set()); // key = "platform:source_id"
 
   // Pre-launch readiness (GET /api/audits/readiness) — surfaced as a banner so
@@ -276,13 +277,17 @@ export default function AiReadinessAuditPage() {
     (async () => {
       try {
         const [auditProducts, storefrontProducts] = await Promise.all([
-          apiClient.getAuditProducts(), apiClient.getProducts().catch(() => []),
+          apiClient.getAuditProducts().catch(error => {
+            if ((error as { response?: { status?: number } }).response?.status === 404) return null;
+            throw error;
+          }), apiClient.getProducts().catch(() => []),
         ]);
-        const list = auditProducts.map(product => ({
+        const list = auditProducts ? auditProducts.map(product => ({
           ...(storefrontProducts as CatalogProductRow[]).find(p => pickPlatform(p) === product.platform && pickPlatformProductId(p) === product.platform_product_id),
           ...product,
-        }));
+        })) : storefrontProducts;
         if (cancelled) return;
+        setAuditCatalogUnavailable(auditProducts === null);
         setProducts(Array.isArray(list) ? list : []);
       } catch (err) {
         if (cancelled) return;
@@ -719,6 +724,7 @@ export default function AiReadinessAuditPage() {
         }
       >
         <div className="px-5 py-4">
+          {auditCatalogUnavailable ? <p className="mb-3 text-sm text-amber-800">Products discovered by URL audits are temporarily unavailable in this picker. You can still open past reports or <a className="underline" href="/dashboard/agent-center/url-audit">audit product URLs</a>.</p> : null}
           {productsLoading ? (
             <p className="text-sm text-slate-500">
               <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
@@ -925,7 +931,7 @@ export default function AiReadinessAuditPage() {
             <a className="underline" href="#audit-zone-2">Action plan, approvals and tasks</a>
             <a className="underline" href="#audit-zone-4">Outreach results and re-test</a>
           </nav>
-          <RevenueRecovery runId={activeRunId || auditResult.payload.audit_run_id} />
+          <ReportSectionBoundary section="recovery-summary"><RevenueRecovery runId={activeRunId || auditResult.payload.audit_run_id} /></ReportSectionBoundary>
           <PerSkuAuditReportRenderer
             report={auditResult.payload}
             onAddPrompts={addSuggestedPrompts}

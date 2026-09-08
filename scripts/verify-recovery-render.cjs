@@ -22,6 +22,10 @@ const render = data => renderToStaticMarkup(React.createElement(loaded.exports.R
 (async () => {
   const fixtures = ['historical', 'contract-example'].map(name => JSON.parse(fs.readFileSync(`scripts/fixtures/recovery/${name}.json`)));
   const [historical, example] = fixtures.map(render);
+  for (const legacy of [null, {}, { builder_version: '1.1.0', stages: [] },
+    { ...fixtures[0], selection: { tiers: { branded: {} } } }]) {
+    assert(render(legacy).includes('Your existing report and actions remain below'));
+  }
   const postgres = JSON.parse(fs.readFileSync('scripts/fixtures/recovery/postgres-url.json'));
   const postgresHtml = render(postgres);
   assert(postgresHtml.includes('0/1') && postgresHtml.includes('1 failed, excluded'));

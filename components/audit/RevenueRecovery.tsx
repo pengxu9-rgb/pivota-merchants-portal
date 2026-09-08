@@ -27,7 +27,27 @@ function EstimateValue({ estimate }: { estimate: Estimate }) {
 const tierLabels = { branded: 'When shoppers name you', unbranded: 'When shoppers ask about the category', dupe: 'When shoppers ask for alternatives' };
 const stageLabels: Record<string, string> = { get_selected: 'Get selected', get_cited: 'Get cited', convert_sales: 'Convert sales' };
 
+export function isRecoveryCompatible(value: unknown): value is Recovery {
+  const data = value as Recovery | null;
+  const selection = data?.selection;
+  const validEstimate = (e: Estimate | undefined) => !!e &&
+    Number.isFinite(e.n) && e.n >= 0 && Number.isFinite(e.positive) &&
+    Number.isFinite(e.unknown) && (e.rate === null || Number.isFinite(e.rate)) &&
+    (e.ci95 === null || (Array.isArray(e.ci95) && e.ci95.length === 2 && e.ci95.every(Number.isFinite)));
+  return !!selection?.tiers && Object.keys(tierLabels).every(key => {
+    const tier = selection.tiers[key];
+    return !!tier && validEstimate(tier.brand_mentioned) && validEstimate(tier.source_visible);
+  }) && Array.isArray(data?.stages) && data.stages.every(stage => stage && Array.isArray(stage.findings)) &&
+    Array.isArray(data?.headline?.dimensions) &&
+    (!data.selection_gap || (Array.isArray(data.selection_gap.gaps) &&
+      Array.isArray(data.selection_gap.won_queries) && Array.isArray(data.selection_gap.lost_queries_without_product) &&
+      !!data.selection_gap.counts));
+}
+
 export function RecoveryView({ data }: { data: Recovery }) {
+  // A successful HTTP response can still carry an older projection contract.
+  // Keep the saved action workspace usable during mixed-version rollouts.
+  if (!isRecoveryCompatible(data)) return <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">New recovery metrics are not available for this saved report. Your existing report and actions remain below.</p>;
   return <section className="rounded-xl border border-slate-200 bg-white p-5 space-y-6" aria-label="Revenue recovery">
     <header><p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Revenue recovery</p>
       <h2 className="mt-1 text-xl font-semibold">Where AI finds you — and where you can grow</h2>

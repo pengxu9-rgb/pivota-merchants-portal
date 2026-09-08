@@ -643,7 +643,7 @@ export default function UrlAuditPage() {
               <ShareOfVoiceBars summary={stripSummary} />
             </div>
           ) : null}
-          <RevenueRecovery runId={result.run_id ?? result.audit_run_id ?? activeRunId} />
+          <ReportSectionBoundary section="recovery-summary"><RevenueRecovery runId={result.run_id ?? result.audit_run_id ?? activeRunId} /></ReportSectionBoundary>
           <div className="space-y-2 px-5 py-4">
             <p className="text-sm">
               <span className="font-semibold">{citedCount}</span> of{' '}
