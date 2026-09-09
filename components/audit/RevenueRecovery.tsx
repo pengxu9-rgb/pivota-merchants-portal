@@ -63,7 +63,7 @@ export function RecoveryView({ data }: { data: Recovery }) {
       <summary className="cursor-pointer font-medium">Consumer answer evidence · {data.selection.answers.length}</summary>
       <p className="mt-2 text-sm text-slate-500">These responses use the shopper question without adding your brand or product context. Unverified or incomplete answers are excluded from the answer-mention rate.</p>
       {data.selection.answers.filter(a => a && typeof a.query === 'string').map((a, i) => <details key={`${a.observation_id}-${i}`} className="mt-3 border-t pt-3">
-        <summary className="cursor-pointer text-sm">{a.query} · {a.provider} · {typeof a.brand_mentioned !== 'boolean' ? 'Not measured' : a.brand_mentioned ? 'Brand mentioned' : 'Brand not mentioned'}</summary>
+        <summary className="cursor-pointer text-sm">{a.query} · {typeof a.provider === 'string' ? a.provider : 'Unknown provider'} · {typeof a.brand_mentioned !== 'boolean' ? 'Not measured' : a.brand_mentioned ? 'Brand mentioned' : 'Brand not mentioned'}</summary>
         <p className="mt-2 text-xs text-slate-500">{typeof a.evidence?.model === 'string' ? a.evidence.model : 'Model not retained'}</p>
         <p className="mt-2 whitespace-pre-wrap break-words text-sm">{typeof a.evidence?.text === 'string' ? a.evidence.text : 'Answer text was not retained.'}</p>
       </details>)}
