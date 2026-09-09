@@ -26,6 +26,10 @@ const render = data => renderToStaticMarkup(React.createElement(loaded.exports.R
     { ...fixtures[0], selection: { tiers: { branded: {} } } }]) {
     assert(render(legacy).includes('Your existing report and actions remain below'));
   }
+  const consumer = render(JSON.parse(fs.readFileSync('scripts/fixtures/recovery/consumer-answer.json')));
+  assert(consumer.includes('Consumer answer evidence') && consumer.includes('Brand mentioned'));
+  assert(consumer.includes('Consider Anua.') && consumer.includes('&lt;script&gt;'));
+  assert(!consumer.includes('<script>'));
   const postgres = JSON.parse(fs.readFileSync('scripts/fixtures/recovery/postgres-url.json'));
   const postgresHtml = render(postgres);
   assert(postgresHtml.includes('0/1') && postgresHtml.includes('1 failed, excluded'));

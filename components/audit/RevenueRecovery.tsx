@@ -5,10 +5,12 @@ import { apiClient } from '@/lib/api-client';
 
 type Estimate = { positive: number; n: number; rate: number | null; ci95: [number, number] | null; unknown: number };
 type Tier = { attempted: number; provider_failed: number; brand_mentioned: Estimate; source_visible: Estimate };
+type Answer = { observation_id: string; query: string; provider: string; brand_mentioned: boolean | null;
+  evidence?: { text?: string | null; model?: string | null; complete?: boolean }; };
 type Query = { query: string; matched_products?: { title?: string; product_key?: string }[] };
 export type Recovery = {
   builder_version: string;
-  selection: { observations: number; tiers: Record<string, Tier>; unclassified: number; unavailable_reason?: string; limitation: string };
+  selection: { answers?: Answer[]; excluded_diagnostics?: number; observations: number; tiers: Record<string, Tier>; unclassified: number; unavailable_reason?: string; limitation: string };
   selection_gap?: { gaps: Query[]; won_queries: Query[]; lost_queries_without_product: Query[]; counts: { lost_queries: number; won_queries: number } } | null;
   stages: { stage: string; status: string; unverified_reason?: string; findings: { type: string; summary: string }[] }[];
   headline: { dimensions: { dimension: string; label: string; band_label?: string; n?: number; median?: number; p25?: number; p75?: number }[] };
@@ -57,6 +59,15 @@ export function RecoveryView({ data }: { data: Recovery }) {
       {Object.entries(tierLabels).map(([tier, label]) => { const t = data.selection.tiers[tier]; return t ? <tr key={tier} className="border-b align-top"><th className="p-2 font-medium">{label}</th><td className="p-2"><EstimateValue estimate={t.brand_mentioned} /></td><td className="p-2"><EstimateValue estimate={t.source_visible} /></td><td className="p-2">{data.selection.unavailable_reason ? 'Not retained' : `${t.attempted} attempted`}{t.provider_failed > 0 ? <span className="block text-amber-700">{t.provider_failed} failed, excluded</span> : null}</td></tr> : null; })}
     </tbody></table></div>
     <p className="text-xs text-slate-500">{data.selection.limitation}{data.selection.unclassified > 0 ? ` ${data.selection.unclassified} responses have an unknown question type and are excluded from the three groups.` : ''}</p>
+    {Array.isArray(data.selection.answers) && data.selection.answers.length > 0 ? <details className="rounded-lg border p-4">
+      <summary className="cursor-pointer font-medium">Consumer answer evidence · {data.selection.answers.length}</summary>
+      <p className="mt-2 text-sm text-slate-500">These responses use the shopper question without adding your brand or product context. Unverified or incomplete answers are excluded from the answer-mention rate.</p>
+      {data.selection.answers.filter(a => a && typeof a.query === 'string').map((a, i) => <details key={`${a.observation_id}-${i}`} className="mt-3 border-t pt-3">
+        <summary className="cursor-pointer text-sm">{a.query} · {a.provider} · {typeof a.brand_mentioned !== 'boolean' ? 'Not measured' : a.brand_mentioned ? 'Brand mentioned' : 'Brand not mentioned'}</summary>
+        <p className="mt-2 text-xs text-slate-500">{typeof a.evidence?.model === 'string' ? a.evidence.model : 'Model not retained'}</p>
+        <p className="mt-2 whitespace-pre-wrap break-words text-sm">{typeof a.evidence?.text === 'string' ? a.evidence.text : 'Answer text was not retained.'}</p>
+      </details>)}
+    </details> : null}
     <div className="grid gap-3 md:grid-cols-3">{data.stages.map(stage => <div key={stage.stage} className="rounded-lg bg-slate-50 p-4"><h3 className="font-semibold">{stageLabels[stage.stage] || stage.stage}</h3><p className="mt-1 text-sm">{stage.status === 'UNVERIFIED' ? 'Not verified' : stage.status === 'NO_FINDINGS' ? 'No findings in the available checks' : 'Findings available'}</p>{stage.unverified_reason ? <p className="mt-2 text-xs text-slate-500">{stage.unverified_reason}</p> : null}<ul className="mt-2 space-y-2 text-sm">{stage.findings.map((finding, i) => <li key={`${finding.type}-${i}`}>{finding.summary}</li>)}</ul></div>)}</div>
     {data.actions_locked ? <p className="text-sm">Your query action plan is available on a paid plan.</p> : data.selection_gap ? <div className="grid gap-5 md:grid-cols-2">
       <div><h3 className="font-semibold">Queries to win · {data.selection_gap.counts.lost_queries}</h3><ul className="mt-2 space-y-3">{data.selection_gap.gaps.map(q => <li key={q.query} className="text-sm"><strong>“{q.query}”</strong><p className="text-slate-500">Products matching this query: {q.matched_products?.map(p => p.title || p.product_key).join(', ')}</p></li>)}</ul>{data.selection_gap.lost_queries_without_product.length > 0 ? <details open={data.selection_gap.gaps.length === 0} className="mt-3 text-sm"><summary>Queries without a confident product match · {data.selection_gap.lost_queries_without_product.length}</summary><p className="my-2 text-slate-500">These queries lack a confident product match in this report. Review the existing action plan below before choosing a product to improve.</p><ul>{data.selection_gap.lost_queries_without_product.map(q => <li key={q.query}>{q.query}</li>)}</ul></details> : null}</div>
