@@ -30,6 +30,11 @@ const render = data => renderToStaticMarkup(React.createElement(loaded.exports.R
   assert(consumer.includes('Consumer answer evidence') && consumer.includes('Brand mentioned'));
   assert(consumer.includes('Consider Anua.') && consumer.includes('&lt;script&gt;'));
   assert(!consumer.includes('<script>'));
+  const ungrounded = JSON.parse(fs.readFileSync('scripts/fixtures/recovery/consumer-answer.json'));
+  ungrounded.selection.answers[0].brand_mentioned = null;
+  ungrounded.selection.answers[0].unknown_reason = 'answer_sources_missing';
+  assert(render(ungrounded).includes('This response has no verifiable citations'));
+
   const postgres = JSON.parse(fs.readFileSync('scripts/fixtures/recovery/postgres-url.json'));
   const postgresHtml = render(postgres);
   assert(postgresHtml.includes('0/1') && postgresHtml.includes('1 failed, excluded'));

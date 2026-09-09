@@ -5,7 +5,7 @@ import { apiClient } from '@/lib/api-client';
 
 type Estimate = { positive: number; n: number; rate: number | null; ci95: [number, number] | null; unknown: number };
 type Tier = { attempted: number; provider_failed: number; brand_mentioned: Estimate; source_visible: Estimate };
-type Answer = { observation_id: string; query: string; provider: string; brand_mentioned: boolean | null;
+type Answer = { observation_id: string; query: string; provider: string; brand_mentioned: boolean | null; unknown_reason?: string;
   evidence?: { text?: string | null; model?: string | null; complete?: boolean }; };
 type Query = { query: string; matched_products?: { title?: string; product_key?: string }[] };
 export type Recovery = {
@@ -61,9 +61,10 @@ export function RecoveryView({ data }: { data: Recovery }) {
     <p className="text-xs text-slate-500">{data.selection.limitation}{data.selection.unclassified > 0 ? ` ${data.selection.unclassified} responses have an unknown question type and are excluded from the three groups.` : ''}</p>
     {Array.isArray(data.selection.answers) && data.selection.answers.length > 0 ? <details className="rounded-lg border p-4">
       <summary className="cursor-pointer font-medium">Consumer answer evidence · {data.selection.answers.length}</summary>
-      <p className="mt-2 text-sm text-slate-500">These responses use the shopper question without adding your brand or product context. Unverified or incomplete answers are excluded from the answer-mention rate.</p>
+      <p className="mt-2 text-sm text-slate-500">These responses use the shopper question without adding your brand or product context. Only completed answers with verifiable citations contribute to the answer-mention rate. Other responses remain unmeasured.</p>
       {data.selection.answers.filter(a => a && typeof a.query === 'string').map((a, i) => <details key={`${a.observation_id}-${i}`} className="mt-3 border-t pt-3">
         <summary className="cursor-pointer text-sm">{a.query} · {typeof a.provider === 'string' ? a.provider : 'Unknown provider'} · {typeof a.brand_mentioned !== 'boolean' ? 'Not measured' : a.brand_mentioned ? 'Brand mentioned' : 'Brand not mentioned'}</summary>
+        {typeof a.brand_mentioned !== 'boolean' ? <p className="mt-2 text-sm text-amber-800">{a.unknown_reason === 'answer_sources_missing' ? 'This response has no verifiable citations, so it cannot establish whether your brand was selected.' : 'This response could not be verified as a completed, cited answer. It is excluded from the rate.'}</p> : null}
         <p className="mt-2 text-xs text-slate-500">{typeof a.evidence?.model === 'string' ? a.evidence.model : 'Model not retained'}</p>
         <p className="mt-2 whitespace-pre-wrap break-words text-sm">{typeof a.evidence?.text === 'string' ? a.evidence.text : 'Answer text was not retained.'}</p>
       </details>)}
