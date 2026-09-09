@@ -2019,6 +2019,7 @@ export type AuditPreviewScope =
   | { select_top_n_by_revenue: number };
 
 export interface AgentCenterAuditPreviewRequest {
+  consumer_answer_queries?: string[];
   merchant_id: string;
   scope: AuditPreviewScope;
   prompts_per_sku?: number;
@@ -2027,6 +2028,7 @@ export interface AgentCenterAuditPreviewRequest {
 }
 
 export interface AgentCenterAuditPreviewResponse {
+  consumer_capture?: { plan_sha256: string; probe_count: number; credits: number };
   audit_run_id_preview: string;
   merchant_id: string;
   sku_count: number;

@@ -2332,6 +2332,7 @@ class ApiClient {
   }
 
   async runPerSkuAudit(request: {
+    consumer_answer_queries?: string[];
     merchant_id: string;
     sku_keys: string[];
     prompts_per_sku?: number;
@@ -2352,6 +2353,7 @@ class ApiClient {
           sku_keys: request.sku_keys,
           prompts_per_sku: request.prompts_per_sku ?? 40,
           custom_prompts: request.custom_prompts ?? [],
+          ...(request.consumer_answer_queries?.length ? { consumer_answer_queries: request.consumer_answer_queries } : {}),
           providers: request.providers ?? ['gemini'],
         },
         {

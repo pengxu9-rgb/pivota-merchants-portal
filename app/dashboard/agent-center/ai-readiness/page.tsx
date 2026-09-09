@@ -238,6 +238,13 @@ export default function AiReadinessAuditPage() {
   // (hydration / acne / picky-eaters / etc.). Up to 10; trim + dedupe
   // client-side; >10 surfaces inline error.
   const [customPromptsText, setCustomPromptsText] = useState('');
+  const consumerCaptureEnabled = process.env.NEXT_PUBLIC_CONSUMER_ANSWER_ENABLED === 'true';
+  const [consumerQuestionsText, setConsumerQuestionsText] = useState('');
+  const consumerQueries = useMemo(() => consumerCaptureEnabled
+    ? [...new Set(consumerQuestionsText.split('\n').map(q => q.trim()).filter(Boolean))] : [],
+    [consumerCaptureEnabled, consumerQuestionsText]);
+  const consumerError = consumerQueries.length > 8 || consumerQueries.some(q => q.length > 1000)
+    ? 'Use up to 8 questions, each no longer than 1,000 characters.' : null;
 
   // Preview state — spec §I. The preview endpoint runs no probes; it
   // returns projected cost + current balance + sufficient flag. We
@@ -547,14 +554,16 @@ export default function AiReadinessAuditPage() {
 
   useEffect(() => {
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
-    if (selectedSkuKeys.length < 1 || customPromptsError) {
+    const seq = ++previewRequestSeqRef.current;
+    setPreviewData(null);
+    if (selectedSkuKeys.length < 1 || customPromptsError || consumerError) {
       setPreviewData(null);
       setPreviewError(null);
       setPreviewLoading(false);
       return;
     }
+    setPreviewLoading(true);
     previewTimerRef.current = setTimeout(() => {
-      const seq = ++previewRequestSeqRef.current;
       setPreviewLoading(true);
       setPreviewError(null);
       apiClient
@@ -563,6 +572,7 @@ export default function AiReadinessAuditPage() {
           scope: { sku_keys: selectedSkuKeys },
           prompts_per_sku: 40,
           custom_prompts: customPromptsParsed,
+          ...(consumerQueries.length ? { consumer_answer_queries: consumerQueries } : {}),
           providers: selectedProviders,
         })
         .then((res) => {
@@ -585,13 +595,13 @@ export default function AiReadinessAuditPage() {
     return () => {
       if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
     };
-  }, [selectedSkuKeys, customPromptsParsed, customPromptsError, selectedProviders]);
+  }, [selectedSkuKeys, customPromptsParsed, customPromptsError, selectedProviders, consumerQueries, consumerError]);
 
   const previewSufficient = previewData?.sufficient === true;
 
   const runAudit = async () => {
     if (selectedRefs.length < 1 || selectedRefs.length > MAX_SELECTED) return;
-    if (customPromptsError) return;
+    if (customPromptsError || consumerError || previewLoading || previewError || !previewData) return;
     // Hard block when preview says insufficient. Per memory
     // feedback_no_execution_layer_fallbacks: never auto-shrink scope.
     if (previewData && !previewData.sufficient) return;
@@ -607,6 +617,7 @@ export default function AiReadinessAuditPage() {
         sku_keys: selectedSkuKeys,
         prompts_per_sku: 40,
         custom_prompts: customPromptsParsed,
+        ...(consumerQueries.length ? { consumer_answer_queries: consumerQueries } : {}),
         providers: selectedProviders,
         idempotency_key: idempotencyKey,
       });
@@ -847,6 +858,15 @@ export default function AiReadinessAuditPage() {
       </SurfaceCard>
       </div>
 
+      {consumerCaptureEnabled ? <SurfaceCard title="Consumer answer questions" description="Optional: capture how AI answers shopper questions, alongside your existing audit. Extra calls are included in the quote below.">
+        <div className="px-5 py-4 space-y-2">
+          <label htmlFor="consumer-questions" className="block text-sm">One shopper question per line, up to 8. Include brand, category and alternative questions you want to measure.</label>
+          <textarea id="consumer-questions" value={consumerQuestionsText} onChange={e => setConsumerQuestionsText(e.target.value)} rows={3} maxLength={8100} className="w-full rounded border p-2" />
+          {consumerError ? <p role="alert" className="text-sm text-red-700">{consumerError}</p> : null}
+          {previewData?.consumer_capture ? <p className="text-sm">{previewData.consumer_capture.probe_count} additional AI calls · {previewData.consumer_capture.credits} credits, included in the total. Incomplete or failed answers remain unmeasured.</p> : null}
+        </div>
+      </SurfaceCard> : null}
+
       <SurfaceCard
         title="3. Preview audit cost"
         description="Estimated credits + current balance. Coverage is credit-driven; we never auto-shrink scope to fit available credits — the merchant decides."
@@ -889,6 +909,9 @@ export default function AiReadinessAuditPage() {
             selected.size < 1 ||
             selected.size > MAX_SELECTED ||
             !!customPromptsError ||
+            !!consumerError ||
+            previewLoading ||
+            !previewData ||
             !!previewError ||
             (previewData !== null && !previewSufficient) ||
             (readiness !== null && !readiness.ready)
