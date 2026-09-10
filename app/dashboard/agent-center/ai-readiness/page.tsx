@@ -863,7 +863,7 @@ export default function AiReadinessAuditPage() {
           <label htmlFor="consumer-questions" className="block text-sm">One shopper question per line, up to 8. Include brand, category and alternative questions you want to measure.</label>
           <textarea id="consumer-questions" value={consumerQuestionsText} onChange={e => setConsumerQuestionsText(e.target.value)} rows={3} maxLength={8100} className="w-full rounded border p-2" />
           {consumerError ? <p role="alert" className="text-sm text-red-700">{consumerError}</p> : null}
-          {previewData?.consumer_capture ? <p className="text-sm">{previewData.consumer_capture.probe_count} additional AI calls · {previewData.consumer_capture.credits} credits, included in the total. Incomplete or failed answers remain unmeasured.</p> : null}
+          {previewData?.consumer_capture ? <p className="text-sm">{previewData.consumer_capture.probe_count} additional AI calls · {previewData.consumer_capture.credits} credits, included in the total. Incomplete or failed answers remain unmeasured.{previewData.consumer_capture.execution_profiles?.includes('openai_web_required_v2') ? ' OpenAI will search the web before answering. These credits are a fixed quote, not a token-based final bill.' : ''}</p> : null}
         </div>
       </SurfaceCard> : null}
 

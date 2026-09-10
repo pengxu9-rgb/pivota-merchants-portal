@@ -5,12 +5,12 @@ import { apiClient } from '@/lib/api-client';
 
 type Estimate = { positive: number; n: number; rate: number | null; ci95: [number, number] | null; unknown: number };
 type Tier = { attempted: number; provider_failed: number; brand_mentioned: Estimate; source_visible: Estimate };
-type Answer = { observation_id: string; query: string; provider: string; brand_mentioned: boolean | null; unknown_reason?: string;
+type Answer = { observation_id: string; query: string; provider: string; brand_mentioned: boolean | null; unknown_reason?: string; prompt_contract?: string;
   evidence?: { text?: string | null; model?: string | null; complete?: boolean }; };
 type Query = { query: string; matched_products?: { title?: string; product_key?: string }[] };
 export type Recovery = {
   builder_version: string;
-  selection: { answers?: Answer[]; excluded_diagnostics?: number; observations: number; tiers: Record<string, Tier>; unclassified: number; unavailable_reason?: string; limitation: string };
+  selection: { mixed_execution_providers?: string[]; answers?: Answer[]; excluded_diagnostics?: number; observations: number; tiers: Record<string, Tier>; unclassified: number; unavailable_reason?: string; limitation: string };
   selection_gap?: { gaps: Query[]; won_queries: Query[]; lost_queries_without_product: Query[]; counts: { lost_queries: number; won_queries: number } } | null;
   stages: { stage: string; status: string; unverified_reason?: string; findings: { type: string; summary: string }[] }[];
   headline: { dimensions: { dimension: string; label: string; band_label?: string; n?: number; median?: number; p25?: number; p75?: number }[] };
@@ -59,12 +59,14 @@ export function RecoveryView({ data }: { data: Recovery }) {
       {Object.entries(tierLabels).map(([tier, label]) => { const t = data.selection.tiers[tier]; return t ? <tr key={tier} className="border-b align-top"><th className="p-2 font-medium">{label}</th><td className="p-2"><EstimateValue estimate={t.brand_mentioned} /></td><td className="p-2"><EstimateValue estimate={t.source_visible} /></td><td className="p-2">{data.selection.unavailable_reason ? 'Not retained' : `${t.attempted} attempted`}{t.provider_failed > 0 ? <span className="block text-amber-700">{t.provider_failed} failed, excluded</span> : null}</td></tr> : null; })}
     </tbody></table></div>
     <p className="text-xs text-slate-500">{data.selection.limitation}{data.selection.unclassified > 0 ? ` ${data.selection.unclassified} responses have an unknown question type and are excluded from the three groups.` : ''}</p>
+    {data.selection.mixed_execution_providers?.length ? <p className="text-sm text-amber-800">Different search settings were retained for the same AI provider. Its answer-mention rate is unmeasured because these conditions cannot be combined.</p> : null}
     {Array.isArray(data.selection.answers) && data.selection.answers.length > 0 ? <details className="rounded-lg border p-4">
       <summary className="cursor-pointer font-medium">Consumer answer evidence · {data.selection.answers.length}</summary>
       <p className="mt-2 text-sm text-slate-500">These responses use the shopper question without adding your brand or product context. Only completed answers with verifiable citations contribute to the answer-mention rate. Other responses remain unmeasured.</p>
       {data.selection.answers.filter(a => a && typeof a.query === 'string').map((a, i) => <details key={`${a.observation_id}-${i}`} className="mt-3 border-t pt-3">
         <summary className="cursor-pointer text-sm">{a.query} · {typeof a.provider === 'string' ? a.provider : 'Unknown provider'} · {typeof a.brand_mentioned !== 'boolean' ? 'Not measured' : a.brand_mentioned ? 'Brand mentioned' : 'Brand not mentioned'}</summary>
         {typeof a.brand_mentioned !== 'boolean' ? <p className="mt-2 text-sm text-amber-800">{a.unknown_reason === 'answer_sources_missing' ? 'This response has no verifiable citations, so it cannot establish whether your brand was selected.' : 'This response could not be verified as a completed, cited answer. It is excluded from the rate.'}</p> : null}
+        <p className="mt-2 text-xs text-slate-500">{a.prompt_contract === 'consumer_query_openai_web_required_v2' ? 'Web search required · separate measurement conditions from automatic search' : 'Legacy or automatic search conditions'}</p>
         <p className="mt-2 text-xs text-slate-500">{typeof a.evidence?.model === 'string' ? a.evidence.model : 'Model not retained'}</p>
         <p className="mt-2 whitespace-pre-wrap break-words text-sm">{typeof a.evidence?.text === 'string' ? a.evidence.text : 'Answer text was not retained.'}</p>
       </details>)}

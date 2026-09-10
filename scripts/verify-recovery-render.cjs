@@ -34,6 +34,11 @@ const render = data => renderToStaticMarkup(React.createElement(loaded.exports.R
   ungrounded.selection.answers[0].brand_mentioned = null;
   ungrounded.selection.answers[0].unknown_reason = 'answer_sources_missing';
   assert(render(ungrounded).includes('This response has no verifiable citations'));
+  ungrounded.selection.answers[0].prompt_contract='consumer_query_openai_web_required_v2';
+  assert(render(ungrounded).includes('Web search required'));
+  ungrounded.selection.mixed_execution_providers=['chatgpt'];
+  assert(render(ungrounded).includes('these conditions cannot be combined'));
+
 
   const postgres = JSON.parse(fs.readFileSync('scripts/fixtures/recovery/postgres-url.json'));
   const postgresHtml = render(postgres);

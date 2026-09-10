@@ -2028,7 +2028,7 @@ export interface AgentCenterAuditPreviewRequest {
 }
 
 export interface AgentCenterAuditPreviewResponse {
-  consumer_capture?: { plan_sha256: string; probe_count: number; credits: number };
+  consumer_capture?: { plan_sha256: string; probe_count: number; credits: number; execution_profiles?: string[]; pricing_basis?: string };
   audit_run_id_preview: string;
   merchant_id: string;
   sku_count: number;
