@@ -7,6 +7,7 @@ steps:
     '--build-arg', 'NEXT_PUBLIC_API_URL=https://api.pivota.cc',
     '--build-arg', 'NEXT_PUBLIC_FEATURE_PLATFORM_ORDERS_ACP=true',
     '--build-arg', 'NEXT_PUBLIC_FEATURE_PLATFORM_ORDERS_V1=true',
+    '--build-arg', 'NEXT_PUBLIC_FEATURE_AI_READINESS_HOME=true',
     '--build-arg', 'NEXT_PUBLIC_CONSUMER_ANSWER_ENABLED=${_CONSUMER_CAPTURE}',
     '-t', 'us-west1-docker.pkg.dev/pivota-prod/cloud-run-source-deploy/merchants-portal:$COMMIT_SHA', '.']
 images:
