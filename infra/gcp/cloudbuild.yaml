@@ -1,0 +1,16 @@
+# Consumer capture is opt-in at build time, after compatible backend/gateway release.
+substitutions:
+  _CONSUMER_CAPTURE: 'false'
+steps:
+- name: gcr.io/cloud-builders/docker
+  args: ['build', '-f', 'infra/gcp/Dockerfile',
+    '--build-arg', 'NEXT_PUBLIC_API_URL=https://api.pivota.cc',
+    '--build-arg', 'NEXT_PUBLIC_FEATURE_PLATFORM_ORDERS_ACP=true',
+    '--build-arg', 'NEXT_PUBLIC_FEATURE_PLATFORM_ORDERS_V1=true',
+    '--build-arg', 'NEXT_PUBLIC_CONSUMER_ANSWER_ENABLED=${_CONSUMER_CAPTURE}',
+    '-t', 'us-west1-docker.pkg.dev/pivota-prod/cloud-run-source-deploy/merchants-portal:$COMMIT_SHA', '.']
+images:
+- 'us-west1-docker.pkg.dev/pivota-prod/cloud-run-source-deploy/merchants-portal:$COMMIT_SHA'
+timeout: 1200s
+options:
+  machineType: E2_HIGHCPU_8
