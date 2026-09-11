@@ -153,8 +153,9 @@ export function AiReadinessHomeHero() {
         ) : null}
         {firstAction ? (
           <p className="max-w-3xl text-xs leading-relaxed">
-            <span className="merchant-text-muted">Next move: </span>
+            <span className="merchant-text-muted">Suggested next move (historical diagnostic): </span>
             {firstAction.headline}
+            <span className="mt-1 block merchant-text-muted">Verify the product match and supporting sources before acting. This suggestion does not establish an endorsement or ranking outcome.</span>
           </p>
         ) : null}
         <div>
