@@ -141,7 +141,7 @@ export function AuditScoreStrip({
   const subscores = measuredSubscores(score);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--merchant-line)] px-5 py-3">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--merchant-line)] px-5 py-3"><p className="w-full text-xs text-amber-800">Diagnostic readiness score — not a consumer recommendation rate. See Revenue recovery for verified response-level measurements.</p>
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-baseline gap-1">
           <Gauge className="mr-1 h-5 w-5 self-center opacity-50" aria-hidden />

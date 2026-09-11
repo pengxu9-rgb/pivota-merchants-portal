@@ -102,7 +102,7 @@ function ActionButton({
           <div className="mt-2 rounded-md border border-[color:var(--merchant-line)] bg-white/70 px-3 py-2">
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--merchant-accent,#6366f1)]">
-                <Sparkles className="h-3 w-3" /> Pivota draft — ready to publish
+                <Sparkles className="h-3 w-3" /> Pivota draft — verify facts before publishing
               </span>
               <button
                 type="button"

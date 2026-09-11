@@ -157,7 +157,7 @@ export function ChannelAppearancePanel({
       <div className="mt-3 rounded-md border border-[color:var(--merchant-line)] bg-white/40 px-3 py-3">
         <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide opacity-70">
           <BadgeCheck className="h-3.5 w-3.5" />
-          Where this product shows up in AI
+          Historical channel diagnostics
           <PromptsRanInfo prompts={prompts} />
         </div>
         <p className="mt-1 text-xs leading-relaxed opacity-70">
@@ -175,21 +175,21 @@ export function ChannelAppearancePanel({
   // Honest headline: own site cited as a source vs brand merely named.
   const headline =
     ownCited > 0
-      ? `Your site is cited in ${ownCited} of ${total} AI answers`
-      : `Your site isn't cited in any of the ${total} AI answers yet`;
+      ? `Historical own-site flags: ${ownCited} of ${total} diagnostic prompts`
+      : `Historical own-site flags: 0 of ${total} diagnostic prompts`;
 
   return (
     <div className="mt-3 rounded-md border border-[color:var(--merchant-line)] bg-white/40 px-3 py-3">
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide opacity-70">
         <BadgeCheck className="h-3.5 w-3.5" />
-        Where this product shows up in AI
+        Historical channel diagnostics
         <PromptsRanInfo prompts={prompts} />
       </div>
       <div className="mt-1 text-sm font-semibold">{headline}</div>
       <p className="mt-0.5 text-xs opacity-70">
         {ca.brand_mentioned_count > 0 && ownCited === 0
-          ? `AI names your brand in ${ca.brand_mentioned_count} of ${total} answers, but routes buyers to the channels below — not your own page.`
-          : 'Your own page vs the channels AI cites for this product.'}
+          ? `Historical brand flags: ${ca.brand_mentioned_count} of ${total}. Complete answer mentions and product identity are unverified.`
+          : 'Retained channel counts; not proof these hosts support the saved excerpt or refer to the matching product.'}
       </p>
 
       <div className="mt-2 space-y-0.5">

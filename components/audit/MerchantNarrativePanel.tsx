@@ -315,7 +315,7 @@ export function MerchantNarrativePanel({
     (w?.branded_navigational_probes || 0) > 0 || (w?.category_discovery_probes || 0) > 0;
 
   return (
-    <div className="space-y-4">
+    <details className="space-y-4 rounded border border-amber-200 p-4"><summary className="cursor-pointer font-medium">Historical diagnostic narrative — unverified recommendations</summary><p className="text-sm">The following is the saved diagnostic interpretation. It may confuse similarly named products or source snippets with answers. Use it to investigate, not as a measured recommendation rate or proof of an endorsement. Your action tools remain available below.</p>
       {/* R2 — reseller context: the audit measures whether AI sends shoppers to
           THIS STORE, not whether the brands it carries are recommended. Without
           this, a retailer reads "findable / recommended" as being about them when
@@ -438,6 +438,6 @@ export function MerchantNarrativePanel({
           </ul>
         </div>
       ) : null}
-    </div>
+    </details>
   );
 }
