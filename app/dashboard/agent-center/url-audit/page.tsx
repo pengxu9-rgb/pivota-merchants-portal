@@ -649,8 +649,8 @@ export default function UrlAuditPage() {
               <span className="font-semibold">{citedCount}</span> of{' '}
               <span className="font-semibold">{perSku.length}</span> product
               {perSku.length === 1 ? '' : 's'}{' '}
-              {citedCount === 1 ? 'is' : 'are'} cited by AI shopping agents for
-              the buyer-intent prompts we tested.
+              {citedCount === 1 ? 'has' : 'have'} positive historical diagnostic flags.
+              These are not verified complete-answer mentions or product matches.
             </p>
             {methodology ? (
               methodology.coverage_unavailable ? (

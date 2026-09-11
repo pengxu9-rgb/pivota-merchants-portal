@@ -66,7 +66,7 @@ function toCsv(rows: Row[]): string {
     const safe = /^[=+\-@]/.test(v) ? `'${v}` : v;
     return `"${safe.replace(/"/g, '""')}"`;
   };
-  const head = 'query,product,axis,spec_matched,outcome,engines,competitors';
+  const head = 'query,product,axis,spec_matched,diagnostic_outcome,engines,competitors,evidence_status';
   return [
     head,
     ...rows.map((r) =>
@@ -75,13 +75,14 @@ function toCsv(rows: Row[]): string {
         esc(r.sku),
         esc(r.axis),
         r.specMatched ? 'yes' : 'no',
-        r.won ? 'cited' : 'not_cited',
+        r.won ? 'historical_positive' : 'historical_negative',
         esc(
           Object.entries(r.providers)
             .map(([k, v]) => `${k}:${v}`)
             .join(' '),
         ),
         esc(r.competitors.join('; ')),
+        esc('unverified diagnostic; not consumer answer measurement'),
       ].join(','),
     ),
   ].join('\n');
@@ -125,13 +126,13 @@ export function PromptExplorer({
     <div className="rounded-lg border border-[color:var(--merchant-line)] bg-white/50 px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
-          Prompt explorer — every prompt we probed ({rows.length}/{all.length})
+          Historical prompt diagnostics — product identity unverified ({rows.length}/{all.length})
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <select value={outcome} onChange={(e) => setOutcome(e.target.value as typeof outcome)} className={select} aria-label="Filter by outcome">
             <option value="all">All outcomes</option>
-            <option value="won">Cited</option>
-            <option value="lost">Not cited</option>
+            <option value="won">Historical positive</option>
+            <option value="lost">Historical negative</option>
           </select>
           <select value={axis} onChange={(e) => setAxis(e.target.value)} className={select} aria-label="Filter by prompt type">
             <option value="all">All types</option>
@@ -183,9 +184,9 @@ export function PromptExplorer({
                 </td>
                 <td className="py-1.5 pr-3">
                   {r.won ? (
-                    <span className="font-medium text-emerald-700">Cited</span>
+                    <span className="font-medium text-emerald-700">Historical positive</span>
                   ) : (
-                    <span className="text-red-700">Not cited</span>
+                    <span className="text-red-700">Historical negative</span>
                   )}
                 </td>
                 <td className="py-1.5 pr-3">
