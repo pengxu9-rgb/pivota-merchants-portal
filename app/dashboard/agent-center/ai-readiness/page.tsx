@@ -203,6 +203,7 @@ export default function AiReadinessAuditPage() {
   const handoffAppliedRef = useRef(false);
 
   const [running, setRunning] = useState(false);
+  const [inputsOpen, setInputsOpen] = useState(true);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [auditResult, setAuditResult] = useState<LaunchResult | null>(null);
   // Run history: which past run is being viewed, an open-in-progress marker, and
@@ -484,6 +485,7 @@ export default function AiReadinessAuditPage() {
         added.push(key);
       }
       if (added.length) {
+        setInputsOpen(true);
         setCustomPromptsText(next.join('\n'));
         window.setTimeout(
           () =>
@@ -519,6 +521,7 @@ export default function AiReadinessAuditPage() {
       const detail = await apiClient.getAuditRunDetail(runId);
       if (detail?.stage === 'completed' && detail.report_jsonb?.per_sku_reports) {
         setAuditResult({ mode: 'per_sku', payload: detail.report_jsonb });
+        setInputsOpen(false);
         setActiveRunId(runId);
         // Viewing a saved run — flag it (+ its date) so the report shows the
         // "this is a past snapshot" banner. Empty string when no timestamp.
@@ -626,6 +629,7 @@ export default function AiReadinessAuditPage() {
         idempotency_key: idempotencyKey,
       });
       setAuditResult({ mode: 'per_sku', payload: res });
+      setInputsOpen(false);
       setActiveRunId(res.audit_run_id);
       setSavedRunViewedAt(null); // fresh run — this IS the current audit, no banner
       setHistoryReloadKey((k) => k + 1); // surface the just-finished run in history
@@ -687,9 +691,10 @@ export default function AiReadinessAuditPage() {
             <button type="button" disabled={!usableProducts.some(p => productKey(p) === retestProduct)} className="rounded bg-indigo-700 px-3 py-2 text-white disabled:opacity-40" onClick={() => {
               const next = prepareProductRetest(retestProduct, usableProducts.map(productKey), pendingRetest.queries);
               if (!next) return;
+              setInputsOpen(true);
               setPreviewData(null); setSelected(new Set(next.skuKeys));
               setCustomPromptsText(next.customPrompts.join('\n')); setConsumerQuestionsText(next.consumerQuestions); setPendingRetest(null);
-              customPromptsRef.current?.scrollIntoView({behavior: 'smooth', block: 'center'});
+              window.setTimeout(() => customPromptsRef.current?.scrollIntoView({behavior: 'smooth', block: 'center'}), 50);
             }}>Use this product and get quote</button>
           </div>
         </div>
@@ -710,6 +715,10 @@ export default function AiReadinessAuditPage() {
         subjectType="merchant"
       />
 
+      {auditResult ? <button type="button" aria-expanded={inputsOpen} aria-controls="catalog-audit-inputs" onClick={() => setInputsOpen(open => !open)} className="w-full rounded-lg border border-[color:var(--merchant-line)] px-5 py-3 text-left text-sm font-medium">
+        {inputsOpen ? 'Hide audit inputs' : 'Edit inputs / run another audit'}
+      </button> : null}
+      <div id="catalog-audit-inputs" hidden={!!auditResult && !inputsOpen} className="space-y-6">
       <AuditReadinessBanner
         pickerUnavailable={auditCatalogUnavailable}
         readiness={readiness}
@@ -958,6 +967,8 @@ export default function AiReadinessAuditPage() {
             </>
           )}
         </MerchantButton>
+      </div>
+
       </div>
 
       {insufficient ? (

@@ -168,6 +168,7 @@ export default function UrlAuditPage() {
   const [skuPromptsText, setSkuPromptsText] = useState<string[]>(['']);
   const [skuPromptsOpen, setSkuPromptsOpen] = useState<boolean[]>([false]);
   const [loading, setLoading] = useState(false);
+  const [inputsOpen, setInputsOpen] = useState(true);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [error, setError] = useState<string | null>(null);
   // Set alongside `error` when the backend's 422 carries an upgrade_path
@@ -462,6 +463,7 @@ export default function UrlAuditPage() {
           setElapsedSec(Math.round(elapsedMs / 1000)),
       });
       setResult(res);
+      if (res.per_sku_reports?.length || res.brand_report) setInputsOpen(false);
       setActiveRunId(res.audit_run_id ?? null);
       setHistoryReloadKey((k) => k + 1); // surface the just-finished check in history
       // Hand off the audited URLs so the readiness audit can pre-select these
@@ -527,6 +529,7 @@ export default function UrlAuditPage() {
           ('brand_report' in detail && !!detail.brand_report));
       if (hasContent) {
         setResult(detail as UrlReadinessAuditResponse);
+        setInputsOpen(false);
         setActiveRunId(runId);
         setError(null);
         setTimeout(
@@ -904,6 +907,10 @@ export default function UrlAuditPage() {
           context for the audit they are about to run, not a result. */}
       <FunnelChecksPanel />
 
+      {result ? <button type="button" aria-expanded={inputsOpen} aria-controls="url-audit-inputs" onClick={() => setInputsOpen(open => !open)} className="w-full rounded-lg border border-[color:var(--merchant-line)] px-5 py-3 text-left text-sm font-medium">
+        {inputsOpen ? 'Hide audit inputs' : 'Edit inputs / run another audit'}
+      </button> : null}
+      <div id="url-audit-inputs" hidden={!!result && !inputsOpen}>
       <SurfaceCard title="Audit your products">
         <div className="space-y-4 px-5 py-4">
           {/* Brand site (optional, prefilled). */}
@@ -1134,6 +1141,8 @@ export default function UrlAuditPage() {
           </div>
         </div>
       </SurfaceCard>
+
+      </div>
 
       {error ? (
         <SurfaceCard>
