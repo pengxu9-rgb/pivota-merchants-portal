@@ -99,7 +99,7 @@ export function AiReadinessHomeHero() {
 
   if (state === 'empty' || !summary) {
     return (
-      <SurfaceCard strong eyebrow="AI readiness">
+      <SurfaceCard strong eyebrow="Diagnostic readiness">
         <div className="flex flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between lg:px-6">
           <div className="space-y-1.5">
             <h2 className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--merchant-ink)]">
@@ -128,7 +128,7 @@ export function AiReadinessHomeHero() {
   const firstAction = (summary.top_actions ?? []).find((a) => a && a.headline);
 
   return (
-    <SurfaceCard strong eyebrow="AI readiness">
+    <SurfaceCard strong eyebrow="Diagnostic readiness">
       <div className="space-y-3 px-5 py-5 lg:px-6">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-baseline gap-1">
@@ -149,9 +149,7 @@ export function AiReadinessHomeHero() {
           ) : null}
         </div>
         {summary.verdict?.headline ? (
-          <p className="max-w-3xl text-sm font-medium leading-relaxed">
-            {summary.verdict.headline}
-          </p>
+          <details className="max-w-3xl text-sm"><summary className="cursor-pointer">Historical interpretation — recommendations unverified</summary><p className="mt-2">{summary.verdict.headline}</p><p className="mt-2 text-xs">This diagnostic score does not establish consumer answer mentions, matching product citations or endorsements. See the report for evidence and limitations.</p></details>
         ) : null}
         {firstAction ? (
           <p className="max-w-3xl text-xs leading-relaxed">
