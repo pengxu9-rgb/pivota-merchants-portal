@@ -1,0 +1,218 @@
+{
+  "audience": "revenue_recovery",
+  "builder_version": "1.3.0",
+  "audit_run_id": "consumer-fixture",
+  "headline": {
+    "kind": "distribution",
+    "dimensions": [
+      {
+        "dimension": "citation",
+        "label": "Citation",
+        "band": "partial",
+        "band_label": "Needs work",
+        "measures": "brand_ai_visibility",
+        "median": 48,
+        "p25": 42,
+        "p75": 50,
+        "n": 3,
+        "above_count": 2
+      },
+      {
+        "dimension": "content_richness",
+        "label": "Content",
+        "band": "blocked",
+        "band_label": "Not yet visible",
+        "measures": "brand_ai_visibility",
+        "median": 23,
+        "p25": 20,
+        "p75": 23,
+        "n": 3,
+        "above_count": 2
+      },
+      {
+        "dimension": "identity",
+        "label": "Identity",
+        "band": "blocked",
+        "band_label": "Not yet visible",
+        "measures": "brand_ai_visibility",
+        "median": 16,
+        "p25": 16,
+        "p75": 16,
+        "n": 3,
+        "above_count": 3
+      }
+    ],
+    "dimensions_considered": 3,
+    "skus_audited": 3,
+    "prompt_split": {
+      "basis": "citation_by_intent axes classified by prompt_mix.branded_axes; cited and answered are prompt counts, not SKU counts",
+      "branded": {
+        "cited": 10,
+        "answered": 13,
+        "axes": [
+          "navigational",
+          "trust"
+        ],
+        "rate": 0.769
+      },
+      "unbranded": {
+        "cited": 19,
+        "answered": 25,
+        "axes": [
+          "category_head",
+          "constraint",
+          "problem_jtbd"
+        ],
+        "rate": 0.76
+      },
+      "unclassified_axes": [],
+      "branded_axes_without_citation_data": [],
+      "branded_prompt_count": 13,
+      "unbranded_prompt_count": 25,
+      "prompt_mix_version": 3
+    },
+    "note": "Per-dimension distribution with n. Not a composite score: averaging these describes no dimension."
+  },
+  "selection": {
+    "version": "2",
+    "mention_predicate": "complete_consumer_answer_brand_literal_v1",
+    "excluded_diagnostics": 0,
+    "answers": [
+      {
+        "observation_id": "e0247d6d18a8380f0688bce4a737f921c3a888667211f304f367eec07c342165",
+        "query": "best serum",
+        "provider": "chatgpt",
+        "brand_mentioned": true,
+        "unknown_reason": null,
+        "evidence": {
+          "text": "Consider Anua. <script>not executable</script>",
+          "sha256": "5e68cb10a707e313b8fe6ef48a541188d547be195ba16f4a9a2da7dccc3d4116",
+          "complete": true,
+          "finish_reason": "completed",
+          "status": "complete",
+          "provider": "chatgpt",
+          "model": "fixture-model",
+          "captured_at": "2026-09-09T02:31:04.432Z",
+          "prompt_sha256": "1c3e03f90e15fdde87df8a74bdbd4798028b00e0f6a3e5969d94c8ecba659545"
+        },
+        "cited_sources": [
+          {
+            "uri": "https://anua.com",
+            "title": "Anua"
+          }
+        ]
+      }
+    ],
+    "unit": "product_provider_query_response",
+    "tiers": {
+      "branded": {
+        "attempted": 0,
+        "provider_failed": 0,
+        "brand_mentioned": {
+          "positive": 0,
+          "n": 0,
+          "rate": null,
+          "ci95": null,
+          "unknown": 0
+        },
+        "source_visible": {
+          "positive": 0,
+          "n": 0,
+          "rate": null,
+          "ci95": null,
+          "unknown": 0
+        }
+      },
+      "unbranded": {
+        "attempted": 1,
+        "provider_failed": 0,
+        "brand_mentioned": {
+          "positive": 1,
+          "n": 1,
+          "rate": 1.0,
+          "ci95": [
+            0.20654931437723745,
+            1
+          ],
+          "unknown": 0
+        },
+        "source_visible": {
+          "positive": 1,
+          "n": 1,
+          "rate": 1.0,
+          "ci95": [
+            0.20654931437723745,
+            1
+          ],
+          "unknown": 0
+        }
+      },
+      "dupe": {
+        "attempted": 0,
+        "provider_failed": 0,
+        "brand_mentioned": {
+          "positive": 0,
+          "n": 0,
+          "rate": null,
+          "ci95": null,
+          "unknown": 0
+        },
+        "source_visible": {
+          "positive": 0,
+          "n": 0,
+          "rate": null,
+          "ci95": null,
+          "unknown": 0
+        }
+      }
+    },
+    "observations": 1,
+    "unclassified": 0,
+    "providers": {
+      "chatgpt": 1
+    },
+    "unavailable_reason": null,
+    "interval_method": "Wilson 95%, conditional on observed responses",
+    "limitation": "Describes this sample only. Repeated queries and providers may be correlated; these intervals do not establish improvement or population coverage. Unknown answers are excluded, not counted as misses."
+  },
+  "selection_gap": null,
+  "catalog_available": false,
+  "stages": [
+    {
+      "stage": "get_selected",
+      "findings": [
+        {
+          "type": "content_too_thin_to_cite",
+          "severity": "high",
+          "summary": "Content: Not yet visible \u2014 The listing is too thin for AI to describe this product."
+        },
+        {
+          "type": "product_identity_unresolvable",
+          "severity": "high",
+          "summary": "Identity: Not yet visible \u2014 AI can't reliably tell which product this is."
+        }
+      ],
+      "actions": [],
+      "status": "MEASURED"
+    },
+    {
+      "stage": "get_cited",
+      "findings": [
+        {
+          "type": "category_citation_weak",
+          "severity": "medium",
+          "summary": "Citation: Needs work \u2014 AI mentions this product occasionally, but rarely as the answer."
+        }
+      ],
+      "actions": [],
+      "status": "MEASURED"
+    },
+    {
+      "stage": "convert_sales",
+      "findings": [],
+      "actions": [],
+      "status": "UNVERIFIED",
+      "unverified_reason": "No production observation exists for this stage yet: the browser commerce lane has never run against a live store."
+    }
+  ]
+}

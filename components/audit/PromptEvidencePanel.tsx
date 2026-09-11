@@ -43,7 +43,7 @@ function VerdictChip({
   verdict: string;
   viaListing?: boolean;
 }) {
-  const label = verdict === 'win' ? (viaListing ? 'listed' : 'appears') : verdict === 'loss' ? 'absent' : '—';
+  const label = verdict === 'win' ? 'historical positive' : verdict === 'loss' ? 'historical negative' : 'unrecorded';
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${verdictTone(
@@ -51,7 +51,7 @@ function VerdictChip({
       )}`}
       title={
         verdict === 'win' && viaListing
-          ? 'Found via your own/retail listing (findability), not an independent recommendation'
+          ? 'Unverified diagnostic flag; not proof of a matching product or a complete answer mention'
           : undefined
       }
     >
@@ -97,7 +97,7 @@ function Row({ row }: { row: SkuPerPromptRow }) {
             {hosts ? (
               <span className="not-italic opacity-60">
                 {' '}
-                — citing {hosts.slice(0, 3).join(', ')}
+                — Separately retained hosts (not verified as sources for this excerpt): {hosts.join(', ')}
               </span>
             ) : null}
           </span>
@@ -107,7 +107,7 @@ function Row({ row }: { row: SkuPerPromptRow }) {
       {sub?.present && sub.substituted_by ? (
         <div className="mt-1 flex items-center gap-1 text-[11px] text-red-700">
           <ArrowLeftRight className="h-3 w-3 shrink-0" />
-          AI named <span className="font-semibold">{sub.substituted_by}</span> instead of you
+          Historical diagnostic candidate: <span className="font-semibold">{sub.substituted_by}</span> (identity and substitution unverified)
           {sub.engines?.length ? (
             <span className="opacity-60"> ({sub.engines.join(', ')})</span>
           ) : null}

@@ -17,6 +17,7 @@
  *   - Free tier keeps the 2-audits-per-24h rate limit alongside credits.
  */
 
+import { prepareProductRetest } from '@/lib/audit/retest';
 import { RevenueRecovery } from '@/components/audit/RevenueRecovery';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -202,6 +203,7 @@ export default function AiReadinessAuditPage() {
   const handoffAppliedRef = useRef(false);
 
   const [running, setRunning] = useState(false);
+  const [inputsOpen, setInputsOpen] = useState(true);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [auditResult, setAuditResult] = useState<LaunchResult | null>(null);
   // Run history: which past run is being viewed, an open-in-progress marker, and
@@ -238,6 +240,16 @@ export default function AiReadinessAuditPage() {
   // (hydration / acne / picky-eaters / etc.). Up to 10; trim + dedupe
   // client-side; >10 surfaces inline error.
   const [customPromptsText, setCustomPromptsText] = useState('');
+  const consumerCaptureEnabled = process.env.NEXT_PUBLIC_CONSUMER_ANSWER_ENABLED === 'true';
+  const [consumerQuestionsText, setConsumerQuestionsText] = useState('');
+  const [pendingRetest, setPendingRetest] = useState<{sku: string; queries: string[]} | null>(null);
+  const [retestProduct, setRetestProduct] = useState('');
+
+  const consumerQueries = useMemo(() => consumerCaptureEnabled
+    ? [...new Set(consumerQuestionsText.split('\n').map(q => q.trim()).filter(Boolean))] : [],
+    [consumerCaptureEnabled, consumerQuestionsText]);
+  const consumerError = consumerQueries.length > 8 || consumerQueries.some(q => q.length > 1000)
+    ? 'Use up to 8 questions, each no longer than 1,000 characters.' : null;
 
   // Preview state — spec §I. The preview endpoint runs no probes; it
   // returns projected cost + current balance + sufficient flag. We
@@ -473,6 +485,7 @@ export default function AiReadinessAuditPage() {
         added.push(key);
       }
       if (added.length) {
+        setInputsOpen(true);
         setCustomPromptsText(next.join('\n'));
         window.setTimeout(
           () =>
@@ -508,6 +521,7 @@ export default function AiReadinessAuditPage() {
       const detail = await apiClient.getAuditRunDetail(runId);
       if (detail?.stage === 'completed' && detail.report_jsonb?.per_sku_reports) {
         setAuditResult({ mode: 'per_sku', payload: detail.report_jsonb });
+        setInputsOpen(false);
         setActiveRunId(runId);
         // Viewing a saved run — flag it (+ its date) so the report shows the
         // "this is a past snapshot" banner. Empty string when no timestamp.
@@ -547,14 +561,16 @@ export default function AiReadinessAuditPage() {
 
   useEffect(() => {
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
-    if (selectedSkuKeys.length < 1 || customPromptsError) {
+    const seq = ++previewRequestSeqRef.current;
+    setPreviewData(null);
+    if (selectedSkuKeys.length < 1 || customPromptsError || consumerError) {
       setPreviewData(null);
       setPreviewError(null);
       setPreviewLoading(false);
       return;
     }
+    setPreviewLoading(true);
     previewTimerRef.current = setTimeout(() => {
-      const seq = ++previewRequestSeqRef.current;
       setPreviewLoading(true);
       setPreviewError(null);
       apiClient
@@ -563,6 +579,7 @@ export default function AiReadinessAuditPage() {
           scope: { sku_keys: selectedSkuKeys },
           prompts_per_sku: 40,
           custom_prompts: customPromptsParsed,
+          ...(consumerQueries.length ? { consumer_answer_queries: consumerQueries } : {}),
           providers: selectedProviders,
         })
         .then((res) => {
@@ -585,13 +602,13 @@ export default function AiReadinessAuditPage() {
     return () => {
       if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
     };
-  }, [selectedSkuKeys, customPromptsParsed, customPromptsError, selectedProviders]);
+  }, [selectedSkuKeys, customPromptsParsed, customPromptsError, selectedProviders, consumerQueries, consumerError]);
 
   const previewSufficient = previewData?.sufficient === true;
 
   const runAudit = async () => {
     if (selectedRefs.length < 1 || selectedRefs.length > MAX_SELECTED) return;
-    if (customPromptsError) return;
+    if (pendingRetest || customPromptsError || consumerError || previewLoading || previewError || !previewData) return;
     // Hard block when preview says insufficient. Per memory
     // feedback_no_execution_layer_fallbacks: never auto-shrink scope.
     if (previewData && !previewData.sufficient) return;
@@ -607,10 +624,12 @@ export default function AiReadinessAuditPage() {
         sku_keys: selectedSkuKeys,
         prompts_per_sku: 40,
         custom_prompts: customPromptsParsed,
+        ...(consumerQueries.length ? { consumer_answer_queries: consumerQueries } : {}),
         providers: selectedProviders,
         idempotency_key: idempotencyKey,
       });
       setAuditResult({ mode: 'per_sku', payload: res });
+      setInputsOpen(false);
       setActiveRunId(res.audit_run_id);
       setSavedRunViewedAt(null); // fresh run — this IS the current audit, no banner
       setHistoryReloadKey((k) => k + 1); // surface the just-finished run in history
@@ -655,6 +674,31 @@ export default function AiReadinessAuditPage() {
 
   return (
     <div className="space-y-6">
+      {pendingRetest ? <div role="dialog" aria-modal="true" aria-labelledby="retest-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
+        <div className="max-h-[85vh] w-full max-w-xl space-y-4 overflow-auto rounded-xl bg-white p-6 text-slate-900">
+          <h2 id="retest-title" className="text-lg font-semibold">Confirm the product to re-test</h2>
+          <p>Source product: <strong>{pendingRetest.sku}</strong></p>
+          <ul className="list-disc pl-5">{pendingRetest.queries.map(q => <li key={q}>{q}</li>)}</ul>
+          <label className="block">Matching product in your current catalog
+            <select aria-label="Matching product for re-test" className="mt-2 w-full rounded border p-2" value={retestProduct} onChange={e => setRetestProduct(e.target.value)}>
+              <option value="">Choose the matching product</option>
+              {usableProducts.map(p => <option key={productKey(p)} value={productKey(p)}>{pickTitle(p)} · {productKey(p)}</option>)}
+            </select>
+          </label>
+          <p className="text-sm">This replaces the current product selection and custom questions with this one-product re-test. Consumer questions are cleared. No audit starts and no credits are charged until you review the new quote and launch.</p>
+          <p className="text-sm">If the source product is missing or ambiguous, cancel and resolve its catalog identity first.</p>
+          <div className="flex gap-4"><button type="button" onClick={() => setPendingRetest(null)}>Cancel</button>
+            <button type="button" disabled={!usableProducts.some(p => productKey(p) === retestProduct)} className="rounded bg-indigo-700 px-3 py-2 text-white disabled:opacity-40" onClick={() => {
+              const next = prepareProductRetest(retestProduct, usableProducts.map(productKey), pendingRetest.queries);
+              if (!next) return;
+              setInputsOpen(true);
+              setPreviewData(null); setSelected(new Set(next.skuKeys));
+              setCustomPromptsText(next.customPrompts.join('\n')); setConsumerQuestionsText(next.consumerQuestions); setPendingRetest(null);
+              window.setTimeout(() => customPromptsRef.current?.scrollIntoView({behavior: 'smooth', block: 'center'}), 50);
+            }}>Use this product and get quote</button>
+          </div>
+        </div>
+      </div> : null}
       <PageHeader
         eyebrow="Step 2 · needs a synced catalog"
         title="AI readiness audit"
@@ -671,6 +715,10 @@ export default function AiReadinessAuditPage() {
         subjectType="merchant"
       />
 
+      {auditResult ? <button type="button" aria-expanded={inputsOpen} aria-controls="catalog-audit-inputs" onClick={() => setInputsOpen(open => !open)} className="w-full rounded-lg border border-[color:var(--merchant-line)] px-5 py-3 text-left text-sm font-medium">
+        {inputsOpen ? 'Hide audit inputs' : 'Edit inputs / run another audit'}
+      </button> : null}
+      <div id="catalog-audit-inputs" hidden={!!auditResult && !inputsOpen} className="space-y-6">
       <AuditReadinessBanner
         pickerUnavailable={auditCatalogUnavailable}
         readiness={readiness}
@@ -847,6 +895,15 @@ export default function AiReadinessAuditPage() {
       </SurfaceCard>
       </div>
 
+      {consumerCaptureEnabled ? <SurfaceCard title="Consumer answer questions" description="Optional: capture how AI answers shopper questions, alongside your existing audit. Extra calls are included in the quote below.">
+        <div className="px-5 py-4 space-y-2">
+          <label htmlFor="consumer-questions" className="block text-sm">One shopper question per line, up to 8. Include brand, category and alternative questions you want to measure.</label>
+          <textarea id="consumer-questions" value={consumerQuestionsText} onChange={e => setConsumerQuestionsText(e.target.value)} rows={3} maxLength={8100} className="w-full rounded border p-2" />
+          {consumerError ? <p role="alert" className="text-sm text-red-700">{consumerError}</p> : null}
+          {previewData?.consumer_capture ? <p className="text-sm">{previewData.consumer_capture.probe_count} additional AI calls · {previewData.consumer_capture.credits} credits, included in the total. Incomplete or failed answers remain unmeasured.{previewData.consumer_capture.execution_profiles?.includes('openai_web_required_v2') ? ' OpenAI will search the web before answering. These credits are a fixed quote, not a token-based final bill.' : ''}</p> : null}
+        </div>
+      </SurfaceCard> : null}
+
       <SurfaceCard
         title="3. Preview audit cost"
         description="Estimated credits + current balance. Coverage is credit-driven; we never auto-shrink scope to fit available credits — the merchant decides."
@@ -889,6 +946,10 @@ export default function AiReadinessAuditPage() {
             selected.size < 1 ||
             selected.size > MAX_SELECTED ||
             !!customPromptsError ||
+            !!pendingRetest ||
+            !!consumerError ||
+            previewLoading ||
+            !previewData ||
             !!previewError ||
             (previewData !== null && !previewSufficient) ||
             (readiness !== null && !readiness.ready)
@@ -906,6 +967,8 @@ export default function AiReadinessAuditPage() {
             </>
           )}
         </MerchantButton>
+      </div>
+
       </div>
 
       {insufficient ? (
@@ -938,6 +1001,10 @@ export default function AiReadinessAuditPage() {
           <PerSkuAuditReportRenderer
             report={auditResult.payload}
             onAddPrompts={addSuggestedPrompts}
+            onRetest={(sku, queries) => {
+              setRetestProduct('');
+              setPendingRetest({sku, queries});
+            }}
             customPromptCount={customPromptsParsed.length}
             savedRunViewedAt={savedRunViewedAt}
           />
@@ -2608,6 +2675,7 @@ function CitationByIntentPanel({ rollup }: { rollup: AgentCenterBrandRollup }) {
 export function PerSkuAuditReportRenderer({
   report,
   onAddPrompts,
+  onRetest,
   customPromptCount = 0,
   savedRunViewedAt = null,
 }: {
@@ -2615,6 +2683,7 @@ export function PerSkuAuditReportRenderer({
   // Step 3 (win-the-specific-long-tail): 1-click "add to my prompts" from the
   // suggested-niches panel. Omitted by the dev fixture preview (no prompts box).
   onAddPrompts?: (queries: string[]) => string[];
+  onRetest?: (sku: string, queries: string[]) => void;
   customPromptCount?: number;
   // Step 4: non-null when the merchant OPENED a past run (history / ?run_id=) — its
   // timestamp ('' if unknown). Drives the "this is a past snapshot" banner so a
@@ -2799,7 +2868,7 @@ export function PerSkuAuditReportRenderer({
         <ReportSectionBoundary section="readiness-retest" silent>
           <RetestPanel
             winPlan={report.win_plan}
-            onAddPrompts={onAddPrompts}
+            onRetest={onRetest}
             customPromptCount={customPromptCount}
           />
         </ReportSectionBoundary>
@@ -3123,128 +3192,26 @@ function SuggestedPromptsPanel({
 // (your URL isn't cited). After a fix, 1-click adds them to the prompts box and the
 // next run re-probes them — CustomPromptsPanel then shows which now cite you (before:
 // not cited, by definition of "losing"). No new probe machinery; honest re-probe.
-function RetestPanel({
-  winPlan,
-  onAddPrompts,
-  customPromptCount = 0,
-}: {
+function RetestPanel({winPlan, onRetest}: {
   winPlan?: AgentCenterPerSkuAuditResponse['win_plan'];
-  onAddPrompts?: (queries: string[]) => string[];
+  onRetest?: (sku: string, queries: string[]) => void;
   customPromptCount?: number;
 }) {
-  const [added, setAdded] = useState<Set<string>>(new Set());
-  const [hitCap, setHitCap] = useState(false);
-  const losing = useMemo(() => {
-    const seen = new Set<string>();
-    const out: Array<{ query: string; sku: string | null }> = [];
-    for (const sp of winPlan?.sku_plans ?? []) {
-      for (const lq of sp.losing_queries ?? []) {
-        const q = (lq.query || '').trim();
-        const key = q.toLowerCase();
-        if (!q || seen.has(key)) continue;
-        seen.add(key);
-        out.push({ query: q, sku: sp.sku_title ?? null });
-      }
-    }
-    return out;
-  }, [winPlan]);
-
-  if (!losing.length || !onAddPrompts) return null;
-  const slotsLeft = Math.max(0, MAX_CUSTOM_PROMPTS - customPromptCount);
-  const full = slotsLeft <= 0;
-
-  function addOne(q: string) {
-    const got = onAddPrompts?.([q]) ?? [];
-    if (got.length) {
-      setAdded((prev) => new Set(prev).add(q.toLowerCase()));
-      setHitCap(false);
-    } else {
-      setHitCap(true);
-    }
-  }
-  function addAll() {
-    const queue = losing
-      .map((l) => l.query)
-      .filter((q) => !added.has(q.toLowerCase()));
-    const got = onAddPrompts?.(queue) ?? [];
-    if (got.length) {
-      setAdded((prev) => {
-        const n = new Set(prev);
-        got.forEach((k) => n.add(k));
-        return n;
-      });
-    }
-    if (got.length < queue.length) setHitCap(true);
-  }
-
-  return (
-    <SurfaceCard
-      title="Did your fixes work? Re-test what you're losing"
-      description="The buyer-intent queries this audit found you losing — your URL isn't cited on these yet. Made a change (enriched a page, landed a citation)? Add them to your prompts and re-run; the next audit re-probes them and shows which now cite you."
-    >
-      <div className="space-y-3 px-5 py-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-            {losing.length} losing quer{losing.length === 1 ? 'y' : 'ies'} · {slotsLeft} / {MAX_CUSTOM_PROMPTS} prompt slots free
-          </span>
-          <button
-            type="button"
-            onClick={addAll}
-            disabled={full}
-            className="inline-flex items-center gap-1 rounded border border-emerald-300 bg-white px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
-          >
-            <Plus className="h-3 w-3" /> Re-test all that fit
-          </button>
-        </div>
-        <ul className="space-y-2">
-          {losing.map((l, i) => {
-            const isAdded = added.has(l.query.toLowerCase());
-            return (
-              <li
-                key={`retest-${i}`}
-                className="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50/60 px-3 py-2"
-              >
-                <span className="text-sm font-medium text-slate-800">{l.query}</span>
-                <span className="rounded-sm bg-rose-100 px-1.5 py-0.5 text-[10px] text-rose-700">
-                  not cited yet
-                </span>
-                {l.sku ? (
-                  <span className="text-[11px] text-slate-500">via {l.sku}</span>
-                ) : null}
-                <span className="ml-auto">
-                  {isAdded ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">
-                      <Check className="h-3 w-3" /> Added to re-test
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => addOne(l.query)}
-                      disabled={full}
-                      className="inline-flex items-center gap-1 rounded border border-emerald-300 bg-white px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
-                    >
-                      <Plus className="h-3 w-3" /> Re-test this
-                    </button>
-                  )}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-        {hitCap || full ? (
-          <p className="flex items-center gap-1.5 text-[11px] text-amber-700">
-            <AlertTriangle className="h-3.5 w-3.5" />
-            Prompt slots are full ({MAX_CUSTOM_PROMPTS} max). Remove one above to add more.
-          </p>
-        ) : null}
-      </div>
-    </SurfaceCard>
-  );
+  const plans = (winPlan?.sku_plans ?? []).filter(p => p.losing_queries?.length);
+  if (!plans.length || !onRetest) return null;
+  return <SurfaceCard title="Re-test a product's saved questions" description="Historical diagnostic gaps suggest questions to review. Confirm the matching product before getting a new quote. Each re-test uses one product, so questions cannot spill into other products.">
+    <div className="space-y-4 p-5">{plans.map(p => {
+      const queries = [...new Set(p.losing_queries.map(q => q.query.trim()).filter(Boolean))];
+      const label = p.sku_title || p.sku_key;
+      return <section key={p.sku_key} className="space-y-2 rounded border p-3">
+        <h4 className="font-medium">{label}</h4>
+        <button type="button" className="text-sm underline" onClick={() => onRetest(label, queries.slice(0, MAX_CUSTOM_PROMPTS))}>Review up to 10 questions for this product</button>
+        <ul>{queries.map(q => <li key={q} className="flex justify-between gap-3 py-2 text-sm"><span>{q}</span><button type="button" className="shrink-0 underline" onClick={() => onRetest(label, [q])}>Re-test this</button></li>)}</ul>
+      </section>;
+    })}</div>
+  </SurfaceCard>;
 }
 
-// C3 — for a reseller, the winning competitor products AI names that the merchant
-// does NOT carry: a stocking/sourcing signal (expand into the demand AI is already
-// routing). Reseller-gated; renders only when the catalog-overlap found gaps.
 function WinningProductsNotCarriedPanel({ rollup }: { rollup: AgentCenterBrandRollup }) {
   if (rollup.merchant_type !== 'reseller') return null;
   const items = rollup.winning_products_not_carried ?? [];

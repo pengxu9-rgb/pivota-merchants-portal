@@ -34,7 +34,7 @@ export function ShareOfVoiceBars({ summary }: { summary: ReportSummary }) {
   return (
     <div className="border-t border-[color:var(--merchant-line)] px-5 py-3">
       <div className="text-[11px] font-semibold uppercase tracking-wide opacity-70">
-        Share of voice — who wins the prompts we tested
+        Historical diagnostic counts — not consumer answer share
       </div>
       <div className="mt-2 space-y-1.5">
         {rows.map((r, i) => (
@@ -59,8 +59,8 @@ export function ShareOfVoiceBars({ summary }: { summary: ReportSummary }) {
         ))}
       </div>
       <p className="merchant-text-muted mt-1.5 text-[11px]">
-        Presence in the {sov.prompts_probed} buyer-intent prompts this audit
-        probed — not market share.
+        Unverified diagnostic flags across {sov.prompts_probed} prompts this audit
+        probed. Product identity, complete answers and recommendation rates are not verified by these counts.
       </p>
     </div>
   );

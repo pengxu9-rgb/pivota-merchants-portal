@@ -131,8 +131,8 @@ export function EngineDiscoverySplitChart({
 
   return (
     <SurfaceCard
-      title="Where each engine finds your products"
-      description="The share of non-branded “best…” searches where each AI engine surfaced each product. Gemini and ChatGPT search different indexes, so wins can diverge — work each engine’s sources separately."
+      title="Historical engine diagnostics"
+      description="Saved positive flags per engine, not verified complete-answer mentions or recommendations. Product identity and source alignment may be unresolved. Use these as investigation leads."
     >
       <div className="px-5 py-4">
         {/* Legend — once, above. Swatch + engine name; the only place color is

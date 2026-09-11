@@ -97,6 +97,7 @@ export function StrategicBriefPanel({ report }: { report: AgentCenterPerSkuRepor
 
   return (
     <div className="mt-3 rounded-md border border-[color:var(--merchant-line)] bg-white/40 px-3 py-3">
+      <p className="mb-2 text-xs text-amber-800">Historical action suggestions — verify product identity, source evidence and claims before acting. These saved interpretations do not establish current recommendations or ranking causes.</p>
       {nba.headline ? (
         <div className="text-sm font-semibold">{nba.headline}</div>
       ) : null}
@@ -112,19 +113,19 @@ export function StrategicBriefPanel({ report }: { report: AgentCenterPerSkuRepor
       ) : null}
 
       {whyLose ? (
-        <Section title="Why you're losing this" icon={<AlertTriangle className="h-3.5 w-3.5" />}>
+        <Section title="Historical explanation — unverified" icon={<AlertTriangle className="h-3.5 w-3.5" />}>
           {whyLose}
         </Section>
       ) : null}
 
       {decision ? (
-        <Section title="The call" icon={<ArrowRight className="h-3.5 w-3.5" />}>
+        <Section title="Suggested decision" icon={<ArrowRight className="h-3.5 w-3.5" />}>
           {decision}
         </Section>
       ) : null}
 
       {steps.length > 0 ? (
-        <Section title="Do this now" icon={<ListChecks className="h-3.5 w-3.5" />}>
+        <Section title="Next steps to review" icon={<ListChecks className="h-3.5 w-3.5" />}>
           <ol className="ml-4 list-decimal space-y-1">
             {steps.slice(0, 5).map((s, i) => (
               <li key={i}>{briefLine(s)}</li>
@@ -144,7 +145,7 @@ export function StrategicBriefPanel({ report }: { report: AgentCenterPerSkuRepor
       ) : null}
 
       {subPlay ? (
-        <Section title="Win back substituted buyers" icon={<ArrowLeftRight className="h-3.5 w-3.5" />}>
+        <Section title="Suggested substitution strategy — unverified" icon={<ArrowLeftRight className="h-3.5 w-3.5" />}>
           {subPlay}
         </Section>
       ) : null}

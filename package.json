@@ -15,7 +15,7 @@
     "verify:closed-channels": "node scripts/verify-closed-channels-render.mjs",
     "verify:outreach": "node scripts/verify-outreach-outcomes-render.mjs",
     "verify:summary": "node scripts/verify-report-summary-render.mjs",
-    "verify:recovery": "node scripts/verify-recovery-render.cjs"
+    "verify:recovery": "node scripts/verify-recovery-render.cjs && node scripts/verify-browser-fixes.cjs"
   },
   "dependencies": {
     "@adyen/adyen-web": "^6.32.0",

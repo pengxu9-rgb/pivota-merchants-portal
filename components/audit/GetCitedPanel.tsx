@@ -318,8 +318,8 @@ function buildRedditPaths(tracked: TrackedSubreddit[], category: string): Starte
       // to own; a category thread is one to join. Old payloads (no
       // about_merchant) keep the neutral copy.
       const how = thread?.about_merchant === true
-        ? `This thread is about your product and AI already cites it${obj.length ? ` — address: ${obj.join(', ')}` : ''}. Join it with a genuine, disclosed reply.`
-        : `AI already cites this discussion${obj.length ? ` — address: ${obj.join(', ')}` : ''}. Add a genuine, disclosed reply.`;
+        ? `Saved thread associated with your product — verify the product match${obj.length ? ` — address: ${obj.join(', ')}` : ''}. Join it with a genuine, disclosed reply.`
+        : `Saved discussion lead — citation status unverified${obj.length ? ` — address: ${obj.join(', ')}` : ''}. Add a genuine, disclosed reply.`;
       out.push({
         kind: 'community',
         title,
@@ -331,7 +331,7 @@ function buildRedditPaths(tracked: TrackedSubreddit[], category: string): Starte
         kind: 'community',
         title: `r/${name}`,
         url: `https://www.reddit.com/r/${name}/`,
-        how: `A subreddit AI already cites for your category${obj.length ? ` — people raise: ${obj.join(', ')}` : ''}. Join the conversation, disclosed.`,
+        how: `A saved subreddit lead for your category — verify relevance${obj.length ? ` — people raise: ${obj.join(', ')}` : ''}. Join the conversation, disclosed.`,
       });
     }
   }
@@ -442,10 +442,10 @@ function ChannelRow({
           </a>
         ) : null}
       </div>
-      {how ? <p className="mt-1 text-[11px] leading-snug opacity-70">{how}</p> : null}
+      {how ? <p className="mt-1 text-[11px] leading-snug opacity-70"><span className="font-medium">Suggested action — verify source and claims: </span>{how}</p> : null}
       {losingQueries && losingQueries.length > 0 ? (
         <p className="mt-1 text-[11px] leading-snug">
-          <span className="opacity-60">Queries you lost where this source grounded the answer: </span>
+          <span className="opacity-60">Saved diagnostic queries associated with this source (answer linkage unverified): </span>
           {losingQueries.map((q, qi) => (
             <span key={qi}>
               {qi > 0 ? ' · ' : ''}
@@ -478,7 +478,7 @@ function ChannelRow({
               <div className="mt-1 rounded bg-white/70 px-2.5 py-2">
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--merchant-accent,#6366f1)]">
-                    <Sparkles className="h-3 w-3" /> Pivota outreach draft
+                    <Sparkles className="h-3 w-3" /> Pivota outreach draft — verify facts before sending
                   </span>
                   <button type="button" onClick={copy} className="inline-flex items-center gap-1 text-[10px] opacity-60 hover:opacity-100">
                     <Copy className="h-3 w-3" /> {st.copied ? 'Copied' : 'Copy'}
@@ -538,8 +538,8 @@ function PitchTargetsSection({ targets, runId, category }: {
     <div className="mt-3 rounded-md border border-[color:var(--merchant-line)] bg-white/30 p-3">
       <div className="text-xs font-bold">Your category&apos;s pitch targets</div>
       <p className="mt-0.5 text-[11px] leading-snug opacity-60">
-        The review sites AI grounds this category&apos;s recommendations in. Earning a
-        listing or review here moves every engine at once.
+        Potential review sites from the saved diagnostic report. Verify their relevance and
+        submission requirements before pitching; a listing does not establish an AI recommendation.
       </p>
       <div className="mt-2 space-y-1.5">
         {targets.map((t, i) => {
@@ -628,7 +628,7 @@ function EngineGroup({
   if (measured === false) {
     return (
       <div className="rounded-md border border-dashed border-[color:var(--merchant-line)] bg-white/20 p-3">
-        <div className="text-xs font-bold opacity-70">Win {label}</div>
+        <div className="text-xs font-bold opacity-70">Outreach leads · {label}</div>
         <p className="mt-1 text-[11px] leading-snug opacity-60">
           Not measured on this run — this engine wasn&apos;t probed, so there&apos;s no
           per-engine plan to show. Re-audit with a multi-engine coverage
@@ -642,8 +642,8 @@ function EngineGroup({
 
   return (
     <div className="rounded-md border border-[color:var(--merchant-line)] bg-white/30 p-3">
-      <div className="text-xs font-bold">Win {label}</div>
-      {howItCites ? <p className="mt-0.5 text-[11px] leading-snug opacity-60">{howItCites}</p> : null}
+      <div className="text-xs font-bold">Outreach leads · {label}</div>
+      {howItCites ? <details className="mt-1 text-[11px]"><summary className="cursor-pointer">Historical engine interpretation — unverified</summary><p>{howItCites}</p></details> : null}
       <div className="mt-2 space-y-1.5">
         {cited.map((m, i) => {
           const k = kindOf(m);
@@ -819,14 +819,14 @@ export function GetCitedPanel({
         kind: 'community',
         title: `Reddit — the threads asking: “${shortQ(q)}”`,
         url: `https://www.reddit.com/search/?q=${enc(q)}`,
-        how: 'A question you measurably lose on ChatGPT — add a genuine, disclosed answer where shoppers ask it.',
+        how: 'A saved diagnostic question to investigate. Check the actual discussion before offering a helpful, disclosed answer.',
         query: q,
       },
       {
         kind: 'community',
         title: `Quora — answer: “${shortQ(q)}”`,
         url: `https://www.quora.com/search?q=${enc(q)}`,
-        how: 'Write the genuinely helpful answer — ChatGPT grounds on threads like this.',
+        how: 'Check whether shoppers ask this question, then contribute a useful answer with your affiliation disclosed.',
         query: q,
       },
     ]),
@@ -840,7 +840,7 @@ export function GetCitedPanel({
       ? []
       : [
           { kind: 'kol' as Kind, title: 'YouTube creators — get reviewed', url: `https://www.youtube.com/results?search_query=${enc(catQ + ' review')}`, how: 'Find creators reviewing this category and offer a gifting/review collab.' },
-          { kind: 'kol' as Kind, title: 'TikTok creators', url: `https://www.tiktok.com/search?q=${enc(catQ)}`, how: 'Short-form reviews build the community signal ChatGPT picks up.' },
+          { kind: 'kol' as Kind, title: 'TikTok creators', url: `https://www.tiktok.com/search?q=${enc(catQ)}`, how: 'Find relevant reviewers and check their audience and disclosure requirements.' },
         ]),
   ];
   const geminiStarters: Starter[] = [
@@ -850,7 +850,7 @@ export function GetCitedPanel({
       // title must compose ("Get cited on Pages ranking for …").
       title: `Pages ranking for “${shortQ(q)}”`,
       url: `https://www.google.com/search?q=${enc(q)}`,
-      how: 'The pages Google ranks for this exact ask are where Gemini grounds it — pitch them to include you.',
+      how: 'Inspect search results for this question and verify relevant publishers before pitching.',
       query: q,
     })),
     // Cold-start fallback ONLY (same rule as the ChatGPT generic community
@@ -865,7 +865,7 @@ export function GetCitedPanel({
     ...(hasMeasuredCreators
       ? []
       : [
-          { kind: 'kol' as Kind, title: 'Instagram creators', url: `https://www.google.com/search?q=${enc('instagram ' + catQ + ' creator')}`, how: 'Creator posts that get indexed feed Google-trusted signals.' },
+          { kind: 'kol' as Kind, title: 'Instagram creators', url: `https://www.google.com/search?q=${enc('instagram ' + catQ + ' creator')}`, how: 'Review creators covering this category and assess whether a collaboration fits.' },
         ]),
   ];
 
@@ -894,15 +894,15 @@ export function GetCitedPanel({
         <div className="text-sm font-semibold">Get cited on independent sources</div>
       </div>
       <p className="mt-1 text-xs leading-snug opacity-70">
-        AI recommends independent sources — reviews, media, creators, communities — not your own
-        product page. Gemini and ChatGPT trust <em>different</em> ones, so earn evidence on each.
-        The more places you show up, the more AI cites you.
+        Review these outreach leads alongside your own product page. Historical source associations
+        do not verify product identity, endorsements or current citations. Check each source and
+        claim before contacting a publisher; placement does not guarantee AI recommendations.
       </p>
       <PitchTargetsSection targets={targets} runId={runId} category={category} />
       <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
         <EngineGroup
           engineKey="gemini"
-          label="Gemini (Google index)"
+          label="Gemini"
           howItCites={ep.gemini?.how_it_cites}
           moves={list}
           enginesByHost={enginesByHost}
@@ -915,7 +915,7 @@ export function GetCitedPanel({
         />
         <EngineGroup
           engineKey="chatgpt"
-          label="ChatGPT (Bing + community)"
+          label="ChatGPT"
           howItCites={ep.chatgpt?.how_it_cites}
           moves={list}
           enginesByHost={enginesByHost}
@@ -930,11 +930,10 @@ export function GetCitedPanel({
 
       {unattributed.length > 0 ? (
         <div className="mt-3 rounded-md border border-[color:var(--merchant-line)] bg-white/30 p-3">
-          <div className="text-xs font-bold">Also cited for your category</div>
+          <div className="text-xs font-bold">Other saved source leads</div>
           <p className="mt-0.5 text-[11px] leading-snug opacity-60">
-            AI grounded answers in these sources too, but this run didn&apos;t
-            attribute them to a specific engine — work them alongside the
-            per-engine plans above.
+            These saved hosts have no attribution to a displayed engine. Verify their relevance
+            and original evidence before adding them to your outreach plan.
           </p>
           <div className="mt-2 space-y-1.5">
             {unattributed.map((m, i) => {

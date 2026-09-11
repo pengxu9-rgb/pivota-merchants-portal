@@ -26,6 +26,20 @@ const render = data => renderToStaticMarkup(React.createElement(loaded.exports.R
     { ...fixtures[0], selection: { tiers: { branded: {} } } }]) {
     assert(render(legacy).includes('Your existing report and actions remain below'));
   }
+  const consumer = render(JSON.parse(fs.readFileSync('scripts/fixtures/recovery/consumer-answer.json')));
+  assert(consumer.includes('Consumer answer evidence') && consumer.includes('Brand mentioned'));
+  assert(consumer.includes('Consider Anua.') && consumer.includes('&lt;script&gt;'));
+  assert(!consumer.includes('<script>'));
+  const ungrounded = JSON.parse(fs.readFileSync('scripts/fixtures/recovery/consumer-answer.json'));
+  ungrounded.selection.answers[0].brand_mentioned = null;
+  ungrounded.selection.answers[0].unknown_reason = 'answer_sources_missing';
+  assert(render(ungrounded).includes('This response has no verifiable citations'));
+  ungrounded.selection.answers[0].prompt_contract='consumer_query_openai_web_required_v2';
+  assert(render(ungrounded).includes('Web search required'));
+  ungrounded.selection.mixed_execution_providers=['chatgpt'];
+  assert(render(ungrounded).includes('these conditions cannot be combined'));
+
+
   const postgres = JSON.parse(fs.readFileSync('scripts/fixtures/recovery/postgres-url.json'));
   const postgresHtml = render(postgres);
   assert(postgresHtml.includes('0/1') && postgresHtml.includes('1 failed, excluded'));

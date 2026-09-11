@@ -20,22 +20,22 @@ const CUSTOM_LANE_META: Record<
   open: {
     label: 'Open lane',
     chip: 'border-green-300 bg-green-50 text-green-800',
-    blurb: "You're cited with little competition — defend and scale this.",
+    blurb: "Historical positive diagnostic with limited competitor flags; verify the product match.",
   },
   contested: {
     label: 'Contested',
     chip: 'border-amber-300 bg-amber-50 text-amber-800',
-    blurb: "You're cited, but the lane is crowded with competitors.",
+    blurb: "Historical positive diagnostic with competitor flags; verify the product match.",
   },
   absent: {
-    label: 'Not cited',
+    label: 'Historical negative',
     chip: 'border-red-300 bg-red-50 text-red-800',
-    blurb: 'The AI answered with sources but never named you — competitors own this lane.',
+    blurb: 'Historical negative diagnostic. A complete answer and matching product are not established.',
   },
   no_signal: {
     label: 'No signal',
     chip: 'border-slate-300 bg-slate-50 text-slate-600',
-    blurb: "This prompt didn't return grounded results — thin or no demand for it.",
+    blurb: "No retained diagnostic signal. This does not establish shopper demand.",
   },
 };
 
@@ -53,12 +53,11 @@ export function CustomPromptsPanel({
           Your prompts ({prompts.length})
         </div>
         <div className="text-xs opacity-70">
-          cited in <strong>{citedCount}</strong> of {prompts.length}
+          historical positive flags in <strong>{citedCount}</strong> of {prompts.length}
         </div>
       </div>
       <p className="mt-1 text-xs opacity-60">
-        The prompts you added — for each, whether AI cited you, the sources it
-        grounded in, and which competitors it named.
+        Saved diagnostics for your prompts. Complete answers, source alignment and product identity are unverified; these are not consumer mention rates.
       </p>
       <div className="mt-3 space-y-2.5">
         {prompts.map((p, i) => {
