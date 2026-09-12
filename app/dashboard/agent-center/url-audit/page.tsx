@@ -1164,7 +1164,7 @@ export default function UrlAuditPage() {
               {loading ? (
                 <span className="inline-flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  {elapsedSec > 0 ? `Auditing… (${elapsedSec}s)` : 'Auditing…'}
+                  {consumerQueries.length && !currentQuote ? 'Getting quote…' : elapsedSec > 0 ? `Auditing… (${elapsedSec}s)` : 'Auditing…'}
                 </span>
               ) : (
                 consumerQueries.length ? (currentQuote ? `Start audit · ${currentQuote.credits} credits` : 'Get audit quote') : 'Audit my products'

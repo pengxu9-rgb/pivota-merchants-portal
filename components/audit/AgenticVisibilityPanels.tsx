@@ -38,7 +38,7 @@ export function AgenticVisibilityPanels({
   return (
     <>
       <details className="rounded border border-amber-200 p-3"><summary className="cursor-pointer font-medium">Historical product diagnostics — identity and recommendation unverified</summary><p className="text-sm">Saved flags and excerpts are diagnostic leads. They do not establish complete answer mentions or endorsements, and may refer to similarly named products.</p><ProductCompetitivenessPanel report={report} /></details>
-      <div className="space-y-2"><p className="text-xs text-amber-800">Historical engine playbook: suggested actions, not verified ranking factors or recommendation outcomes. Verify the named sources and product match before acting.</p><EnginePlaybookPanel report={report} /></div>
+      <details className="rounded border p-3"><summary className="cursor-pointer font-medium">Review saved engine suggestions</summary><EnginePlaybookPanel report={report} /></details>
       <CompetitorIntelPanel report={report} />
       <PromptEvidencePanel report={report} />
       <ChannelAppearancePanel report={report} />

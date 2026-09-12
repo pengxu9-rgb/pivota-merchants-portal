@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * "What the category winner does right" — a grounded read of what AI says the
+ * "Competitor details to verify" — a grounded read of what AI says the
  * winning competitor is known for. The verbatim `known_for` is the gold (it's
  * exactly what the AI told a shopper), backed by the specific attributes AI
  * surfaced. Honest framing: this is grounded PRESENCE, not a claim the merchant
@@ -22,8 +22,9 @@ export function CompetitorIntelPanel({ report }: { report: AgentCenterPerSkuRepo
     <div className="mt-3 rounded-md border border-[color:var(--merchant-line)] bg-white/40 px-3 py-3">
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide opacity-70">
         <Trophy className="h-3.5 w-3.5" />
-        What the category winner does right
+        Competitor details to verify
       </div>
+      <p className="mt-1 text-xs opacity-60">Check these details against the named product and sources before using them in your page copy.</p>
       {ci.competitor ? (
         <div className="mt-1 text-sm font-semibold">{ci.competitor}</div>
       ) : null}
@@ -35,7 +36,7 @@ export function CompetitorIntelPanel({ report }: { report: AgentCenterPerSkuRepo
       {attributes.length > 0 ? (
         <div className="mt-2">
           <div className="text-[10px] font-semibold uppercase tracking-wide opacity-50">
-            What AI highlights about them
+            Attributes in the saved analysis
           </div>
           <div className="mt-1 flex flex-wrap gap-1.5">
             {attributes.map((a) => (
