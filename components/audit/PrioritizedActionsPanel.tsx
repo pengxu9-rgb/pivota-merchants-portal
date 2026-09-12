@@ -33,6 +33,7 @@ interface ActionState {
   } | null;
   error?: string | null;
   copied?: boolean;
+  charged?: number;
 }
 
 export function reviewActionHeadline(headline?: string | null) {
@@ -61,7 +62,7 @@ function ActionButton({
   const label = 'Draft on-page version';
 
   async function run() {
-    if (st.loading || st.done) return;
+    if (st.loading || (st.done && st.draft)) return;
     setSt({ loading: true });
     try {
       const res = await apiClient.startAuditAction({
@@ -76,6 +77,7 @@ function ActionButton({
         done: true,
         draft: res?.draft ?? null,
         placement: res?.placement ?? null,
+        charged: res?.credits_charged,
       });
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status;
@@ -120,6 +122,7 @@ function ActionButton({
               </button>
             </div>
             <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed">{st.draft}</p>
+            {st.charged !== undefined ? <p className="mt-1 text-[11px] opacity-60">{st.charged.toLocaleString(undefined, { maximumFractionDigits: 8 })} credits used</p> : null}
             <p className="mt-1.5 border-t border-[color:var(--merchant-line)] pt-1.5 text-[10px] leading-snug opacity-70">
               {st.placement?.url && /^https?:\/\//.test(st.placement.url) ? (
                 <>

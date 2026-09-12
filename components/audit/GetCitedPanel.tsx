@@ -394,12 +394,12 @@ function ChannelRow({
    *  pitch target). Absent → no line, never inferred. */
   evidenceGroups?: { label: string; urls: string[] }[] | null;
 }) {
-  const [st, setSt] = useState<{ loading?: boolean; done?: boolean; draft?: string | null; error?: string | null; copied?: boolean }>({});
+  const [st, setSt] = useState<{ loading?: boolean; done?: boolean; draft?: string | null; error?: string | null; copied?: boolean; charged?: number }>({});
   const Meta = KIND_META[kind];
   const rm = realism ? REALISM_META[realism] : undefined;
 
   async function draft() {
-    if (!runId || st.loading || st.done) return;
+    if (!runId || st.loading || (st.done && st.draft)) return;
     setSt({ loading: true });
     try {
       const res = await apiClient.startAuditAction({
@@ -410,7 +410,7 @@ function ChannelRow({
         channelType,
         query: query ?? undefined,
       });
-      setSt({ done: true, draft: res?.draft ?? null });
+      setSt({ done: true, draft: res?.draft ?? null, charged: res?.credits_charged });
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status;
       setSt({ error: status === 402 ? "You're out of credits — top up to draft this." : "Couldn't draft — try again." });
@@ -486,6 +486,7 @@ function ChannelRow({
                   </button>
                 </div>
                 <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed">{st.draft}</p>
+                {st.charged !== undefined ? <p className="mt-1 text-[11px] opacity-60">{st.charged.toLocaleString(undefined, { maximumFractionDigits: 8 })} credits used</p> : null}
                 {pitchEmail ? (
                   <a
                     href={`mailto:${pitchEmail}?subject=${encodeURIComponent(
