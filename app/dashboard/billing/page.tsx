@@ -298,14 +298,14 @@ export default function BillingPage() {
         {availableCredits > 0 && (
           <p className="mt-1 text-xs text-[color:var(--merchant-muted)]">
             {t('dashboard.billing.usage.availableHint', {
-              credits: availableCredits.toLocaleString(),
+              credits: availableCredits.toLocaleString(undefined, { maximumFractionDigits: 8 }),
             })}
           </p>
         )}
       </div>
       <div className="whitespace-nowrap text-lg font-semibold text-[color:var(--merchant-ink)]">
         {t('dashboard.billing.usage.topUpBalance', {
-          credits: purchasedCredits.toLocaleString(),
+          credits: purchasedCredits.toLocaleString(undefined, { maximumFractionDigits: 8 }),
         })}
       </div>
     </div>
@@ -375,8 +375,8 @@ export default function BillingPage() {
             <div className="flex items-baseline justify-between text-sm">
               <span className="text-[color:var(--merchant-muted-strong)]">
                 {t('dashboard.billing.usage.creditsUsed', {
-                  used: consumed.toLocaleString(),
-                  allowance: allowance.toLocaleString(),
+                  used: consumed.toLocaleString(undefined, { maximumFractionDigits: 8 }),
+                  allowance: allowance.toLocaleString(undefined, { maximumFractionDigits: 8 }),
                 })}
               </span>
               <span className="font-semibold text-[color:var(--merchant-ink)]">{usagePct}%</span>
@@ -397,7 +397,7 @@ export default function BillingPage() {
                 <AlertTriangle className="mt-0.5 h-5 w-5 text-[color:var(--merchant-warning)]" />
                 <p className="text-sm text-[color:var(--merchant-muted-strong)]">
                   {t('dashboard.billing.usage.overageBanner', {
-                    count: (period?.overage_count ?? 0).toLocaleString(),
+                    count: (period?.overage_count ?? 0).toLocaleString(undefined, { maximumFractionDigits: 8 }),
                     amount: formatUsdCents(period?.overage_total_usd_cents ?? 0),
                   })}
                 </p>
@@ -461,7 +461,7 @@ export default function BillingPage() {
                     </div>
                     <div className="text-sm text-[color:var(--merchant-muted-strong)]">
                       {t('dashboard.billing.upgrade.creditsPerMonth', {
-                        credits: plan.monthly_credit_allowance.toLocaleString(),
+                        credits: plan.monthly_credit_allowance.toLocaleString(undefined, { maximumFractionDigits: 8 }),
                       })}
                     </div>
                   </div>
@@ -525,7 +525,7 @@ export default function BillingPage() {
                   </td>
                   <td className="text-[color:var(--merchant-muted-strong)]">
                     {statement.overage_credits > 0
-                      ? `${statement.overage_credits.toLocaleString()} cr · ${formatUsdCents(
+                      ? `${statement.overage_credits.toLocaleString(undefined, { maximumFractionDigits: 8 })} cr · ${formatUsdCents(
                           statement.overage_revenue_usd_cents,
                         )}`
                       : '—'}

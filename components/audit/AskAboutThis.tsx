@@ -12,6 +12,7 @@
  * Renders nothing when there's no grounded discovery signal to talk about.
  */
 
+import { MeasuredGenerationPrice } from './MeasuredGenerationPrice';
 import { useState } from 'react';
 import { MessageCircleQuestion, Send, Loader2, Sparkles } from 'lucide-react';
 import type { AgentCenterPerSkuReport } from '@/lib/types/ai-readiness';
@@ -73,6 +74,7 @@ function FreeformAsk({
 }) {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState<string | null>(null);
+  const [charged, setCharged] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,9 +84,11 @@ function FreeformAsk({
     setLoading(true);
     setError(null);
     setAnswer(null);
+    setCharged(null);
     try {
       const res = await apiClient.askAuditQuestion({ runId, question: q, productKey });
       setAnswer(res?.answer || 'No answer came back — please try again.');
+      setCharged(res?.credits_charged ?? 0);
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status;
       setError(
@@ -124,6 +128,7 @@ function FreeformAsk({
           Ask
         </button>
       </div>
+      <MeasuredGenerationPrice />
       {error ? <p className="mt-2 text-xs text-red-700">{error}</p> : null}
       {answer ? (
         <div className="mt-2 rounded bg-white/70 px-3 py-2">
@@ -132,6 +137,7 @@ function FreeformAsk({
             AI summary · grounded in your audit
           </div>
           <p className="text-xs leading-relaxed">{answer}</p>
+          {charged !== null ? <p className="mt-1 text-[11px] opacity-60">{charged.toLocaleString(undefined, { maximumFractionDigits: 8 })} credits used</p> : null}
         </div>
       ) : null}
     </div>

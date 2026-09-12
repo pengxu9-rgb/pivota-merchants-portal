@@ -2281,7 +2281,7 @@ class ApiClient {
     runId: string;
     question: string;
     productKey?: string | null;
-  }): Promise<{ answer: string; grounded?: boolean }> {
+  }): Promise<{ answer: string; grounded?: boolean; credits_charged?: number; replay?: boolean }> {
     const res = await this.client.post(
       '/api/merchant-center/audit/ask',
       {

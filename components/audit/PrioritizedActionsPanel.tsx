@@ -9,6 +9,7 @@
  * distributing stays theirs (or a connected store/service) for now.
  */
 
+import { MeasuredGenerationPrice } from './MeasuredGenerationPrice';
 import { useState, type ReactNode } from 'react';
 import { ListChecks, ArrowRight, Loader2, Check, Sparkles, Copy } from 'lucide-react';
 import type {
@@ -32,6 +33,13 @@ interface ActionState {
   } | null;
   error?: string | null;
   copied?: boolean;
+  charged?: number;
+}
+
+export function reviewActionHeadline(headline?: string | null) {
+  return (headline || 'Review this product page')
+    .replace(/^Give AI enough on (.+)'s page to pick you over .+\.?$/, 'Review product facts on $1’s page')
+    .replace(/^Become the page AI cites$/i, 'Strengthen product facts and source evidence');
 }
 
 export function reviewActionHeadline(headline?: string | null) {
@@ -60,7 +68,7 @@ function ActionButton({
   const label = 'Draft on-page version';
 
   async function run() {
-    if (st.loading || st.done) return;
+    if (st.loading || (st.done && st.draft)) return;
     setSt({ loading: true });
     try {
       const res = await apiClient.startAuditAction({
@@ -75,6 +83,7 @@ function ActionButton({
         done: true,
         draft: res?.draft ?? null,
         placement: res?.placement ?? null,
+        charged: res?.credits_charged,
       });
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status;
@@ -119,6 +128,7 @@ function ActionButton({
               </button>
             </div>
             <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed">{st.draft}</p>
+            {st.charged !== undefined ? <p className="mt-1 text-[11px] opacity-60">{st.charged.toLocaleString(undefined, { maximumFractionDigits: 8 })} credits used</p> : null}
             <p className="mt-1.5 border-t border-[color:var(--merchant-line)] pt-1.5 text-[10px] leading-snug opacity-70">
               {st.placement?.url && /^https?:\/\//.test(st.placement.url) ? (
                 <>
@@ -154,10 +164,11 @@ function ActionButton({
             ) : null}
           </div>
         ) : (
-          <p className="mt-1 text-[11px] leading-snug opacity-55">
-            Tracked in your plan — open it to work on this. (Top up credits to have Pivota
-            draft it for you.)
-          </p>
+          <div className="mt-1 text-[11px] leading-snug opacity-55">
+            Tracked in your plan. No draft yet.{' '}
+            <button type="button" onClick={run} disabled={st.loading} className="underline">{st.loading ? 'Drafting…' : 'Retry draft'}</button>
+            <MeasuredGenerationPrice />
+          </div>
         )}
       </div>
     );
@@ -174,6 +185,7 @@ function ActionButton({
         {st.loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
         {st.loading ? 'Adding…' : label}
       </button>
+      <MeasuredGenerationPrice />
       {st.error ? <p className="mt-1 text-[11px] text-red-700">{st.error}</p> : null}
     </div>
   );
