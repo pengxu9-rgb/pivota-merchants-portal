@@ -1,5 +1,7 @@
 'use client';
 
+import { comparableMomentumPrior } from '@/lib/audit/momentum-baseline';
+
 /**
  * Momentum — baseline → current (dumbbell rows).
  *
@@ -136,7 +138,7 @@ export function BrandMomentumChart({
       <p className="pt-1 text-[11px] text-[color:var(--merchant-muted)]">
         {anyComparable
           ? 'Each row shows your previous run’s median → this run’s median for that dimension, on a 0–100 scale. The band label reflects where you stand now.'
-          : 'First measurement — no prior run to compare against yet. Re-audit after you act on the plan and the movement shows up here.'}
+          : 'No comparable prior measurement. Re-audit the same products and questions to measure change.'}
       </p>
     </div>
   );
@@ -281,12 +283,13 @@ export function BrandMomentumPanel({
   fetchPriorDimensions,
   embedded = false,
   prefetchedPrior,
+  comparablePriorRunId,
 }: {
   rollup: AgentCenterBrandRollup;
   currentRunId?: string | null;
   /** Scopes the run history AND selects the per-surface detail fetch:
    *  'merchant' (readiness, default) or 'merchant_url' (AI-Visibility). */
-  subjectType?: string;
+  subjectType?: 'merchant' | 'merchant_url';
   /** Override the prior-run dimensions fetch entirely (dev previews/tests). */
   fetchPriorDimensions?: (runId: string) => Promise<BrandDimensionStats | null>;
   /** Render without the SurfaceCard shell — for composition inside a parent
@@ -297,6 +300,7 @@ export function BrandMomentumPanel({
    *  including explicitly null for "no prior run" — the panel renders
    *  synchronously and never calls the authed run-list endpoints. */
   prefetchedPrior?: BrandDimensionStats | null;
+  comparablePriorRunId?: string | null;
 }) {
   const [prior, setPrior] = useState<BrandDimensionStats | null>(null);
   // Pre-fetched prior renders synchronously — never a spinner frame.
@@ -313,28 +317,11 @@ export function BrandMomentumPanel({
     setPrior(null);
     (async () => {
       try {
-        const runs = await apiClient.listAuditRuns(20, subjectType);
-        // Completed, openable runs only (a failed run stamps completed_at but has
-        // no report). Newest first, as returned.
-        const done = runs.filter(
-          (r) =>
-            r.run_id &&
-            !!r.completed_at &&
-            (r.status || '').toLowerCase() !== 'failed',
-        );
-        // Find the run immediately OLDER than the current one. If the current run
-        // is in the list, take its next neighbor; if it isn't (e.g. a just-finished
-        // run not yet indexed), the newest completed run that isn't it IS the prior.
-        let priorRunId: string | null = null;
-        const idx = currentRunId
-          ? done.findIndex((r) => r.run_id === currentRunId)
-          : -1;
-        if (idx >= 0) {
-          priorRunId = done[idx + 1]?.run_id ?? null;
-        } else {
-          const candidate = done.find((r) => r.run_id !== currentRunId);
-          priorRunId = candidate?.run_id ?? null;
-        }
+        const priorRunId = comparablePriorRunId !== undefined
+          ? comparablePriorRunId
+          : comparableMomentumPrior(
+              await apiClient.getVisibilityTracking(50, subjectType), currentRunId,
+            );
         if (!priorRunId) {
           if (!cancelled) setLoading(false);
           return;
@@ -354,11 +341,12 @@ export function BrandMomentumPanel({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRunId, subjectType, prefetchedPrior]);
+  }, [currentRunId, subjectType, prefetchedPrior, comparablePriorRunId]);
 
   if (!rollup?.dimensions) return null;
 
-  const body = loading ? (
+  const displayedPrior = prefetchedPrior !== undefined ? prefetchedPrior : prior;
+  const body = prefetchedPrior === undefined && loading ? (
     <div className="flex items-center gap-2 py-6 text-sm text-[color:var(--merchant-muted)]">
       <Loader2 className="h-4 w-4 animate-spin" />
       <span>Checking your previous audit…</span>
@@ -367,9 +355,9 @@ export function BrandMomentumPanel({
     <>
       <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--merchant-muted)]">
         <TrendingUp className="h-3.5 w-3.5" />
-        Previous run → this run
+        {displayedPrior ? 'Comparable prior run → this run' : 'Current measurement'}
       </div>
-      <BrandMomentumChart current={rollup.dimensions} prior={prior} />
+      <BrandMomentumChart current={rollup.dimensions} prior={displayedPrior} />
     </>
   );
 
@@ -378,8 +366,8 @@ export function BrandMomentumPanel({
 
   return (
     <SurfaceCard
-      title="Momentum — where you moved"
-      description="Baseline → current for each readiness dimension. We compare this run against your previous audit; a dimension with no prior run shows its first measurement."
+      title="Readiness measurements"
+      description="Changes are shown only when the product set and measurement basis match the prior check."
     >
       <div className="px-5 py-4">{body}</div>
     </SurfaceCard>
