@@ -33,13 +33,18 @@ export function LockedActionsCard({
         {teaserHeadline ? (
           <>
             {' '}
-            The first one: <span className="font-medium">“{teaserHeadline}”</span>.
+            First suggestion to verify: <span className="font-medium">“{teaserHeadline}”</span>.
           </>
         ) : null}
       </p>
       <p className="mt-1 text-sm text-[color:var(--merchant-muted-strong)]">
         Upgrade to see the full prioritized plan — what to fix, in what order,
         and how to track it.
+      </p>
+      <p className="mt-2 text-xs text-[color:var(--merchant-muted-strong)]">
+        Before making changes, open the question evidence below, check that the cited page
+        refers to your exact product, and confirm the suggested gap. Diagnostic suggestions
+        do not establish why an AI model chose a competitor.
       </p>
       {upgradeCta ? <div className="mt-3">{upgradeCta}</div> : null}
     </div>

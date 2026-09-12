@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/api-client';
 type Estimate = { positive: number; n: number; rate: number | null; ci95: [number, number] | null; unknown: number };
 type Tier = { attempted: number; provider_failed: number; brand_mentioned: Estimate; source_visible: Estimate };
 type Answer = { observation_id: string; query: string; provider: string; brand_mentioned: boolean | null; unknown_reason?: string; prompt_contract?: string;
+  cited_sources?: {uri?: string; url?: string; title?: string}[];
   evidence?: { text?: string | null; model?: string | null; complete?: boolean }; };
 type Query = { query: string; matched_products?: { title?: string; product_key?: string }[] };
 export type Recovery = {
@@ -17,6 +18,13 @@ export type Recovery = {
   actions_locked?: boolean;
   catalog_available?: boolean;
 };
+
+function sourceLink(source: {uri?: string; url?: string}): string | null {
+  try {
+    const url = new URL(source.uri || source.url || '');
+    return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password ? url.href : null;
+  } catch { return null; }
+}
 
 function EstimateValue({ estimate }: { estimate: Estimate }) {
   if (!estimate.n || estimate.rate == null) return <span>Not measured{estimate.unknown > 0 ? ` · ${estimate.unknown} unknown` : ''}</span>;
@@ -46,6 +54,21 @@ export function isRecoveryCompatible(value: unknown): value is Recovery {
       !!data.selection_gap.counts));
 }
 
+// Saved projections can still carry conclusions derived only from score bands.
+// Neutralize that specific legacy contract without rewriting unrelated findings.
+export function recoveryFindingSummary(finding: { type: string; summary: string }): string {
+  const dimensions: Record<string, string> = {
+    product_identity_unresolvable: 'Identity',
+    category_citation_weak: 'Citation',
+    content_too_thin_to_cite: 'Content',
+  };
+  const label = dimensions[finding.type];
+  if (label && new RegExp(`^${label}: (Not yet visible|Needs work|Ready|Agent.ready)`).test(finding.summary)) {
+    return `${label}: diagnostic checks need review. This score does not establish verified AI identification, mention, or recommendation. Review the underlying evidence before changing the product page.`;
+  }
+  return finding.summary;
+}
+
 export function RecoveryView({ data }: { data: Recovery }) {
   // A successful HTTP response can still carry an older projection contract.
   // Keep the saved action workspace usable during mixed-version rollouts.
@@ -69,9 +92,10 @@ export function RecoveryView({ data }: { data: Recovery }) {
         <p className="mt-2 text-xs text-slate-500">{a.prompt_contract === 'consumer_query_openai_web_required_v2' ? 'Web search required · separate measurement conditions from automatic search' : 'Legacy or automatic search conditions'}</p>
         <p className="mt-2 text-xs text-slate-500">{typeof a.evidence?.model === 'string' ? a.evidence.model : 'Model not retained'}</p>
         <p className="mt-2 whitespace-pre-wrap break-words text-sm">{typeof a.evidence?.text === 'string' ? a.evidence.text : 'Answer text was not retained.'}</p>
+        {Array.isArray(a.cited_sources) && a.cited_sources.length > 0 ? <ul className="mt-2 space-y-1 text-xs" aria-label="Cited sources">{a.cited_sources.filter(source => source && sourceLink(source)).map((source, index) => <li key={index}><a className="underline" href={sourceLink(source)!} target="_blank" rel="noopener noreferrer">{typeof source.title === 'string' && source.title ? source.title : sourceLink(source)}</a></li>)}</ul> : null}
       </details>)}
     </details> : null}
-    <div className="grid gap-3 md:grid-cols-3">{data.stages.map(stage => <div key={stage.stage} className="rounded-lg bg-slate-50 p-4"><h3 className="font-semibold">{stageLabels[stage.stage] || stage.stage}</h3><p className="mt-1 text-sm">{stage.status === 'UNVERIFIED' ? 'Not verified' : stage.status === 'NO_FINDINGS' ? 'No findings in the available checks' : 'Findings available'}</p>{stage.unverified_reason ? <p className="mt-2 text-xs text-slate-500">{stage.unverified_reason}</p> : null}<ul className="mt-2 space-y-2 text-sm">{stage.findings.map((finding, i) => <li key={`${finding.type}-${i}`}>{finding.summary}</li>)}</ul></div>)}</div>
+    <div className="grid gap-3 md:grid-cols-3">{data.stages.map(stage => <div key={stage.stage} className="rounded-lg bg-slate-50 p-4"><h3 className="font-semibold">{stageLabels[stage.stage] || stage.stage}</h3><p className="mt-1 text-sm">{stage.status === 'UNVERIFIED' ? 'Not verified' : stage.status === 'NO_FINDINGS' ? 'No findings in the available checks' : 'Findings available'}</p>{stage.unverified_reason ? <p className="mt-2 text-xs text-slate-500">{stage.unverified_reason}</p> : null}<ul className="mt-2 space-y-2 text-sm">{stage.findings.map((finding, i) => <li key={`${finding.type}-${i}`}>{recoveryFindingSummary(finding)}</li>)}</ul></div>)}</div>
     {data.actions_locked ? <p className="text-sm">Your query action plan is available on a paid plan.</p> : data.selection_gap ? <div className="grid gap-5 md:grid-cols-2">
       <div><h3 className="font-semibold">Queries to win · {data.selection_gap.counts.lost_queries}</h3><ul className="mt-2 space-y-3">{data.selection_gap.gaps.map(q => <li key={q.query} className="text-sm"><strong>“{q.query}”</strong><p className="text-slate-500">Products matching this query: {q.matched_products?.map(p => p.title || p.product_key).join(', ')}</p></li>)}</ul>{data.selection_gap.lost_queries_without_product.length > 0 ? <details open={data.selection_gap.gaps.length === 0} className="mt-3 text-sm"><summary>Queries without a confident product match · {data.selection_gap.lost_queries_without_product.length}</summary><p className="my-2 text-slate-500">These queries lack a confident product match in this report. Review the existing action plan below before choosing a product to improve.</p><ul>{data.selection_gap.lost_queries_without_product.map(q => <li key={q.query}>{q.query}</li>)}</ul></details> : null}</div>
       <div><h3 className="font-semibold">Queries with product citations · {data.selection_gap.counts.won_queries}</h3><ul className="mt-2 space-y-2 text-sm">{data.selection_gap.won_queries.map(q => <li key={q.query}>“{q.query}”</li>)}</ul><p className="mt-2 text-xs text-slate-500">Query lists use the report’s product-citation evidence. They are not the answer-mention rate above. Long lists may be truncated.</p></div>

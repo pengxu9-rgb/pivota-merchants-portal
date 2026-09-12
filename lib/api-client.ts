@@ -1931,11 +1931,25 @@ class ApiClient {
   // past the free cap; 422 { code: 'no_products_resolved', unresolved } when no
   // URL resolves. A failed background run throws Error(message).
   // -------------------------------------------------------------------
+  async quoteUrlReadinessAudit(body: {
+    product_urls: string[]; website?: string; brand?: string;
+    custom_prompts?: string[]; custom_prompts_by_url?: Record<string, string[]>;
+    consumer_answer_queries: string[];
+  }): Promise<{quote_id: string; credits: number; base_credits: number; providers: string[]; product_count: number; consumer_capture?: {credits: number; probe_count: number}}> {
+    const res = await this.client.post('/api/merchant-center/audit/url-readiness/quote',
+      {...body, quote_only: true}, {timeout: 60_000});
+    const quote = res.data?.data || res.data;
+    if (quote?.status !== 'quoted' || typeof quote.quote_id !== 'string' || !Number.isInteger(quote.credits) || quote.credits < 0) throw new Error('Could not verify the audit quote.');
+    return quote;
+  }
+
   async runUrlReadinessAudit(params: {
     productUrls: string[];
     website?: string;
     brand?: string;
     customPrompts?: string[];
+    consumerAnswerQueries?: string[];
+    acceptedQuote?: string;
     /** Per-product prompts keyed by the EXACT productUrls entry — probed
      * inside that product's audit context and pinned into its weekly basis. */
     customPromptsByUrl?: Record<string, string[]>;
@@ -1944,6 +1958,8 @@ class ApiClient {
     const body: Record<string, unknown> = {
       product_urls: params.productUrls,
     };
+    if (params.consumerAnswerQueries?.length) body.consumer_answer_queries = params.consumerAnswerQueries;
+    if (params.acceptedQuote) body.accepted_quote = params.acceptedQuote;
     if (params.website) body.website = params.website;
     if (params.brand) body.brand = params.brand;
     if (params.customPrompts && params.customPrompts.length > 0) {

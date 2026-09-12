@@ -30,6 +30,11 @@ const render = data => renderToStaticMarkup(React.createElement(loaded.exports.R
   assert(consumer.includes('Consumer answer evidence') && consumer.includes('Brand mentioned'));
   assert(consumer.includes('Consider Anua.') && consumer.includes('&lt;script&gt;'));
   assert(!consumer.includes('<script>'));
+  const linked = JSON.parse(fs.readFileSync('scripts/fixtures/recovery/consumer-answer.json'));
+  linked.selection.answers[0].cited_sources = [{uri:'https://judydoll.com/products/mascara',title:'Official product'}, {uri:'javascript:alert(1)',title:'Unsafe'}, {uri:'https://user:password@example.com',title:'Credentials'}];
+  const links = render(linked);
+  assert(links.includes('href="https://judydoll.com/products/mascara"'));
+  assert(!links.includes('javascript:') && !links.includes('user:password'));
   const ungrounded = JSON.parse(fs.readFileSync('scripts/fixtures/recovery/consumer-answer.json'));
   ungrounded.selection.answers[0].brand_mentioned = null;
   ungrounded.selection.answers[0].unknown_reason = 'answer_sources_missing';
@@ -67,6 +72,10 @@ const render = data => renderToStaticMarkup(React.createElement(loaded.exports.R
   assert(unmatched.includes('<details open=""'));
   assert(unmatched.includes('UNMATCHED-QUERY'));
   assert(unmatched.includes('Review the existing action plan below'));
+  const oldConclusion = structuredClone(fixtures[1]);
+  oldConclusion.stages[0].findings = [{type:'category_citation_weak',summary:"Citation: Not yet visible — AI doesn't recommend this product yet."}];
+  assert(!render(oldConclusion).includes("recommend this product yet"));
+  assert(render(oldConclusion).includes('diagnostic checks need review'));
   const hostile = structuredClone(fixtures[1]);
   hostile.stages[0].findings[0].summary = '<script>alert(1)</script>';
   assert(render(hostile).includes('&lt;script&gt;'));

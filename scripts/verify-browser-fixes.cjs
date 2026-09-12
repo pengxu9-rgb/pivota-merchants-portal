@@ -4,6 +4,7 @@ const ts = require('typescript'), React = require('react');
 const {renderToStaticMarkup: render} = require('react-dom/server');
 function load(relative) {
  const file=path.resolve(relative), m=new Module(file,module); m.filename=file;m.paths=module.paths;
+ const original=m.require.bind(m); m.require=id=>id==='@/components/ui/merchant-primitives'?{SurfaceCard:({children})=>React.createElement('section',null,children)}:original(id);
  m._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText,file);return m.exports;
 }
 const {prepareProductRetest}=load('lib/audit/retest.ts');
@@ -23,3 +24,22 @@ const sov=render(React.createElement(ShareOfVoiceBars,{summary:{share_of_voice:{
 assert(sov.includes('not consumer answer share'));
 assert(!sov.includes('who wins'));
 console.log('PASS: retest rejects missing/ambiguous products and replaces scope; historical evidence does not assert excerpt-host alignment or verified product presence.');
+
+const {agenticVerdict}=load('lib/audit/agenticVerdict.ts');
+for (const discovery of [{total:10}, {total:10,appeared:3}, {total:10,appeared_recommended:3}]) {
+  const verdict=agenticVerdict({product_competitiveness:{has_discovery:true,discovery}});
+  assert.equal(verdict.label,'Recommendation not measured');
+  assert.equal(verdict.tone,'muted');
+}
+assert.equal(agenticVerdict({product_competitiveness:{has_discovery:true}}).label,"Couldn't measure");
+console.log('PASS: missing and positive legacy discovery flags cannot assert a recommendation outcome.');
+
+const {EngineDiscoverySplitChart}=load('components/audit/EngineDiscoverySplitChart.tsx');
+const chart=render(React.createElement(EngineDiscoverySplitChart,{reports:[
+ {sku_key:'a',product_competitiveness:{by_model:{gemini:{appeared:0,total:10},chatgpt:{total:0,rate:0}}}},
+ {sku_key:'b',product_competitiveness:{by_model:{gemini:{appeared:3,total:10}}}},
+]}));
+assert.equal((chart.match(/Not measured/g)||[]).length,2);
+assert(chart.includes('0/10') && chart.includes('3/10'));
+assert(!chart.includes('0/0'));
+console.log('PASS: zero observations and missing provider results remain unmeasured; measured zero remains 0/10.');

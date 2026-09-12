@@ -6,12 +6,7 @@ export interface AgenticVerdict {
   meaning: string;
 }
 
-/**
- * The honest per-product agentic status, derived from the recommended-vs-listing
- * split (NOT the catalog-dominated dimension band, which reads "blocked" for a
- * store-less brand even when AI finds it). Keeps the four states the merchant
- * cares about distinct: recommended, findable-only, invisible, unmeasured.
- */
+/** Legacy discovery diagnostics do not establish consumer recommendation outcomes. */
 export function agenticVerdict(report: AgentCenterPerSkuReport): AgenticVerdict | null {
   const pc = report.product_competitiveness;
   if (!pc) return null;
@@ -41,27 +36,12 @@ export function agenticVerdict(report: AgentCenterPerSkuReport): AgenticVerdict 
       meaning: 'This run carried no discovery measurements — re-run to measure.',
     };
   }
-  const recommended = d.appeared_recommended ?? 0;
-  const listing = d.appeared_listing ?? d.appeared ?? 0;
-
-  if (recommended > 0) {
-    return {
-      label: 'Recommended',
-      tone: 'good',
-      meaning: `AI recommends you in ${recommended} of ${d.total} discovery searches.`,
-    };
-  }
-  if (listing > 0) {
-    return {
-      label: 'Findable, not recommended',
-      tone: 'warn',
-      meaning: 'AI can retrieve your listing, but no independent source endorses you yet.',
-    };
-  }
+  // Legacy discovery flags do not retain verified complete-answer evidence.
+  // Even a positive flag cannot establish a matching-product recommendation.
   return {
-    label: 'Not yet visible',
-    tone: 'bad',
-    meaning: "AI doesn't surface you for the category demand you could win.",
+    label: 'Recommendation not measured',
+    tone: 'muted',
+    meaning: 'Diagnostic search flags are available below. They do not establish whether an AI answer recommends this product.',
   };
 }
 
