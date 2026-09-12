@@ -76,6 +76,15 @@ const render = data => renderToStaticMarkup(React.createElement(loaded.exports.R
   oldConclusion.stages[0].findings = [{type:'category_citation_weak',summary:"Citation: Not yet visible — AI doesn't recommend this product yet."}];
   assert(!render(oldConclusion).includes("recommend this product yet"));
   assert(render(oldConclusion).includes('diagnostic checks need review'));
+  const scored = structuredClone(fixtures[1]);
+  const disclaimer = 'This score does not establish verified AI identification, mention, or recommendation. Review the underlying evidence before changing the product page.';
+  scored.stages[0].findings = [{ type: 'product_identity_unresolvable', summary: `Identity: diagnostic score 23/100. ${disclaimer}` }];
+  const concise = render(scored);
+  assert(concise.includes('Identity: 23/100 · diagnostic score'));
+  assert(!concise.includes(disclaimer));
+  assert(concise.includes('How to read these results') && concise.includes('About Sources mentioning you'));
+  scored.stages[0].findings[0].summary = 'Identity: diagnostic score 23/100. Missing product identifier.';
+  assert(render(scored).includes('Missing product identifier.'));
   const hostile = structuredClone(fixtures[1]);
   hostile.stages[0].findings[0].summary = '<script>alert(1)</script>';
   assert(render(hostile).includes('&lt;script&gt;'));

@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { apiClient } from '@/lib/api-client';
 
 type Estimate = { positive: number; n: number; rate: number | null; ci95: [number, number] | null; unknown: number };
@@ -24,6 +25,31 @@ function sourceLink(source: {uri?: string; url?: string}): string | null {
     const url = new URL(source.uri || source.url || '');
     return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password ? url.href : null;
   } catch { return null; }
+}
+
+function MetricLabel({ label, explanation }: { label: string; explanation: string }) {
+  const id = useId();
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+  useEffect(() => {
+    if (!position) return;
+    const close = () => setPosition(null);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+  }, [position]);
+  const show = (button: HTMLButtonElement) => {
+    const rect = button.getBoundingClientRect();
+    setPosition({ top: Math.min(rect.bottom + 8, window.innerHeight - 180), left: Math.max(12, Math.min(rect.left, window.innerWidth - 300)) });
+  };
+  return <span className="inline-flex items-center gap-1" onMouseLeave={() => setPosition(null)}>
+    {label}<button type="button" aria-label={`About ${label}`} aria-describedby={position ? id : undefined}
+      aria-expanded={!!position} onMouseEnter={e => show(e.currentTarget)} onFocus={e => show(e.currentTarget)}
+      onClick={e => show(e.currentTarget)} onBlur={() => setPosition(null)} onKeyDown={e => { if (e.key === 'Escape') setPosition(null); }}
+      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600">
+      <span aria-hidden="true">ⓘ</span>
+    </button>
+    {position ? createPortal(<span id={id} role="tooltip" style={position} className="fixed z-50 w-72 max-w-[calc(100vw-24px)] rounded-lg border border-slate-200 bg-white p-3 text-left text-sm font-normal text-slate-700 shadow-lg">{explanation}</span>, document.body) : null}
+  </span>;
 }
 
 function EstimateValue({ estimate }: { estimate: Estimate }) {
@@ -64,7 +90,11 @@ export function recoveryFindingSummary(finding: { type: string; summary: string 
   };
   const label = dimensions[finding.type];
   if (label && new RegExp(`^${label}: (Not yet visible|Needs work|Ready|Agent.ready)`).test(finding.summary)) {
-    return `${label}: diagnostic checks need review. This score does not establish verified AI identification, mention, or recommendation. Review the underlying evidence before changing the product page.`;
+    return `${label}: diagnostic checks need review.`;
+  }
+  if (label) {
+    const score = finding.summary.match(new RegExp(`^${label}: diagnostic score (\\d+(?:\\.\\d+)?)/100\\.`));
+    if (score && finding.summary.slice(score[0].length).trim() === 'This score does not establish verified AI identification, mention, or recommendation. Review the underlying evidence before changing the product page.') return `${label}: ${score[1]}/100 · diagnostic score`;
   }
   return finding.summary;
 }
@@ -76,12 +106,17 @@ export function RecoveryView({ data }: { data: Recovery }) {
   return <section className="rounded-xl border border-slate-200 bg-white p-5 space-y-6" aria-label="Revenue recovery">
     <header><p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Revenue recovery</p>
       <h2 className="mt-1 text-xl font-semibold">Where AI finds you — and where you can grow</h2>
-      <p className="mt-2 text-sm text-slate-600">Each observation is one product, question and AI response. Answer mentions and cited-source visibility measure different things.</p></header>
+      <p className="mt-2 text-sm text-slate-600">See where your brand appears in AI answers and their sources.</p></header>
     {data.selection.unavailable_reason ? <p className="rounded-lg bg-amber-50 p-3 text-sm">{data.selection.unavailable_reason} Older reports cannot establish a response-level mention rate.</p> : null}
-    <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead><tr className="border-b"><th className="p-2">Shopper question</th><th className="p-2">Brand mentioned in answer</th><th className="p-2">Brand in cited sources</th><th className="p-2">Responses</th></tr></thead><tbody>
+    <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead><tr className="border-b"><th className="p-2">Shopper question</th><th className="p-2"><MetricLabel label="Your brand mentioned" explanation="The share of measured answers that name your brand. For example, 2/2 means both answers mention it. A mention can be a comparison or criticism; it does not necessarily recommend your product." /></th><th className="p-2"><MetricLabel label="Sources mentioning you" explanation="The share of measured answers with at least one cited source that matches your website or names your brand in its title or label. For example, 1/2 means one of two answers has a matching source. Retailer and review sources can count too; this does not mean the full source page was checked." /></th><th className="p-2"><MetricLabel label="Answers checked" explanation="How many AI responses we attempted to collect for this question group. Each percentage uses its own measured-answer count. Failed or unknown responses are shown separately and excluded." /></th></tr></thead><tbody>
       {Object.entries(tierLabels).map(([tier, label]) => { const t = data.selection.tiers[tier]; return t ? <tr key={tier} className="border-b align-top"><th className="p-2 font-medium">{label}</th><td className="p-2"><EstimateValue estimate={t.brand_mentioned} /></td><td className="p-2"><EstimateValue estimate={t.source_visible} /></td><td className="p-2">{data.selection.unavailable_reason ? 'Not retained' : `${t.attempted} attempted`}{t.provider_failed > 0 ? <span className="block text-amber-700">{t.provider_failed} failed, excluded</span> : null}</td></tr> : null; })}
     </tbody></table></div>
-    <p className="text-xs text-slate-500">{data.selection.limitation}{data.selection.unclassified > 0 ? ` ${data.selection.unclassified} responses have an unknown question type and are excluded from the three groups.` : ''}</p>
+    <details className="text-sm text-slate-600"><summary className="cursor-pointer font-medium">How to read these results</summary>
+      <div className="mt-2 space-y-2"><p>{data.selection.limitation}</p>
+      <p>Readiness scores describe diagnostic checks, not verified brand mentions, product recommendations or sales. Use the answer evidence and action plan to decide what to investigate next.</p>
+      {data.selection.unclassified > 0 ? <p>{data.selection.unclassified} responses have an unknown question type and are excluded from the three groups.</p> : null}
+      {data.stages.filter(stage => stage.unverified_reason).map(stage => <p key={stage.stage}>{stageLabels[stage.stage] || stage.stage}: {stage.unverified_reason}</p>)}
+      </div></details>
     {data.selection.mixed_execution_providers?.length ? <p className="text-sm text-amber-800">Different search settings were retained for the same AI provider. Its answer-mention rate is unmeasured because these conditions cannot be combined.</p> : null}
     {Array.isArray(data.selection.answers) && data.selection.answers.length > 0 ? <details className="rounded-lg border p-4">
       <summary className="cursor-pointer font-medium">Consumer answer evidence · {data.selection.answers.length}</summary>
@@ -95,7 +130,7 @@ export function RecoveryView({ data }: { data: Recovery }) {
         {Array.isArray(a.cited_sources) && a.cited_sources.length > 0 ? <ul className="mt-2 space-y-1 text-xs" aria-label="Cited sources">{a.cited_sources.filter(source => source && sourceLink(source)).map((source, index) => <li key={index}><a className="underline" href={sourceLink(source)!} target="_blank" rel="noopener noreferrer">{typeof source.title === 'string' && source.title ? source.title : sourceLink(source)}</a></li>)}</ul> : null}
       </details>)}
     </details> : null}
-    <div className="grid gap-3 md:grid-cols-3">{data.stages.map(stage => <div key={stage.stage} className="rounded-lg bg-slate-50 p-4"><h3 className="font-semibold">{stageLabels[stage.stage] || stage.stage}</h3><p className="mt-1 text-sm">{stage.status === 'UNVERIFIED' ? 'Not verified' : stage.status === 'NO_FINDINGS' ? 'No findings in the available checks' : 'Findings available'}</p>{stage.unverified_reason ? <p className="mt-2 text-xs text-slate-500">{stage.unverified_reason}</p> : null}<ul className="mt-2 space-y-2 text-sm">{stage.findings.map((finding, i) => <li key={`${finding.type}-${i}`}>{recoveryFindingSummary(finding)}</li>)}</ul></div>)}</div>
+    <div className="grid gap-3 md:grid-cols-3">{data.stages.map(stage => <div key={stage.stage} className="rounded-lg bg-slate-50 p-4"><h3 className="font-semibold">{stageLabels[stage.stage] || stage.stage}</h3><p className="mt-1 text-sm">{stage.status === 'UNVERIFIED' ? 'Not verified' : stage.status === 'NO_FINDINGS' ? 'No findings in the available checks' : 'Findings available'}</p><ul className="mt-2 space-y-2 text-sm">{stage.findings.map((finding, i) => <li key={`${finding.type}-${i}`}>{recoveryFindingSummary(finding)}</li>)}</ul></div>)}</div>
     {data.actions_locked ? <p className="text-sm">Your query action plan is available on a paid plan.</p> : data.selection_gap ? <div className="grid gap-5 md:grid-cols-2">
       <div><h3 className="font-semibold">Queries to win · {data.selection_gap.counts.lost_queries}</h3><ul className="mt-2 space-y-3">{data.selection_gap.gaps.map(q => <li key={q.query} className="text-sm"><strong>“{q.query}”</strong><p className="text-slate-500">Products matching this query: {q.matched_products?.map(p => p.title || p.product_key).join(', ')}</p></li>)}</ul>{data.selection_gap.lost_queries_without_product.length > 0 ? <details open={data.selection_gap.gaps.length === 0} className="mt-3 text-sm"><summary>Queries without a confident product match · {data.selection_gap.lost_queries_without_product.length}</summary><p className="my-2 text-slate-500">These queries lack a confident product match in this report. Review the existing action plan below before choosing a product to improve.</p><ul>{data.selection_gap.lost_queries_without_product.map(q => <li key={q.query}>{q.query}</li>)}</ul></details> : null}</div>
       <div><h3 className="font-semibold">Queries with product citations · {data.selection_gap.counts.won_queries}</h3><ul className="mt-2 space-y-2 text-sm">{data.selection_gap.won_queries.map(q => <li key={q.query}>“{q.query}”</li>)}</ul><p className="mt-2 text-xs text-slate-500">Query lists use the report’s product-citation evidence. They are not the answer-mention rate above. Long lists may be truncated.</p></div>
