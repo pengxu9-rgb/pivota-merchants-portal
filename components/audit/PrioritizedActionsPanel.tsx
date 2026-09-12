@@ -42,12 +42,6 @@ export function reviewActionHeadline(headline?: string | null) {
     .replace(/^Become the page AI cites$/i, 'Strengthen product facts and source evidence');
 }
 
-export function reviewActionHeadline(headline?: string | null) {
-  return (headline || 'Review this product page')
-    .replace(/^Give AI enough on (.+)'s page to pick you over .+\.?$/, 'Review product facts on $1’s page')
-    .replace(/^Become the page AI cites$/i, 'Strengthen product facts and source evidence');
-}
-
 // Pitch-shaped first moves ("get cited there: pitch them…") confused merchants
 // clicking the on-page draft button — "what is our target media?" The media
 // target lives in the Get-cited panel below; say so instead of leaving the
