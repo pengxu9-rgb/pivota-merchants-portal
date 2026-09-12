@@ -508,9 +508,12 @@ export default function UrlAuditPage() {
           brand: brand.trim() || undefined,
           website: website.trim() || undefined,
         });
+      } else if (status === 409 && detail?.code === 'quote_required') {
+        setError(detail.message || 'The audit scope or price changed. Get a fresh quote.');
       } else if (status === 402) {
         setError(
-          detail?.message ||
+          (typeof detail === 'string' ? detail : detail?.message) ||
+            (consumerQueries.length ? `Not enough credits for this audit${typeof detail?.required === 'number' ? `: ${detail.required} required, ${detail.available ?? 0} available` : ''}. Top up credits, or remove the supplemental questions to use any remaining free diagnostic allowance.` : null) ||
             "You've used your free URL audits. Connect your store for the full per-SKU audit, or upgrade to keep auditing by URL.",
         );
       } else if (status === 422) {
@@ -521,7 +524,7 @@ export default function UrlAuditPage() {
               .join(', ')
           : '';
         setError(
-          (detail?.message ||
+          ( (typeof detail === 'string' ? detail : detail?.message) ||
             "We couldn't read a product from those URLs. Make sure each link opens a single product page.") +
             (unresolved ? ` (${unresolved})` : ''),
         );
@@ -529,7 +532,7 @@ export default function UrlAuditPage() {
           setErrorUpgradePath(detail.upgrade_path);
         }
       } else {
-        setError(e?.message || 'Audit failed. Please try again.');
+        setError((typeof detail === 'string' ? detail : detail?.message) || e?.message || 'Audit failed. Please try again.');
       }
     } finally {
       setLoading(false);
