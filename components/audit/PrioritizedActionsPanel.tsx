@@ -155,10 +155,11 @@ function ActionButton({
             ) : null}
           </div>
         ) : (
-          <p className="mt-1 text-[11px] leading-snug opacity-55">
-            Tracked in your plan — open it to work on this. (Top up credits to have Pivota
-            draft it for you.)
-          </p>
+          <div className="mt-1 text-[11px] leading-snug opacity-55">
+            Tracked in your plan. No draft yet.{' '}
+            <button type="button" onClick={run} disabled={st.loading} className="underline">{st.loading ? 'Drafting…' : 'Retry draft'}</button>
+            <MeasuredGenerationPrice />
+          </div>
         )}
       </div>
     );

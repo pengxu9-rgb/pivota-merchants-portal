@@ -498,7 +498,7 @@ function ChannelRow({
                 ) : null}
               </div>
             ) : (
-              <span className="ml-1 text-[11px] opacity-55">(top up credits to have Pivota draft the outreach)</span>
+              <div className="ml-1 text-[11px] opacity-55">No draft yet.{' '}<button type="button" onClick={draft} disabled={st.loading} className="underline">{st.loading ? 'Drafting…' : 'Retry draft'}</button><MeasuredGenerationPrice /></div>
             )}
           </div>
         ) : (
