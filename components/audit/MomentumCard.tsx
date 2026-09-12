@@ -31,6 +31,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { comparableMomentumPrior } from '@/lib/audit/momentum-baseline';
 import { SurfaceCard } from '@/components/ui/merchant-primitives';
 import { ReportSectionBoundary } from '@/components/audit/ReportSectionBoundary';
 import { MomentumTrend, windowTrendPoints } from '@/components/audit/MomentumTrend';
@@ -108,6 +109,7 @@ export function MomentumCard({
   const windowedCount = windowTrendPoints(data).points.length;
   const showTrend = !error && windowedCount >= 3;
   const hasDumbbells = !!rollup?.dimensions;
+  const comparablePriorRunId = comparableMomentumPrior(data, currentRunId);
 
   // Nothing measurable on either axis → no card at all (never an empty shell,
   // never fabricated content). While the tracking fetch is in flight we still
@@ -122,7 +124,9 @@ export function MomentumCard({
       description={
         showTrend
           ? 'Your recent visibility checks, and what moved since your previous one.'
-          : 'What moved since your previous check. Trend lines appear once three checks are tracked.'
+          : comparablePriorRunId
+            ? 'Changes from your previous comparable check.'
+            : 'Current measurements. Changes require the same products and measurement basis.'
       }
     >
       <div className="space-y-5 px-5 py-4">
@@ -143,11 +147,13 @@ export function MomentumCard({
                 </p>
               ) : null}
               <BrandMomentumPanel
+                key={`${currentRunId ?? "unknown"}:${comparablePriorRunId ?? "none"}`}
                 embedded
                 rollup={rollup}
                 currentRunId={currentRunId}
                 subjectType={subjectType}
-                prefetchedPrior={priorDimensions}
+                prefetchedPrior={comparablePriorRunId ? priorDimensions : null}
+                comparablePriorRunId={comparablePriorRunId}
               />
             </div>
           </ReportSectionBoundary>

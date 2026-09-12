@@ -43,3 +43,17 @@ assert.equal((chart.match(/Not measured/g)||[]).length,2);
 assert(chart.includes('0/10') && chart.includes('3/10'));
 assert(!chart.includes('0/0'));
 console.log('PASS: zero observations and missing provider results remain unmeasured; measured zero remains 0/10.');
+
+const {comparableMomentumPrior}=load('lib/audit/momentum-baseline.ts');
+const previous={run_id:'judydoll',panel_id:'judydoll-product',basis_id:'questions',comparable_with_prev:false};
+const current={run_id:'fenty',panel_id:'fenty-product',basis_id:'questions',comparable_with_prev:true};
+assert.equal(comparableMomentumPrior({points:[previous,current]},'fenty'),null);
+const matched={...current,panel_id:previous.panel_id};
+assert.equal(comparableMomentumPrior({points:[previous,matched]},'fenty'),'judydoll');
+assert.equal(comparableMomentumPrior({points:[previous,{...matched,basis_id:'new-questions'}]},'fenty'),null);
+assert.equal(comparableMomentumPrior({points:[previous,{...matched,comparable_with_prev:false}]},'fenty'),null);
+assert.equal(comparableMomentumPrior({points:[previous,{...matched,panel_id:null}]},'fenty'),null);
+assert.equal(comparableMomentumPrior({points:[previous,matched]},'missing'),null);
+assert.equal(comparableMomentumPrior({points:[previous,matched]},null),null);
+assert.equal(comparableMomentumPrior(null,'fenty'),null);
+console.log('PASS: cross-product, changed-basis, unknown and missing runs cannot create momentum deltas; a known comparable prior remains available.');
