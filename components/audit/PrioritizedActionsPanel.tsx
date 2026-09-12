@@ -9,6 +9,7 @@
  * distributing stays theirs (or a connected store/service) for now.
  */
 
+import { MeasuredGenerationPrice } from './MeasuredGenerationPrice';
 import { useState, type ReactNode } from 'react';
 import { ListChecks, ArrowRight, Loader2, Check, Sparkles, Copy } from 'lucide-react';
 import type {
@@ -174,6 +175,7 @@ function ActionButton({
         {st.loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
         {st.loading ? 'Adding…' : label}
       </button>
+      <MeasuredGenerationPrice />
       {st.error ? <p className="mt-1 text-[11px] text-red-700">{st.error}</p> : null}
     </div>
   );

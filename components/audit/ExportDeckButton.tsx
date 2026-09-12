@@ -8,6 +8,7 @@
  * response's billing headers; 402 → top-up copy, 409 → not-ready copy.
  */
 
+import { MeasuredGenerationPrice } from './MeasuredGenerationPrice';
 import { useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
@@ -80,6 +81,7 @@ export function ExportDeckButton({ runId }: { runId: string }) {
         {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
         {busy ? 'Exporting…' : 'Export deck (PPT)'}
       </button>
+      <MeasuredGenerationPrice deck />
       {error ? <p className="max-w-56 text-right text-[11px] text-red-700">{error}</p> : null}
       {note ? (
         <p className="merchant-text-muted max-w-56 text-right text-[11px]">{note}</p>

@@ -12,6 +12,7 @@
  * the more places a merchant earns evidence, the more AI cites them.
  */
 
+import { MeasuredGenerationPrice } from './MeasuredGenerationPrice';
 import { useState, type ReactNode } from 'react';
 import { LockedActionsCard } from '@/components/audit/LockedActionsCard';
 import {
@@ -507,6 +508,7 @@ function ChannelRow({
               {st.loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
               {st.loading ? 'Drafting…' : 'Draft outreach'}
             </button>
+            <MeasuredGenerationPrice />
             {st.error ? <span className="ml-2 text-[11px] text-red-700">{st.error}</span> : null}
           </div>
         )
