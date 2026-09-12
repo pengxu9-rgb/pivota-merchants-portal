@@ -67,6 +67,10 @@ const render = data => renderToStaticMarkup(React.createElement(loaded.exports.R
   assert(unmatched.includes('<details open=""'));
   assert(unmatched.includes('UNMATCHED-QUERY'));
   assert(unmatched.includes('Review the existing action plan below'));
+  const oldConclusion = structuredClone(fixtures[1]);
+  oldConclusion.stages[0].findings = [{type:'category_citation_weak',summary:"Citation: Not yet visible — AI doesn't recommend this product yet."}];
+  assert(!render(oldConclusion).includes("recommend this product yet"));
+  assert(render(oldConclusion).includes('diagnostic checks need review'));
   const hostile = structuredClone(fixtures[1]);
   hostile.stages[0].findings[0].summary = '<script>alert(1)</script>';
   assert(render(hostile).includes('&lt;script&gt;'));

@@ -388,8 +388,20 @@ export default function UrlAuditPage() {
     return null;
   }, [skuPromptsParsed, skuPromptsByUrl, productUrls]);
 
+  const consumerCaptureEnabled = process.env.NEXT_PUBLIC_CONSUMER_ANSWER_ENABLED === 'true';
+  const [consumerQuestionsText, setConsumerQuestionsText] = useState('');
+  const [consumerQuote, setConsumerQuote] = useState<{scope: string; quote_id: string; credits: number; base_credits: number; providers: string[]; product_count: number; consumer_capture?: {credits: number; probe_count: number}} | null>(null);
+  const consumerQueries = consumerCaptureEnabled ? [...new Set(consumerQuestionsText.split('\n').map(q => q.trim()).filter(Boolean))] : [];
+  const consumerError = consumerQueries.length > 8 || consumerQueries.some(q => q.length > 1000);
+  const quoteRequest = {product_urls: cleanedUrls, website: website.trim() || undefined,
+    brand: brand.trim() || undefined, custom_prompts: customPromptsParsed.length ? customPromptsParsed : undefined,
+    custom_prompts_by_url: Object.keys(skuPromptsByUrl).length ? skuPromptsByUrl : undefined,
+    consumer_answer_queries: consumerQueries};
+  const quoteScope = JSON.stringify(quoteRequest);
+  const currentQuote = consumerQuote?.scope === quoteScope ? consumerQuote : null;
+
   const canRun =
-    cleanedUrls.length > 0 && !loading && !customPromptsError && !skuPromptsError;
+    cleanedUrls.length > 0 && !loading && !customPromptsError && !skuPromptsError && !consumerError;
 
   // Adopt-from-suggestions (win-the-specific-long-tail Step 3, wedge edition):
   // the loaded run's computed-but-unprobed winnable niches, offered as one-click
@@ -450,10 +462,17 @@ export default function UrlAuditPage() {
     setError(null);
     setErrorUpgradePath(null);
     setNotice(null);
-    setResult(null);
     try {
+      if (consumerQueries.length && !currentQuote) {
+        const quote = await apiClient.quoteUrlReadinessAudit(quoteRequest);
+        setConsumerQuote({...quote, scope: quoteScope});
+        return;
+      }
+      setResult(null);
       const res = await apiClient.runUrlReadinessAudit({
         productUrls: cleanedUrls,
+        consumerAnswerQueries: consumerQueries,
+        acceptedQuote: currentQuote?.quote_id,
         website: website.trim() || undefined,
         brand: brand.trim() || undefined,
         customPrompts: customPromptsParsed.length > 0 ? customPromptsParsed : undefined,
@@ -462,6 +481,7 @@ export default function UrlAuditPage() {
         onProgress: ({ elapsedMs }) =>
           setElapsedSec(Math.round(elapsedMs / 1000)),
       });
+      setConsumerQuote(null);
       setResult(res);
       if (res.per_sku_reports?.length || res.brand_report) setInputsOpen(false);
       setActiveRunId(res.audit_run_id ?? null);
@@ -474,6 +494,7 @@ export default function UrlAuditPage() {
         website: website.trim() || undefined,
       });
     } catch (e: any) {
+      setConsumerQuote(null);
       const status = e?.response?.status;
       const detail = e?.response?.data?.detail;
       if (e?.code === 'poll_timeout') {
@@ -876,7 +897,7 @@ export default function UrlAuditPage() {
       <PageHeader
         eyebrow="Per-product · no catalog sync"
         title="See how AI sees your products"
-        description="Paste your product links — up to 5 per audit on the free plan (first 2 audits free), up to 20 per audit on paid plans and we'll audit each one — how AI shopping agents (Gemini + ChatGPT) cite it, which competitors and channels they surface instead, and what to do about it. No catalog sync required. Connect your store for the full-catalog audit with availability + agent checkout."
+        description="Paste your product links — up to 5 per audit on the free plan (first 2 audits free), up to 20 per audit on paid plans and we'll audit each one — how the AI models enabled for your run cite it, which competitors and channels they surface instead, and what to do about it. No catalog sync required. Connect your store for the full-catalog audit with availability + agent checkout."
       />
 
       {/* Re-open a past visibility check (subject_type=merchant_url). Renders
@@ -1118,6 +1139,14 @@ export default function UrlAuditPage() {
             ) : null}
           </div>
 
+          {consumerCaptureEnabled ? <div className="space-y-2">
+            <label htmlFor="url-consumer-questions" className="block text-sm font-medium">Consumer answer questions (optional · up to 8)</label>
+            <textarea id="url-consumer-questions" value={consumerQuestionsText} disabled={loading} onChange={e => setConsumerQuestionsText(e.target.value)} rows={3} maxLength={8100} className="w-full rounded border p-2" />
+            <p className="text-xs text-slate-600">Ask exactly what a shopper would ask. We retain complete answers and citations without adding your product context. This costs additional credits, including during a free diagnostic audit. Review the quote before starting. Weekly re-audits do not automatically repeat these supplemental questions.</p>
+            {consumerError ? <p role="alert">Use up to 8 questions, each at most 1,000 characters.</p> : null}
+            {currentQuote ? <p role="status" className="rounded border p-3 text-sm">Total: {currentQuote.credits} credits · diagnostics {currentQuote.base_credits} · answer capture {currentQuote.consumer_capture?.credits ?? 0}. {currentQuote.product_count} products · {currentQuote.providers.join(', ')} · {currentQuote.consumer_capture?.probe_count ?? 0} additional answers. Unverified supplemental answers are refunded. Credit prices are fixed per probe, not based on actual token usage.</p> : null}
+          </div> : null}
+
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="merchant-text-muted text-xs">
               We fetch each link for clean data (Shopify, Wix, or any product
@@ -1135,7 +1164,7 @@ export default function UrlAuditPage() {
                   {elapsedSec > 0 ? `Auditing… (${elapsedSec}s)` : 'Auditing…'}
                 </span>
               ) : (
-                'Audit my products'
+                consumerQueries.length ? (currentQuote ? `Start audit · ${currentQuote.credits} credits` : 'Get audit quote') : 'Audit my products'
               )}
             </MerchantButton>
           </div>

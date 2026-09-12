@@ -46,6 +46,21 @@ export function isRecoveryCompatible(value: unknown): value is Recovery {
       !!data.selection_gap.counts));
 }
 
+// Saved projections can still carry conclusions derived only from score bands.
+// Neutralize that specific legacy contract without rewriting unrelated findings.
+export function recoveryFindingSummary(finding: { type: string; summary: string }): string {
+  const dimensions: Record<string, string> = {
+    product_identity_unresolvable: 'Identity',
+    category_citation_weak: 'Citation',
+    content_too_thin_to_cite: 'Content',
+  };
+  const label = dimensions[finding.type];
+  if (label && new RegExp(`^${label}: (Not yet visible|Needs work|Ready|Agent.ready)`).test(finding.summary)) {
+    return `${label}: diagnostic checks need review. This score does not establish verified AI identification, mention, or recommendation. Review the underlying evidence before changing the product page.`;
+  }
+  return finding.summary;
+}
+
 export function RecoveryView({ data }: { data: Recovery }) {
   // A successful HTTP response can still carry an older projection contract.
   // Keep the saved action workspace usable during mixed-version rollouts.
@@ -71,7 +86,7 @@ export function RecoveryView({ data }: { data: Recovery }) {
         <p className="mt-2 whitespace-pre-wrap break-words text-sm">{typeof a.evidence?.text === 'string' ? a.evidence.text : 'Answer text was not retained.'}</p>
       </details>)}
     </details> : null}
-    <div className="grid gap-3 md:grid-cols-3">{data.stages.map(stage => <div key={stage.stage} className="rounded-lg bg-slate-50 p-4"><h3 className="font-semibold">{stageLabels[stage.stage] || stage.stage}</h3><p className="mt-1 text-sm">{stage.status === 'UNVERIFIED' ? 'Not verified' : stage.status === 'NO_FINDINGS' ? 'No findings in the available checks' : 'Findings available'}</p>{stage.unverified_reason ? <p className="mt-2 text-xs text-slate-500">{stage.unverified_reason}</p> : null}<ul className="mt-2 space-y-2 text-sm">{stage.findings.map((finding, i) => <li key={`${finding.type}-${i}`}>{finding.summary}</li>)}</ul></div>)}</div>
+    <div className="grid gap-3 md:grid-cols-3">{data.stages.map(stage => <div key={stage.stage} className="rounded-lg bg-slate-50 p-4"><h3 className="font-semibold">{stageLabels[stage.stage] || stage.stage}</h3><p className="mt-1 text-sm">{stage.status === 'UNVERIFIED' ? 'Not verified' : stage.status === 'NO_FINDINGS' ? 'No findings in the available checks' : 'Findings available'}</p>{stage.unverified_reason ? <p className="mt-2 text-xs text-slate-500">{stage.unverified_reason}</p> : null}<ul className="mt-2 space-y-2 text-sm">{stage.findings.map((finding, i) => <li key={`${finding.type}-${i}`}>{recoveryFindingSummary(finding)}</li>)}</ul></div>)}</div>
     {data.actions_locked ? <p className="text-sm">Your query action plan is available on a paid plan.</p> : data.selection_gap ? <div className="grid gap-5 md:grid-cols-2">
       <div><h3 className="font-semibold">Queries to win · {data.selection_gap.counts.lost_queries}</h3><ul className="mt-2 space-y-3">{data.selection_gap.gaps.map(q => <li key={q.query} className="text-sm"><strong>“{q.query}”</strong><p className="text-slate-500">Products matching this query: {q.matched_products?.map(p => p.title || p.product_key).join(', ')}</p></li>)}</ul>{data.selection_gap.lost_queries_without_product.length > 0 ? <details open={data.selection_gap.gaps.length === 0} className="mt-3 text-sm"><summary>Queries without a confident product match · {data.selection_gap.lost_queries_without_product.length}</summary><p className="my-2 text-slate-500">These queries lack a confident product match in this report. Review the existing action plan below before choosing a product to improve.</p><ul>{data.selection_gap.lost_queries_without_product.map(q => <li key={q.query}>{q.query}</li>)}</ul></details> : null}</div>
       <div><h3 className="font-semibold">Queries with product citations · {data.selection_gap.counts.won_queries}</h3><ul className="mt-2 space-y-2 text-sm">{data.selection_gap.won_queries.map(q => <li key={q.query}>“{q.query}”</li>)}</ul><p className="mt-2 text-xs text-slate-500">Query lists use the report’s product-citation evidence. They are not the answer-mention rate above. Long lists may be truncated.</p></div>

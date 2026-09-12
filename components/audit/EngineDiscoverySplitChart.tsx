@@ -61,28 +61,30 @@ function engineLabel(provider: string): string {
 // Turn a by_model entry into a clamped 0–100 percentage. Prefer the honest
 // appeared/total ratio; fall back to the backend `rate` (which may be a 0–1
 // fraction or an already-scaled 0–100) only when counts are absent.
-function toPct(entry: { appeared?: number; total?: number; rate?: number | null }): number {
+function toPct(entry: { appeared?: number; total?: number; rate?: number | null }): number | null {
   const { appeared, total, rate } = entry;
+  if (total === 0) return null;
   let pct: number;
   if (typeof total === 'number' && total > 0 && typeof appeared === 'number') {
     pct = (appeared / total) * 100;
   } else if (typeof rate === 'number') {
     pct = rate <= 1 ? rate * 100 : rate;
   } else {
-    pct = 0;
+    return null;
   }
-  if (!Number.isFinite(pct)) return 0;
+  if (!Number.isFinite(pct)) return null;
   return Math.max(0, Math.min(100, pct));
 }
 
-function fmtPct(pct: number): string {
+function fmtPct(pct: number | null): string {
+  if (pct === null) return "Not measured";
   return `${Math.round(pct)}%`;
 }
 
 type SkuRow = {
   key: string;
   title: string;
-  bars: { provider: string; pct: number; appeared?: number; total?: number }[];
+  bars: { provider: string; pct: number | null; appeared?: number; total?: number }[];
 };
 
 export function EngineDiscoverySplitChart({
@@ -119,7 +121,7 @@ export function EngineDiscoverySplitChart({
         const entry = bm[provider];
         return {
           provider,
-          pct: entry ? toPct(entry) : 0,
+          pct: entry ? toPct(entry) : null,
           appeared: entry?.appeared,
           total: entry?.total,
         };
@@ -172,8 +174,8 @@ export function EngineDiscoverySplitChart({
                       <div
                         className="h-full rounded-full"
                         style={{
-                          width: `${bar.pct}%`,
-                          minWidth: bar.pct > 0 ? undefined : 2,
+                          width: `${bar.pct ?? 0}%`,
+                          minWidth: bar.pct === 0 ? 2 : undefined,
                           backgroundColor: engineColor(bar.provider),
                         }}
                       />
@@ -181,13 +183,13 @@ export function EngineDiscoverySplitChart({
                     <span
                       className="w-16 shrink-0 text-right text-[11px] font-semibold tabular-nums text-[color:var(--merchant-ink)]"
                       title={
-                        bar.total != null
+                        bar.pct !== null && bar.total != null
                           ? `${bar.appeared ?? 0} of ${bar.total} searches`
                           : undefined
                       }
                     >
                       {fmtPct(bar.pct)}
-                      {bar.total != null ? (
+                      {bar.pct !== null && bar.total != null ? (
                         <span className="ml-1 font-normal text-[color:var(--merchant-muted)]">
                           {bar.appeared ?? 0}/{bar.total}
                         </span>
