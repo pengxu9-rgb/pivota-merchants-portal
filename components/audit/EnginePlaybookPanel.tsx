@@ -102,7 +102,7 @@ export function EnginePlaybookPanel({ report }: { report: AgentCenterPerSkuRepor
     <div className="mt-3 rounded-md border border-[color:var(--merchant-line)] bg-white/40 px-3 py-3">
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide opacity-70">
         <Bot className="h-3.5 w-3.5" />
-        Win each AI engine
+        Saved engine diagnostics
       </div>
       {ep.divergence_note ? (
         <p className="mt-1 rounded bg-amber-50 px-2 py-1.5 text-[11px] leading-snug text-amber-800">
@@ -110,7 +110,7 @@ export function EnginePlaybookPanel({ report }: { report: AgentCenterPerSkuRepor
         </p>
       ) : (
         <p className="mt-1 text-[11px] leading-snug opacity-60">
-          Gemini and ChatGPT cite from different sources — winning each is a different job.
+          Compare the saved sources and question coverage for each engine.
         </p>
       )}
       <div className="mt-2 grid gap-2 sm:grid-cols-2">

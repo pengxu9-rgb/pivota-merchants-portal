@@ -1,0 +1,17 @@
+const fs=require('fs'),path=require('path'),Module=require('module'),assert=require('node:assert/strict');
+const ts=require('typescript'),React=require('react'),{renderToStaticMarkup:render}=require('react-dom/server');
+const file=path.resolve('components/audit/PrioritizedActionsPanel.tsx'), m=new Module(file,module); m.filename=file;m.paths=module.paths;
+const original=m.require.bind(m);
+m.require=id=>id==='@/lib/api-client'?{apiClient:{}}:id==='@/components/ui/Disclosure'?{Disclosure:({children})=>React.createElement('details',null,children)}:id==='@/components/audit/LockedActionsCard'?{LockedActionsCard:()=>React.createElement('div',null,'LOCKED')}:id==='@/components/audit/PromptEvidenceList'?{PromptEvidenceList:()=>null}:original(id);
+m._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2020}}).outputText,file);
+const {reviewActionHeadline,PrioritizedActionsPanel}=m.exports;
+assert.equal(reviewActionHeadline("Give AI enough on ANUKO hair butter's page to pick you over Cécred."),'Review product facts on ANUKO hair butter’s page');
+const specific='Re-test failed SKU prompt: shea butter hair treatment';
+assert.equal(reviewActionHeadline(specific),specific);
+const html=render(React.createElement(PrioritizedActionsPanel,{runId:'test',actions:[{headline:specific,sku_title:'ANUKO hair butter',first_move:'Specific saved suggestion',why_this_first:'Saved historical rationale'}]}));
+assert(html.includes(specific)&&html.includes('ANUKO hair butter')&&html.includes('Draft on-page version'));
+assert(html.includes('<details')&&!html.includes('<details open'));
+assert(html.includes('Specific saved suggestion')&&html.includes('Saved historical rationale'));
+const locked=render(React.createElement(PrioritizedActionsPanel,{locked:true,lockedCount:1,actions:[{headline:'PRIVATE ACTION'}]}));
+assert(locked.includes('LOCKED')&&!locked.includes('PRIVATE ACTION'));
+console.log('PASS: concrete actions, draft entry, saved rationale and paywall retained; unsupported winning headline reframed.');

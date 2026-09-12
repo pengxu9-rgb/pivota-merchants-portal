@@ -34,6 +34,12 @@ interface ActionState {
   copied?: boolean;
 }
 
+export function reviewActionHeadline(headline?: string | null) {
+  return (headline || 'Review this product page')
+    .replace(/^Give AI enough on (.+)'s page to pick you over .+\.?$/, 'Review product facts on $1’s page')
+    .replace(/^Become the page AI cites$/i, 'Strengthen product facts and source evidence');
+}
+
 // Pitch-shaped first moves ("get cited there: pitch them…") confused merchants
 // clicking the on-page draft button — "what is our target media?" The media
 // target lives in the Get-cited panel below; say so instead of leaving the
@@ -213,7 +219,7 @@ export function PrioritizedActionsPanel({
     if (count === 0) return null;
     return (
       <LockedActionsCard
-        title="Start here — your highest-impact moves"
+        title="Start here — suggested next steps"
         count={count}
         teaserHeadline={lockedTeaserHeadline}
         upgradeCta={upgradeCta}
@@ -226,11 +232,10 @@ export function PrioritizedActionsPanel({
     <div className="rounded-lg border border-[color:var(--merchant-line)] bg-white/50 px-4 py-3">
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide opacity-70">
         <ListChecks className="h-3.5 w-3.5" />
-        Start here — your highest-impact moves
+        Start here — suggested next steps
       </div>
       <p className="mt-1 text-[11px] leading-snug opacity-60">
-        These strengthen your own page. AI mostly cites <em>independent</em> sources, so pair each
-        with third-party proof in <span className="font-medium">Get cited on independent sources</span> below.
+        Review your product facts, then draft page improvements. Review source opportunities in <span className="font-medium">Get cited on independent sources</span> below.
       </p>
       <ol className="mt-2 space-y-2.5">
         {items.slice(0, 6).map((a, i) => (
@@ -240,7 +245,7 @@ export function PrioritizedActionsPanel({
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-sm font-medium leading-snug">{a.headline}</span>
+                <span className="text-sm font-medium leading-snug">{reviewActionHeadline(a.headline)}</span>
                 {(() => {
                   const impact = a.headline
                     ? evidenceByHeadline?.[`${a.primary_gap ?? ''}|${a.headline}`]?.impact
@@ -257,6 +262,7 @@ export function PrioritizedActionsPanel({
                   {a.sku_titles?.length ? a.sku_titles.join(' \u00b7 ') : a.sku_title}
                 </div>
               ) : null}
+              <details className="mt-1 text-xs"><summary className="cursor-pointer">Review saved suggestion</summary><p className="mt-1 font-medium">{a.headline}</p>
               {a.first_move ? (
                 <div className="mt-1 flex items-start gap-1 text-xs">
                   <ArrowRight className="mt-0.5 h-3 w-3 shrink-0 opacity-50" />
@@ -268,6 +274,7 @@ export function PrioritizedActionsPanel({
                   {a.why_this_first}
                 </div>
               ) : null}
+              </details>
               {(() => {
                 const evidence = a.headline
                   ? evidenceByHeadline?.[`${a.primary_gap ?? ''}|${a.headline}`]?.prompts
