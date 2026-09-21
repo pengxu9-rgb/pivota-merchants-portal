@@ -12,7 +12,8 @@ import {
   Settings,
   ShoppingBag,
   Sparkles,
-  Store, Wallet,
+  Store,
+  Wallet,
   Zap,
 } from "lucide-react";
 import { FEATURE_FLAGS } from "@/lib/config";
@@ -112,10 +113,12 @@ export const settingsNavigationItem: MerchantNavigationItem = {
   descriptionKey: "shell.nav.settingsDesc",
 };
 
-// The AI-readiness journey, as two explicit steps in one place so merchants
-// read them as a sequence — not two look-alike "AI" tools.
+// The readiness journey, as three explicit checks in one place so merchants
+// can distinguish how answer engines see them, the quality of their catalog,
+// and whether a storefront agent can complete the buying path.
 //   Step 1 (visibility): paste links → no setup, first 2 runs free (then credits).
 //   Step 2 (audit): sync your catalog → per-SKU win-plan, credit-based.
+//   Step 3 (storefront): paste a product URL → test the purchase journey, no sync.
 // The badge telegraphs the lane (cost/setup) before the merchant clicks in.
 export const aiReadinessNavigation: MerchantNavigationItem[] = [
   {
@@ -134,6 +137,14 @@ export const aiReadinessNavigation: MerchantNavigationItem[] = [
     description: "Per-SKU win-plan for your synced catalog",
     badge: "Needs sync",
     requiresSync: true,
+  },
+  {
+    label: "Storefront Agent Readiness",
+    href: "/dashboard/agent-center/storefront-agent-readiness",
+    icon: Store,
+    matchPrefixes: ["/dashboard/agent-center/storefront-agent-readiness"],
+    description: "Can agents search, cart, and reach checkout?",
+    badge: "No sync",
   },
 ];
 
