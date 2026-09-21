@@ -41,6 +41,28 @@ export interface CommerceFunnelParams {
   commerce_surface?: string;
 }
 
+export type StoreReadinessStepStatus =
+  | 'pending'
+  | 'passed'
+  | 'failed'
+  | 'blocked'
+  | 'not_supported'
+  | 'not_run';
+
+export interface StoreReadinessResponse {
+  state: 'not_run' | 'pending' | 'complete' | 'failed' | 'blocked';
+  overall: 'not_run' | 'running' | 'ready' | 'attention' | 'blocked';
+  audit_run_id?: string | null;
+  verification_run_id?: string | null;
+  checked_at?: string | null;
+  steps: Array<{
+    step: string;
+    status: StoreReadinessStepStatus;
+    reason?: string | null;
+  }>;
+  safety_stop: string;
+}
+
 interface RequestOptions {
   timeoutMs?: number;
 }
@@ -1715,6 +1737,21 @@ class ApiClient {
     }>;
   }> {
     const response = await this.client.get('/api/merchant-center/audit/funnel-checks');
+    return response.data;
+  }
+
+  async getStoreReadiness(): Promise<StoreReadinessResponse> {
+    const response = await this.client.get(
+      '/api/merchant-center/audit/store-readiness',
+    );
+    return response.data;
+  }
+
+  async runStoreReadiness(productUrl: string): Promise<StoreReadinessResponse> {
+    const response = await this.client.post(
+      '/api/merchant-center/audit/store-readiness',
+      { product_url: productUrl },
+    );
     return response.data;
   }
 
