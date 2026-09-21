@@ -32,6 +32,7 @@ import {
   X,
 } from 'lucide-react';
 import { FunnelChecksPanel } from '@/components/audit/FunnelChecksPanel';
+import { StoreReadinessPanel } from '@/components/audit/StoreReadinessPanel';
 import { apiClient } from '@/lib/api-client';
 import { sanitizeFunnelAuditRunId } from '@/lib/onboarding';
 import { FEATURE_FLAGS } from '@/lib/config';
@@ -930,6 +931,10 @@ export default function UrlAuditPage() {
           any other way sees no trace of it. Above the form because it is
           context for the audit they are about to run, not a result. */}
       <FunnelChecksPanel />
+
+      <StoreReadinessPanel
+        productUrl={productUrls.find((value) => value.trim()) || null}
+      />
 
       {result ? <button type="button" aria-expanded={inputsOpen} aria-controls="url-audit-inputs" onClick={() => setInputsOpen(open => !open)} className="w-full rounded-lg border border-[color:var(--merchant-line)] px-5 py-3 text-left text-sm font-medium">
         {inputsOpen ? 'Hide audit inputs' : 'Edit inputs / run another audit'}
