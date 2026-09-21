@@ -85,8 +85,9 @@ function errorMessage(error: unknown): string {
   return 'The store check could not be started. Please try again.';
 }
 
-export function StoreReadinessPanel({ productUrl }: { productUrl?: string | null }) {
+export function StoreReadinessPanel({ initialProductUrl }: { initialProductUrl?: string | null }) {
   const [result, setResult] = useState<StoreReadinessResponse | null>(null);
+  const [productUrl, setProductUrl] = useState(String(initialProductUrl || ''));
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,9 +124,9 @@ export function StoreReadinessPanel({ productUrl }: { productUrl?: string | null
   }, [result?.checked_at]);
 
   async function run() {
-    const url = String(productUrl || '').trim();
+    const url = productUrl.trim();
     if (!url) {
-      setError('Paste a product URL below, then run Store Readiness.');
+      setError('Paste a product URL, then run the storefront check.');
       return;
     }
     setRunning(true);
@@ -155,7 +156,7 @@ export function StoreReadinessPanel({ productUrl }: { productUrl?: string | null
         <div>
           <div className="flex items-center gap-2">
             <Store className="h-5 w-5 text-indigo-600" />
-            <h2 className="text-base font-semibold text-slate-900">Store Readiness</h2>
+            <h2 className="text-base font-semibold text-slate-900">Purchase journey check</h2>
           </div>
           <p className="mt-1 text-sm font-medium text-slate-800">{headline}</p>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
@@ -179,6 +180,25 @@ export function StoreReadinessPanel({ productUrl }: { productUrl?: string | null
             ? 'Run again'
             : 'Run store check'}
         </button>
+      </div>
+
+      <div className="mt-5 max-w-3xl">
+        <label htmlFor="storefront-readiness-product-url" className="block text-sm font-medium text-slate-800">
+          Product URL
+        </label>
+        <p className="mt-1 text-xs leading-5 text-slate-500">
+          Use a live product page on a storefront linked to this merchant account. Catalog sync is not required.
+        </p>
+        <input
+          id="storefront-readiness-product-url"
+          type="url"
+          inputMode="url"
+          value={productUrl}
+          onChange={(event) => setProductUrl(event.target.value)}
+          placeholder="https://your-store.com/products/example"
+          disabled={running || isPending}
+          className="mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-slate-50"
+        />
       </div>
 
       {loading ? (
