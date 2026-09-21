@@ -1,18 +1,20 @@
 // Offline shape-contract check for the redesigned per-product audit card.
-// Runs against the REAL report_jsonb of run a51ae093 (merch_efbc46b4619cfbdf,
-// Anuko) to assert the fields the new components consume are populated, and that
-// the honest recommended-vs-listing split drives the right verdict. No auth, no
-// cost. Usage:  node scripts/verify-audit-redesign-render.mjs <path-to-run.json>
+// Runs against a committed production-shaped report fixture to assert the fields
+// the redesigned components consume are populated, and that the honest
+// recommended-vs-listing split drives the right verdict. No auth, no cost.
+// Usage: node scripts/verify-audit-redesign-render.mjs <path-to-run.json>
 //
 // The fixture is { meta, report }, where report === the per_sku report_jsonb the
 // GET envelope forwards intact (per_sku_reports + authority_map + merchant_narrative).
 
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const path =
   process.argv[2] ||
-  '/private/tmp/claude-502/-Users-pengchydan-dev-PIVOTA-Agent/f6284fc2-442d-4cd0-8c56-a14c9ca794ec/scratchpad/run_a51ae093.json';
-const report = JSON.parse(readFileSync(path, 'utf8')).report;
+  fileURLToPath(new URL('./fixtures/audit-redesign.report.json', import.meta.url));
+const payload = JSON.parse(readFileSync(path, 'utf8'));
+const report = payload.report || payload;
 
 let failures = 0;
 const ok = (cond, msg) => {

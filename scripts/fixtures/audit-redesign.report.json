@@ -1,0 +1,91 @@
+{
+  "audit_run_id": "fixture-audit-redesign",
+  "per_sku_reports": [
+    {
+      "sku_key": "sku-primary",
+      "product_competitiveness": {
+        "has_discovery": true,
+        "discovery": {
+          "appeared": 2,
+          "appeared_recommended": 0,
+          "appeared_listing": 2
+        },
+        "by_model": {
+          "gemini": { "appeared": 1 },
+          "chatgpt": { "appeared": 1 }
+        },
+        "model_divergence": []
+      },
+      "opportunity": {
+        "per_prompt": [
+          {
+            "query": "best hair treatment for damaged hair",
+            "cited_evidence": {
+              "excerpt": "The answer lists the product but does not recommend it."
+            },
+            "provider_verdicts": {
+              "gemini": "listing",
+              "chatgpt": "listing"
+            },
+            "substitution": {
+              "present": true,
+              "substituted_by": "Example competitor"
+            }
+          }
+        ]
+      },
+      "next_best_action": {
+        "brief_status": "ok",
+        "brief_debug": { "outcome": "llm" },
+        "strategic_brief": {
+          "your_angle": "State verified product facts on the canonical page.",
+          "substitution_play": "Answer the measured shopper question and retest.",
+          "first_moves": ["Add the verified decision facts."],
+          "traffic_strategy": [],
+          "diy_vs_pivota": { "self_serve": [] }
+        }
+      },
+      "channel_appearance": {
+        "channels": [
+          {
+            "host": "example.com",
+            "intents_cited": ["attribute_category"]
+          }
+        ]
+      }
+    },
+    {
+      "sku_key": "sku-fallback",
+      "product_competitiveness": {
+        "has_discovery": false,
+        "discovery": {
+          "appeared": 0,
+          "appeared_recommended": 0,
+          "appeared_listing": 0
+        },
+        "by_model": {},
+        "model_divergence": []
+      },
+      "opportunity": { "per_prompt": [] },
+      "next_best_action": {
+        "brief_status": "unavailable",
+        "brief_debug": { "outcome": "deterministic" },
+        "strategic_brief": {
+          "your_angle": "Fallback content must stay hidden.",
+          "substitution_play": "Fallback content must stay hidden.",
+          "first_moves": [{ "action": "deterministic fallback" }],
+          "traffic_strategy": [],
+          "diy_vs_pivota": { "self_serve": [] }
+        }
+      },
+      "channel_appearance": { "channels": [] }
+    }
+  ],
+  "merchant_narrative": {
+    "prioritized_actions": [
+      {
+        "headline": "Answer the measured shopper question with verified product facts."
+      }
+    ]
+  }
+}
