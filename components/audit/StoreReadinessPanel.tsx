@@ -34,6 +34,7 @@ const REASON_LABELS: Record<string, string> = {
   pdp_unconfirmed: 'The page could not be confirmed as a purchasable product',
   cart_item_added: 'One item was added',
   cart_control_unavailable: 'No usable add-to-cart control was found',
+  cart_item_not_observed: 'The product did not appear in the cart after the add-to-cart action',
   required_selection_unresolved: 'A required product or add-on selection blocked the cart',
   checkout_reached: 'A guest checkout page was reached',
   checkout_route_missing: 'No usable checkout route was found',
