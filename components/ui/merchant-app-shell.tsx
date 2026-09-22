@@ -256,14 +256,14 @@ export function MerchantAppShell({
         </div>
 
         <nav className="mt-2 flex-1 space-y-4 overflow-y-auto pr-1">
-          {/* "AI readiness first" IA (AI_READINESS_HOME): the readiness journey
+          {/* "Revenue recovery first" IA (AI_READINESS_HOME): the recovery journey
               leads the sidebar — a merchant's first question is whether AI can
               recommend them — and the low-engagement Workflows group hides
               (hidden, not deleted: flag off restores today's order exactly). */}
           {FEATURE_FLAGS.AI_READINESS_HOME ? (
             <>
               <NavigationGroup
-                label="AI readiness"
+                label="Revenue recovery"
                 items={aiReadinessNavigation}
                 pathname={pathname}
                 onNavigate={() => setSidebarOpen(false)}
@@ -288,7 +288,7 @@ export function MerchantAppShell({
                 collapsed={sidebarCollapsed}
               />
               <NavigationGroup
-                label="AI readiness"
+                label="Revenue recovery"
                 items={aiReadinessNavigation}
                 pathname={pathname}
                 onNavigate={() => setSidebarOpen(false)}

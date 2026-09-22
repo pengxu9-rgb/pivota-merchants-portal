@@ -700,8 +700,8 @@ export default function AiReadinessAuditPage() {
         </div>
       </div> : null}
       <PageHeader
-        eyebrow="AI Visibility · synced catalog scope"
-        title="AI Visibility — synced catalog"
+        eyebrow="AI Revenue Recovery · synced catalog"
+        title="AI Revenue Recovery — synced catalog"
         description="Audit up to 50 synced products against AI shopping agents, with catalog evidence, per-product scorecards, a brand roll-up, and an action plan. Preview the credit cost before launch."
       />
 

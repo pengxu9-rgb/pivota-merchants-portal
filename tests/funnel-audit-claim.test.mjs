@@ -48,7 +48,7 @@ test("the landing path carries the run id", () => {
     funnelAuditRunId: "ce70de2f-c47d-4394-a875-277c85b3e70f",
   });
   const url = new URL(path, "https://merchant.pivota.cc");
-  assert.equal(url.pathname, "/dashboard/agent-center/url-audit");
+  assert.equal(url.pathname, "/dashboard/agent-center/storefront-agent-readiness");
   assert.equal(url.searchParams.get("website"), "https://anua.com");
   assert.equal(url.searchParams.get("brand"), "Anua");
   assert.equal(
@@ -70,11 +70,11 @@ test("the path still works for a non-funnel signup", () => {
   // The positive counterpart: a builder that dropped everything would pass
   // the omission tests above.
   const path = auditFunnelLandingPath({ storeUrl: "https://anua.com" });
-  assert.equal(path, "/dashboard/agent-center/url-audit?website=https%3A%2F%2Fanua.com");
+  assert.equal(path, "/dashboard/agent-center/storefront-agent-readiness?website=https%3A%2F%2Fanua.com");
 });
 
 test("an empty input yields the bare path, not a dangling ?", () => {
-  assert.equal(auditFunnelLandingPath({}), "/dashboard/agent-center/url-audit");
+  assert.equal(auditFunnelLandingPath({}), "/dashboard/agent-center/storefront-agent-readiness");
 });
 
 // ---- which id a signup uses -------------------------------------------------
