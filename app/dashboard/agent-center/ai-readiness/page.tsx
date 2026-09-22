@@ -700,9 +700,9 @@ export default function AiReadinessAuditPage() {
         </div>
       </div> : null}
       <PageHeader
-        eyebrow="Step 2 · needs a synced catalog"
-        title="AI readiness audit"
-        description="The deep version of your AI visibility check: audit up to 50 of your synced SKUs (not just pasted links) against AI shopping agents (Gemini grounded search; DeepSeek verification). Per-SKU scorecards — Identity / Content / Routability / Citation — plus a brand roll-up and a per-SKU win-plan. Coverage is credit-driven — preview the cost before launch."
+        eyebrow="AI Visibility · synced catalog scope"
+        title="AI Visibility — synced catalog"
+        description="Audit up to 50 synced products against AI shopping agents, with catalog evidence, per-product scorecards, a brand roll-up, and an action plan. Preview the credit cost before launch."
       />
 
       {/* Run history — re-open any past audit without re-running. Renders null
@@ -4314,4 +4314,3 @@ function AxisCoverageBlock({
     </div>
   );
 }
-
