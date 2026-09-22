@@ -103,8 +103,8 @@ export function sanitizeFunnelAuditRunId(raw: string | null | undefined): string
 }
 
 /**
- * Where an audit-funnel signup lands after login, carrying everything the
- * dashboard needs to continue the visitor's session rather than restart it.
+ * Where a Store Audit funnel signup lands after login, carrying everything
+ * the dashboard needs to continue the visitor's session rather than restart it.
  *
  * `audit_run_id` is the one that matters: without it the merchant re-runs an
  * audit they already watched, which is the behaviour this whole funnel exists
@@ -123,7 +123,7 @@ export function auditFunnelLandingPath(input: {
   if (brand) params.set('brand', brand);
   if (runId) params.set('audit_run_id', runId);
   const query = params.toString();
-  return `/dashboard/agent-center/url-audit${query ? `?${query}` : ''}`;
+  return `/dashboard/agent-center/storefront-agent-readiness${query ? `?${query}` : ''}`;
 }
 
 /**
@@ -148,4 +148,3 @@ export function resolveFunnelAuditRunId(
     ''
   );
 }
-
