@@ -241,21 +241,34 @@ export default function MerchantSignup() {
   }, [currentStep, funnelAuditRunId, hasHydrated, onboardingData, pspForm.customPspName, pspForm.pspType, registrationForm, signupSource]);
 
   const panelAction = useMemo(
-    () => (
+    () => {
+      const postLoginPath =
+        signupSource === AUDIT_FUNNEL_SIGNUP_SOURCE
+          ? auditFunnelLandingPath({
+              storeUrl: registrationForm.store_url,
+              businessName: registrationForm.business_name,
+              funnelAuditRunId,
+            })
+          : '';
+      const loginHref = postLoginPath
+        ? `/login?next=${encodeURIComponent(postLoginPath)}`
+        : '/login';
+      return (
       <div className="text-right">
         <p className="text-[11px] uppercase tracking-[0.16em] text-[color:var(--merchant-muted)]">
           {t('auth.shell.alreadyRegistered')}
         </p>
         <Link
-          href="/login"
+          href={loginHref}
           className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-[color:var(--merchant-brand)] hover:text-[color:var(--merchant-brand-strong)]"
         >
           <span>{t('auth.shell.signIn')}</span>
           <ArrowRight className="h-4 w-4" />
         </Link>
       </div>
-    ),
-    [t],
+      );
+    },
+    [funnelAuditRunId, registrationForm.business_name, registrationForm.store_url, signupSource, t],
   );
 
   const signupHighlights = useMemo(
