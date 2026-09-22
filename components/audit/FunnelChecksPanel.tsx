@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 
 import { apiClient } from '@/lib/api-client';
+import { sanitizeFunnelAuditRunId } from '@/lib/onboarding';
 
 /**
  * The check a merchant ran on the marketing site before they had an account,
@@ -76,17 +77,37 @@ export function FunnelChecksPanel({
 
   useEffect(() => {
     let cancelled = false;
-    apiClient
-      .listClaimedFunnelChecks()
-      .then((res) => {
+
+    async function loadChecks() {
+      // Claim before listing so the pre-signup observation is visible on the
+      // first render after either signup or login. Claim failures are expected
+      // for an already-claimed, foreign, expired, or malformed run and must
+      // never block the underlying audit page.
+      const runId =
+        typeof window === 'undefined'
+          ? ''
+          : sanitizeFunnelAuditRunId(
+              new URLSearchParams(window.location.search).get('audit_run_id'),
+            );
+      if (runId) {
+        try {
+          await apiClient.claimFunnelAuditRun(runId);
+        } catch {
+          // Best effort; list below still returns an already-claimed check.
+        }
+      }
+
+      try {
+        const res = await apiClient.listClaimedFunnelChecks();
         if (!cancelled) setChecks(res?.checks ?? []);
-      })
-      // Same contract as RecentAuditsPanel: a failure renders nothing rather
-      // than an error. This panel is a nicety above the form the merchant came
-      // here to use; it must never be the reason the page looks broken.
-      .catch(() => {
+      } catch {
+        // Same contract as RecentAuditsPanel: this panel decorates the page
+        // and must never be the reason the audit itself looks broken.
         if (!cancelled) setChecks([]);
-      });
+      }
+    }
+
+    void loadChecks();
     return () => {
       cancelled = true;
     };

@@ -127,6 +127,30 @@ export function auditFunnelLandingPath(input: {
 }
 
 /**
+ * Accept only the Store Audit continuation we issue ourselves. Login query
+ * strings are user-editable, so this must never become an open redirect.
+ */
+export function sanitizeAuditFunnelPostLoginPath(
+  raw: string | null | undefined,
+): string {
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw, 'https://merchant.pivota.cc');
+    if (parsed.origin !== 'https://merchant.pivota.cc') return '';
+    if (parsed.pathname !== '/dashboard/agent-center/storefront-agent-readiness') {
+      return '';
+    }
+    return auditFunnelLandingPath({
+      storeUrl: parsed.searchParams.get('website') || '',
+      businessName: parsed.searchParams.get('brand') || '',
+      funnelAuditRunId: parsed.searchParams.get('audit_run_id') || '',
+    });
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Which funnel run id a signup should use: the one in the URL, else the one
  * left in the session draft.
  *

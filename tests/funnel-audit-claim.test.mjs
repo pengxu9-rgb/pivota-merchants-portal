@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   auditFunnelLandingPath,
+  sanitizeAuditFunnelPostLoginPath,
   sanitizeFunnelAuditRunId,
 } from "../lib/onboarding.ts";
 
@@ -75,6 +76,18 @@ test("the path still works for a non-funnel signup", () => {
 
 test("an empty input yields the bare path, not a dangling ?", () => {
   assert.equal(auditFunnelLandingPath({}), "/dashboard/agent-center/storefront-agent-readiness");
+});
+
+test("the login continuation preserves the Store Audit handoff", () => {
+  const next = "/dashboard/agent-center/storefront-agent-readiness?website=https%3A%2F%2Fanua.com&audit_run_id=ce70de2f-c47d-4394-a875-277c85b3e70f";
+  assert.equal(sanitizeAuditFunnelPostLoginPath(next), next);
+});
+
+test("the login continuation rejects external and unrelated routes", () => {
+  assert.equal(sanitizeAuditFunnelPostLoginPath("https://evil.example/steal"), "");
+  assert.equal(sanitizeAuditFunnelPostLoginPath("//evil.example/steal"), "");
+  assert.equal(sanitizeAuditFunnelPostLoginPath("/dashboard/billing"), "");
+  assert.equal(sanitizeAuditFunnelPostLoginPath("javascript:alert(1)"), "");
 });
 
 // ---- which id a signup uses -------------------------------------------------
