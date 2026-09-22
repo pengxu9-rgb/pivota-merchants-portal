@@ -898,10 +898,32 @@ export default function UrlAuditPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Per-product · no catalog sync"
-        title="See how AI sees your products"
-        description="Paste your product links — up to 5 per audit on the free plan (first 2 audits free), up to 20 per audit on paid plans and we'll audit each one — how the AI models enabled for your run cite it, which competitors and channels they surface instead, and what to do about it. No catalog sync required. Connect your store for the full-catalog audit with availability + agent checkout."
+        eyebrow="Answer-engine discovery and recommendation"
+        title="AI Visibility"
+        description="Measure whether AI models find, cite, and recommend your products. Start with pasted product links, or use your synced catalog for broader coverage and per-product action plans."
       />
+
+      <div className="grid gap-3 md:grid-cols-2" aria-label="AI Visibility audit scope">
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-4">
+          <p className="text-sm font-semibold text-slate-900">Product links</p>
+          <p className="mt-1 text-sm leading-6 text-slate-600">
+            Paste the products you want to check. Your first two audits are free, then usage is credit-based.
+          </p>
+          <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-indigo-700">Current scope</p>
+        </div>
+        <Link
+          href="/dashboard/agent-center/ai-readiness"
+          className="group rounded-lg border border-[color:var(--merchant-line)] bg-white p-4 transition hover:border-indigo-300 hover:bg-indigo-50/30"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-slate-900">Synced catalog</p>
+            <ArrowRight className="h-4 w-4 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-indigo-600" />
+          </div>
+          <p className="mt-1 text-sm leading-6 text-slate-600">
+            Audit up to 50 synced products with catalog evidence and a per-product action plan.
+          </p>
+        </Link>
+      </div>
 
       {/* Re-open a past visibility check (subject_type=merchant_url). Renders
           null when there's no history yet. */}
