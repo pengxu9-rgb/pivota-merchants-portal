@@ -898,12 +898,12 @@ export default function UrlAuditPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Answer-engine discovery and recommendation"
-        title="AI Visibility"
-        description="Measure whether AI models find, cite, and recommend your products. Start with pasted product links, or use your synced catalog for broader coverage and per-product action plans."
+        eyebrow="Recover missed AI demand"
+        title="AI Revenue Recovery"
+        description="See where AI models overlook your products, cite other sources, or surface competitors, then turn the measured gaps into actions. Start with product links or use your synced catalog for broader coverage."
       />
 
-      <div className="grid gap-3 md:grid-cols-2" aria-label="AI Visibility audit scope">
+      <div className="grid gap-3 md:grid-cols-2" aria-label="AI Revenue Recovery audit scope">
         <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-4">
           <p className="text-sm font-semibold text-slate-900">Product links</p>
           <p className="mt-1 text-sm leading-6 text-slate-600">
