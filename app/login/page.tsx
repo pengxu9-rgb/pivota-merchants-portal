@@ -7,6 +7,7 @@ import { ArrowRight, Loader2, ShoppingBag, Sparkles, Store } from 'lucide-react'
 import { AuthShell } from '@/components/auth/AuthShell';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { apiClient } from '@/lib/api-client';
+import { sanitizeAuditFunnelPostLoginPath } from '@/lib/onboarding';
 
 function normalizeEmail(value: string) {
   return (value || '').trim().toLowerCase();
@@ -20,6 +21,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [fromSignup, setFromSignup] = useState(false);
+  const [postLoginPath, setPostLoginPath] = useState('');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -33,6 +35,7 @@ export default function LoginPage() {
     }
 
     setFromSignup(signupFlag);
+    setPostLoginPath(sanitizeAuditFunnelPostLoginPath(params.get('next')));
   }, []);
 
   const panelAction = useMemo(
@@ -86,7 +89,7 @@ export default function LoginPage() {
       const response = await apiClient.login(normalizedEmail, password);
 
       if (response.success === true || response.status === 'success') {
-        router.push('/dashboard');
+        router.push(postLoginPath || '/dashboard');
         return;
       }
 
