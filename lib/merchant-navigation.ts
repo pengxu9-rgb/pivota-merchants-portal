@@ -4,7 +4,6 @@ import {
   ClipboardCheck,
   CreditCard,
   LayoutDashboard,
-  ListChecks,
   MessageSquare,
   Package,
   Receipt,
@@ -113,38 +112,28 @@ export const settingsNavigationItem: MerchantNavigationItem = {
   descriptionKey: "shell.nav.settingsDesc",
 };
 
-// The readiness journey, as three explicit checks in one place so merchants
-// can distinguish how answer engines see them, the quality of their catalog,
-// and whether a storefront agent can complete the buying path.
-//   Step 1 (visibility): paste links → no setup, first 2 runs free (then credits).
-//   Step 2 (audit): sync your catalog → per-SKU win-plan, credit-based.
-//   Step 3 (storefront): paste a product URL → test the purchase journey, no sync.
-// The badge telegraphs the lane (cost/setup) before the merchant clicks in.
+// Two merchant questions belong in the readiness area:
+//   1. Can AI answer engines find and recommend my products?
+//   2. Can a storefront agent complete the buying journey?
+// URL and synced-catalog visibility audits are two scopes of the first
+// question, so they share one navigation item.
 export const aiReadinessNavigation: MerchantNavigationItem[] = [
   {
     label: "AI visibility",
     href: "/dashboard/agent-center/url-audit",
     icon: ScanEye,
-    matchPrefixes: ["/dashboard/agent-center/url-audit"],
-    description: "How AI sees you — no setup",
-    badge: "First 2 free",
-  },
-  {
-    label: "Readiness audit",
-    href: "/dashboard/agent-center/ai-readiness",
-    icon: ListChecks,
-    matchPrefixes: ["/dashboard/agent-center/ai-readiness"],
-    description: "Per-SKU win-plan for your synced catalog",
-    badge: "Needs sync",
-    requiresSync: true,
+    matchPrefixes: [
+      "/dashboard/agent-center/url-audit",
+      "/dashboard/agent-center/ai-readiness",
+    ],
+    description: "Measure and improve how AI sees your products",
   },
   {
     label: "Storefront Agent Readiness",
     href: "/dashboard/agent-center/storefront-agent-readiness",
     icon: Store,
     matchPrefixes: ["/dashboard/agent-center/storefront-agent-readiness"],
-    description: "Can agents search, cart, and reach checkout?",
-    badge: "No sync",
+    description: "Test search, cart, shipping, and checkout",
   },
 ];
 
