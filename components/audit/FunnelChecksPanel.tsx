@@ -67,7 +67,11 @@ function formatWhen(value?: string | null): string | null {
   });
 }
 
-export function FunnelChecksPanel() {
+export function FunnelChecksPanel({
+  nextStep = 'visibility',
+}: {
+  nextStep?: 'visibility' | 'storefront';
+} = {}) {
   const [checks, setChecks] = useState<FunnelCheck[] | null>(null);
 
   useEffect(() => {
@@ -153,8 +157,9 @@ export function FunnelChecksPanel() {
       </ul>
       <p className="mt-3 text-xs leading-5 text-slate-500">
         These are protocol checks — what your storefront advertises to an agent.
-        Run the audit below to see how AI shopping agents actually answer for
-        your products.
+        {nextStep === 'storefront'
+          ? ' Paste a product URL below to test the full buying path from store search through checkout.'
+          : ' Run the audit below to see how AI shopping agents actually answer for your products.'}
       </p>
     </div>
   );
