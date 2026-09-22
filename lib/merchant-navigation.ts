@@ -112,28 +112,28 @@ export const settingsNavigationItem: MerchantNavigationItem = {
   descriptionKey: "shell.nav.settingsDesc",
 };
 
-// Two merchant questions belong in the readiness area:
-//   1. Can AI answer engines find and recommend my products?
-//   2. Can a storefront agent complete the buying journey?
-// URL and synced-catalog visibility audits are two scopes of the first
-// question, so they share one navigation item.
+// Two revenue leaks belong in this area:
+//   1. AI answer engines overlook the merchant's products.
+//   2. An agent cannot complete the storefront buying journey.
+// URL and synced-catalog audits are two scopes of the first leak, so they
+// share one navigation item.
 export const aiReadinessNavigation: MerchantNavigationItem[] = [
   {
-    label: "AI visibility",
+    label: "AI Revenue Recovery",
     href: "/dashboard/agent-center/url-audit",
     icon: ScanEye,
     matchPrefixes: [
       "/dashboard/agent-center/url-audit",
       "/dashboard/agent-center/ai-readiness",
     ],
-    description: "Measure and improve how AI sees your products",
+    description: "Find where AI sends shoppers elsewhere",
   },
   {
-    label: "Storefront Agent Readiness",
+    label: "Storefront Revenue Recovery",
     href: "/dashboard/agent-center/storefront-agent-readiness",
     icon: Store,
     matchPrefixes: ["/dashboard/agent-center/storefront-agent-readiness"],
-    description: "Test search, cart, shipping, and checkout",
+    description: "Fix search, cart, shipping, and checkout blockers",
   },
 ];
 
