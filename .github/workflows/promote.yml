@@ -96,7 +96,9 @@ jobs:
             --format=json | jq --arg r "$REV" '[.status.traffic[] | select(.revisionName == $r) | .percent] | add // 0')
           [ "$pct" = 100 ] || { echo "::error::${REV} has ${pct}% of traffic, want 100"; exit 1; }
           for i in 1 2 3; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' https://merchant.pivota.cc/)
+            # `|| code=000`: under bash -e a curl CONNECTION failure (exit 6 while the host has no
+            # DNS yet, or a dropped connection) aborted the step instead of retrying / warning.
+            code=$(curl -s -o /dev/null -w '%{http_code}' https://merchant.pivota.cc/) || code=000
             [ "$code" = 200 ] && break; sleep 10
           done
           echo "https://merchant.pivota.cc/ -> ${code}"; [ "$code" = 200 ] || exit 1
