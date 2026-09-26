@@ -109,7 +109,9 @@ jobs:
           [ "$image" = "$want" ] || { echo "::error::candidate ${cand} runs ${image}, want ${want}"; exit 1; }
           code=""
           for i in 1 2 3 4 5 6; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' https://merchant-candidate.pivota.cc/)
+            # `|| code=000`: under bash -e a curl CONNECTION failure (exit 6 while the host has no
+            # DNS yet, or a dropped connection) aborted the step instead of retrying / warning.
+            code=$(curl -s -o /dev/null -w '%{http_code}' https://merchant-candidate.pivota.cc/) || code=000
             [ "$code" = 200 ] && break; sleep 10
           done
           echo "https://merchant-candidate.pivota.cc/ -> ${code}"
