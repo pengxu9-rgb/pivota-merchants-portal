@@ -1,0 +1,32 @@
+# Builds every PR (and main) with the release recipe in infra/gcp/cloudbuild.yaml.
+#
+# Vercel used to build each PR; that Git integration was disconnected on 2026-09-26
+# when merchant.pivota.cc had long since moved to Cloud Run. Without this, a PR that
+# cannot build merges green and only fails in the candidate deploy. The builder stage
+# is the whole `next build`, with exactly the args a release uses.
+name: Build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build (release args, builder stage)
+        run: |
+          mapfile -t args < <(infra/gcp/docker-build-args.sh "${GITHUB_SHA}")
+          # args end with the build context; stop at the builder stage (no push, no runner).
+          docker "${args[@]:0:${#args[@]}-1}" --target builder "${args[-1]}"

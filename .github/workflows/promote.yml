@@ -1,0 +1,103 @@
+# Shift 100% of merchant.pivota.cc to the revision running a given commit's image —
+# after browser acceptance of that commit on https://merchant-candidate.pivota.cc.
+#
+# Also the ROLLBACK: pass the sha of an earlier release. Any revision still holding
+# that exact image digest qualifies (the `candidate`-tagged one is preferred).
+# The sha is required and must match: you promote what you accepted, never "whatever
+# the candidate is now" — a merge landing after your check would have replaced it.
+name: Promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Commit to promote to 100% (full or short sha, on main)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-merchants-portal
+  cancel-in-progress: false
+
+env:
+  PROJECT: pivota-prod
+  REGION: us-west1
+  SERVICE: merchants-portal
+  REPO: us-west1-docker.pkg.dev/pivota-prod/cloud-run-source-deploy/merchants-portal
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: meta
+        name: Resolve the commit (must be on main)
+        env:
+          WANT: ${{ inputs.sha }}
+        run: |
+          sha=$(git rev-parse --verify --quiet "${WANT}^{commit}") \
+            || { echo "::error::${WANT} is not a commit in this repository"; exit 1; }
+          git merge-base --is-ancestor "$sha" origin/main \
+            || { echo "::error::${sha} is not on main"; exit 1; }
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/371394967380/locations/global/workloadIdentityPools/github-actions/providers/github-frontends
+          service_account: sa-merchants-portal-deploy@pivota-prod.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - id: rev
+        name: Find the revision running this commit's image
+        env:
+          SHA: ${{ steps.meta.outputs.sha }}
+        run: |
+          digest=$(gcloud artifacts docker images describe "${REPO}:${SHA}" --format='value(image_summary.digest)') \
+            || { echo "::error::no image ${REPO}:${SHA} — stage it with Deploy candidate first"; exit 1; }
+          want="${REPO}@${digest}"
+          svc=$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format=json)
+          cand=$(jq -r '.status.traffic[] | select(.tag == "candidate") | .revisionName' <<<"$svc")
+          rev=""
+          if [ -n "$cand" ] && [ "$(gcloud run revisions describe "$cand" --project "$PROJECT" --region "$REGION" \
+                 --format='value(spec.containers[0].image)')" = "$want" ]; then
+            rev=$cand
+          else
+            rev=$(gcloud run revisions list --service "$SERVICE" --project "$PROJECT" --region "$REGION" \
+              --format=json | jq -r --arg w "$want" \
+              '[.[] | select(.spec.containers[0].image == $w)] | sort_by(.metadata.creationTimestamp) | last | .metadata.name // empty')
+          fi
+          [ -n "$rev" ] || { echo "::error::no revision runs ${want}; stage ${SHA:0:7} with Deploy candidate first"; exit 1; }
+          echo "rev=${rev}" >> "$GITHUB_OUTPUT"
+          echo "promoting ${rev} (${want})"
+
+      - name: Shift 100% of traffic
+        env:
+          REV: ${{ steps.rev.outputs.rev }}
+        # Tags (candidate, acceptance tags) are kept; only percentages change.
+        run: |
+          gcloud run services update-traffic "$SERVICE" --project "$PROJECT" --region "$REGION" \
+            --to-revisions "${REV}=100" --quiet
+
+      - name: Verify
+        env:
+          REV: ${{ steps.rev.outputs.rev }}
+          SHA: ${{ steps.meta.outputs.sha }}
+        run: |
+          pct=$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" \
+            --format=json | jq --arg r "$REV" '[.status.traffic[] | select(.revisionName == $r) | .percent] | add // 0')
+          [ "$pct" = 100 ] || { echo "::error::${REV} has ${pct}% of traffic, want 100"; exit 1; }
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' https://merchant.pivota.cc/)
+            [ "$code" = 200 ] && break; sleep 10
+          done
+          echo "https://merchant.pivota.cc/ -> ${code}"; [ "$code" = 200 ] || exit 1
+          echo "### Promoted \`${SHA:0:7}\` (${REV}) to 100% of merchant.pivota.cc" >> "$GITHUB_STEP_SUMMARY"
