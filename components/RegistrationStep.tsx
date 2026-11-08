@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import type { FormEvent } from 'react';
 import { AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
@@ -9,6 +10,8 @@ interface RegistrationStepProps {
   formData: RegistrationFormData;
   loading: boolean;
   error: string;
+  /** The email already has a login, or a merchant set up without one: offer sign-in / reset. */
+  signinRequired?: boolean;
   onChange: (field: keyof RegistrationFormData, value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
@@ -22,6 +25,7 @@ export default function RegistrationStep({
   formData,
   loading,
   error,
+  signinRequired = false,
   onChange,
   onSubmit,
 }: RegistrationStepProps) {
@@ -229,6 +233,16 @@ export default function RegistrationStep({
                 <AlertCircle className="mt-0.5 h-4.5 w-4.5 flex-shrink-0" />
                 <span>{error}</span>
               </div>
+              {signinRequired ? (
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 pl-7 font-medium">
+                  <Link href="/login" className="underline underline-offset-2">
+                    {t('auth.signup.signinRequiredSignIn')}
+                  </Link>
+                  <Link href="/forgot-password" className="underline underline-offset-2">
+                    {t('auth.signup.signinRequiredReset')}
+                  </Link>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
