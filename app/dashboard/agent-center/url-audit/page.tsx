@@ -1355,8 +1355,9 @@ export default function UrlAuditPage() {
                     <div className="text-sm font-semibold">Connect your store</div>
                     <p className="merchant-text-muted mt-1 text-xs">
                       Sync your catalog → we audit every SKU automatically with
-                      availability + serving data, and make you transactable in
-                      agent checkout.
+                      availability + serving data. Pivota reviews every merchant
+                      before listing it to agent partners; agent checkout is not
+                      yet available to portal merchants.
                     </p>
                   </a>
                 ) : null}

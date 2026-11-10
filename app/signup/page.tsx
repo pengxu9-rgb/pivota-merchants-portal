@@ -11,6 +11,7 @@ import { AuthShell } from '@/components/auth/AuthShell';
 import { OnboardingProgress } from '@/components/auth/OnboardingProgress';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { onboardingApi } from '@/lib/api';
+import { apiClient } from '@/lib/api-client';
 import { captureInviteRef } from '@/lib/invite-ref';
 import {
   AUDIT_FUNNEL_SIGNUP_SOURCE,
@@ -401,6 +402,21 @@ export default function MerchantSignup() {
       // PSP/documents steps, since document upload is its path to approval.
       const skipToComplete = response.auto_approved === true;
 
+      // The PSP and document steps call authenticated routes, and register
+      // returns no token. Every new signup is now pending review, so it walks
+      // those steps: sign in here with the credentials just entered. If that
+      // fails, go to completion, which retries the sign-in and otherwise
+      // offers the login page, instead of a document step that cannot save.
+      let signedIn = skipToComplete;
+      if (!skipToComplete) {
+        try {
+          const login = await apiClient.login(normalizedEmail, registrationForm.password);
+          signedIn = login?.success === true || login?.status === 'success';
+        } catch {
+          signedIn = false;
+        }
+      }
+
       setOnboardingData({
         merchant_id: response.merchant_id,
         business_name: registrationForm.business_name,
@@ -418,7 +434,7 @@ export default function MerchantSignup() {
         ...prev,
         contact_email: normalizedEmail,
       }));
-      setCurrentStep(skipToComplete ? 'complete' : 'psp');
+      setCurrentStep(skipToComplete || !signedIn ? 'complete' : 'psp');
       setError('');
     } catch (err) {
       setError(getApiErrorMessage(err, t('auth.signup.registrationFailed')));
