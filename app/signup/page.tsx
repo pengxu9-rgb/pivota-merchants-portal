@@ -54,10 +54,13 @@ function toPublicRegistrationDraft(formData: RegistrationFormData): PublicRegist
   return publicDraft;
 }
 
-// The backend answers 409 with detail.code MERCHANT_SIGNIN_REQUIRED when the email
-// already has a login (and the password entered is not its password), or when it
-// names a merchant set up without a login. Either way the next step is to sign in
-// or reset the password, not to register again.
+// The backend answers 409 with detail.code MERCHANT_SIGNIN_REQUIRED in three cases:
+// - the email already has a login (and the password entered is not its password);
+// - the email names a merchant onboarding record set up without a login (sign-in
+//   cannot work there, but a merchant password reset does);
+// - the email belongs to another identity (an employee, an agent owner or another
+//   tenant), where neither merchant sign-in nor merchant reset will work.
+// So the page offers sign-in and reset without promising either, plus support.
 const MERCHANT_SIGNIN_REQUIRED = 'MERCHANT_SIGNIN_REQUIRED';
 
 function getApiErrorCode(error: unknown): string {

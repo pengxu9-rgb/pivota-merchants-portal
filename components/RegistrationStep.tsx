@@ -4,13 +4,14 @@ import Link from 'next/link';
 import type { FormEvent } from 'react';
 import { AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
+import { APP_CONFIG } from '@/lib/config';
 import type { RegistrationFormData } from '@/lib/onboarding';
 
 interface RegistrationStepProps {
   formData: RegistrationFormData;
   loading: boolean;
   error: string;
-  /** The email already has a login, or a merchant set up without one: offer sign-in / reset. */
+  /** The email is already in use (MERCHANT_SIGNIN_REQUIRED): offer sign-in, reset and support. */
   signinRequired?: boolean;
   onChange: (field: keyof RegistrationFormData, value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -241,6 +242,9 @@ export default function RegistrationStep({
                   <Link href="/forgot-password" className="underline underline-offset-2">
                     {t('auth.signup.signinRequiredReset')}
                   </Link>
+                  <a href={`mailto:${APP_CONFIG.SUPPORT_EMAIL}`} className="underline underline-offset-2">
+                    {t('auth.signup.signinRequiredSupport')}
+                  </a>
                 </div>
               ) : null}
             </div>
