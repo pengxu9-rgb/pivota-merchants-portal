@@ -54,6 +54,25 @@ function toPublicRegistrationDraft(formData: RegistrationFormData): PublicRegist
   return publicDraft;
 }
 
+// The backend answers 409 with detail.code MERCHANT_SIGNIN_REQUIRED in three cases:
+// - the email already has a login (and the password entered is not its password);
+// - the email names a merchant onboarding record set up without a login (sign-in
+//   cannot work there, but a merchant password reset does);
+// - the email belongs to another identity (an employee, an agent owner or another
+//   tenant), where neither merchant sign-in nor merchant reset will work.
+// So the page offers sign-in and reset without promising either, plus support.
+const MERCHANT_SIGNIN_REQUIRED = 'MERCHANT_SIGNIN_REQUIRED';
+
+function getApiErrorCode(error: unknown): string {
+  if (typeof error !== 'object' || error === null) return '';
+  const detail = (error as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
+  if (typeof detail === 'object' && detail !== null && 'code' in detail) {
+    const code = (detail as { code?: unknown }).code;
+    return typeof code === 'string' ? code : '';
+  }
+  return '';
+}
+
 function getApiErrorMessage(error: unknown, fallback: string) {
   if (typeof error === 'object' && error !== null) {
     const candidate = error as {
@@ -159,6 +178,7 @@ export default function MerchantSignup() {
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [signinRequired, setSigninRequired] = useState(false);
   const [hasHydrated, setHasHydrated] = useState(false);
   const [signupSource, setSignupSource] = useState('');
   const [funnelAuditRunId, setFunnelAuditRunId] = useState('');
@@ -357,6 +377,7 @@ export default function MerchantSignup() {
   const handleRegistrationSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
+    setSigninRequired(false);
 
     if (registrationForm.password !== registrationForm.confirm_password) {
       setError(t('auth.signup.passwordMismatch'));
@@ -437,7 +458,12 @@ export default function MerchantSignup() {
       setCurrentStep(skipToComplete || !signedIn ? 'complete' : 'psp');
       setError('');
     } catch (err) {
-      setError(getApiErrorMessage(err, t('auth.signup.registrationFailed')));
+      if (getApiErrorCode(err) === MERCHANT_SIGNIN_REQUIRED) {
+        setSigninRequired(true);
+        setError(t('auth.signup.signinRequired'));
+      } else {
+        setError(getApiErrorMessage(err, t('auth.signup.registrationFailed')));
+      }
     } finally {
       setLoading(false);
     }
@@ -592,6 +618,7 @@ export default function MerchantSignup() {
           formData={registrationForm}
           loading={loading}
           error={error}
+          signinRequired={signinRequired && Boolean(error)}
           onChange={updateRegistrationField}
           onSubmit={handleRegistrationSubmit}
         />
