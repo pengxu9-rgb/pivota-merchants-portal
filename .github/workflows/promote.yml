@@ -61,9 +61,8 @@ jobs:
         env:
           SHA: ${{ steps.meta.outputs.sha }}
         run: |
-          digest=$(gcloud artifacts docker images describe "${REPO}:${SHA}" --format='value(image_summary.digest)') \
-            || { echo "::error::no image ${REPO}:${SHA} — stage it with Deploy candidate first"; exit 1; }
-          want="${REPO}@${digest}"
+          want=$(bash infra/gcp/resolve-cloud-run-image.sh "$REPO" "$SHA") \
+            || { echo "::error::could not resolve ${REPO}:${SHA} — check Deploy candidate first"; exit 1; }
           svc=$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format=json)
           cand=$(jq -r '.status.traffic[] | select(.tag == "candidate") | .revisionName' <<<"$svc")
           rev=""
