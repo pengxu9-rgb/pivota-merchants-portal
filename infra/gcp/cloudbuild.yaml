@@ -1,6 +1,6 @@
 # Consumer capture is opt-in at build time, after compatible backend/gateway release.
 substitutions:
-  _CONSUMER_CAPTURE: 'false'
+  _CONSUMER_CAPTURE: 'true'
 steps:
 - name: gcr.io/cloud-builders/docker
   args: ['build', '-f', 'infra/gcp/Dockerfile',
