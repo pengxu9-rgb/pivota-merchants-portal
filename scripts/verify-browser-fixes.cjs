@@ -7,13 +7,37 @@ function load(relative) {
  const original=m.require.bind(m); m.require=id=>id==='@/components/ui/merchant-primitives'?{SurfaceCard:({children})=>React.createElement('section',null,children)}:original(id);
  m._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText,file);return m.exports;
 }
-const {prepareProductRetest}=load('lib/audit/retest.ts');
+const {prepareConsumerAnswerRetest, prepareProductRetest}=load('lib/audit/retest.ts');
 assert.equal(prepareProductRetest('', ['butter','brush'], ['detangling']), null);
 assert.equal(prepareProductRetest('missing', ['butter','brush'], ['detangling']), null);
 assert.equal(prepareProductRetest('brush', ['brush','brush'], ['detangling']), null);
 assert.deepEqual(prepareProductRetest('brush',['butter','brush'],[' detangling ','DETANGLING']),{skuKeys:['brush'],customPrompts:['DETANGLING'],consumerQuestions:''});
 assert.equal(prepareProductRetest('brush',['brush'],[]),null);
 assert.equal(prepareProductRetest('brush',['brush'],Array.from({length:11},(_,i)=>String(i))),null);
+
+const ess = 'prod::shop::shopify::essence';
+const catalog = [{ key: ess, skuKey: 'shopify:essence' }, { key: 'prod::shop::shopify::cream', skuKey: 'shopify:cream' }];
+const question = { product_key: ess, provider: 'chatgpt', tier: 'unbranded', query: 'Hydrating essence under $25 in the US?', recommendation_pilot_eligible: true, prompt_contract: 'consumer_query_openai_web_required_v2' };
+const gemini = { ...question, provider: 'gemini', prompt_contract: 'consumer_query_v1' };
+const failed = { ...question, query: 'What hydrating essences are available in the US?', status: 'provider_failed', prompt_contract: null };
+const providers = ['gemini', 'chatgpt'];
+const replay = (answers, products = catalog) => prepareConsumerAnswerRetest(ess, products, answers, providers);
+assert.deepEqual(replay([question, question, { ...question, query: 'Where to buy Brand X?', tier: 'branded' }, { ...question, product_key: catalog[1].key }]), {
+  skuKeys: ['shopify:essence'], queries: [question.query], providers: ['chatgpt'],
+});
+assert.deepEqual(replay([question, gemini]).providers, providers);
+assert.deepEqual(replay([question, failed]).queries, [question.query, failed.query]);
+assert.equal(replay([failed]), null);
+assert.equal(replay([question, { ...failed, status: 'answered' }]), null);
+assert.equal(replay([{ ...question, prompt_contract: 'consumer_query_v1' }]), null);
+assert.equal(replay([question, { ...failed, prompt_contract: 'consumer_query_v1' }]), null);
+assert.equal(replay([{ ...question, product_key: undefined }]), null);
+assert.equal(replay([{ ...question, recommendation_pilot_eligible: undefined }]), null);
+assert.equal(replay([question, { ...gemini, query: 'Different saved question?' }]), null);
+assert.equal(replay([question, { ...question, provider: 'claude' }]), null);
+assert.equal(replay([question], [...catalog, { ...catalog[0], key: 'another-key' }]), null);
+assert.equal(replay([{ ...question, query: 'Question with\na second line' }]), null);
+assert.equal(replay(Array.from({length: 9}, (_, i) => ({ ...question, query: `Question ${i}` }))), null);
 const {PromptEvidencePanel}=load('components/audit/PromptEvidencePanel.tsx');
 const html=render(React.createElement(PromptEvidencePanel,{report:{opportunity:{per_prompt:[{query:'shop ANUKO',provider_verdicts:{gemini:'win'},appearance_via_listing:true,cited_evidence:{excerpt:'Anko bag at Target; official link https://anukoofficial.com',cited_hosts:['target.com.au']}}]}}}));
 assert(html.includes('historical positive'));
@@ -23,7 +47,7 @@ const {ShareOfVoiceBars}=load('components/audit/ShareOfVoiceBars.tsx');
 const sov=render(React.createElement(ShareOfVoiceBars,{summary:{share_of_voice:{available:true,prompts_probed:21,brand:{name:'Anuko',pct:76.2,prompts_cited:16}}}}));
 assert(sov.includes('not consumer answer share'));
 assert(!sov.includes('who wins'));
-console.log('PASS: retest rejects missing/ambiguous products and replaces scope; historical evidence does not assert excerpt-host alignment or verified product presence.');
+console.log('PASS: retest rejects ambiguous products and incompatible search settings, and keeps failed questions when the provider has a matching retained setting.');
 
 const {agenticVerdict}=load('lib/audit/agenticVerdict.ts');
 for (const discovery of [{total:10}, {total:10,appeared:3}, {total:10,appeared_recommended:3}]) {

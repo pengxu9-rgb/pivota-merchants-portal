@@ -8,12 +8,10 @@
  * skippable. It lets a merchant (1) add positioning (stored `unverified` —
  * improves on-page copy) and (2) upload a lab / third-party test report whose
  * LLM-extracted CANDIDATE claims they review and confirm one at a time. Confirming
- * a candidate posts it with source_ref=<artifact_id>, which is what grades it
- * `substantiated` server-side and gets it cited to agents. Nothing is published
- * until the merchant confirms — the trust spine, surfaced honestly.
+ * a candidate posts it with a public source reviewers can inspect.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -30,6 +28,7 @@ import { MerchantButton } from '@/components/ui/merchant-primitives';
 import {
   gradeBadge,
   labCandidateToClaim,
+  normalizeEvidenceSourceUrl,
   partitionClaims,
   POSITIONING_SOURCE,
   statusBadge,
@@ -40,7 +39,9 @@ import {
 
 function ClaimRow({ claim }: { claim: ProductEvidenceClaim }) {
   const grade = gradeBadge(claim.evidence_grade);
-  const status = statusBadge(claim.substantiation_status);
+  const status = statusBadge(claim);
+  const reviewed = status.label === 'Verified';
+  const source = normalizeEvidenceSourceUrl(reviewed ? claim.review_source_url : claim.public_source_url);
   return (
     <li className="flex flex-col gap-1 rounded-md border border-slate-100 bg-slate-50/60 px-3 py-2">
       <span className="text-xs text-slate-800">{claim.claim_text}</span>
@@ -48,12 +49,15 @@ function ClaimRow({ claim }: { claim: ProductEvidenceClaim }) {
         <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${status.className}`}>
           {status.label}
         </span>
-        {claim.evidence_grade ? (
+        {reviewed && claim.evidence_grade ? (
           <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${grade.className}`}>
             {grade.label}
           </span>
         ) : null}
       </span>
+      {source ? <a href={source} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-700 underline">
+        {reviewed ? 'Reviewed source' : 'Submitted source'}
+      </a> : null}
     </li>
   );
 }
@@ -66,7 +70,7 @@ export function ProductEvidencePanel({
   platform: string;
   platformProductId: string;
   // When mounted from an explicit "Supply proof" affordance (e.g. the audit
-  // "Make your claims citable" section), open expanded so the intake is visible
+  // "Evidence for your claims" section), open expanded so the intake is visible
   // immediately rather than requiring a second click.
   defaultExpanded?: boolean;
 }) {
@@ -87,11 +91,11 @@ export function ProductEvidencePanel({
   const [extracting, setExtracting] = useState(false);
   const [artifactId, setArtifactId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<LabCandidateClaim[] | null>(null);
+  const [publicSourceUrl, setPublicSourceUrl] = useState('');
   const [confirmingIdx, setConfirmingIdx] = useState<number | null>(null);
-  // Per-candidate outcome (keyed by index so duplicate texts don't collide):
-  // 'served' = backend graded it substantiated (cited to agents); 'added' = saved
-  // but NOT served (e.g. backend flagged it). Drives an honest row label.
-  const [confirmedByIdx, setConfirmedByIdx] = useState<Record<number, 'served' | 'added'>>({});
+  const [submittedByIdx, setSubmittedByIdx] = useState<Record<number, boolean>>({});
+  const sourceInputId = useId();
+  const reviewableSourceUrl = normalizeEvidenceSourceUrl(publicSourceUrl);
 
   async function loadEvidence() {
     setLoading(true);
@@ -131,7 +135,7 @@ export function ProductEvidencePanel({
         { claim_text: text, source_type: POSITIONING_SOURCE },
       ]);
       setPositioningText('');
-      setNotice('Saved. Positioning improves your on-page copy — back it with a lab report to get cited by agents.');
+      setNotice('Positioning saved. Add a lab report to support specific claims.');
       await loadEvidence();
     } catch (err: any) {
       setError(err?.message || 'Could not save positioning.');
@@ -141,12 +145,13 @@ export function ProductEvidencePanel({
   }
 
   async function handleExtract() {
-    if (!labFile && !labText.trim()) return;
+    if (confirmingIdx !== null || (!labFile && !labText.trim())) return;
     setExtracting(true);
     setError(null);
     setNotice(null);
     setCandidates(null);
     setArtifactId(null);
+    setPublicSourceUrl('');
     try {
       const res = await apiClient.extractMerchantLabReport(platform, platformProductId, {
         file: labFile,
@@ -154,9 +159,9 @@ export function ProductEvidencePanel({
       });
       setArtifactId(res.artifact_id);
       setCandidates(res.candidate_claims || []);
-      setConfirmedByIdx({});
+      setSubmittedByIdx({});
       if (!res.candidate_claims?.length) {
-        setNotice('No verifiable claims were found in that report.');
+        setNotice('No candidate claims were found in that report.');
       }
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
@@ -167,33 +172,28 @@ export function ProductEvidencePanel({
   }
 
   async function handleConfirmCandidate(candidate: LabCandidateClaim, idx: number) {
-    if (!artifactId) return;
+    if (!artifactId || !reviewableSourceUrl || confirmingIdx !== null) return;
     setConfirmingIdx(idx);
     setError(null);
     setNotice(null);
     try {
       const res = await apiClient.addMerchantProductEvidence(platform, platformProductId, [
-        labCandidateToClaim(candidate, artifactId),
+        labCandidateToClaim(candidate, artifactId, reviewableSourceUrl),
       ]);
-      const served = res.substantiated > 0;
-      setConfirmedByIdx((prev) => ({ ...prev, [idx]: served ? 'served' : 'added' }));
-      setNotice(
-        served
-          ? res.served_refresh
-            ? 'Added — now cited to agents and live on its agent PDP.'
-            : 'Added — now cited to agents (goes live on the next refresh).'
-          : 'Added to this product’s evidence.'
-      );
+      if (!res.claims_written) throw new Error('Could not save this claim.');
+      setSubmittedByIdx((prev) => ({ ...prev, [idx]: true }));
+      setNotice('Claim and source submitted for review.');
       await loadEvidence();
     } catch (err: any) {
-      setError(err?.message || 'Could not add that claim.');
+      const detail = err?.response?.data?.detail;
+      setError(typeof detail === 'string' ? detail : err?.message || 'Could not submit that claim.');
     } finally {
       setConfirmingIdx(null);
     }
   }
 
   const claims = evidence?.claims ?? [];
-  const { served, copyOnly } = partitionClaims(claims);
+  const { verified, other } = partitionClaims(claims);
 
   return (
     <div className="bg-white rounded-lg shadow border">
@@ -210,9 +210,7 @@ export function ProductEvidencePanel({
               <span className="font-normal text-gray-400">· optional</span>
             </h2>
             <p className="mt-0.5 text-xs text-gray-500">
-              Add lab results or positioning so agents cite this product with grounded,
-              attributable claims. Only substantiated claims are served — nothing is
-              published until you confirm it.
+              Add positioning or submit lab findings that support specific product claims.
             </p>
           </div>
         </div>
@@ -244,46 +242,29 @@ export function ProductEvidencePanel({
             </div>
           ) : (
             <>
-              {/* Proof: the real, immediate outcome of adding evidence — how many
-                  claims agents can now cite on this product. Reflects the live
-                  served count (grows when a lab claim is confirmed); no score is
-                  implied because evidence doesn't feed the score (yet). */}
-              {served.length > 0 && (
-                <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
-                    <ShieldCheck className="h-3.5 w-3.5" />
-                    {served.length} claim{served.length === 1 ? '' : 's'} cited to agents
-                  </div>
-                  <p className="mt-0.5 text-[11px] text-emerald-700">
-                    Agents can ground recommendations on this product with these grounded,
-                    attributable claims — they appear on its agent-facing PDP.
-                  </p>
-                </div>
-              )}
-
               {/* Current evidence */}
               {claims.length > 0 ? (
                 <div className="space-y-3">
-                  {served.length > 0 && (
+                  {verified.length > 0 && (
                     <div>
                       <div className="mb-1 text-xs font-medium text-gray-700">
-                        Cited to agents ({served.length})
+                        Verified claims ({verified.length})
                       </div>
                       <ul className="space-y-1.5">
-                        {served.map((c, i) => (
-                          <ClaimRow key={`s-${i}`} claim={c} />
+                        {verified.map((c, i) => (
+                          <ClaimRow key={`verified-${i}`} claim={c} />
                         ))}
                       </ul>
                     </div>
                   )}
-                  {copyOnly.length > 0 && (
+                  {other.length > 0 && (
                     <div>
                       <div className="mb-1 text-xs font-medium text-gray-700">
-                        Improves copy only ({copyOnly.length})
+                        Other evidence ({other.length})
                       </div>
                       <ul className="space-y-1.5">
-                        {copyOnly.map((c, i) => (
-                          <ClaimRow key={`c-${i}`} claim={c} />
+                        {other.map((c, i) => (
+                          <ClaimRow key={`other-${i}`} claim={c} />
                         ))}
                       </ul>
                     </div>
@@ -302,8 +283,7 @@ export function ProductEvidencePanel({
                   <span className="text-xs font-medium text-gray-700">Add positioning</span>
                 </div>
                 <p className="text-[11px] text-gray-500">
-                  How you describe this product. Stored as positioning — it sharpens your
-                  on-page copy. To be cited by agents, back it with a lab report.
+                  Describe who the product is for and how they would use it. Add a lab report to support specific claims.
                 </p>
                 <textarea
                   value={positioningText}
@@ -337,9 +317,7 @@ export function ProductEvidencePanel({
                   </span>
                 </div>
                 <p className="text-[11px] text-gray-500">
-                  Upload a PDF (or paste its text). We extract the verifiable findings for
-                  you to review — confirm the ones that are accurate and they become cited,
-                  grade-A claims.
+                  Upload a PDF or paste report text to draft claims. Submit findings with a public source that a reviewer can open.
                 </p>
                 <input
                   type="file"
@@ -357,7 +335,7 @@ export function ProductEvidencePanel({
                 <MerchantButton
                   type="button"
                   onClick={handleExtract}
-                  disabled={extracting || (!labFile && !labText.trim())}
+                  disabled={extracting || confirmingIdx !== null || (!labFile && !labText.trim())}
                   className="inline-flex items-center gap-1 text-xs"
                 >
                   {extracting ? (
@@ -370,12 +348,24 @@ export function ProductEvidencePanel({
 
                 {candidates && candidates.length > 0 && (
                   <div className="mt-2 space-y-2">
-                    <div className="text-[11px] font-medium text-gray-700">
-                      Review the extracted findings — nothing is published until you confirm.
-                    </div>
+                    <label htmlFor={sourceInputId} className="block text-[11px] font-medium text-gray-700">Public source URL</label>
+                    <input
+                      id={sourceInputId}
+                      type="url"
+                      placeholder="https://example.com/product-test"
+                      value={publicSourceUrl}
+                      maxLength={2000}
+                      disabled={confirmingIdx !== null}
+                      onChange={event => setPublicSourceUrl(event.target.value)}
+                      aria-describedby={`${sourceInputId}-hint`}
+                      className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-800 focus:border-blue-400 focus:outline-none"
+                    />
+                    <p id={`${sourceInputId}-hint`} className="text-[11px] text-gray-500">
+                      Use a public HTTPS link that supports the claim for this product. The upload or pasted text is used to draft candidates.
+                    </p>
                     <ul className="space-y-1.5">
                       {candidates.map((cand, idx) => {
-                        const outcome = confirmedByIdx[idx];
+                        const submitted = submittedByIdx[idx];
                         return (
                           <li
                             key={idx}
@@ -388,20 +378,16 @@ export function ProductEvidencePanel({
                               </span>
                             )}
                             <div>
-                              {outcome === 'served' ? (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">
-                                  <CheckCircle2 className="h-3 w-3" /> Added — cited to agents
-                                </span>
-                              ) : outcome === 'added' ? (
+                              {submitted ? (
                                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600">
-                                  <CheckCircle2 className="h-3 w-3" /> Added to evidence
+                                  <CheckCircle2 className="h-3 w-3" /> Submitted
                                 </span>
                               ) : (
                                 <MerchantButton
                                   type="button"
                                   variant="secondary"
                                   onClick={() => handleConfirmCandidate(cand, idx)}
-                                  disabled={confirmingIdx === idx}
+                                  disabled={confirmingIdx !== null || !reviewableSourceUrl}
                                   className="inline-flex items-center gap-1 text-[11px]"
                                 >
                                   {confirmingIdx === idx ? (
@@ -409,7 +395,7 @@ export function ProductEvidencePanel({
                                   ) : (
                                     <Plus className="h-3 w-3" />
                                   )}
-                                  Add as cited evidence
+                                  Submit claim
                                 </MerchantButton>
                               )}
                             </div>

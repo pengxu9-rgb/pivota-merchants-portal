@@ -17,7 +17,7 @@
  *   - Free tier keeps the 2-audits-per-24h rate limit alongside credits.
  */
 
-import { prepareProductRetest } from '@/lib/audit/retest';
+import { prepareConsumerAnswerRetest, prepareProductRetest, type SavedConsumerQuestion } from '@/lib/audit/retest';
 import { RevenueRecovery } from '@/components/audit/RevenueRecovery';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -100,6 +100,7 @@ import type {
  * fallback chain).
  */
 interface CatalogProductRow {
+  product_key?: string;
   platform_product_id?: string;
   platform?: string;
   product_id?: string;
@@ -231,10 +232,9 @@ export default function AiReadinessAuditPage() {
   // never show them a "subscribe to a paid plan" CTA. Default hidden is safe.
   const [canPurchaseCredits, setCanPurchaseCredits] = useState(false);
 
-  // Tiered audit model: free tier runs Gemini only; ChatGPT/Claude are premium
-  // (paid plan). Gemini is always on (the free baseline); merchants opt into
-  // premium models, then subscribe at launch if not entitled.
-  const [selectedProviders, setSelectedProviders] = useState<AuditPreviewProvider[]>(['gemini']);
+  // Gemini is the default. A saved-question re-test can restore an explicit
+  // provider set, still subject to the normal quote and subscription checks.
+  const [draftProviders, setSelectedProviders] = useState<AuditPreviewProvider[]>(['gemini']);
 
   // Custom prompts — reserved slots for marketing-team use-case prompts
   // (hydration / acne / picky-eaters / etc.). Up to 10; trim + dedupe
@@ -243,6 +243,15 @@ export default function AiReadinessAuditPage() {
   const consumerCaptureEnabled = process.env.NEXT_PUBLIC_CONSUMER_ANSWER_ENABLED === 'true';
   const [consumerQuestionsText, setConsumerQuestionsText] = useState('');
   const [pendingRetest, setPendingRetest] = useState<{sku: string; queries: string[]} | null>(null);
+  const [consumerRetest, setConsumerRetest] = useState<{
+    runId: string;
+    title: string;
+    queries: string[];
+    skuKeys: string[];
+    providers: AuditPreviewProvider[];
+  } | null>(null);
+  const [activeConsumerReplay, setActiveConsumerReplay] = useState<typeof consumerRetest>(null);
+  const consumerRetestDialogRef = useRef<HTMLDialogElement>(null);
   const [retestProduct, setRetestProduct] = useState('');
 
   const consumerQueries = useMemo(() => consumerCaptureEnabled
@@ -250,6 +259,11 @@ export default function AiReadinessAuditPage() {
     [consumerCaptureEnabled, consumerQuestionsText]);
   const consumerError = consumerQueries.length > 8 || consumerQueries.some(q => q.length > 1000)
     ? 'Use up to 8 questions, each no longer than 1,000 characters.' : null;
+
+  useEffect(() => {
+    const dialog = consumerRetestDialogRef.current;
+    if (consumerRetest && !dialog?.open) dialog?.showModal();
+  }, [consumerRetest]);
 
   // Preview state — spec §I. The preview endpoint runs no probes; it
   // returns projected cost + current balance + sufficient flag. We
@@ -364,6 +378,16 @@ export default function AiReadinessAuditPage() {
     [products],
   );
 
+  const prepareSavedQuestionRetest = (key: string, answers: SavedConsumerQuestion[]) => {
+    if (!consumerCaptureEnabled || running || pendingRetest) return null;
+    return prepareConsumerAnswerRetest(
+      key,
+      usableProducts.map(product => ({ key: product.product_key ?? '', skuKey: productKey(product) })),
+      answers,
+      CONNECTED_AUDIT_PROVIDERS,
+    );
+  };
+
   const sortedByPrice = useMemo(
     () =>
       [...usableProducts].sort(
@@ -441,6 +465,16 @@ export default function AiReadinessAuditPage() {
   const selectedSkuKeys = useMemo(
     () => Array.from(selected),
     [selected],
+  );
+
+  const savedQuestionReplay = !!activeConsumerReplay && activeConsumerReplay.runId === activeRunId &&
+    selectedSkuKeys.length === 1 && selectedSkuKeys[0] === activeConsumerReplay.skuKeys[0] &&
+    consumerQueries.length === activeConsumerReplay.queries.length &&
+    consumerQueries.every(query => activeConsumerReplay.queries.includes(query));
+
+  const selectedProviders = useMemo<AuditPreviewProvider[]>(
+    () => savedQuestionReplay || draftProviders.includes('gemini') ? draftProviders : ['gemini', ...draftProviders],
+    [draftProviders, savedQuestionReplay],
   );
 
   // Parse custom prompts: split on newline, trim, drop empties, dedupe.
@@ -608,7 +642,7 @@ export default function AiReadinessAuditPage() {
 
   const runAudit = async () => {
     if (selectedRefs.length < 1 || selectedRefs.length > MAX_SELECTED) return;
-    if (pendingRetest || customPromptsError || consumerError || previewLoading || previewError || !previewData) return;
+    if (pendingRetest || consumerRetest || customPromptsError || consumerError || previewLoading || previewError || !previewData) return;
     // Hard block when preview says insufficient. Per memory
     // feedback_no_execution_layer_fallbacks: never auto-shrink scope.
     if (previewData && !previewData.sufficient) return;
@@ -674,6 +708,26 @@ export default function AiReadinessAuditPage() {
 
   return (
     <div className="space-y-6">
+      {consumerRetest ? <dialog ref={consumerRetestDialogRef} aria-labelledby="consumer-retest-title" className="max-h-[85vh] w-[calc(100%-2rem)] max-w-xl space-y-4 overflow-y-auto rounded-lg bg-white p-6 text-slate-900 shadow-lg backdrop:bg-black/40" onClose={() => setConsumerRetest(null)}>
+          <h2 id="consumer-retest-title" className="text-lg font-semibold">Re-test saved shopper questions</h2>
+          <p className="text-sm"><strong>{consumerRetest.title}</strong> · {consumerRetest.providers.map(providerLabel).join(', ')}</p>
+          <ul className="list-disc space-y-1 pl-5 text-sm">{consumerRetest.queries.map(query => <li key={query}>{query}</li>)}</ul>
+          <p className="text-sm">This replaces the current audit selection and questions. Review the new quote before running the audit.</p>
+          <div className="flex flex-wrap gap-4">
+            <button type="button" className="text-sm underline" onClick={() => consumerRetestDialogRef.current?.close()}>Cancel</button>
+            <button type="button" className="rounded bg-indigo-700 px-3 py-2 text-sm font-medium text-white" onClick={() => {
+              setInputsOpen(true);
+              setPreviewData(null);
+              setSelected(new Set(consumerRetest.skuKeys));
+              setSelectedProviders(consumerRetest.providers);
+              setActiveConsumerReplay(consumerRetest);
+              setCustomPromptsText('');
+              setConsumerQuestionsText(consumerRetest.queries.join('\n'));
+              consumerRetestDialogRef.current?.close();
+              window.setTimeout(() => document.getElementById('consumer-questions')?.focus(), 50);
+            }}>Use saved questions and get quote</button>
+          </div>
+      </dialog> : null}
       {pendingRetest ? <div role="dialog" aria-modal="true" aria-labelledby="retest-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
         <div className="max-h-[85vh] w-full max-w-xl space-y-4 overflow-auto rounded-xl bg-white p-6 text-slate-900">
           <h2 id="retest-title" className="text-lg font-semibold">Confirm the product to re-test</h2>
@@ -923,6 +977,7 @@ export default function AiReadinessAuditPage() {
       <ProviderSelector
         selected={selectedProviders}
         onChange={setSelectedProviders}
+        savedQuestionReplay={savedQuestionReplay}
       />
 
       <div className="flex items-center justify-between rounded border border-indigo-200 bg-indigo-50/50 px-4 py-3">
@@ -946,7 +1001,7 @@ export default function AiReadinessAuditPage() {
             selected.size < 1 ||
             selected.size > MAX_SELECTED ||
             !!customPromptsError ||
-            !!pendingRetest ||
+            !!pendingRetest || !!consumerRetest ||
             !!consumerError ||
             previewLoading ||
             !previewData ||
@@ -997,7 +1052,15 @@ export default function AiReadinessAuditPage() {
             <a className="underline" href="#audit-zone-2">Action plan, approvals and tasks</a>
             <a className="underline" href="#audit-zone-4">Outreach results and re-test</a>
           </nav>
-          <ReportSectionBoundary section="recovery-summary"><RevenueRecovery runId={activeRunId || auditResult.payload.audit_run_id} /></ReportSectionBoundary>
+          <ReportSectionBoundary section="recovery-summary">
+            <RevenueRecovery runId={activeRunId || auditResult.payload.audit_run_id} consumerRetest={{
+              canReplay: (key, answers) => !!prepareSavedQuestionRetest(key, answers),
+              prepareQuote: (product, answers) => {
+                const selection = prepareSavedQuestionRetest(product.key, answers);
+                if (selection && activeRunId) setConsumerRetest({ runId: activeRunId, title: product.title, ...selection });
+              },
+            }} />
+          </ReportSectionBoundary>
           <PerSkuAuditReportRenderer
             report={auditResult.payload}
             onAddPrompts={addSuggestedPrompts}
@@ -1210,9 +1273,7 @@ function InsufficientCreditsBanner({ error }: { error: InsufficientCreditsError 
 }
 
 // Pick models by where your buyers actually shop — not by a cost tier. The real
-// credit cost for the chosen set is shown in the estimate below (recomputes per
-// selection), so we don't editorialize "cheaper/pricier" on the chips. Gemini is
-// the default-on model so every run has at least one engine.
+// credit cost for the chosen set is shown in the estimate below.
 const PROVIDER_OPTIONS: { id: AuditPreviewProvider; label: string; blurb: string }[] = [
   { id: 'gemini', label: 'Gemini', blurb: 'Google · grounded search' },
   { id: 'chatgpt', label: 'ChatGPT', blurb: 'OpenAI · web search' },
@@ -1228,13 +1289,16 @@ const CONNECTED_AUDIT_PROVIDERS: readonly AuditPreviewProvider[] = ['gemini', 'c
 function ProviderSelector({
   selected,
   onChange,
+  savedQuestionReplay,
 }: {
   selected: AuditPreviewProvider[];
   onChange: (next: AuditPreviewProvider[]) => void;
+  savedQuestionReplay: boolean;
 }) {
   const toggle = (id: AuditPreviewProvider) => {
-    if (id === 'gemini') return; // Gemini is the default-on model — always included.
     if (!CONNECTED_AUDIT_PROVIDERS.includes(id)) return; // not connected yet
+    if (id === 'gemini' && !savedQuestionReplay) return;
+    if (selected.length === 1 && selected.includes(id)) return;
     onChange(
       selected.includes(id) ? selected.filter((p) => p !== id) : [...selected, id],
     );
@@ -1251,7 +1315,7 @@ function ProviderSelector({
       <div className="mt-3 flex flex-wrap gap-2">
         {PROVIDER_OPTIONS.map((opt) => {
           const checked = selected.includes(opt.id);
-          const base = opt.id === 'gemini';
+          const required = checked && (selected.length === 1 || (opt.id === 'gemini' && !savedQuestionReplay));
           const connected = CONNECTED_AUDIT_PROVIDERS.includes(opt.id);
           return (
             <button
@@ -1259,7 +1323,7 @@ function ProviderSelector({
               type="button"
               onClick={() => toggle(opt.id)}
               aria-pressed={checked}
-              disabled={base || !connected}
+              disabled={required || !connected}
               title={connected ? opt.blurb : `${opt.label} isn't connected yet`}
               className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition ${
                 !connected
@@ -1267,7 +1331,7 @@ function ProviderSelector({
                   : checked
                     ? 'border-indigo-400 bg-indigo-50 text-indigo-900'
                     : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-              } ${base ? 'cursor-default opacity-90' : ''}`}
+              } ${required ? 'cursor-default opacity-90' : ''}`}
             >
               <span
                 className={`inline-block h-3.5 w-3.5 rounded-sm border ${

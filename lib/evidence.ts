@@ -4,14 +4,11 @@
  *
  * Mirrors the pivota-backend contract (claim_safety.ProductClaim / product_evidence):
  *   - GET  /merchant/products/{platform}/{id}/evidence            -> ProductEvidence
- *   - POST /merchant/products/{platform}/{id}/evidence            -> write graded claims
+ *   - POST /merchant/products/{platform}/{id}/evidence            -> submit claims
  *   - POST /merchant/products/{platform}/{id}/evidence/lab-report -> LabExtractionResult
  *
- * Trust spine, surfaced honestly in the UI: positioning is stored `unverified`
- * (improves PDP copy) and only a lab/cert/third-party source grades a claim
- * `substantiated` — and only `substantiated` claims are cited to agents. The
- * lab-report flow PROPOSES candidates; the merchant confirms one with
- * source_ref=<artifact_id>, which is what grades it server-side.
+ * Claim review is independent of publication and observed citations. The lab
+ * flow proposes candidate claims and attaches a public source for review.
  */
 
 export type EvidenceSourceType =
@@ -29,8 +26,11 @@ export interface ProductEvidenceClaim {
   claim_text: string;
   source_type?: string | null;
   source_ref?: string | null;
+  public_source_url?: string | null;
+  review_source_url?: string | null;
   evidence_grade?: string | null;
   substantiation_status?: string | null;
+  review_status?: string | null;
 }
 
 export interface ProductEvidence {
@@ -57,6 +57,7 @@ export interface EvidenceClaimInput {
   claim_text: string;
   source_type?: string | null;
   source_ref?: string | null;
+  public_source_url?: string | null;
 }
 
 interface Badge {
@@ -78,15 +79,8 @@ export function gradeBadge(grade?: string | null): Badge {
   }
 }
 
-/** Substantiation status → merchant-friendly badge. Only `substantiated` is
- * cited to agents; everything else only improves on-page copy. */
-export function statusBadge(status?: string | null): Badge {
-  switch (String(status || '').toLowerCase()) {
-    case 'substantiated':
-      return {
-        label: 'Cited to agents',
-        className: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
-      };
+export function statusBadge(claim: ProductEvidenceClaim): Badge {
+  switch (claim.substantiation_status?.toLowerCase()) {
     case 'flagged':
       return {
         label: 'Flagged',
@@ -97,43 +91,54 @@ export function statusBadge(status?: string | null): Badge {
         label: 'Rejected',
         className: 'bg-red-50 text-red-700 border border-red-200',
       };
-    default:
-      return {
-        label: 'Improves copy only',
-        className: 'bg-slate-50 text-slate-600 border border-slate-200',
-      };
   }
+  if (isVerifiedClaim(claim)) return {
+    label: 'Verified',
+    className: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  };
+  return {
+    label: claim.source_type === POSITIONING_SOURCE ? 'Positioning' : 'Submitted',
+    className: 'bg-slate-50 text-slate-600 border border-slate-200',
+  };
 }
 
-/** Whether a stored claim is currently cited to agents (substantiated only). */
-export function isServedToAgents(claim: ProductEvidenceClaim): boolean {
-  return String(claim.substantiation_status || '').toLowerCase() === 'substantiated';
+export function isVerifiedClaim(claim: ProductEvidenceClaim): boolean {
+  return claim.substantiation_status === 'substantiated' && claim.review_status === 'verified';
 }
 
-/** Split stored claims into the two buckets the UI shows: cited-to-agents
- * (substantiated) vs improves-copy-only (everything else). */
 export function partitionClaims(claims: ProductEvidenceClaim[]): {
-  served: ProductEvidenceClaim[];
-  copyOnly: ProductEvidenceClaim[];
+  verified: ProductEvidenceClaim[];
+  other: ProductEvidenceClaim[];
 } {
-  const served: ProductEvidenceClaim[] = [];
-  const copyOnly: ProductEvidenceClaim[] = [];
+  const verified: ProductEvidenceClaim[] = [];
+  const other: ProductEvidenceClaim[] = [];
   for (const claim of claims || []) {
-    (isServedToAgents(claim) ? served : copyOnly).push(claim);
+    (isVerifiedClaim(claim) ? verified : other).push(claim);
   }
-  return { served, copyOnly };
+  return { verified, other };
 }
 
-/** The trust-spine handshake: turn a lab-report candidate into the confirm body.
- * source_ref=<artifact_id> is what grades it `substantiated` server-side — the
- * merchant is attesting "this finding is in the report I uploaded". */
+export function normalizeEvidenceSourceUrl(value?: string | null): string | null {
+  const input = value?.trim();
+  if (!input || input.length > 2000 || !/^https:\/\//i.test(input) || /\s/.test(input)) return null;
+  try {
+    const url = new URL(input);
+    return url.protocol === 'https:' && url.hostname.includes('.') && !url.username && !url.password ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Keep the extraction reference and the URL that staff can open. */
 export function labCandidateToClaim(
   candidate: LabCandidateClaim,
   artifactId: string,
+  source: string,
 ): EvidenceClaimInput {
   return {
     claim_text: candidate.claim_text,
     source_type: LAB_SOURCE,
     source_ref: artifactId,
+    public_source_url: source,
   };
 }
