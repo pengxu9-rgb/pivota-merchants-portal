@@ -357,11 +357,14 @@ export function ProductEvidencePanel({
                       maxLength={2000}
                       disabled={confirmingIdx !== null}
                       onChange={event => setPublicSourceUrl(event.target.value)}
+                      aria-invalid={Boolean(publicSourceUrl.trim() && !reviewableSourceUrl)}
                       aria-describedby={`${sourceInputId}-hint`}
                       className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-800 focus:border-blue-400 focus:outline-none"
                     />
                     <p id={`${sourceInputId}-hint`} className="text-[11px] text-gray-500">
-                      Use a public HTTPS link that supports the claim for this product. The upload or pasted text is used to draft candidates.
+                      {publicSourceUrl.trim() && !reviewableSourceUrl
+                        ? 'Enter a public HTTPS URL without sign-in credentials or a fragment.'
+                        : 'Use a public HTTPS link that supports the claim for this product. The upload or pasted text is used to draft candidates.'}
                     </p>
                     <ul className="space-y-1.5">
                       {candidates.map((cand, idx) => {

@@ -68,7 +68,12 @@ test("labCandidateToClaim includes the artifact and inspectable source URL", () 
 
 test("evidence source links require HTTPS without credentials", () => {
   assert.equal(normalizeEvidenceSourceUrl(" https://example.com/report "), "https://example.com/report");
-  for (const value of ["", "http://example.com/report", "javascript:alert(1)", "https://user:password@example.com", "https://localhost", "https://example.com/report x"]) {
+  assert.equal(normalizeEvidenceSourceUrl("https://example.com/report?page=4"), "https://example.com/report?page=4");
+  for (const value of [
+    "", "http://example.com/report", "javascript:alert(1)", "https://user:password@example.com", "https://localhost",
+    "https://example.com/report x", "https://example.com/report#page=4", "https://example.com/report?access_token=test",
+    "https://example.com/report?API%5FKEY=test", "https://test.internal/report", "https://127.0.0.1/report", "https://example.com\\report",
+  ]) {
     assert.equal(normalizeEvidenceSourceUrl(value), null);
   }
 });

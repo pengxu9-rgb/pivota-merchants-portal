@@ -120,10 +120,15 @@ export function partitionClaims(claims: ProductEvidenceClaim[]): {
 
 export function normalizeEvidenceSourceUrl(value?: string | null): string | null {
   const input = value?.trim();
-  if (!input || input.length > 2000 || !/^https:\/\//i.test(input) || /\s/.test(input)) return null;
+  if (!input || input.length > 2000 || !/^https:\/\//i.test(input) || input.includes('\\') || input.includes('#')
+      || /\s/.test(input) || [...input].some(character => character.charCodeAt(0) < 32)) return null;
   try {
     const url = new URL(input);
-    return url.protocol === 'https:' && url.hostname.includes('.') && !url.username && !url.password ? url.href : null;
+    const hostname = url.hostname.replace(/\.$/, '');
+    if (url.protocol !== 'https:' || !hostname.includes('.') || url.username || url.password
+        || /\.(?:local|internal|localhost)$/i.test(hostname) || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return null;
+    if ([...url.searchParams.keys()].some(key => /token|password|secret|authorization|api.?key/i.test(key))) return null;
+    return url.href;
   } catch {
     return null;
   }
