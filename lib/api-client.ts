@@ -1092,10 +1092,7 @@ class ApiClient {
   }
 
   /**
-   * Write graded claims for a product. Positioning is stored `unverified`
-   * (improves copy); a lab/cert/third-party source_type WITH a source_ref grades
-   * it `substantiated` (cited to agents). The serve gate is single-sourced in the
-   * backend — this just posts the merchant's intent.
+   * Submit positioning or claims with their source references for review.
    *   POST /merchant/products/{platform}/{platform_product_id}/evidence
    */
   async addMerchantProductEvidence(
@@ -1108,6 +1105,7 @@ class ApiClient {
     claims_written: number;
     substantiated: number;
     served_refresh: boolean;
+    review_status?: 'submitted';
   }> {
     const encodedId = encodeURIComponent(platformProductId);
     const response = await this.client.post(
@@ -1119,9 +1117,8 @@ class ApiClient {
 
   /**
    * Upload a lab / third-party test report (PDF) or paste its text → CANDIDATE
-   * claims an LLM extracted, for the merchant to review. Nothing is published:
-   * confirm a candidate via addMerchantProductEvidence with
-   * source_type='merchant_lab_report' and source_ref=<artifact_id> to grade it.
+   * claims an LLM extracted. Submit candidates with the artifact reference
+   * and a public source URL that supports the claim for that product.
    *   POST /merchant/products/{platform}/{platform_product_id}/evidence/lab-report
    */
   async extractMerchantLabReport(

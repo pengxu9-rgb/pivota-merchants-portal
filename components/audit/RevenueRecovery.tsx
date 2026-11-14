@@ -3,16 +3,33 @@
 import { useEffect, useId, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { apiClient } from '@/lib/api-client';
+import type { SavedConsumerQuestion } from '@/lib/audit/retest';
 
 type Estimate = { positive: number; n: number; rate: number | null; ci95: [number, number] | null; unknown: number };
 type Tier = { attempted: number; provider_failed: number; brand_mentioned: Estimate; source_visible: Estimate };
-type Answer = { observation_id: string; query: string; provider: string; brand_mentioned: boolean | null; unknown_reason?: string; prompt_contract?: string;
+type Answer = SavedConsumerQuestion & { observation_id: string; brand_mentioned: boolean | null; unknown_reason?: string;
+  recommendation_review?: { verdict: 'recommended' | 'other' | 'unknown'; market: string; excerpt?: string; citation_url?: string };
   cited_sources?: {uri?: string; url?: string; title?: string}[];
   evidence?: { text?: string | null; model?: string | null; complete?: boolean }; };
 type Query = { query: string; matched_products?: { title?: string; product_key?: string }[] };
+type RecommendationRow = {
+  product_key: string;
+  product_title: string;
+  provider: string;
+  model: string;
+  market: string;
+  prompt_contract: string;
+  attempted: number;
+  recommended: number;
+  other: number;
+  unknown: number;
+  failed: number;
+  cited: number;
+};
 export type Recovery = {
   builder_version: string;
-  selection: { mixed_execution_providers?: string[]; answers?: Answer[]; excluded_diagnostics?: number; observations: number; tiers: Record<string, Tier>; unclassified: number; unavailable_reason?: string; limitation: string };
+  selection: { mixed_execution_providers?: string[]; answers?: Answer[]; excluded_diagnostics?: number; observations: number; tiers: Record<string, Tier>; unclassified: number; unavailable_reason?: string; limitation: string;
+    recommendations?: { basis: string; rows: RecommendationRow[] }; };
   selection_gap?: { gaps: Query[]; won_queries: Query[]; lost_queries_without_product: Query[]; counts: { lost_queries: number; won_queries: number } } | null;
   stages: { stage: string; status: string; unverified_reason?: string; findings: { type: string; summary: string }[] }[];
   headline: { dimensions: { dimension: string; label: string; band_label?: string; n?: number; median?: number; p25?: number; p75?: number }[] };
@@ -20,11 +37,98 @@ export type Recovery = {
   catalog_available?: boolean;
 };
 
+type RecoveryProps = {
+  consumerRetest?: {
+    canReplay: (productKey: string, answers: SavedConsumerQuestion[]) => boolean;
+    prepareQuote: (product: { key: string; title: string }, answers: SavedConsumerQuestion[]) => void;
+  };
+};
+
+function recommendationRows(data: Recovery['selection']['recommendations']): RecommendationRow[] {
+  if (data?.basis !== 'reviewed_consumer_answers_v1' || !Array.isArray(data.rows)) return [];
+  return data.rows.filter(row => row &&
+    [row.product_key, row.product_title, row.provider, row.model, row.market, row.prompt_contract]
+      .every(value => typeof value === 'string' && value.trim().length > 0) &&
+    [row.attempted, row.recommended, row.other, row.unknown, row.failed, row.cited]
+      .every(value => Number.isSafeInteger(value) && value >= 0) &&
+    row.attempted > 0 && row.attempted === row.recommended + row.other + row.unknown + row.failed &&
+    row.recommended <= row.cited && row.cited <= row.attempted - row.failed);
+}
+
+function ProductRecommendations({
+  selection,
+  consumerRetest,
+}: RecoveryProps & { selection: Recovery['selection'] }) {
+  const headingId = useId();
+  const rows = recommendationRows(selection.recommendations);
+  const answers = Array.isArray(selection.answers) ? selection.answers : [];
+  const products = new Map(rows.map(row => [row.product_key, { key: row.product_key, title: row.product_title }]));
+  const replayable = consumerRetest
+    ? Array.from(products.values()).filter(product => consumerRetest.canReplay(product.key, answers))
+    : [];
+
+  return <section className="space-y-3" aria-labelledby={headingId}>
+    <h3 className="font-semibold" id={headingId}>Exact-product recommendations</h3>
+    {rows.length > 0 ? <>
+      <p className="text-sm text-slate-600">Reviewed answers to unbranded shopper questions. A recommendation counts when the answer explains how the exact product meets the request and cites a source for it.</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead><tr className="border-b">
+            <th scope="col" className="p-2">Product</th>
+            <th scope="col" className="p-2">AI provider and market</th>
+            <th scope="col" className="p-2">Recommended</th>
+            <th scope="col" className="p-2">Answers citing product</th>
+            <th scope="col" className="p-2">Coverage</th>
+          </tr></thead>
+          <tbody>{rows.map(row => {
+            const measured = row.recommended + row.other;
+            return <tr key={JSON.stringify([row.product_key, row.provider, row.model, row.market, row.prompt_contract])} className="border-b align-top">
+              <th scope="row" className="p-2 font-medium">{row.product_title}</th>
+              <td className="p-2">
+                <span className="capitalize">{row.provider === 'chatgpt' ? 'ChatGPT' : row.provider}</span> · {row.market}
+                <span className="block text-xs text-slate-500">{row.model} · {captureSettings(row.prompt_contract)}</span>
+              </td>
+              <td className="p-2">{measured ? `${row.recommended}/${measured} reviewed` : 'Not measured'}</td>
+              <td className="p-2">{row.cited > 0 || measured > 0 ? row.cited : 'Not measured'}</td>
+              <td className="p-2">
+                {row.attempted} attempted
+                {row.unknown > 0 ? <span className="block text-xs text-slate-500">{row.unknown} unverified</span> : null}
+                {row.failed > 0 ? <span className="block text-xs text-slate-500">{row.failed} failed</span> : null}
+              </td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+      {replayable.map(product => <button key={product.key} type="button" className="block text-left text-sm font-medium text-indigo-700 underline" onClick={() => consumerRetest?.prepareQuote(product, answers)}>
+        Review saved shopper questions for {product.title}
+      </button>)}
+    </> : <p className="text-sm text-slate-600">Not measured in this audit.</p>}
+  </section>;
+}
+
+function captureSettings(contract: string) {
+  if (contract === 'consumer_query_openai_web_required_v2') return 'Web search required';
+  if (contract === 'consumer_query_v1') return 'Automatic search';
+  return contract;
+}
+
 function sourceLink(source: {uri?: string; url?: string}): string | null {
   try {
     const url = new URL(source.uri || source.url || '');
     return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password ? url.href : null;
   } catch { return null; }
+}
+
+function AnswerRecommendationReview({ review }: { review: NonNullable<Answer['recommendation_review']> }) {
+  const citation = sourceLink({ url: review.citation_url });
+  let outcome = 'Recommendation unverified';
+  if (review.verdict === 'recommended' && review.excerpt && citation) outcome = 'Exact product recommended';
+  if (review.verdict === 'other') outcome = 'Other reviewed outcome';
+  return <div className="mt-2 rounded-md bg-slate-50 p-3 text-sm">
+    <p className="font-medium">{outcome} · {review.market}</p>
+    {review.excerpt ? <blockquote className="mt-1 border-l-2 border-slate-200 pl-2 text-slate-600">{review.excerpt}</blockquote> : null}
+    {citation ? <a className="mt-1 inline-block underline" href={citation} target="_blank" rel="noopener noreferrer">Exact-product citation</a> : null}
+  </div>;
 }
 
 function MetricLabel({ label, explanation }: { label: string; explanation: string }) {
@@ -99,7 +203,7 @@ export function recoveryFindingSummary(finding: { type: string; summary: string 
   return finding.summary;
 }
 
-export function RecoveryView({ data }: { data: Recovery }) {
+export function RecoveryView({ data, consumerRetest }: RecoveryProps & { data: Recovery }) {
   // A successful HTTP response can still carry an older projection contract.
   // Keep the saved action workspace usable during mixed-version rollouts.
   if (!isRecoveryCompatible(data)) return <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">New recovery metrics are not available for this saved report. Your existing report and actions remain below.</p>;
@@ -111,6 +215,7 @@ export function RecoveryView({ data }: { data: Recovery }) {
     <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead><tr className="border-b"><th className="p-2">Shopper question</th><th className="p-2"><MetricLabel label="Your brand mentioned" explanation="The share of measured answers that name your brand. For example, 2/2 means both answers mention it. A mention can be a comparison or criticism; it does not necessarily recommend your product." /></th><th className="p-2"><MetricLabel label="Sources mentioning you" explanation="The share of measured answers with at least one cited source that matches your website or names your brand in its title or label. For example, 1/2 means one of two answers has a matching source. Retailer and review sources can count too; this does not mean the full source page was checked." /></th><th className="p-2"><MetricLabel label="Answers checked" explanation="How many AI responses we attempted to collect for this question group. Each percentage uses its own measured-answer count. Failed or unknown responses are shown separately and excluded." /></th></tr></thead><tbody>
       {Object.entries(tierLabels).map(([tier, label]) => { const t = data.selection.tiers[tier]; return t ? <tr key={tier} className="border-b align-top"><th className="p-2 font-medium">{label}</th><td className="p-2"><EstimateValue estimate={t.brand_mentioned} /></td><td className="p-2"><EstimateValue estimate={t.source_visible} /></td><td className="p-2">{data.selection.unavailable_reason ? 'Not retained' : `${t.attempted} attempted`}{t.provider_failed > 0 ? <span className="block text-amber-700">{t.provider_failed} failed, excluded</span> : null}</td></tr> : null; })}
     </tbody></table></div>
+    <ProductRecommendations selection={data.selection} consumerRetest={consumerRetest} />
     <details className="text-sm text-slate-600"><summary className="cursor-pointer font-medium">How to read these results</summary>
       <div className="mt-2 space-y-2"><p>{data.selection.limitation}</p>
       <p>Readiness scores describe diagnostic checks, not verified brand mentions, product recommendations or sales. Use the answer evidence and action plan to decide what to investigate next.</p>
@@ -127,6 +232,7 @@ export function RecoveryView({ data }: { data: Recovery }) {
         <p className="mt-2 text-xs text-slate-500">{a.prompt_contract === 'consumer_query_openai_web_required_v2' ? 'Web search required · separate measurement conditions from automatic search' : 'Legacy or automatic search conditions'}</p>
         <p className="mt-2 text-xs text-slate-500">{typeof a.evidence?.model === 'string' ? a.evidence.model : 'Model not retained'}</p>
         <p className="mt-2 whitespace-pre-wrap break-words text-sm">{typeof a.evidence?.text === 'string' ? a.evidence.text : 'Answer text was not retained.'}</p>
+        {data.selection.recommendations?.basis === 'reviewed_consumer_answers_v1' && a.recommendation_review ? <AnswerRecommendationReview review={a.recommendation_review} /> : null}
         {Array.isArray(a.cited_sources) && a.cited_sources.length > 0 ? <ul className="mt-2 space-y-1 text-xs" aria-label="Cited sources">{a.cited_sources.filter(source => source && sourceLink(source)).map((source, index) => <li key={index}><a className="underline" href={sourceLink(source)!} target="_blank" rel="noopener noreferrer">{typeof source.title === 'string' && source.title ? source.title : sourceLink(source)}</a></li>)}</ul> : null}
       </details>)}
     </details> : null}
@@ -139,7 +245,7 @@ export function RecoveryView({ data }: { data: Recovery }) {
   </section>;
 }
 
-export function RevenueRecovery({ runId }: { runId?: string | null }) {
+export function RevenueRecovery({ runId, consumerRetest }: RecoveryProps & { runId?: string | null }) {
   const [state, setState] = useState<{ id: string; data?: Recovery; error?: string } | null>(null);
   const [retry, setRetry] = useState(0);
   useEffect(() => {
@@ -152,6 +258,6 @@ export function RevenueRecovery({ runId }: { runId?: string | null }) {
   }, [runId, retry]);
   if (!runId) return null;
   if (state?.id !== runId) return <p className="text-sm text-slate-500" role="status">Loading recovery evidence…</p>;
-  if (state.data) return <RecoveryView data={state.data} />;
+  if (state.data) return <RecoveryView data={state.data} consumerRetest={consumerRetest} />;
   return <p className="text-sm text-amber-800">{state.error} <button className="underline" onClick={() => { setState(null); setRetry(r => r + 1); }}>Retry</button></p>;
 }

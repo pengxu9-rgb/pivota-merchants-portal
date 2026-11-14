@@ -18,7 +18,7 @@ loaded.paths = module.paths;
 const originalRequire = loaded.require.bind(loaded);
 loaded.require = id => id === '@/lib/api-client' ? { apiClient: {} } : originalRequire(id);
 loaded._compile(compiled, source);
-const render = data => renderToStaticMarkup(React.createElement(loaded.exports.RecoveryView, { data }));
+const render = (data, consumerRetest) => renderToStaticMarkup(React.createElement(loaded.exports.RecoveryView, { data, consumerRetest }));
 (async () => {
   const fixtures = ['historical', 'contract-example'].map(name => JSON.parse(fs.readFileSync(`scripts/fixtures/recovery/${name}.json`)));
   const [historical, example] = fixtures.map(render);
@@ -43,6 +43,35 @@ const render = data => renderToStaticMarkup(React.createElement(loaded.exports.R
   assert(render(ungrounded).includes('Web search required'));
   ungrounded.selection.mixed_execution_providers=['chatgpt'];
   assert(render(ungrounded).includes('these conditions cannot be combined'));
+
+  const reviewed = JSON.parse(fs.readFileSync('scripts/fixtures/recovery/consumer-answer.json'));
+  const productKey = 'prod::shop::shopify::essence';
+  const recommended = { product_key: productKey, product_title: 'Hydrating Essence', provider: 'chatgpt', model: 'fixture-model', market: 'US', prompt_contract: 'consumer_query_openai_web_required_v2', attempted: 5, recommended: 1, other: 2, unknown: 1, failed: 1, cited: 2 };
+  reviewed.selection.recommendations = { basis: 'reviewed_consumer_answers_v1', rows: [
+    recommended,
+    { ...recommended, provider: 'gemini', prompt_contract: 'consumer_query_v1', attempted: 2, recommended: 0, other: 0, unknown: 1, failed: 1, cited: 0 },
+    { ...recommended, provider: 'gemini', model: 'second-model', attempted: 2, recommended: 0, other: 2, unknown: 0, failed: 0, cited: 0 },
+    { ...recommended, product_title: 'Invalid counters', attempted: 0 },
+  ] };
+  const first = reviewed.selection.answers[0];
+  first.product_key = productKey;
+  first.tier = 'unbranded';
+  first.recommendation_review = { verdict: 'recommended', market: 'US', excerpt: 'Consider <script>Hydrating Essence</script>', citation_url: 'https://example.org/exact-product' };
+  const replay = { canReplay: (key, answers) => key === productKey && answers[0].product_key === key, prepareQuote: () => {} };
+  const reviewedHtml = render(reviewed, replay);
+  assert(reviewedHtml.includes('Exact-product recommendations') && reviewedHtml.includes('Answers citing product'));
+  assert(reviewedHtml.includes('1/3 reviewed') && reviewedHtml.includes('0/2 reviewed') && !reviewedHtml.includes('0/0'));
+  assert(reviewedHtml.includes('1 unverified') && reviewedHtml.includes('1 failed') && !reviewedHtml.includes('Invalid counters'));
+  assert(reviewedHtml.includes('Review saved shopper questions for Hydrating Essence'));
+  assert((reviewedHtml.match(/Review saved shopper questions/g) || []).length === 1);
+  assert(!render(reviewed).includes('Review saved shopper questions'));
+  assert(reviewedHtml.includes('Exact product recommended') && reviewedHtml.includes('&lt;script&gt;Hydrating Essence&lt;/script&gt;'));
+  assert(reviewedHtml.includes('href="https://example.org/exact-product"'));
+  first.recommendation_review.citation_url = 'javascript:alert(1)';
+  assert(!render(reviewed).includes('javascript:'));
+  reviewed.selection.recommendations.basis = 'legacy_diagnostics';
+  assert(render(reviewed).includes('Not measured in this audit.') && !render(reviewed).includes('1/3 reviewed'));
+  assert(historical.includes('Not measured in this audit.'));
 
 
   const postgres = JSON.parse(fs.readFileSync('scripts/fixtures/recovery/postgres-url.json'));
