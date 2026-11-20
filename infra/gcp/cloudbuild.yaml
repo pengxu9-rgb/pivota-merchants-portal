@@ -1,9 +1,11 @@
 # Consumer capture is opt-in at build time, after compatible backend/gateway release.
-# _RECOVERY_V2 turns on the AI Revenue Recovery v2 portal. Keep it 'false' until
-# the v2 screens and all six locales are signed off; merges deploy.
+# _RECOVERY_V2 turns on the AI Revenue Recovery v2 portal. A merge stages the
+# flag-on build as a 0% candidate at merchant-candidate.pivota.cc; it reaches
+# production only when it is promoted (promote.yml, a separate manual step).
+# Set back to 'false' to roll back.
 substitutions:
   _CONSUMER_CAPTURE: 'true'
-  _RECOVERY_V2: 'false'
+  _RECOVERY_V2: 'true'
 steps:
 - name: gcr.io/cloud-builders/docker
   args: ['build', '-f', 'infra/gcp/Dockerfile',
