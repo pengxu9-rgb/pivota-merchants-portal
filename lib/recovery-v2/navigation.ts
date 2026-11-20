@@ -16,6 +16,10 @@ export type RecoveryNavItem = {
 /** Where "Connect" goes. The Start screen (R4) replaces this. */
 export const RECOVERY_CONNECT_HREF = "/dashboard/integrations";
 
+/** Where "Run new check" goes. The Start screen + cost modal (R4) replace
+ * this; until then it is the existing URL check, which shows its own quote. */
+export const RECOVERY_RUN_HREF = "/dashboard/agent-center/url-audit";
+
 export const recoveryMainNav: RecoveryNavItem[] = [
   { labelKey: "recovery.nav.overview", href: "/dashboard", icon: Home },
   {

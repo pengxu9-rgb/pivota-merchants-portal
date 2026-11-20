@@ -44,7 +44,7 @@ type RecoveryProps = {
   };
 };
 
-function recommendationRows(data: Recovery['selection']['recommendations']): RecommendationRow[] {
+export function recommendationRows(data: Recovery['selection']['recommendations']): RecommendationRow[] {
   if (data?.basis !== 'reviewed_consumer_answers_v1' || !Array.isArray(data.rows)) return [];
   return data.rows.filter(row => row &&
     [row.product_key, row.product_title, row.provider, row.model, row.market, row.prompt_contract]
