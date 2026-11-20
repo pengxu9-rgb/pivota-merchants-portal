@@ -18,6 +18,7 @@ import {
 import { apiClient } from '@/lib/api-client';
 import { FEATURE_FLAGS } from '@/lib/config';
 import { AiReadinessHomeHero } from '@/components/audit/AiReadinessHomeHero';
+import { RecoveryOverview } from '@/components/recovery-v2/RecoveryOverview';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import {
   MerchantButton,
@@ -173,7 +174,7 @@ function formatRelativeTime(language: string, value?: string | null, fallbackLab
   return formatter.format(-Math.max(1, Math.round(diffMs / day)), 'day');
 }
 
-export default function DashboardPage() {
+function LegacyDashboardPage() {
   const { t, language } = useMerchantLanguage();
   const [readinessSummary, setReadinessSummary] = useState<ReadinessSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1255,4 +1256,10 @@ export default function DashboardPage() {
       </div>
     </div>
   );
+}
+
+// AI Revenue Recovery v2 (flag off by default): the Overview replaces this
+// dashboard. Flag off renders the existing page unchanged.
+export default function DashboardPage() {
+  return FEATURE_FLAGS.RECOVERY_V2 ? <RecoveryOverview /> : <LegacyDashboardPage />;
 }
