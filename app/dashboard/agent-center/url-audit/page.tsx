@@ -35,6 +35,7 @@ import { FunnelChecksPanel } from '@/components/audit/FunnelChecksPanel';
 import { apiClient } from '@/lib/api-client';
 import { FEATURE_FLAGS } from '@/lib/config';
 import { stashVisibilityHandoff } from '@/lib/visibility-handoff';
+import { useUrlAuditRun, type UrlAuditRequest } from '@/lib/audit/useUrlAuditRun';
 import { actionSupportingPrompts, summaryRenderable } from '@/lib/audit/reportSummary';
 import { DetailDisclosureCard } from '@/components/ui/DetailDisclosureCard';
 import { ReportSectionBoundary } from '@/components/audit/ReportSectionBoundary';
@@ -166,26 +167,37 @@ export default function UrlAuditPage() {
   // textarea can't collapse the panel mid-edit.
   const [skuPromptsText, setSkuPromptsText] = useState<string[]>(['']);
   const [skuPromptsOpen, setSkuPromptsOpen] = useState<boolean[]>([false]);
-  const [loading, setLoading] = useState(false);
   const [inputsOpen, setInputsOpen] = useState(true);
-  const [elapsedSec, setElapsedSec] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  // Set alongside `error` when the backend's 422 carries an upgrade_path
-  // (product_cap_exceeded) — renders the upsell as a CLICKABLE link, not prose.
-  const [errorUpgradePath, setErrorUpgradePath] = useState<string | null>(null);
   // False until confirmed on the paid (off-platform) billing path; gates every
   // in-app purchase/upgrade affordance on this page. Default hidden is the safe
   // state for free / App Store merchants.
   const [canPurchaseCredits, setCanPurchaseCredits] = useState(false);
-  // Non-error info (e.g. "still running — saved to history"): grounded per-SKU
-  // probes can run past the browser poll budget, but the run is durable.
-  const [notice, setNotice] = useState<string | null>(null);
-  const [result, setResult] = useState<UrlReadinessAuditResponse | null>(null);
-  // Visibility run history: the run currently shown, an open-in-progress marker,
-  // a key that refreshes the list after a new run, and a scroll target.
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  // Visibility run history: an open-in-progress marker, a key that refreshes
+  // the list after a new run, and a scroll target.
   const [loadingRunId, setLoadingRunId] = useState<string | null>(null);
   const [historyReloadKey, setHistoryReloadKey] = useState(0);
+  // Run lifecycle (quote → accept → poll, 402/409/422, poll_timeout) lives in
+  // the shared hook, which the Recovery v2 Start screen reuses. `error` carries
+  // the same messages as before; `errorUpgradePath` is set when the backend's
+  // 422 carries an upgrade_path (product_cap_exceeded) — rendered as a
+  // CLICKABLE link, not prose. `notice` is non-error info ("still running —
+  // saved to history"): probes can outrun the browser poll budget, but the run
+  // is durable.
+  const audit = useUrlAuditRun({
+    onFinished: (res, request) => {
+      if (res.per_sku_reports?.length || res.brand_report) setInputsOpen(false);
+      setHistoryReloadKey((k) => k + 1); // surface the just-finished check in history
+      // Hand off the audited URLs so the readiness audit can pre-select these
+      // exact products once the merchant connects + syncs their catalog.
+      stashVisibilityHandoff({ urls: request.product_urls, brand: request.brand, website: request.website });
+    },
+    onStillRunning: (_runId, request) => {
+      setHistoryReloadKey((k) => k + 1);
+      stashVisibilityHandoff({ urls: request.product_urls, brand: request.brand, website: request.website });
+    },
+  });
+  const { loading, elapsedSec, error, errorUpgradePath, notice, result, activeRunId } = audit;
+  const { setError, setResult, setActiveRunId } = audit;
   const resultRef = useRef<HTMLDivElement | null>(null);
   const queryPrefilledRef = useRef({ website: false, brand: false });
 
@@ -352,15 +364,13 @@ export default function UrlAuditPage() {
 
   const consumerCaptureEnabled = process.env.NEXT_PUBLIC_CONSUMER_ANSWER_ENABLED === 'true';
   const [consumerQuestionsText, setConsumerQuestionsText] = useState('');
-  const [consumerQuote, setConsumerQuote] = useState<{scope: string; quote_id: string; credits: number; base_credits: number; providers: string[]; product_count: number; consumer_capture?: {credits: number; probe_count: number}} | null>(null);
   const consumerQueries = consumerCaptureEnabled ? [...new Set(consumerQuestionsText.split('\n').map(q => q.trim()).filter(Boolean))] : [];
   const consumerError = consumerQueries.length > 8 || consumerQueries.some(q => q.length > 1000);
-  const quoteRequest = {product_urls: cleanedUrls, website: website.trim() || undefined,
+  const quoteRequest: UrlAuditRequest = {product_urls: cleanedUrls, website: website.trim() || undefined,
     brand: brand.trim() || undefined, custom_prompts: customPromptsParsed.length ? customPromptsParsed : undefined,
     custom_prompts_by_url: Object.keys(skuPromptsByUrl).length ? skuPromptsByUrl : undefined,
     consumer_answer_queries: consumerQueries};
-  const quoteScope = JSON.stringify(quoteRequest);
-  const currentQuote = consumerQuote?.scope === quoteScope ? consumerQuote : null;
+  const currentQuote = audit.quoteFor(quoteRequest);
 
   const canRun =
     cleanedUrls.length > 0 && !loading && !customPromptsError && !skuPromptsError && !consumerError;
@@ -415,90 +425,7 @@ export default function UrlAuditPage() {
   };
 
   const run = async () => {
-    if (cleanedUrls.length === 0) {
-      setError('Add at least one product URL to audit.');
-      return;
-    }
-    setLoading(true);
-    setElapsedSec(0);
-    setError(null);
-    setErrorUpgradePath(null);
-    setNotice(null);
-    try {
-      if (consumerQueries.length && !currentQuote) {
-        const quote = await apiClient.quoteUrlReadinessAudit(quoteRequest);
-        setConsumerQuote({...quote, scope: quoteScope});
-        return;
-      }
-      setResult(null);
-      const res = await apiClient.runUrlReadinessAudit({
-        productUrls: cleanedUrls,
-        consumerAnswerQueries: consumerQueries,
-        acceptedQuote: currentQuote?.quote_id,
-        website: website.trim() || undefined,
-        brand: brand.trim() || undefined,
-        customPrompts: customPromptsParsed.length > 0 ? customPromptsParsed : undefined,
-        customPromptsByUrl:
-          Object.keys(skuPromptsByUrl).length > 0 ? skuPromptsByUrl : undefined,
-        onProgress: ({ elapsedMs }) =>
-          setElapsedSec(Math.round(elapsedMs / 1000)),
-      });
-      setConsumerQuote(null);
-      setResult(res);
-      if (res.per_sku_reports?.length || res.brand_report) setInputsOpen(false);
-      setActiveRunId(res.audit_run_id ?? null);
-      setHistoryReloadKey((k) => k + 1); // surface the just-finished check in history
-      // Hand off the audited URLs so the readiness audit can pre-select these
-      // exact products once the merchant connects + syncs their catalog.
-      stashVisibilityHandoff({
-        urls: cleanedUrls,
-        brand: brand.trim() || undefined,
-        website: website.trim() || undefined,
-      });
-    } catch (e: any) {
-      setConsumerQuote(null);
-      const status = e?.response?.status;
-      const detail = e?.response?.data?.detail;
-      if (e?.code === 'poll_timeout') {
-        // Not a failure — the durable run is still going and will appear in
-        // Past visibility checks. Surface it there + as a friendly notice.
-        setNotice(e?.message || 'Still auditing — check Past visibility checks shortly.');
-        if (e?.runId) setActiveRunId(e.runId);
-        setHistoryReloadKey((k) => k + 1);
-        stashVisibilityHandoff({
-          urls: cleanedUrls,
-          brand: brand.trim() || undefined,
-          website: website.trim() || undefined,
-        });
-      } else if (status === 409 && detail?.code === 'quote_required') {
-        setError(detail.message || 'The audit scope or price changed. Get a fresh quote.');
-      } else if (status === 402) {
-        setError(
-          (typeof detail === 'string' ? detail : detail?.message) ||
-            (consumerQueries.length ? `Not enough credits for this audit${typeof detail?.required === 'number' ? `: ${detail.required} required, ${detail.available ?? 0} available` : ''}. Top up credits, or remove the supplemental questions to use any remaining free diagnostic allowance.` : null) ||
-            "You've used your free URL audits. Connect your store for the full per-SKU audit, or upgrade to keep auditing by URL.",
-        );
-      } else if (status === 422) {
-        const unresolved = Array.isArray(detail?.unresolved)
-          ? detail.unresolved
-              .map((u: { url?: string }) => u?.url)
-              .filter(Boolean)
-              .join(', ')
-          : '';
-        setError(
-          ( (typeof detail === 'string' ? detail : detail?.message) ||
-            "We couldn't read a product from those URLs. Make sure each link opens a single product page.") +
-            (unresolved ? ` (${unresolved})` : ''),
-        );
-        if (typeof detail?.upgrade_path === 'string' && detail.upgrade_path) {
-          setErrorUpgradePath(detail.upgrade_path);
-        }
-      } else {
-        setError((typeof detail === 'string' ? detail : detail?.message) || e?.message || 'Audit failed. Please try again.');
-      }
-    } finally {
-      setLoading(false);
-    }
+    await audit.start(quoteRequest);
   };
 
   // Re-open a past visibility check from the history panel: fetch the completed

@@ -1,0 +1,233 @@
+{
+ "_comment": "Synthetic placeholder catalog run detail for Recovery v2 Sources.",
+ "stage": "succeeded",
+ "report_jsonb": {
+  "audit_run_id": "run-catalog-placeholder",
+  "audit_mode": "per_sku",
+  "per_sku_reports": [
+   {
+    "sku_key": "1001",
+    "product_key": "prod::merchant-placeholder::shopify::1001",
+    "content_key": null,
+    "sku_title": "Example Serum 30 ml",
+    "identity": {
+     "name": "Example Serum 30 ml"
+    },
+    "scores": {
+     "identity": {
+      "score": 16,
+      "band": "blocked",
+      "band_label": "Not yet visible"
+     },
+     "content_richness": {
+      "score": 23,
+      "band": "blocked",
+      "band_label": "Not yet visible"
+     },
+     "routability": {
+      "score": 0,
+      "band": "unscored",
+      "band_label": "Not measured"
+     },
+     "citation": {
+      "score": 48,
+      "band": "partial",
+      "band_label": "Needs work"
+     }
+    },
+    "band": "blocked",
+    "primary_gaps": [
+     {
+      "label": "Name the exact product",
+      "why": "AI can't tell this serum apart from similar ones.",
+      "dimension": "identity",
+      "bucket": "x",
+      "gap": 1
+     },
+     {
+      "label": "Add key ingredients and size",
+      "why": "The page doesn't say what's in it or how much.",
+      "dimension": "identity",
+      "bucket": "x",
+      "gap": 1
+     }
+    ],
+    "verbatim_grounding_evidence": [],
+    "axis_coverage": {}
+   },
+   {
+    "sku_key": "1002",
+    "product_key": "prod::merchant-placeholder::shopify::1002",
+    "content_key": null,
+    "sku_title": "Example Sunscreen SPF 50",
+    "identity": {
+     "name": "Example Sunscreen SPF 50"
+    },
+    "scores": {
+     "identity": {
+      "score": 45,
+      "band": "partial",
+      "band_label": "Needs work"
+     },
+     "content_richness": {
+      "score": 20,
+      "band": "blocked",
+      "band_label": "Not yet visible"
+     },
+     "routability": {
+      "score": 0,
+      "band": "unscored",
+      "band_label": "Not measured"
+     },
+     "citation": {
+      "score": 52,
+      "band": "partial",
+      "band_label": "Needs work"
+     }
+    },
+    "band": "blocked",
+    "primary_gaps": [
+     {
+      "label": "Describe who it's for",
+      "why": "No skin type or use case on the page.",
+      "dimension": "identity",
+      "bucket": "x",
+      "gap": 1
+     }
+    ],
+    "verbatim_grounding_evidence": [],
+    "axis_coverage": {}
+   },
+   {
+    "sku_key": "1003",
+    "product_key": "prod::merchant-placeholder::shopify::1003",
+    "content_key": null,
+    "sku_title": "Example Night Cream",
+    "identity": {
+     "name": "Example Night Cream"
+    },
+    "scores": {
+     "identity": {
+      "score": 18,
+      "band": "blocked",
+      "band_label": "Not yet visible"
+     },
+     "content_richness": {
+      "score": 55,
+      "band": "partial",
+      "band_label": "Needs work"
+     },
+     "routability": {
+      "score": 0,
+      "band": "unscored",
+      "band_label": "Not measured"
+     },
+     "citation": {
+      "score": 78,
+      "band": "ready",
+      "band_label": "Ready"
+     }
+    },
+    "band": "blocked",
+    "primary_gaps": [],
+    "verbatim_grounding_evidence": [],
+    "axis_coverage": {}
+   }
+  ],
+  "win_plan": {
+   "available": true,
+   "note": null,
+   "sku_plans": [
+    {
+     "sku_key": "sku-1",
+     "sku_title": "Example Serum 30 ml",
+     "losing_queries": [
+      {
+       "query": "best vitamin c serum for sensitive skin",
+       "axis": "category",
+       "grounds_in": [
+        {
+         "host": "reseller-one.example",
+         "role": "retailer",
+         "tier": 2,
+         "applies_to_merchant_category": true,
+         "outreach": {
+          "state": "draft_ready",
+          "hint": "Retail buyer pitch.",
+          "cycle_weeks": [
+           2,
+           4
+          ],
+          "recipient": {
+           "email": "partners@reseller-one.example",
+           "submission_url": null,
+           "note": "Placeholder recipient note."
+          },
+          "pitch_draft": {
+           "subject": "[PLACEHOLDER] Example Serum for your vitamin C range",
+           "body": "[DRAFT PITCH \u2014 placeholder text: introduces Example Serum, explains why it fits the range, offers samples and a direct product link.]",
+           "channel": "email",
+           "recipient_email": "partners@reseller-one.example",
+           "recipient_note": null
+          }
+         }
+        },
+        {
+         "host": "skin-review.example",
+         "role": "editorial_review",
+         "tier": 1,
+         "applies_to_merchant_category": true,
+         "outreach": {
+          "state": "submission_only",
+          "hint": "Roundup submission form.",
+          "cycle_weeks": null,
+          "recipient": {
+           "email": null,
+           "submission_url": "https://skin-review.example/contact",
+           "note": null
+          },
+          "pitch_draft": null
+         }
+        },
+        {
+         "host": "marketplace.example",
+         "role": "marketplace",
+         "tier": 3,
+         "applies_to_merchant_category": null,
+         "outreach": {
+          "state": "target_only",
+          "hint": null,
+          "cycle_weeks": null,
+          "recipient": null,
+          "pitch_draft": null
+         }
+        }
+       ],
+       "competitor_benchmark": [],
+       "win_condition": null,
+       "limit": null
+      }
+     ],
+     "coverage": {
+      "losing_category_queries": 1,
+      "queries_with_grounded_target": 1,
+      "queries_with_draft_ready_target": 1
+     }
+    }
+   ],
+   "rollup": {
+    "losing_category_queries": 1,
+    "independent_hosts_to_win": [
+     "skin-review.example"
+    ],
+    "draft_ready_hosts": [
+     "reseller-one.example"
+    ],
+    "pitch_ready_hosts": [
+     "reseller-one.example"
+    ]
+   }
+  },
+  "outreach_outcomes": null
+ }
+}

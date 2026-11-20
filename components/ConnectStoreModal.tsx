@@ -23,13 +23,15 @@ interface ConnectStoreModalProps {
   onClose: () => void;
   onSuccess: () => void;
   merchantId: string;
+  /** Preselect a platform (Recovery v2 Start screen). Default: none. */
+  initialPlatform?: string;
 }
 
-export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchantId }: ConnectStoreModalProps) {
+export default function ConnectStoreModal({ isOpen, onClose, onSuccess, merchantId, initialPlatform }: ConnectStoreModalProps) {
   const { language } = useMerchantLanguage();
   const copy = getStoreFormCopy(language);
   const guideUiText = getIntegrationGuideUiText(language);
-  const [platform, setPlatform] = useState<string>('');
+  const [platform, setPlatform] = useState<string>(initialPlatform ?? '');
   const [openGuideKey, setOpenGuideKey] = useState<IntegrationGuideKey | null>(null);
   const [loading, setLoading] = useState(false);
   const baseUrl = API_CONFIG.BASE_URL;

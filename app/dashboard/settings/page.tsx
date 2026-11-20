@@ -5,6 +5,8 @@ import { AlertCircle, User, Bell, Shield, Save, Loader2, Lock, Languages, Zap } 
 import { PortalLanguageSwitcher } from '@/components/portal/portal-language-switcher';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { apiClient } from '@/lib/api-client';
+import { FEATURE_FLAGS } from '@/lib/config';
+import { RecoverySettingsHeader } from '@/components/recovery-v2/RecoveryPages';
 import {
   MerchantButton,
   PageHeader,
@@ -23,7 +25,7 @@ function validatePassword(
   return null;
 }
 
-export default function SettingsPage() {
+function LegacySettingsPage() {
   const { t, language, setLanguage } = useMerchantLanguage();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -566,5 +568,18 @@ export default function SettingsPage() {
         </MerchantButton>
       </div>
     </div>
+  );
+}
+
+// AI Revenue Recovery v2 (flag off by default): store connection and
+// "Past orders & refunds" sit above the existing settings. Flag off renders
+// the existing page unchanged.
+export default function SettingsPage() {
+  if (!FEATURE_FLAGS.RECOVERY_V2) return <LegacySettingsPage />;
+  return (
+    <>
+      <RecoverySettingsHeader />
+      <LegacySettingsPage />
+    </>
   );
 }

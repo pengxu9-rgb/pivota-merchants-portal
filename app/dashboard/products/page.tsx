@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { RecoveryProducts } from '@/components/recovery-v2/RecoveryProducts';
+import { FEATURE_FLAGS } from '@/lib/config';
 import {
   AlertCircle,
   ArrowRight,
@@ -757,7 +759,7 @@ function readinessVariantMatchesReason(
   );
 }
 
-export default function ProductsPage() {
+function LegacyProductsPage() {
   const { t } = useMerchantLanguage();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -5426,4 +5428,25 @@ export default function ProductsPage() {
       ) : null}
     </div>
   );
+}
+
+// Deep links into the catalog review workflows (review modal, plan, queue,
+// reason, variant) keep opening the existing page under Recovery v2; a plain
+// visit (optionally ?platform=&platformProductId=) opens v2 Products.
+const LEGACY_PRODUCT_DEEP_LINK_PARAMS = ['modal', 'planId', 'queueState', 'reasonCode', 'variantId', 'source'];
+
+function RecoveryProductsRoute() {
+  const searchParams = useSearchParams();
+  if (LEGACY_PRODUCT_DEEP_LINK_PARAMS.some((param) => searchParams.get(param))) {
+    return <LegacyProductsPage />;
+  }
+  const platform = searchParams.get('platform');
+  const platformProductId = searchParams.get('platformProductId');
+  return <RecoveryProducts initialRef={platform && platformProductId ? { platform, platformProductId } : null} />;
+}
+
+// AI Revenue Recovery v2 (flag off by default): Products replaces the catalog
+// page. Flag off renders the existing page unchanged.
+export default function ProductsPage() {
+  return FEATURE_FLAGS.RECOVERY_V2 ? <RecoveryProductsRoute /> : <LegacyProductsPage />;
 }

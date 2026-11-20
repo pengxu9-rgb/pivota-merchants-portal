@@ -10,6 +10,7 @@ import "./globals.css";
 // new custom properties), so with the flag off nothing on the page changes.
 import "../styles/pivota-tokens.css";
 import "../styles/recovery-v2.css";
+import "../styles/recovery-v2-legacy.css";
 
 export const metadata: Metadata = {
   title: "Pivota Merchant Portal",

@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { CreditCard, Home, Package, SlidersHorizontal } from "lucide-react";
+import { CreditCard, FileText, Globe, Home, Package, ShoppingCart, SlidersHorizontal } from "lucide-react";
 
 /** AI Revenue Recovery v2 nav. Labels are translation keys (`labelKey`) so all
  * six portal locales keep working. Orders, analytics and integrations are not
@@ -13,12 +13,12 @@ export type RecoveryNavItem = {
   matchPrefixes?: string[];
 };
 
-/** Where "Connect" goes. The Start screen (R4) replaces this. */
-export const RECOVERY_CONNECT_HREF = "/dashboard/integrations";
+/** Where "Connect" goes: the Start screen (connect, or start with links). */
+export const RECOVERY_CONNECT_HREF = "/dashboard/start";
 
-/** Where "Run new check" goes. The Start screen + cost modal (R4) replace
- * this; until then it is the existing URL check, which shows its own quote. */
-export const RECOVERY_RUN_HREF = "/dashboard/agent-center/url-audit";
+/** Where "Run new check" goes: Start, whose cost modal shows the cost first
+ * (or says plainly that the backend gives none for this kind of check). */
+export const RECOVERY_RUN_HREF = "/dashboard/start";
 
 export const recoveryMainNav: RecoveryNavItem[] = [
   { labelKey: "recovery.nav.overview", href: "/dashboard", icon: Home },
@@ -27,6 +27,24 @@ export const recoveryMainNav: RecoveryNavItem[] = [
     href: "/dashboard/products",
     icon: Package,
     matchPrefixes: ["/dashboard/products"],
+  },
+  {
+    labelKey: "recovery.nav.sources",
+    href: "/dashboard/sources",
+    icon: Globe,
+    matchPrefixes: ["/dashboard/sources"],
+  },
+  {
+    labelKey: "recovery.nav.checkout",
+    href: "/dashboard/checkout",
+    icon: ShoppingCart,
+    matchPrefixes: ["/dashboard/checkout"],
+  },
+  {
+    labelKey: "recovery.nav.reports",
+    href: "/dashboard/reports",
+    icon: FileText,
+    matchPrefixes: ["/dashboard/reports"],
   },
 ];
 

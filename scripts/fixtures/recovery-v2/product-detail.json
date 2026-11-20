@@ -1,0 +1,16 @@
+{
+ "_comment": "Synthetic placeholder product detail (suggested copy overlay).",
+ "platform": "shopify",
+ "platform_product_id": "1001",
+ "platform_admin_url": "https://admin.example-store.example/products/1001",
+ "enrichment": {
+  "title_override": "Example Serum 30 ml \u2014 10% vitamin C, fragrance-free",
+  "summary_short": "[PLACEHOLDER] A lightweight daily serum.",
+  "description_markdown": "[PLACEHOLDER SUGGESTED COPY] A lightweight serum for daily hydration with 10% vitamin C, fragrance-free and suited to sensitive skin. 30 ml.",
+  "bullet_points": [
+   "10% vitamin C",
+   "Fragrance-free",
+   "30 ml"
+  ]
+ }
+}

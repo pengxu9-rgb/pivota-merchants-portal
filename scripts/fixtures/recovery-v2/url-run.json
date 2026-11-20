@@ -1,0 +1,286 @@
+{
+ "_comment": "Synthetic placeholder links-mode run for Recovery v2 Sources. Placeholder hosts (*.example) only.",
+ "status": "succeeded",
+ "run_id": "run-links-placeholder",
+ "audit_run_id": "run-links-placeholder",
+ "merchant_context": {
+  "plan_tier": "growth",
+  "is_paid": true,
+  "store_connected": false
+ },
+ "per_sku_reports": [
+  {
+   "sku_key": "1001",
+   "product_key": "merchant-placeholder|shopify|1001",
+   "content_key": null,
+   "sku_title": "Example Serum 30 ml",
+   "identity": {
+    "name": "Example Serum 30 ml"
+   },
+   "scores": {
+    "identity": {
+     "score": 16,
+     "band": "blocked",
+     "band_label": "Not yet visible"
+    },
+    "content_richness": {
+     "score": 23,
+     "band": "blocked",
+     "band_label": "Not yet visible"
+    },
+    "routability": {
+     "score": 0,
+     "band": "unscored",
+     "band_label": "Not measured"
+    },
+    "citation": {
+     "score": 48,
+     "band": "partial",
+     "band_label": "Needs work"
+    }
+   },
+   "band": "blocked",
+   "primary_gaps": [
+    {
+     "label": "Name the exact product",
+     "why": "AI can't tell this serum apart from similar ones.",
+     "dimension": "identity",
+     "bucket": "x",
+     "gap": 1
+    },
+    {
+     "label": "Add key ingredients and size",
+     "why": "The page doesn't say what's in it or how much.",
+     "dimension": "identity",
+     "bucket": "x",
+     "gap": 1
+    }
+   ],
+   "verbatim_grounding_evidence": [],
+   "axis_coverage": {}
+  },
+  {
+   "sku_key": "1002",
+   "product_key": "merchant-placeholder|shopify|1002",
+   "content_key": null,
+   "sku_title": "Example Sunscreen SPF 50",
+   "identity": {
+    "name": "Example Sunscreen SPF 50"
+   },
+   "scores": {
+    "identity": {
+     "score": 45,
+     "band": "partial",
+     "band_label": "Needs work"
+    },
+    "content_richness": {
+     "score": 20,
+     "band": "blocked",
+     "band_label": "Not yet visible"
+    },
+    "routability": {
+     "score": 0,
+     "band": "unscored",
+     "band_label": "Not measured"
+    },
+    "citation": {
+     "score": 52,
+     "band": "partial",
+     "band_label": "Needs work"
+    }
+   },
+   "band": "blocked",
+   "primary_gaps": [
+    {
+     "label": "Describe who it's for",
+     "why": "No skin type or use case on the page.",
+     "dimension": "identity",
+     "bucket": "x",
+     "gap": 1
+    }
+   ],
+   "verbatim_grounding_evidence": [],
+   "axis_coverage": {}
+  },
+  {
+   "sku_key": "1003",
+   "product_key": "merchant-placeholder|shopify|1003",
+   "content_key": null,
+   "sku_title": "Example Night Cream",
+   "identity": {
+    "name": "Example Night Cream"
+   },
+   "scores": {
+    "identity": {
+     "score": 18,
+     "band": "blocked",
+     "band_label": "Not yet visible"
+    },
+    "content_richness": {
+     "score": 55,
+     "band": "partial",
+     "band_label": "Needs work"
+    },
+    "routability": {
+     "score": 0,
+     "band": "unscored",
+     "band_label": "Not measured"
+    },
+    "citation": {
+     "score": 78,
+     "band": "ready",
+     "band_label": "Ready"
+    }
+   },
+   "band": "blocked",
+   "primary_gaps": [],
+   "verbatim_grounding_evidence": [],
+   "axis_coverage": {}
+  }
+ ],
+ "catalog_dimensions_available": false,
+ "where_youre_losing": {
+  "outreach_moves": [
+   {
+    "host": "reseller-one.example",
+    "host_type": "retailer",
+    "pitch_state": "draft_ready",
+    "pitch_email": "partners@reseller-one.example",
+    "prompts_cited_count": 9,
+    "losing_queries": [
+     "best vitamin c serum for sensitive skin",
+     "fragrance-free vitamin c serum"
+    ],
+    "first_move": "Ask the category buyer to add your listing.",
+    "headline": "",
+    "why": "",
+    "action_verb": "pitch",
+    "lever": "retail"
+   },
+   {
+    "host": "marketplace.example",
+    "host_type": "marketplace",
+    "pitch_state": "target_only",
+    "prompts_cited_count": 6,
+    "losing_queries": [
+     "vitamin c serum under $40"
+    ],
+    "headline": "",
+    "why": "",
+    "action_verb": "list",
+    "lever": "marketplace"
+   },
+   {
+    "host": "skin-review.example",
+    "host_type": "editorial_review",
+    "pitch_state": "submission_only",
+    "pitch_submission_url": "https://skin-review.example/contact",
+    "prompts_cited_count": 5,
+    "losing_queries": [
+     "best vitamin c serums 2026"
+    ],
+    "first_move": "Submit the product for their next roundup.",
+    "headline": "",
+    "why": "",
+    "action_verb": "pitch",
+    "lever": "editorial"
+   },
+   {
+    "host": "beauty-blog.example",
+    "host_type": "editorial",
+    "pitch_state": "target_only",
+    "prompts_cited_count": 3,
+    "losing_queries": [
+     "vitamin c serum for dull skin"
+    ],
+    "headline": "",
+    "why": "",
+    "action_verb": "pitch",
+    "lever": "editorial"
+   },
+   {
+    "host": "best-of-list.example",
+    "host_type": "editorial",
+    "pitch_state": "draft_ready",
+    "pitch_email": "editors@best-of-list.example",
+    "prompts_cited_count": 2,
+    "losing_queries": [
+     "best serum for sensitive skin"
+    ],
+    "headline": "",
+    "why": "",
+    "action_verb": "pitch",
+    "lever": "editorial"
+   },
+   {
+    "host": "derm-forum.example",
+    "host_type": "community",
+    "pitch_state": "submission_only",
+    "pitch_submission_url": "https://derm-forum.example/submit",
+    "prompts_cited_count": 2,
+    "losing_queries": [
+     "does vitamin c serum irritate"
+    ],
+    "headline": "",
+    "why": "",
+    "action_verb": "post",
+    "lever": "community"
+   },
+   {
+    "host": "glow-guide.example",
+    "host_type": "editorial",
+    "pitch_state": "draft_ready",
+    "pitch_email": "hello@glow-guide.example",
+    "prompts_cited_count": 1,
+    "losing_queries": [
+     "glow serum recommendations"
+    ],
+    "headline": "",
+    "why": "",
+    "action_verb": "pitch",
+    "lever": "editorial"
+   }
+  ]
+ },
+ "outreach_outcomes": {
+  "is_first_audit": false,
+  "available": true,
+  "note": "Placeholder outcome note. No causation claimed.",
+  "comparable": true,
+  "basis_note": null,
+  "targets": [
+   {
+    "host": "glow-guide.example",
+    "query": "glow serum recommendations",
+    "axis": "category",
+    "target_source": "outreach_move",
+    "outcome": "won",
+    "reason": "host_now_endorses",
+    "what_changed": "Placeholder: this site's answer now names you.",
+    "signals": {
+     "prior": {
+      "endorsed": false,
+      "names_you": false,
+      "citation_role": null,
+      "prompts_cited_count": 1
+     },
+     "current": {
+      "endorsed": true,
+      "names_you": true,
+      "citation_role": null,
+      "prompts_cited_count": 1
+     }
+    },
+    "merchant_action": null
+   }
+  ],
+  "summary": {
+   "won": 1,
+   "progress": 0,
+   "no_change": 0,
+   "no_longer_grounded": 0,
+   "not_comparable": 0
+  },
+  "closed_channels_excluded": []
+ }
+}
