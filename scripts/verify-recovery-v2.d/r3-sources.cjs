@@ -26,6 +26,13 @@ module.exports = ({ check, render, h, fixture, text, assertHonest, assert }) => 
     assert(reseller.pitch && reseller.pitch.subject.includes('PLACEHOLDER'));
     assert.equal(catalog.find((r) => r.host === 'marketplace.example').pitch, null);
     assert.deepEqual(buildSources({}), []);
+    // Backend-crawled links: http(s) only, single plain email (review P3-4).
+    const unsafe = buildSources({ moves: [
+      { host: 'a.example', host_type: 'editorial', pitch_state: 'submission_only', pitch_submission_url: 'javascript:alert(1)', losing_queries: ['q'] },
+      { host: 'b.example', host_type: 'editorial', pitch_state: 'draft_ready', pitch_email: 'x@b.example?bcc=y@z.example', losing_queries: ['q'] },
+      { host: 'c.example', host_type: 'editorial', pitch_state: 'submission_only', pitch_submission_url: 'https://user:pw@c.example/form', losing_queries: ['q'] },
+    ] });
+    for (const r of unsafe) { assert.equal(r.submissionUrl, null, r.host); assert.equal(r.recipientEmail, null, r.host); }
   });
 
   check('sources view: labels, tabs, "Sources mention you", no "your link cited"', () => {
@@ -46,6 +53,8 @@ module.exports = ({ check, render, h, fixture, text, assertHonest, assert }) => 
     const form = text(view(rows, 'skin-review.example'));
     assert(form.includes('Contact form') && form.includes('Open their contact form') && form.includes('Mark as sent'));
     assert(form.includes("We can't show the amount before it runs"), 'draft cost honesty');
+    const gated = text(render(h(SourcesView, { state: { kind: 'ready', rows, canDraft: true, canPurchase: false }, actions, initialHost: 'skin-review.example' })));
+    assert(!/Top up/.test(gated), 'no purchase advice without the purchase gate');
     const none = text(view(rows, 'marketplace.example'));
     assert(none.includes("We haven't found a way to reach this site yet") && !none.includes('Mark as sent'));
     const sent = text(view(rows, 'derm-forum.example'));

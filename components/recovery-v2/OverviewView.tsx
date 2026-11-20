@@ -71,21 +71,37 @@ function leftOut(t: T, unknown: number, failed: number): string | null {
 }
 
 function Cell({ cell, t }: { cell: AnswerCell; t: T }) {
-  if (cell.kind === "not_measured_type") return <td className="rv-muted rv-small">{t("recovery.tier.notMeasuredType")}</td>;
-  if (cell.kind === "not_measured_check") return <td className="rv-muted rv-small">{t("recovery.tier.notMeasuredCheck")}</td>;
+  return <td><CellBody cell={cell} t={t} /></td>;
+}
+
+/** Exact product: one block per market, each labelled with its panel. */
+function MarketCells({ cells, t }: { cells: AnswerCell[]; t: T }) {
+  return (
+    <td>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {cells.map((cell, index) => <div key={("panel" in cell && cell.panel) || index}><CellBody cell={cell} t={t} /></div>)}
+      </div>
+    </td>
+  );
+}
+
+function CellBody({ cell, t }: { cell: AnswerCell; t: T }) {
+  if (cell.kind === "not_measured_type") return <span className="rv-muted rv-small">{t("recovery.tier.notMeasuredType")}</span>;
+  if (cell.kind === "not_measured_check") return <span className="rv-muted rv-small">{t("recovery.tier.notMeasuredCheck")}</span>;
   const out = leftOut(t, cell.unknown, cell.failed);
+  const panel = cell.panel ? <div className="rv-muted rv-tiny" style={{ marginTop: 2 }}>{t("recovery.tier.panel", { market: cell.panel })}</div> : null;
   if (cell.kind === "no_readable") {
     return (
-      <td>
+      <>
         <span className="rv-muted">{t("recovery.tier.noReadable")}</span>
         {out ? <div className="rv-muted rv-tiny rv-num" style={{ marginTop: 2 }}>{out}</div> : null}
-        {cell.panel ? <div className="rv-muted rv-tiny" style={{ marginTop: 2 }}>{t("recovery.tier.usPanel")}</div> : null}
-      </td>
+        {panel}
+      </>
     );
   }
   const of = t("recovery.tier.of", { positive: cell.positive, n: cell.n });
   return (
-    <td>
+    <>
       <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <Bar value={cell.rate} label={of} />
         <span className="rv-num">{of}</span>
@@ -94,8 +110,8 @@ function Cell({ cell, t }: { cell: AnswerCell; t: T }) {
         {cell.ci ? t("recovery.tier.range", { low: percent(cell.ci[0]), high: percent(cell.ci[1]) }) : t("recovery.tier.rangeNotReported")}
       </div>
       {out ? <div className="rv-muted rv-tiny rv-num">{out}</div> : null}
-      {cell.panel ? <div className="rv-muted rv-tiny">{t("recovery.tier.usPanel")}</div> : null}
-    </td>
+      {panel}
+    </>
   );
 }
 
@@ -130,7 +146,7 @@ function TierTable({ model, t }: { model: OverviewModel; t: T }) {
                   <>
                     <Cell cell={row.brand} t={t} />
                     <Cell cell={row.sources} t={t} />
-                    <Cell cell={row.exact} t={t} />
+                    <MarketCells cells={row.exact} t={t} />
                   </>
                 )}
               </tr>
@@ -205,7 +221,7 @@ export type OverviewViewProps = {
 };
 
 export function OverviewView({ state, mode, linksCount, aside, nextExtra }: OverviewViewProps) {
-  const { t } = useMerchantLanguage();
+  const { t, language } = useMerchantLanguage();
   const runAction = (
     <ButtonLink href={RECOVERY_RUN_HREF} primary>
       {t("recovery.overview.runCheck")} <span style={{ opacity: 0.75, fontWeight: 400 }}>· {t("recovery.overview.seeCostFirst")}</span>
@@ -254,7 +270,7 @@ export function OverviewView({ state, mode, linksCount, aside, nextExtra }: Over
   }
 
   const { model } = state;
-  const date = formatDate(state.checkedAt);
+  const date = formatDate(state.checkedAt, language);
   const scope = [
     model.productCount != null
       ? t(model.catalogAvailable ? "recovery.overview.scope.catalog" : "recovery.overview.scope.links", { date: date ?? "—", count: model.productCount })

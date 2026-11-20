@@ -28,7 +28,9 @@ export function RecoveryStart() {
     apiClient
       .getBillingPlans()
       .then((res) => {
-        if (!cancelled) setCanPurchase(res?.off_platform_billing !== false);
+        // Hidden unless the backend says purchases are allowed (it always
+        // sends the field; a missing one is treated as "no").
+        if (!cancelled) setCanPurchase(res?.off_platform_billing === true);
       })
       .catch(() => {});
     return () => {
@@ -36,7 +38,10 @@ export function RecoveryStart() {
     };
   }, []);
 
+  // quoteAll: every Start run is priced (read-only quote route) before it
+  // can be started (review P2-2).
   const audit = useUrlAuditRun({
+    quoteAll: true,
     onFinished: (_res, req) => {
       stashVisibilityHandoff({ urls: req.product_urls, website: req.website });
       setOutcome("done");
@@ -51,9 +56,8 @@ export function RecoveryStart() {
   });
 
   const quote = request ? audit.quoteFor(request) : null;
-  const needsQuote = !!request && request.consumer_answer_queries.length > 0;
   const phase: CostModalPhase =
-    outcome !== "idle" ? outcome : audit.loading ? (needsQuote && !quote ? "quoting" : "running") : "review";
+    outcome !== "idle" ? outcome : audit.loading ? (!quote ? "quoting" : "running") : "review";
 
   const close = useCallback(() => {
     setRequest(null);

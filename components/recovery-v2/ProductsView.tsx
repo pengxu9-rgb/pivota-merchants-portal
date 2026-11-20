@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Info } from "lucide-react";
 import { useMerchantLanguage } from "@/components/portal/merchant-language-provider";
-import { Badge, ButtonLink, EmptyState, PageHead, Skeleton, formatDate } from "@/components/recovery-v2/ui";
+import { Badge, ButtonLink, EmptyState, PageHead, Skeleton, formatDate, formatNumber } from "@/components/recovery-v2/ui";
 import { RECOVERY_CONNECT_HREF, RECOVERY_RUN_HREF } from "@/lib/recovery-v2/navigation";
 import { isStoreConnected, type StoreMode } from "@/lib/recovery-v2/mode";
 import type { BandCell, ProductRow, SuggestedCopy } from "@/lib/recovery-v2/products";
@@ -166,11 +166,11 @@ function ActionPlan({ row, t, onClose }: { row: ProductRow; t: T; onClose: () =>
 }
 
 export function ProductsView({ state, mode, linksCount, selectedKey, copy, sync, onSelect, onClose, onSync }: ProductsViewProps) {
-  const { t } = useMerchantLanguage();
+  const { t, language } = useMerchantLanguage();
   const connected = isStoreConnected(mode);
   const scope =
     mode.kind === "connected"
-      ? t("recovery.products.scope.connected", { platform: mode.platform, count: mode.productCount.toLocaleString("en-US"), when: formatDate(mode.lastSync) ?? "—" })
+      ? t("recovery.products.scope.connected", { platform: mode.platform, count: formatNumber(mode.productCount, language), when: formatDate(mode.lastSync, language) ?? "—" })
       : mode.kind === "first_sync"
         ? t("recovery.products.scope.connectedNoSync", { platform: mode.platform })
         : linksCount

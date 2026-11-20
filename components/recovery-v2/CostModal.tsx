@@ -6,6 +6,8 @@ import { X } from "lucide-react";
 import { useMerchantLanguage } from "@/components/portal/merchant-language-provider";
 import type { CreditsSummary } from "@/lib/recovery-v2/mode";
 import type { UrlAuditErrorInfo, UrlAuditQuote, UrlAuditRequest } from "@/lib/audit/useUrlAuditRun";
+import { safeInternalPath } from "@/lib/audit/urlAuditRun";
+import { formatNumber } from "@/components/recovery-v2/ui";
 
 export type CostModalPhase = "review" | "quoting" | "running" | "still_running" | "done";
 
@@ -19,20 +21,20 @@ export type CostModalProps = {
   error: UrlAuditErrorInfo | null;
   credits: CreditsSummary | null | "loading";
   elapsedSec: number;
-  /** False unless the billing API confirmed this merchant may buy credits in
-   * the portal (`off_platform_billing`); App Store / exempt merchants must
-   * never see a purchase or upgrade path. Same gate as the URL check page. */
+  /** True only when the billing API returned `off_platform_billing: true`;
+   * App Store / exempt merchants (false) and an unknown answer (request
+   * failed or field missing) never see a purchase or upgrade path. */
   canPurchase: boolean;
   onGetQuote: () => void;
   onStart: () => void;
   onClose: () => void;
 };
 
-/** Run-cost modal. The backend prices a check before it runs ONLY when shopper
- * (consumer-answer) questions are included; otherwise there is no pre-run
- * quote, and the modal says so instead of inventing a number. */
+/** Run-cost modal. Every check is priced by the read-only quote route before it
+ * can start ("Get the cost" is an explicit click; opening the modal calls
+ * nothing). "Start check · N credits" then runs with that accepted quote. */
 export function CostModal({ request, phase, quote, quoteStale, error, credits, elapsedSec, canPurchase, onGetQuote, onStart, onClose }: CostModalProps) {
-  const { t } = useMerchantLanguage();
+  const { t, language } = useMerchantLanguage();
   const dialogRef = useRef<HTMLDivElement>(null);
   const busy = phase === "quoting" || phase === "running";
   useEffect(() => {
@@ -46,7 +48,7 @@ export function CostModal({ request, phase, quote, quoteStale, error, credits, e
 
   const links = request.product_urls.length;
   const questions = request.consumer_answer_queries.length;
-  const needsQuote = questions > 0;
+  const num = (n: number) => formatNumber(n, language);
   const available = credits && credits !== "loading" ? credits.available : null;
 
   return (
@@ -67,30 +69,31 @@ export function CostModal({ request, phase, quote, quoteStale, error, credits, e
 
         <div className="rv-card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 6 }}>
           <span className="rv-label">{t("recovery.cost.noQuote.title")}</span>
-          {needsQuote ? (
-            quote ? (
-              <>
-                <span style={{ fontSize: 16, fontWeight: 600 }} className="rv-num">{t("recovery.cost.quote.total", { credits: quote.credits.toLocaleString("en-US") })}</span>
+          {quote ? (
+            <>
+              <span style={{ fontSize: 16, fontWeight: 600 }} className="rv-num">{t("recovery.cost.quote.total", { credits: num(quote.credits) })}</span>
+              {quote.credits === 0 ? <span className="rv-muted rv-small">{t("recovery.cost.quote.free")}</span> : null}
+              {questions > 0 ? (
                 <span className="rv-muted rv-small rv-num">
                   {t("recovery.cost.quote.breakdown", {
-                    base: quote.base_credits,
-                    capture: quote.consumer_capture?.credits ?? 0,
+                    base: num(quote.base_credits),
+                    capture: num(quote.consumer_capture?.credits ?? 0),
                     products: quote.product_count,
                     providers: quote.providers.join(", "),
                     probes: quote.consumer_capture?.probe_count ?? 0,
                   })}
                 </span>
-                <span className="rv-muted rv-tiny">{t("recovery.cost.quote.refund")}</span>
-              </>
-            ) : (
-              <span className="rv-muted" style={{ lineHeight: 1.5 }}>
-                {quoteStale ? t("recovery.cost.quote.stale") : t("recovery.cost.quote.needed")}
-              </span>
-            )
+              ) : (
+                <span className="rv-muted rv-small rv-num">{t("recovery.cost.quote.breakdownLinks", { products: quote.product_count, providers: quote.providers.join(", ") })}</span>
+              )}
+              {questions > 0 ? <span className="rv-muted rv-tiny">{t("recovery.cost.quote.refund")}</span> : null}
+            </>
           ) : (
-            <span className="rv-muted" style={{ lineHeight: 1.5 }}>{t("recovery.cost.noQuote.body")}</span>
+            <span className="rv-muted" style={{ lineHeight: 1.5 }}>
+              {quoteStale ? t("recovery.cost.quote.stale") : t("recovery.cost.quote.needed")}
+            </span>
           )}
-          {available !== null ? <span className="rv-small rv-num">{t("recovery.cost.noQuote.available", { count: available.toLocaleString("en-US") })}</span> : null}
+          {available !== null ? <span className="rv-small rv-num">{t("recovery.cost.noQuote.available", { count: num(available) })}</span> : null}
         </div>
 
         {error ? <CostError error={error} canPurchase={canPurchase} hasQuestions={questions > 0} /> : null}
@@ -113,13 +116,13 @@ export function CostModal({ request, phase, quote, quoteStale, error, credits, e
           ) : (
             <>
               <button type="button" className="rv-btn" onClick={onClose} disabled={busy}>{t("recovery.cost.cancel")}</button>
-              {needsQuote && !quote ? (
+              {!quote ? (
                 <button type="button" className="rv-btn rv-primary" onClick={onGetQuote} disabled={busy}>
                   {phase === "quoting" ? t("recovery.cost.quote.getting") : t("recovery.cost.quote.get")}
                 </button>
               ) : (
                 <button type="button" className="rv-btn rv-primary" onClick={onStart} disabled={busy}>
-                  {quote ? t("recovery.cost.startCredits", { credits: quote.credits.toLocaleString("en-US") }) : t("recovery.cost.start")}
+                  {t("recovery.cost.startCredits", { credits: num(quote.credits) })}
                 </button>
               )}
             </>
@@ -162,7 +165,7 @@ function CostError({ error, canPurchase, hasQuestions }: { error: UrlAuditErrorI
       ) : null}
       {(error.kind === "other" || error.kind === "credits") && error.message ? <span>{t("recovery.cost.err.backend", { message: error.message })}</span> : null}
       {!canPurchase ? null : error.upgradePath ? (
-        <Link className="rv-link" href={error.upgradePath.startsWith("/") ? error.upgradePath : "/dashboard/billing"}>{t("recovery.cost.err.upgrade")}</Link>
+        <Link className="rv-link" href={safeInternalPath(error.upgradePath) ?? "/dashboard/billing"}>{t("recovery.cost.err.upgrade")}</Link>
       ) : error.kind === "credits" ? (
         <Link className="rv-link" href="/dashboard/billing">{t("recovery.nav.plan")}</Link>
       ) : null}

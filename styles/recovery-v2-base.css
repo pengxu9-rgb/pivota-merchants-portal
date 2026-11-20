@@ -1,0 +1,33 @@
+/*
+ * AI Revenue Recovery v2 — global base rules. Loaded on every page, but every
+ * selector starts with `body.rv2` / `.rv2`, a body class that only exists when
+ * NEXT_PUBLIC_FEATURE_RECOVERY_V2 is on; flag off, nothing here matches.
+ */
+
+body.rv2 {
+  background: var(--surface);
+  background-image: none;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.45;
+}
+
+/* Auth pages keep their logo when the network-loaded brand stylesheet is
+   dropped (flag on): the mark is a local PNG; the wordmark falls back to
+   Inter because Fredoka is not self-hosted. */
+.rv2 .pv-logo {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+  background: url("/pivota-brand/icons/icon-purple-256.png") center / contain no-repeat;
+  flex-shrink: 0;
+}
+.rv2 .pv-logo--lg { width: 48px; height: 48px; }
+.rv2 .pv-wordmark {
+  font-weight: 600;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}

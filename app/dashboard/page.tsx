@@ -18,7 +18,13 @@ import {
 import { apiClient } from '@/lib/api-client';
 import { FEATURE_FLAGS } from '@/lib/config';
 import { AiReadinessHomeHero } from '@/components/audit/AiReadinessHomeHero';
-import { RecoveryOverview } from '@/components/recovery-v2/RecoveryOverview';
+import dynamic from 'next/dynamic';
+// Inline env check (not FEATURE_FLAGS.RECOVERY_V2) so the minifier folds it to
+// false with the flag off and drops the dynamic import: no v2 code in this
+// page's first-load bundle (review P3-2).
+const RecoveryOverview = (process.env.NEXT_PUBLIC_FEATURE_RECOVERY_V2 || 'false').toLowerCase() === 'true'
+  ? dynamic(() => import('@/components/recovery-v2/RecoveryOverview').then((m) => m.RecoveryOverview))
+  : null;
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import {
   MerchantButton,
@@ -1261,5 +1267,5 @@ function LegacyDashboardPage() {
 // AI Revenue Recovery v2 (flag off by default): the Overview replaces this
 // dashboard. Flag off renders the existing page unchanged.
 export default function DashboardPage() {
-  return FEATURE_FLAGS.RECOVERY_V2 ? <RecoveryOverview /> : <LegacyDashboardPage />;
+  return RecoveryOverview ? <RecoveryOverview /> : <LegacyDashboardPage />;
 }

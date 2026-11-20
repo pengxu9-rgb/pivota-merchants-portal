@@ -38,6 +38,13 @@ const RECOVERY_V2_REDIRECTS = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Always inline the resolved flag ("true" / "false"), even when the variable
+  // is unset: an unset NEXT_PUBLIC_* stays a runtime process.env lookup, which
+  // the minifier cannot fold, so v2-only code would ride along in flag-off
+  // bundles of local / non-Docker builds.
+  env: {
+    NEXT_PUBLIC_FEATURE_RECOVERY_V2: String(RECOVERY_V2),
+  },
   output: "standalone",
   outputFileTracingRoot: configDir,
   eslint: {

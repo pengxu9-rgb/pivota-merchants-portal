@@ -16,10 +16,22 @@ module.exports = ({ check, render, h, fixture, text, assertHonest, assert }) => 
     assert.equal(branded.kind, 'asked');
     assert.deepEqual([branded.brand.positive, branded.brand.n, branded.brand.unknown], [10, 12, 1]);
     assert.deepEqual([branded.sources.positive, branded.sources.n], [3, 12]);
-    assert.equal(branded.exact.kind, 'not_measured_type');
-    assert.equal(unbranded.exact.kind, 'measured');
-    assert.equal(unbranded.exact.panel, 'us_test_panel');
-    assert.deepEqual([unbranded.exact.positive, unbranded.exact.n, unbranded.exact.ci], [3, 24, null]);
+    assert.equal(branded.exact[0].kind, 'not_measured_type');
+    assert.equal(unbranded.exact.length, 1);
+    assert.equal(unbranded.exact[0].kind, 'measured');
+    assert.equal(unbranded.exact[0].panel, 'US');
+    assert.deepEqual([unbranded.exact[0].positive, unbranded.exact[0].n, unbranded.exact[0].ci], [3, 24, null]);
+    // P2-1: a merchant whose reviewed answers are all from another market is
+    // measured in that market, never "Not measured" by a silent US filter.
+    const gb = fixture('recovery-links');
+    gb.selection.recommendations.rows = gb.selection.recommendations.rows.map((r) => ({ ...r, market: 'GB' }));
+    const gbExact = buildOverview(gb).tiers[1].exact;
+    assert.deepEqual(gbExact.map((c) => [c.kind, c.panel, c.positive, c.n]), [['measured', 'GB', 3, 24]]);
+    const mixed = fixture('recovery-links');
+    mixed.selection.recommendations.rows[0].market = 'GB';
+    const mixedExact = buildOverview(mixed).tiers[1].exact;
+    assert.deepEqual(mixedExact.map((c) => [c.panel, c.positive, c.n]), [['GB', 2, 9], ['US', 1, 15]]);
+    assert.equal(text(view({ kind: 'ready', model: buildOverview(gb), checkedAt: null })).includes('GB test panel only'), true);
     assert.equal(unbranded.brand.failed, 1);
     assert.equal(dupe.kind, 'not_asked');
     const connectedModel = buildOverview(fixture('recovery-connected'));

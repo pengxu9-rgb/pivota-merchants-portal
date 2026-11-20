@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+// Component styles ship with the shell (dynamically imported only when the
+// flag is on): `.rv-*` classes and `.rv2`/`body.rv2`-scoped rules.
+import "../../styles/recovery-v2.css";
+import "../../styles/recovery-v2-legacy.css";
 import Link from "next/link";
 import { LogOut, Menu, X } from "lucide-react";
 import { useMerchantLanguage } from "@/components/portal/merchant-language-provider";
@@ -14,6 +18,7 @@ import {
   type RecoveryNavItem,
 } from "@/lib/recovery-v2/navigation";
 import type { CreditsSummary, StoreMode } from "@/lib/recovery-v2/mode";
+import { formatNumber } from "@/components/recovery-v2/ui";
 
 type ShellUser = { business_name?: string; email?: string; merchant_id?: string } | null;
 
@@ -37,7 +42,7 @@ function NavLink({ item, pathname, onNavigate }: { item: RecoveryNavItem; pathna
 }
 
 export function StoreStatusCard({ mode, linksCount }: { mode: StoreMode; linksCount: number | null }) {
-  const { t } = useMerchantLanguage();
+  const { t, language } = useMerchantLanguage();
   if (mode.kind === "loading") {
     return <div className="rv-side-card rv-muted" role="status">{t("recovery.store.checking")}</div>;
   }
@@ -72,14 +77,14 @@ export function StoreStatusCard({ mode, linksCount }: { mode: StoreMode; linksCo
       <span className="rv-dot" aria-hidden="true" />
       <span>
         <span style={{ fontWeight: 600 }}>{t("recovery.store.connected", { platform: mode.platform })}</span>
-        <span className="rv-muted"> · {t("recovery.store.connectedProducts", { count: mode.productCount.toLocaleString("en-US") })}</span>
+        <span className="rv-muted"> · {t("recovery.store.connectedProducts", { count: formatNumber(mode.productCount, language) })}</span>
       </span>
     </div>
   );
 }
 
 export function CreditsCard({ credits }: { credits: CreditsSummary | null | "loading" }) {
-  const { t } = useMerchantLanguage();
+  const { t, language } = useMerchantLanguage();
   if (credits === "loading") return null;
   return (
     <Link className="rv-side-card" href="/dashboard/billing" style={{ margin: "8px 4px", gap: 4, color: "var(--ink)" }}>
@@ -87,10 +92,10 @@ export function CreditsCard({ credits }: { credits: CreditsSummary | null | "loa
       {credits ? (
         <>
           {credits.available !== null ? (
-            <span className="rv-num">{t("recovery.credits.available", { count: credits.available.toLocaleString("en-US") })}</span>
+            <span className="rv-num">{t("recovery.credits.available", { count: formatNumber(credits.available, language) })}</span>
           ) : null}
           {credits.allowance !== null ? (
-            <span className="rv-muted rv-num">{t("recovery.credits.allowance", { count: credits.allowance.toLocaleString("en-US") })}</span>
+            <span className="rv-muted rv-num">{t("recovery.credits.allowance", { count: formatNumber(credits.allowance, language) })}</span>
           ) : null}
         </>
       ) : (

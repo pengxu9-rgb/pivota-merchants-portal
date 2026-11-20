@@ -1,18 +1,13 @@
 /*
  * AI Revenue Recovery v2 — component styles (quiet ledger).
- * Everything is scoped under `.rv2`, which only exists when
- * NEXT_PUBLIC_FEATURE_RECOVERY_V2 is on, so flag-off pages are untouched.
- * Values come from styles/pivota-tokens.css. No shadows, no gradients.
+ * Selectors are `.rv-*` classes (only v2 components use them) or are scoped
+ * under `.rv2` (a body class that only exists when
+ * NEXT_PUBLIC_FEATURE_RECOVERY_V2 is on). Imported by the v2 shell, which is
+ * dynamically loaded only with the flag on. Values come from
+ * styles/pivota-tokens.css. No shadows, no gradients.
  */
 
-body.rv2 {
-  background: var(--surface);
-  background-image: none;
-  color: var(--ink);
-  font-family: var(--font-sans);
-  font-size: var(--text-base);
-  line-height: 1.45;
-}
+
 
 .rv2 a.rv-link,
 .rv2 .rv-link {
@@ -589,6 +584,12 @@ body.rv2 {
   flex-direction: column;
   gap: 16px;
 }
+.rv-modal:focus,
+.rv-modal:focus-visible {
+  /* The dialog takes focus on open (for Escape + screen readers); its own
+     outline would just frame the whole card. Controls inside keep theirs. */
+  outline: none;
+}
 .rv-kv {
   display: grid;
   grid-template-columns: 130px 1fr;
@@ -628,23 +629,4 @@ body.rv2 {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
-}
-
-/* Auth pages keep their logo when the network-loaded brand stylesheet is
-   dropped (flag on): the mark is a local PNG; the wordmark falls back to
-   Inter because Fredoka is not self-hosted. */
-.rv2 .pv-logo {
-  display: inline-block;
-  width: 32px;
-  height: 32px;
-  background: url("/pivota-brand/icons/icon-purple-256.png") center / contain no-repeat;
-  flex-shrink: 0;
-}
-.rv2 .pv-logo--lg { width: 48px; height: 48px; }
-.rv2 .pv-wordmark {
-  font-weight: 600;
-  font-size: 20px;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  color: var(--ink);
 }

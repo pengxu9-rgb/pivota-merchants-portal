@@ -13,6 +13,9 @@ const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 
 const root = path.resolve(__dirname, '..');
+// The v2 copy is merged into the catalog only with the flag on (as in a
+// flag-on build); these checks render the flag-on screens.
+process.env.NEXT_PUBLIC_FEATURE_RECOVERY_V2 = 'true';
 const stubs = {
   '@/lib/api-client': { apiClient: new Proxy({}, { get: () => () => Promise.reject(new Error('no network in verify')) }) },
   'next/link': { __esModule: true, default: ({ href, children, ...rest }) => React.createElement('a', { href: typeof href === 'string' ? href : String(href?.pathname ?? ''), ...rest }, children) },
@@ -32,6 +35,8 @@ Module._resolveFilename = function resolve(request, parent, ...rest) {
 for (const [id, exports] of Object.entries(stubs)) {
   const m = new Module(id); m.exports = exports; m.loaded = true; require.cache[id] = m;
 }
+// Stylesheets imported by components are irrelevant to markup assertions.
+Module._extensions['.css'] = (module) => { module.exports = {}; };
 for (const ext of ['.ts', '.tsx']) {
   Module._extensions[ext] = (module, filename) => {
     const out = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {

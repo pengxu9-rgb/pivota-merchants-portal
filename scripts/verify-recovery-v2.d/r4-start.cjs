@@ -33,24 +33,34 @@ module.exports = ({ check, render, h, text, assertHonest, assert }) => {
     assert.deepEqual(startRequest({ links: ['https://a.example/p'], website: '', questions: 'q1', questionsEnabled: false }).consumer_answer_queries, []);
   });
 
-  check('cost modal: no quote without shopper questions, and it says so', () => {
-    const plain = modal({});
-    assert(plain.includes("We can't show the credit cost of this check before it runs"));
-    assert(plain.includes('2 product links') && plain.includes('1,240 credits available'));
-    assert(plain.includes('Start check') && !/\d+ credits in total/.test(plain));
+  check('cost modal: every check is priced before it can start (review P2-2)', () => {
+    const before = modal({});
+    assert(before.includes('Every check is priced before it starts') && before.includes('Get the cost'));
+    assert(!before.includes('Start check'), 'no start button before a quote');
+    assert(before.includes('2 product links') && before.includes('1,240 credits available'));
+    assert(!/can't show the credit cost/.test(before));
+    const free = { scope: 'x', quote_id: 'quote-placeholder', credits: 0, base_credits: 0, providers: ['gemini'], product_count: 2 };
+    const freeView = modal({ quote: free });
+    assert(freeView.includes('0 credits in total') && freeView.includes('covered by your free checks') && freeView.includes('Start check · 0 credits'));
+    const paid = modal({ quote: { ...free, credits: 30, base_credits: 30 } });
+    assert(paid.includes('30 credits in total') && paid.includes('2 products · gemini') && paid.includes('Start check · 30 credits') && !paid.includes('free checks'));
+    assert(modal({ phase: 'quoting' }).includes('Getting the cost'));
   });
 
-  check('cost modal: shopper questions need a quote first, then show it', () => {
-    const before = modal({ request: req(['which serum is best?']) });
-    assert(before.includes('Get the cost') && before.includes('priced before the check runs') && !before.includes('Start check'));
+  check('cost modal: shopper questions show the capture breakdown', () => {
     const quote = { scope: 'x', quote_id: 'quote-placeholder', credits: 120, base_credits: 60, providers: ['gemini'], product_count: 2, consumer_capture: { credits: 60, probe_count: 12 } };
     const after = modal({ request: req(['which serum is best?']), quote });
     assert(after.includes('120 credits in total') && after.includes('Diagnostics 60 · answer capture 60') && after.includes('Start check · 120 credits'));
-    assert(modal({ request: req(['q']), phase: 'quoting' }).includes('Getting the cost'));
+    assert(after.includes('Unverified extra answers are refunded'));
+  });
+
+  check('cost modal: upgrade link is internal only (no protocol-relative path)', () => {
+    const html = render(h(CostModal, { request: req(), phase: 'review', quote: null, quoteStale: false, error: err({ kind: 'unresolved', upgradePath: '//evil.example/x' }), credits: null, elapsedSec: 0, canPurchase: true, onGetQuote() {}, onStart() {}, onClose() {} }));
+    assert(!html.includes('//evil.example') && html.includes('href="/dashboard/billing"'));
   });
 
   check('cost modal: running, still running, and error states', () => {
-    assert(modal({ phase: 'running', elapsedSec: 42 }).includes('Checking… 42s'));
+    assert(modal({ phase: 'running', elapsedSec: 42, quote: { scope: 'x', quote_id: 'q', credits: 0, base_credits: 0, providers: [], product_count: 2 } }).includes('Checking… 42s'));
     assert(modal({ phase: 'still_running' }).includes('Go to Overview'));
     const credits = modal({ request: req(['q']), error: err({ kind: 'credits', required: 120, available: 40, message: 'Placeholder reason' }) });
     assert(credits.includes('Not enough credits') && credits.includes('120 required, 40 available') && credits.includes('remove the shopper questions'));

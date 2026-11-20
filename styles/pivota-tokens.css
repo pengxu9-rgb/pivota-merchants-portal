@@ -11,7 +11,8 @@
  * the brand values; a partner scope ([data-accent]) derives them from --accent.
  *
  * No shadows, no gradients. Fonts are self-hosted (@fontsource-variable/inter);
- * nothing here fetches from the network.
+ * nothing here fetches from the network. These ~40 :root properties are global
+ * (also with the flag off); no existing page uses these names.
  */
 :root {
   /* Accent (the one themeable token) */

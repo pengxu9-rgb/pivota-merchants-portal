@@ -2,8 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { RecoveryProducts } from '@/components/recovery-v2/RecoveryProducts';
-import { FEATURE_FLAGS } from '@/lib/config';
+import dynamic from 'next/dynamic';
+// Inline env check (not FEATURE_FLAGS.RECOVERY_V2) so the minifier folds it to
+// false with the flag off and drops the dynamic import: no v2 code in this
+// page's first-load bundle (review P3-2).
+const RecoveryProducts = (process.env.NEXT_PUBLIC_FEATURE_RECOVERY_V2 || 'false').toLowerCase() === 'true'
+  ? dynamic(() => import('@/components/recovery-v2/RecoveryProducts').then((m) => m.RecoveryProducts))
+  : null;
 import {
   AlertCircle,
   ArrowRight,
@@ -5437,6 +5442,7 @@ const LEGACY_PRODUCT_DEEP_LINK_PARAMS = ['modal', 'planId', 'queueState', 'reaso
 
 function RecoveryProductsRoute() {
   const searchParams = useSearchParams();
+  if (!RecoveryProducts) return <LegacyProductsPage />;
   if (LEGACY_PRODUCT_DEEP_LINK_PARAMS.some((param) => searchParams.get(param))) {
     return <LegacyProductsPage />;
   }
@@ -5448,5 +5454,5 @@ function RecoveryProductsRoute() {
 // AI Revenue Recovery v2 (flag off by default): Products replaces the catalog
 // page. Flag off renders the existing page unchanged.
 export default function ProductsPage() {
-  return FEATURE_FLAGS.RECOVERY_V2 ? <RecoveryProductsRoute /> : <LegacyProductsPage />;
+  return RecoveryProducts ? <RecoveryProductsRoute /> : <LegacyProductsPage />;
 }

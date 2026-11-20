@@ -68,6 +68,23 @@ function normalizeHost(host: unknown): string {
   return String(host || "").trim().toLowerCase().replace(/^www\./, "");
 }
 
+/** Backend-crawled links render as hrefs: http(s) only, no credentials. */
+export function safeHttpUrl(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const url = new URL(value.trim());
+    return (url.protocol === "https:" || url.protocol === "http:") && !url.username && !url.password ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A single plain address only (no `?`, `&`, `,` or whitespace that could add
+ * mailto headers or recipients). */
+export function safeEmail(value: unknown): string | null {
+  return typeof value === "string" && /^[^\s@?&,;:<>"'/\\]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(value.trim()) ? value.trim() : null;
+}
+
 function asState(value: unknown): OutreachState {
   return value === "draft_ready" || value === "submission_only" ? value : "target_only";
 }
@@ -158,8 +175,8 @@ export function buildSources(input: SourcesInput): SourceRow[] {
   // A recipient only counts if the state says so: a target_only host never
   // shows an email or form, even if a stray field is present.
   for (const row of rows.values()) {
-    if (row.state !== "draft_ready") row.recipientEmail = null;
-    if (row.state !== "submission_only") row.submissionUrl = null;
+    row.recipientEmail = row.state === "draft_ready" ? safeEmail(row.recipientEmail) : null;
+    row.submissionUrl = row.state === "submission_only" ? safeHttpUrl(row.submissionUrl) : null;
     if (row.state === "target_only") row.pitch = null;
   }
 

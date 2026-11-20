@@ -4,9 +4,15 @@ import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { apiClient } from "@/lib/api-client";
 import { MerchantAppShell } from "@/components/ui/merchant-app-shell";
-import { RecoveryShell } from "@/components/recovery-v2/RecoveryShell";
-import { FEATURE_FLAGS } from "@/lib/config";
+import dynamic from "next/dynamic";
 import { useMerchantLanguage } from "@/components/portal/merchant-language-provider";
+
+// Inline env check (not FEATURE_FLAGS.RECOVERY_V2) so the minifier folds it to
+// false with the flag off and drops the dynamic import: no v2 code in this
+// page's first-load bundle (review P3-2).
+const RecoveryShell = (process.env.NEXT_PUBLIC_FEATURE_RECOVERY_V2 || "false").toLowerCase() === "true"
+  ? dynamic(() => import("@/components/recovery-v2/RecoveryShell").then((m) => m.RecoveryShell))
+  : null;
 
 const INTERNAL_ONLY_PREFIXES = [
   "/dashboard/mcp",
@@ -138,7 +144,7 @@ export default function DashboardLayout({
     );
   }
 
-  if (FEATURE_FLAGS.RECOVERY_V2) {
+  if (RecoveryShell) {
     return (
       <RecoveryShell pathname={pathname} user={user} onLogout={handleLogout}>
         {children}

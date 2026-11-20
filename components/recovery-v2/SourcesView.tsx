@@ -17,7 +17,7 @@ export type SourcesState =
   | { kind: "loading" }
   | { kind: "error"; retry: () => void }
   | { kind: "none" }
-  | { kind: "ready"; rows: SourceRow[]; canDraft: boolean };
+  | { kind: "ready"; rows: SourceRow[]; canDraft: boolean; canPurchase?: boolean };
 
 const TABS: { key: SourcesTab; labelKey: string }[] = [
   { key: "all", labelKey: "recovery.sources.tab.all" },
@@ -42,7 +42,7 @@ function MentionCell({ value, t }: { value: SourceRow["mentionsYou"]; t: T }) {
   return <span style={{ color, fontWeight: 500 }}>{t(`recovery.sources.mention.${value}`)}</span>;
 }
 
-function Detail({ row, t, actions, canDraft, onClose }: { row: SourceRow; t: T; actions: SourcesActions; canDraft: boolean; onClose: () => void }) {
+function Detail({ row, t, actions, canDraft, canPurchase, onClose }: { row: SourceRow; t: T; actions: SourcesActions; canDraft: boolean; canPurchase: boolean; onClose: () => void }) {
   const [sent, setSent] = useState<"idle" | "saving" | "done" | "error">(row.sent ? "done" : "idle");
   const [draft, setDraft] = useState<{ state: "idle" | "loading" | "done" | "error" | "credits"; text?: string | null; charged?: number }>({ state: "idle" });
   const [copied, setCopied] = useState(false);
@@ -53,6 +53,8 @@ function Detail({ row, t, actions, canDraft, onClose }: { row: SourceRow; t: T; 
 
   const pitchText = row.pitch ? `${row.pitch.subject}\n\n${row.pitch.body}` : draft.text ?? null;
   const mailto = row.state === "draft_ready" && row.recipientEmail && pitchText
+    // recipientEmail is already a validated single plain address (safeEmail),
+    // so nothing in it can add headers or recipients; subject/body are encoded.
     ? `mailto:${row.recipientEmail}?subject=${encodeURIComponent(row.pitch?.subject ?? row.host)}&body=${encodeURIComponent((row.pitch?.body ?? draft.text ?? "").slice(0, 1800))}`
     : null;
   const reach =
@@ -140,7 +142,7 @@ function Detail({ row, t, actions, canDraft, onClose }: { row: SourceRow; t: T; 
                   {draft.state === "loading" ? t("recovery.sources.detail.drafting") : t("recovery.sources.detail.draft")}
                 </button>
                 {draft.state === "error" ? <div className="rv-alert rv-err" role="alert">{t("recovery.sources.detail.draftFailed")}</div> : null}
-                {draft.state === "credits" ? <div className="rv-alert rv-warn" role="alert">{t("recovery.sources.detail.draftNoCredits")}</div> : null}
+                {draft.state === "credits" ? <div className="rv-alert rv-warn" role="alert">{t(canPurchase ? "recovery.sources.detail.draftNoCredits" : "recovery.sources.detail.draftNoCreditsNoPurchase")}</div> : null}
                 {draft.state === "done" && !draft.text ? <div className="rv-alert rv-warn" role="status">{t("recovery.sources.detail.draftNone")}</div> : null}
               </div>
             ) : row.hint ? (
@@ -285,7 +287,7 @@ export function SourcesView({ state, actions, initialHost }: { state: SourcesSta
         </section>
         <div ref={detailRef} style={{ flex: "2 1 340px", minWidth: 0, scrollMarginTop: 16 }}>
           {current ? (
-            <Detail row={current} t={t} actions={actions} canDraft={state.canDraft} onClose={() => setSelected(null)} />
+            <Detail row={current} t={t} actions={actions} canDraft={state.canDraft} canPurchase={state.canPurchase === true} onClose={() => setSelected(null)} />
           ) : (
             <section className="rv-card rv-muted" style={{ padding: 18 }}>{t("recovery.sources.pickRow")}</section>
           )}

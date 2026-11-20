@@ -57,9 +57,15 @@ module.exports = ({ check, render, h, text, assertHonest, assert }) => {
   });
 
   check('re-skin is scoped to the flag-on body class', () => {
-    const css = fs.readFileSync(path.join(root, 'styles/recovery-v2-legacy.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-    const selectors = css.split('}').map((b) => b.split('{')[0].trim()).filter(Boolean);
-    for (const sel of selectors) for (const part of sel.split(',')) assert(part.trim().startsWith('body.rv2'), `unscoped: ${part.trim()}`);
+    for (const [file, prefixes] of [['styles/recovery-v2-legacy.css', ['body.rv2']], ['styles/recovery-v2-base.css', ['body.rv2', '.rv2 ']]]) {
+      const css = fs.readFileSync(path.join(root, file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+      const selectors = css.split('}').map((b) => b.split('{')[0].trim()).filter(Boolean);
+      for (const sel of selectors) for (const part of sel.split(',')) assert(prefixes.some((p) => part.trim().startsWith(p)), `${file} unscoped: ${part.trim()}`);
+    }
+    // Global CSS from app/layout.tsx is only tokens + the scoped base file;
+    // component styles load with the dynamically imported shell (P3-2).
+    const layout = fs.readFileSync(path.join(root, 'app/layout.tsx'), 'utf8');
+    assert(!/recovery-v2\.css|recovery-v2-legacy\.css/.test(layout), 'component CSS is not global');
     const v2 = fs.readFileSync(path.join(root, 'styles/recovery-v2.css'), 'utf8');
     assert(!/box-shadow:\s*(?!none)[^;]+;/.test(v2.replace(/\/\*[\s\S]*?\*\//g, '')), 'no shadows in v2 styles');
     assert(!/gradient\(/.test(v2), 'no gradients in v2 styles');
