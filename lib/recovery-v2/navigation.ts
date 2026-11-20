@@ -13,12 +13,12 @@ export type RecoveryNavItem = {
   matchPrefixes?: string[];
 };
 
-/** Where "Connect" goes. The Start screen (R4) replaces this. */
-export const RECOVERY_CONNECT_HREF = "/dashboard/integrations";
+/** Where "Connect" goes: the Start screen (connect, or start with links). */
+export const RECOVERY_CONNECT_HREF = "/dashboard/start";
 
-/** Where "Run new check" goes. The Start screen + cost modal (R4) replace
- * this; until then it is the existing URL check, which shows its own quote. */
-export const RECOVERY_RUN_HREF = "/dashboard/agent-center/url-audit";
+/** Where "Run new check" goes: Start, whose cost modal shows the cost first
+ * (or says plainly that the backend gives none for this kind of check). */
+export const RECOVERY_RUN_HREF = "/dashboard/start";
 
 export const recoveryMainNav: RecoveryNavItem[] = [
   { labelKey: "recovery.nav.overview", href: "/dashboard", icon: Home },

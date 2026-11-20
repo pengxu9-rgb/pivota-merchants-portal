@@ -73,14 +73,14 @@ check('store mode: active connection is the only "connected" signal', () => {
   assert(isStoreConnected({ kind: 'first_sync', platform: 'Shopify', storeName: 'x' }));
   assert(!isStoreConnected({ kind: 'links' }));
   // M16: purchased credits can exceed the allowance — both kept separate.
-  assert.deepEqual(deriveCredits({ allowance_credits: 4000, consumed_credits: 3000, available_credits: 5200 }), { available: 5200, allowance: 4000 });
-  assert.deepEqual(deriveCredits({ allowance_credits: 4000, consumed_credits: 3000 }), { available: 1000, allowance: 4000 });
+  assert.deepEqual(deriveCredits({ allowance_credits: 4000, consumed_credits: 3000, available_credits: 5200, tier: 'growth' }), { available: 5200, allowance: 4000, tier: 'growth' });
+  assert.deepEqual(deriveCredits({ allowance_credits: 4000, consumed_credits: 3000 }), { available: 1000, allowance: 4000, tier: null });
   assert.equal(deriveCredits(null), null);
 });
 
 check('shell: nav labels, store card states, credits shown separately', () => {
   const { RecoveryShellView } = require('@/components/recovery-v2/RecoveryShell');
-  const base = { pathname: '/dashboard', user: { business_name: 'Example Store', email: 'owner@example.com' }, onLogout() {}, credits: { available: 5200, allowance: 4000 }, linksCount: 3 };
+  const base = { pathname: '/dashboard', user: { business_name: 'Example Store', email: 'owner@example.com' }, onLogout() {}, credits: { available: 5200, allowance: 4000, tier: 'growth' }, linksCount: 3 };
   const links = render(h(RecoveryShellView, { ...base, mode: { kind: 'links' } }, h('main', null, 'page')));
   const plain = text(links);
   assert(plain.includes('Overview') && plain.includes('Products') && plain.includes('Plan & credits') && plain.includes('Settings'));

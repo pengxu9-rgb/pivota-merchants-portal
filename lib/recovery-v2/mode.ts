@@ -56,9 +56,9 @@ export function isStoreConnected(mode: StoreMode): boolean {
 /** Credits card (review M16): `available` can exceed the monthly allowance
  * because it includes purchased top-ups, so the two are shown separately —
  * never as "X of Y left". */
-export type CreditsSummary = { available: number | null; allowance: number | null };
+export type CreditsSummary = { available: number | null; allowance: number | null; tier: string | null };
 
-export function deriveCredits(period: { available_credits?: number; allowance_credits?: number; consumed_credits?: number } | null | undefined): CreditsSummary | null {
+export function deriveCredits(period: { available_credits?: number; allowance_credits?: number; consumed_credits?: number; tier?: string | null } | null | undefined): CreditsSummary | null {
   if (!period) return null;
   const allowance = Number.isFinite(period.allowance_credits) ? (period.allowance_credits as number) : null;
   let available: number | null = Number.isFinite(period.available_credits) ? (period.available_credits as number) : null;
@@ -66,5 +66,5 @@ export function deriveCredits(period: { available_credits?: number; allowance_cr
     available = Math.max(0, allowance - (period.consumed_credits as number));
   }
   if (available === null && allowance === null) return null;
-  return { available, allowance };
+  return { available, allowance, tier: typeof period.tier === "string" && period.tier ? period.tier : null };
 }

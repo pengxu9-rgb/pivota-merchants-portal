@@ -9,7 +9,7 @@ const configDir = path.dirname(fileURLToPath(import.meta.url));
 // a 200 "not found" body, so a beforeFiles rewrite to a missing path is used.
 const RECOVERY_V2 =
   (process.env.NEXT_PUBLIC_FEATURE_RECOVERY_V2 || "false").toLowerCase() === "true";
-const RECOVERY_V2_ONLY_ROUTES = ["/dashboard/sources"];
+const RECOVERY_V2_ONLY_ROUTES = ["/dashboard/sources", "/dashboard/start"];
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

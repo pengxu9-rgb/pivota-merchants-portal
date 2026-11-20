@@ -165,6 +165,12 @@ body.rv2 {
   .rv-tbl .rv-hide-phone {
     display: none;
   }
+  .rv-tbl.rv-stack-phone th,
+  .rv-tbl.rv-stack-phone td {
+    padding-left: 10px;
+    padding-right: 10px;
+    min-width: 96px;
+  }
   .rv-tbl .rv-badge {
     white-space: normal;
     height: auto;
@@ -383,6 +389,7 @@ body.rv2 {
   background: transparent;
   color: var(--ink);
   font-size: 13px;
+  white-space: normal;
 }
 .rv-tbl tr:last-child td,
 .rv-tbl tr:last-child th {
