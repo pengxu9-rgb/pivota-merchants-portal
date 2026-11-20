@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { apiClient } from "@/lib/api-client";
 import { MerchantAppShell } from "@/components/ui/merchant-app-shell";
+import { RecoveryShell } from "@/components/recovery-v2/RecoveryShell";
+import { FEATURE_FLAGS } from "@/lib/config";
 import { useMerchantLanguage } from "@/components/portal/merchant-language-provider";
 
 const INTERNAL_ONLY_PREFIXES = [
@@ -133,6 +135,14 @@ export default function DashboardLayout({
           </div>
         </div>
       </div>
+    );
+  }
+
+  if (FEATURE_FLAGS.RECOVERY_V2) {
+    return (
+      <RecoveryShell pathname={pathname} user={user} onLogout={handleLogout}>
+        {children}
+      </RecoveryShell>
     );
   }
 

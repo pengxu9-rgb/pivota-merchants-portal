@@ -16,7 +16,8 @@
     "verify:outreach": "node scripts/verify-outreach-outcomes-render.mjs",
     "verify:audit-redesign": "node scripts/verify-audit-redesign-render.mjs",
     "verify:summary": "node scripts/verify-report-summary-render.mjs",
-    "verify:recovery": "node scripts/verify-recovery-render.cjs && node scripts/verify-browser-fixes.cjs"
+    "verify:recovery": "node scripts/verify-recovery-render.cjs && node scripts/verify-browser-fixes.cjs",
+    "verify:recovery-v2": "node scripts/verify-recovery-v2.cjs"
   },
   "dependencies": {
     "@adyen/adyen-web": "^6.32.0",
