@@ -72,7 +72,7 @@ export type ReportsState =
   | { kind: "ready"; rows: ReportRow[] };
 
 export function ReportsView({ state }: { state: ReportsState }) {
-  const { t } = useMerchantLanguage();
+  const { t, language } = useMerchantLanguage();
   const head = <PageHead title={t("recovery.reports.title")} subtitle={t("recovery.reports.subtitle")} actions={<ButtonLink href={RECOVERY_RUN_HREF} primary>{t("recovery.overview.runCheck")}</ButtonLink>} />;
   if (state.kind === "loading") {
     return (
@@ -120,7 +120,7 @@ export function ReportsView({ state }: { state: ReportsState }) {
                 const phase = runPhase(run);
                 return (
                   <tr key={run.run_id ?? run.requested_at ?? Math.random()}>
-                    <th scope="row" className="rv-num">{formatDate(run.completed_at ?? run.requested_at) ?? "—"}</th>
+                    <th scope="row" className="rv-num">{formatDate(run.completed_at ?? run.requested_at, language) ?? "—"}</th>
                     <td>{t(kind === "links" ? "recovery.reports.kind.links" : "recovery.reports.kind.catalog")}</td>
                     <td className="rv-num rv-hide-phone">{Array.isArray(run.product_keys) ? run.product_keys.length : "—"}</td>
                     <td>

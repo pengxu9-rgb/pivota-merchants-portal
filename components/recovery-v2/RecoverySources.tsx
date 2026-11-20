@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
+import { useMerchantLanguage } from "@/components/portal/merchant-language-provider";
 import { SourcesView, type SourcesActions, type SourcesState } from "@/components/recovery-v2/SourcesView";
 import { buildSources, sourcesInputFromRun, type SourceRow } from "@/lib/recovery-v2/sources";
 import { runPhase } from "@/lib/recovery-v2/overview";
@@ -19,6 +20,7 @@ function latest(...lists: AuditRunSummary[][]): { run: AuditRunSummary; kind: "l
 /** Sources container: latest finished run of either kind → outreach targets,
  * joined with the merchant's "pitch sent" tasks. */
 export function RecoverySources() {
+  const { t } = useMerchantLanguage();
   const [state, setState] = useState<SourcesState>({ kind: "loading" });
   const [runId, setRunId] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -43,11 +45,15 @@ export function RecoverySources() {
         const payload = pick.kind === "links"
           ? await apiClient.getUrlAuditRunDetail(pick.run.run_id as string)
           : await apiClient.getAuditRunDetail(pick.run.run_id as string);
-        const tasks = await apiClient.listMerchantTasks({ limit: 200 }).then((r) => r.tasks ?? []).catch(() => []);
+        const [tasks, canPurchase] = await Promise.all([
+          apiClient.listMerchantTasks({ limit: 200 }).then((r) => r.tasks ?? []).catch(() => []),
+          // Purchase paths stay hidden unless the backend says they're allowed.
+          apiClient.getBillingPlans().then((r) => r?.off_platform_billing === true).catch(() => false),
+        ]);
         const rows = buildSources({ ...sourcesInputFromRun(payload), tasks });
         if (cancelled) return;
         setRunId(pick.run.run_id);
-        setState(rows.length ? { kind: "ready", rows, canDraft: true } : { kind: "none" });
+        setState(rows.length ? { kind: "ready", rows, canDraft: true, canPurchase } : { kind: "none" });
       } catch {
         if (!cancelled) setState({ kind: "error", retry });
       }
@@ -82,13 +88,13 @@ export function RecoverySources() {
     if (!runId) throw new Error("no run");
     const res = await apiClient.startAuditAction({
       runId,
-      headline: `Get cited on ${row.host}`,
+      headline: t("recovery.sources.pitchHeadline", { host: row.host }),
       channelHost: row.host,
       query: row.queries[0] ?? undefined,
       skuTitle: row.skuTitle,
     });
     return { draft: res?.draft ?? null, charged: (res as { credits_charged?: number })?.credits_charged };
-  }, [runId]);
+  }, [runId, t]);
 
   const actions: SourcesActions = { markSent, draftPitch };
   return <SourcesView state={state} actions={actions} />;

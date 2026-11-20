@@ -47,8 +47,10 @@ export function normalizePortalLanguage(value?: string | null): MerchantPortalLa
 
 const enMessages: MessageCatalog = {
   // AI Revenue Recovery v2 copy lives in ./recovery-v2 (English only for now;
-  // other locales fall back to it until translated).
-  ...recoveryV2EnMessages,
+  // other locales fall back to it until translated). Merged only when the
+  // build-time flag is on; the inline check folds to false otherwise, so the
+  // strings stay out of every flag-off bundle.
+  ...((process.env.NEXT_PUBLIC_FEATURE_RECOVERY_V2 || "false").toLowerCase() === "true" ? recoveryV2EnMessages : {}),
   "auth.shell.controlCenter": "Merchant control center",
   "auth.shell.needHelpTitle": "Need help?",
   "auth.shell.needHelpDescription": "If you need onboarding support, email {email}.",

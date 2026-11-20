@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'recovery-v2');
 const port = Number(process.env.PORT || 8787);
 let scenario = process.env.SCENARIO || 'links';
-const SCENARIOS = ['links', 'connected', 'first-sync', 'no-runs', 'running', 'failed'];
+const SCENARIOS = ['links', 'connected', 'first-sync', 'no-runs', 'running', 'failed', 'gb-market'];
 
 const load = (name) => {
   const file = path.join(dir, `${name}.json`);
@@ -50,6 +50,10 @@ function runs(subjectType) {
 
 function recovery(runId) {
   const base = load(runId === 'run-catalog-placeholder' ? 'recovery-connected' : 'recovery-links');
+  if (scenario === 'gb-market' && base?.selection?.recommendations?.rows) {
+    // Mixed markets: first product reviewed in GB, the rest in US.
+    base.selection.recommendations.rows[0].market = 'GB';
+  }
   return base;
 }
 
@@ -77,7 +81,13 @@ const routes = [
   ['POST', /^\/api\/merchant-center\/audit\/url-readiness$/, () => (scenario === 'failed'
     ? { status: 402, body: { detail: { code: 'free_audit_limit_reached', message: 'Placeholder: free checks used.' } } }
     : { data: { status: 'running', run_id: 'run-links-placeholder' } })],
-  ['POST', /^\/api\/merchant-center\/audit\/url-readiness\/quote$/, () => ({ data: { status: 'quoted', quote_id: 'quote-placeholder', credits: 120, base_credits: 60, providers: ['gemini'], product_count: 3, consumer_capture: { credits: 60, probe_count: 12 } } })],
+  ['POST', /^\/api\/merchant-center\/audit\/url-readiness\/quote$/, (url, m, body) => {
+    const products = Array.isArray(body?.product_urls) ? body.product_urls.length : 0;
+    const questions = Array.isArray(body?.consumer_answer_queries) ? body.consumer_answer_queries.length : 0;
+    const base = scenario === 'connected' ? 0 : 10 * products; // placeholder pricing
+    const capture = questions ? 5 * questions * products : 0;
+    return { data: { status: 'quoted', quote_id: `quote-placeholder-${products}-${questions}`, credits: base + capture, base_credits: base, providers: ['gemini'], product_count: products, ...(questions ? { consumer_capture: { credits: capture, probe_count: questions * products } } : {}) } };
+  }],
   ['GET', /^\/merchant\/products\/shopify\/1001$/, () => load('product-detail')],
   ['GET', /^\/merchant\/products\/[^/]+\/[^/]+$/, () => ({ platform: 'shopify', enrichment: {} })],
   ['POST', /^\/merchant\/integrations\/shopify\/sync$/, () => ({ status: 'started' })],
@@ -98,6 +108,14 @@ function send(res, status, body) {
 }
 
 const server = http.createServer((req, res) => {
+  let raw = '';
+  req.on('data', (chunk) => { raw += chunk; });
+  req.on('end', () => handle(req, res, raw));
+});
+
+function handle(req, res, raw) {
+  let body = null;
+  try { body = raw ? JSON.parse(raw) : null; } catch { body = null; }
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
   if (req.method === 'OPTIONS') return send(res, 204);
   const pick = url.pathname.match(/^\/__scenario\/([a-z-]+)$/);
@@ -106,10 +124,10 @@ const server = http.createServer((req, res) => {
   for (const [method, pattern, handler] of routes) {
     const match = req.method === method && url.pathname.match(pattern);
     if (!match) continue;
-    const out = handler(url, match);
+    const out = handler(url, match, body);
     if (out && typeof out.status === 'number' && 'body' in out) return send(res, out.status, out.body);
     return send(res, 200, out);
   }
   return send(res, 404, { detail: `mock: no fixture for ${req.method} ${url.pathname}` });
-});
+}
 server.listen(port, '127.0.0.1', () => console.log(`recovery-v2 mock API on http://127.0.0.1:${port} (scenario ${scenario})`));

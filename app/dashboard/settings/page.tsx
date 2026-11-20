@@ -5,14 +5,20 @@ import { AlertCircle, User, Bell, Shield, Save, Loader2, Lock, Languages, Zap } 
 import { PortalLanguageSwitcher } from '@/components/portal/portal-language-switcher';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
 import { apiClient } from '@/lib/api-client';
-import { FEATURE_FLAGS } from '@/lib/config';
-import { RecoverySettingsHeader } from '@/components/recovery-v2/RecoveryPages';
+import dynamic from 'next/dynamic';
 import {
   MerchantButton,
   PageHeader,
   StatusBadge,
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
+
+// Inline env check (not FEATURE_FLAGS.RECOVERY_V2) so the minifier folds it to
+// false with the flag off and drops the dynamic import: no v2 code in this
+// page's first-load bundle (review P3-2).
+const RecoverySettingsHeader = (process.env.NEXT_PUBLIC_FEATURE_RECOVERY_V2 || 'false').toLowerCase() === 'true'
+  ? dynamic(() => import('@/components/recovery-v2/RecoveryPages').then((m) => m.RecoverySettingsHeader))
+  : null;
 
 function validatePassword(
   password: string,
@@ -575,7 +581,7 @@ function LegacySettingsPage() {
 // "Past orders & refunds" sit above the existing settings. Flag off renders
 // the existing page unchanged.
 export default function SettingsPage() {
-  if (!FEATURE_FLAGS.RECOVERY_V2) return <LegacySettingsPage />;
+  if (!RecoverySettingsHeader) return <LegacySettingsPage />;
   return (
     <>
       <RecoverySettingsHeader />

@@ -6,11 +6,11 @@ import "@fontsource/cormorant-garamond/600.css";
 import { MerchantLanguageProvider } from "@/components/portal/merchant-language-provider";
 import { FEATURE_FLAGS } from "@/lib/config";
 import "./globals.css";
-// Recovery v2: tokens + component styles. Every rule is scoped to `.rv2` (or
-// new custom properties), so with the flag off nothing on the page changes.
+// Recovery v2: design tokens (new :root custom properties, unused by existing
+// pages) and a few `body.rv2` base rules (the body class only exists with the
+// flag on). The v2 component styles load with the v2 shell's own chunk.
 import "../styles/pivota-tokens.css";
-import "../styles/recovery-v2.css";
-import "../styles/recovery-v2-legacy.css";
+import "../styles/recovery-v2-base.css";
 
 export const metadata: Metadata = {
   title: "Pivota Merchant Portal",

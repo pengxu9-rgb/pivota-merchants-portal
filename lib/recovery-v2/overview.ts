@@ -9,7 +9,9 @@
  *   never counted as misses. There is no shared "readable answers" column.
  * - `attempted = 0` ("not asked") and `n = 0` ("no readable answers") are
  *   different states (review M3).
- * - Exact-product results appear only on the category row, as "US test panel".
+ * - Exact-product results appear only on the category row, one cell per
+ *   market the reviewed answers came from, each labelled with its market's
+ *   test panel (review P2-1: never filter to one market silently).
  * - Catalog routing needs a connected store; each run's numbers follow that
  *   run's own `catalog_available`.
  * - Convert stays "Not run yet" until a checkout test has actually run (the
@@ -33,14 +35,14 @@ export type DimensionRow = {
 };
 
 export type AnswerCell =
-  | { kind: "measured"; positive: number; n: number; rate: number; ci: [number, number] | null; unknown: number; failed: number; panel?: "us_test_panel" }
-  | { kind: "no_readable"; unknown: number; failed: number; panel?: "us_test_panel" }
+  | { kind: "measured"; positive: number; n: number; rate: number; ci: [number, number] | null; unknown: number; failed: number; panel?: string }
+  | { kind: "no_readable"; unknown: number; failed: number; panel?: string }
   | { kind: "not_measured_type" }
   | { kind: "not_measured_check" };
 
 export type TierRow =
   | { tier: TierKey; labelKey: string; kind: "not_asked" }
-  | { tier: TierKey; labelKey: string; kind: "asked"; attempted: number; failed: number; brand: AnswerCell; sources: AnswerCell; exact: AnswerCell };
+  | { tier: TierKey; labelKey: string; kind: "asked"; attempted: number; failed: number; brand: AnswerCell; sources: AnswerCell; exact: AnswerCell[] };
 
 export type TierKey = "branded" | "unbranded" | "dupe";
 
@@ -121,19 +123,24 @@ export function answerCell(estimate: Estimate | undefined, failed: number): Answ
   return { kind: "measured", positive: finite(estimate.positive) ?? 0, n, rate: estimate.rate as number, ci, unknown, failed };
 }
 
-/** Exact-product results, category row only, US test panel. The reviewed
+/** Exact-product results, category row only: one cell per market (sorted by
+ * market code), each carrying its market as the panel label. The reviewed
  * recommendation rows carry counts but no interval, so `ci` stays null and
  * the view says the range isn't reported. */
-export function exactProductCell(selection: Recovery["selection"]): AnswerCell {
-  const rows = recommendationRows(selection.recommendations).filter((row) => row.market === "US");
-  if (rows.length === 0) return { kind: "not_measured_check" };
-  const sum = (pick: (row: (typeof rows)[number]) => number) => rows.reduce((total, row) => total + pick(row), 0);
-  const positive = sum((row) => row.recommended);
-  const n = positive + sum((row) => row.other);
-  const unknown = sum((row) => row.unknown);
-  const failed = sum((row) => row.failed);
-  if (n === 0) return { kind: "no_readable", unknown, failed, panel: "us_test_panel" };
-  return { kind: "measured", positive, n, rate: positive / n, ci: null, unknown, failed, panel: "us_test_panel" };
+export function exactProductCells(selection: Recovery["selection"]): AnswerCell[] {
+  const rows = recommendationRows(selection.recommendations);
+  if (rows.length === 0) return [{ kind: "not_measured_check" }];
+  const markets = [...new Set(rows.map((row) => row.market.trim()))].sort();
+  return markets.map((market) => {
+    const inMarket = rows.filter((row) => row.market.trim() === market);
+    const sum = (pick: (row: (typeof rows)[number]) => number) => inMarket.reduce((total, row) => total + pick(row), 0);
+    const positive = sum((row) => row.recommended);
+    const n = positive + sum((row) => row.other);
+    const unknown = sum((row) => row.unknown);
+    const failed = sum((row) => row.failed);
+    if (n === 0) return { kind: "no_readable", unknown, failed, panel: market };
+    return { kind: "measured", positive, n, rate: positive / n, ci: null, unknown, failed, panel: market };
+  });
 }
 
 export function buildOverview(data: unknown, opts: { productCount?: number | null } = {}): OverviewModel | null {
@@ -158,7 +165,7 @@ export function buildOverview(data: unknown, opts: { productCount?: number | nul
       failed,
       brand: answerCell(t.brand_mentioned, failed),
       sources: answerCell(t.source_visible, failed),
-      exact: tier === "unbranded" ? exactProductCell(selection) : { kind: "not_measured_type" },
+      exact: tier === "unbranded" ? exactProductCells(selection) : [{ kind: "not_measured_type" }],
     };
   });
 

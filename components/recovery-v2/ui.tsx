@@ -51,9 +51,23 @@ export function Skeleton({ height = 14, width = "100%" }: { height?: number; wid
   return <span className="rv-skeleton" style={{ display: "block", height, width }} aria-hidden="true" />;
 }
 
-export function formatDate(iso: string | null | undefined): string | null {
+/** Dates and numbers follow the portal language (not a hard-coded en-US).
+ * Backend timestamps without a zone are read as UTC. */
+export function formatDate(iso: string | null | undefined, language = "en"): string | null {
   if (!iso) return null;
   const date = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  try {
+    return date.toLocaleDateString(language, { month: "short", day: "numeric", timeZone: "UTC" });
+  } catch {
+    return date.toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" });
+  }
+}
+
+export function formatNumber(value: number, language = "en"): string {
+  try {
+    return value.toLocaleString(language);
+  } catch {
+    return value.toLocaleString("en");
+  }
 }
