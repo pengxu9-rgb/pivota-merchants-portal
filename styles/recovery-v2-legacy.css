@@ -2,10 +2,11 @@
  * Recovery v2 — re-skin of the pages that have no board (Plan & credits,
  * Settings, Past orders & refunds, Checkout, the saved-report pages).
  *
- * Loaded on every flag-on page by RecoveryLegacyStyles (root layout, dynamic
- * import). Token-level: under `body.rv2` (flag on only) the
- * legacy --merchant-* tokens
- * point at the quiet-ledger tokens, and the legacy primitives lose their
+ * Loaded only with the flag on, by the v2 shell (RecoveryShell, dashboard
+ * pages) and by the auth shell (RecoveryLegacyStyles via next/dynamic, for
+ * /login and /signup). Token-level: under `body.rv2` the legacy
+ * --merchant-* tokens point at the quiet-ledger tokens, and the legacy
+ * primitives lose their
  * pill radii, drop shadows, blur and gradients. Flag off: nothing here
  * matches, so those pages render exactly as before.
  */
