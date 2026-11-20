@@ -68,21 +68,44 @@ function normalizeHost(host: unknown): string {
   return String(host || "").trim().toLowerCase().replace(/^www\./, "");
 }
 
-/** Backend-crawled links render as hrefs: http(s) only, no credentials. */
+/** Hosts a crawled link must never point at: loopback, private, link-local,
+ * unspecified, and local-only names. */
+function isPrivateHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, "");
+  if (!h || h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal")) return true;
+  const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
+  }
+  if (h.includes(":")) {
+    // IPv6 literal: loopback, unspecified, unique-local (fc00::/7), link-local
+    // (fe80::/10) and IPv4-mapped addresses.
+    return h === "::1" || h === "::" || /^f[cd]/.test(h) || /^fe[89ab]/.test(h) || h.startsWith("::ffff:");
+  }
+  return false;
+}
+
+/** Backend-crawled links render as hrefs: https only, no credentials, and
+ * never a loopback / private / local host. */
 export function safeHttpUrl(value: unknown): string | null {
   if (typeof value !== "string" || !value.trim()) return null;
   try {
     const url = new URL(value.trim());
-    return (url.protocol === "https:" || url.protocol === "http:") && !url.username && !url.password ? url.href : null;
+    if (url.protocol !== "https:" || url.username || url.password || isPrivateHost(url.hostname)) return null;
+    return url.href;
   } catch {
     return null;
   }
 }
 
-/** A single plain address only (no `?`, `&`, `,` or whitespace that could add
- * mailto headers or recipients). */
+/** A single plain address only. The local part allows letters, digits and
+ * `.`, `_`, `+`, `-` — no `%` (decoding clients could turn `%2C` / `%40` into
+ * an extra recipient), no `?`, `&`, `,` or whitespace that could add headers. */
 export function safeEmail(value: unknown): string | null {
-  return typeof value === "string" && /^[^\s@?&,;:<>"'/\\]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(value.trim()) ? value.trim() : null;
+  if (typeof value !== "string") return null;
+  const email = value.trim();
+  return /^[A-Za-z0-9._+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/.test(email) ? email : null;
 }
 
 function asState(value: unknown): OutreachState {

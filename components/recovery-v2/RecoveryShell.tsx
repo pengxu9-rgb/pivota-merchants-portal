@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 // Component styles ship with the shell (dynamically imported only when the
-// flag is on): `.rv-*` classes and `.rv2`/`body.rv2`-scoped rules.
+// flag is on): `.rv-*` classes, `.rv2`-scoped rules, and the re-skin of the
+// pages without a board. The auth shell loads the same re-skin through
+// RecoveryLegacyStyles so /login and /signup get it too.
 import "../../styles/recovery-v2.css";
 import "../../styles/recovery-v2-legacy.css";
 import Link from "next/link";

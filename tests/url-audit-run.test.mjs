@@ -79,4 +79,9 @@ test("safeInternalPath accepts one leading slash only", () => {
   assert.equal(safeInternalPath("/\\evil.example"), null);
   assert.equal(safeInternalPath("https://evil.example"), null);
   assert.equal(safeInternalPath(null), null);
+  // Browsers strip tab / CR / LF: "/\t/evil" would become "//evil" (P3-1).
+  for (const bad of ["/\t/evil.example", "/\n/evil.example", "/\r/evil.example", "/ /evil.example", "/x\\y", "/\u0000x"]) {
+    assert.equal(safeInternalPath(bad), null, JSON.stringify(bad));
+  }
+  assert.equal(safeInternalPath("/dashboard/billing?plan=growth#top"), "/dashboard/billing?plan=growth#top");
 });

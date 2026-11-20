@@ -5,8 +5,15 @@ import Link from 'next/link';
 import type { LucideIcon } from 'lucide-react';
 import { Mail, Store } from 'lucide-react';
 import { useMerchantLanguage } from '@/components/portal/merchant-language-provider';
+import dynamic from 'next/dynamic';
 import { APP_CONFIG } from '@/lib/config';
 import { cx } from '@/lib/cx';
+
+// Recovery v2 (flag on only): the quiet-ledger re-skin for the auth pages.
+// Inline env check so a flag-off build folds it to null and drops the import.
+const RecoveryLegacyStyles = (process.env.NEXT_PUBLIC_FEATURE_RECOVERY_V2 || 'false').toLowerCase() === 'true'
+  ? dynamic(() => import('@/components/recovery-v2/RecoveryLegacyStyles').then((m) => m.RecoveryLegacyStyles))
+  : null;
 
 type Highlight = {
   title: string;
@@ -44,7 +51,8 @@ export function AuthShell({
   const hasDescription = description.trim().length > 0;
 
   return (
-    <div className="min-h-screen bg-[color:var(--merchant-canvas)] text-[color:var(--merchant-ink)]">
+    <div className={cx('min-h-screen bg-[color:var(--merchant-canvas)] text-[color:var(--merchant-ink)]', RecoveryLegacyStyles ? 'rv-legacy' : null)}>
+      {RecoveryLegacyStyles ? <RecoveryLegacyStyles /> : null}
       <div
         className={cx(
           showSidebar

@@ -118,7 +118,13 @@ export function mapUrlAuditFailure(e: any, hasConsumerQueries: boolean): UrlAudi
   return { kind: 'error', error: errorInfo({ kind: 'other', message: (typeof detail === 'string' ? detail : detail?.message) || e?.message || 'Audit failed. Please try again.' }) };
 }
 
-/** Internal links only: one leading slash, never protocol-relative. */
+/** Internal links only: one leading slash, never protocol-relative, and no
+ * backslash, whitespace or control character anywhere (browsers strip tab /
+ * CR / LF, so `/\t/evil.example` would become `//evil.example`). */
 export function safeInternalPath(path: string | null | undefined): string | null {
-  return typeof path === 'string' && /^\/(?![/\\])/.test(path) ? path : null;
+  if (typeof path !== 'string') return null;
+  if (!/^\/(?![/\\])/.test(path)) return null;
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u0020\u007f-\u009f\\]/.test(path)) return null;
+  return path;
 }

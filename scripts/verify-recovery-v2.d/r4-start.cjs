@@ -41,9 +41,11 @@ module.exports = ({ check, render, h, text, assertHonest, assert }) => {
     assert(!/can't show the credit cost/.test(before));
     const free = { scope: 'x', quote_id: 'quote-placeholder', credits: 0, base_credits: 0, providers: ['gemini'], product_count: 2 };
     const freeView = modal({ quote: free });
-    assert(freeView.includes('0 credits in total') && freeView.includes('covered by your free checks') && freeView.includes('Start check · 0 credits'));
+    assert(freeView.includes('About 0 credits (estimate)') && freeView.includes('covered by your free checks') && freeView.includes('Start check · about 0 credits'));
     const paid = modal({ quote: { ...free, credits: 30, base_credits: 30 } });
-    assert(paid.includes('30 credits in total') && paid.includes('2 products · gemini') && paid.includes('Start check · 30 credits') && !paid.includes('free checks'));
+    // P3-3: without shopper questions the backend doesn't hold the price → estimate.
+    assert(paid.includes('About 30 credits (estimate)') && paid.includes('2 products · gemini') && paid.includes('Start check · about 30 credits') && !paid.includes('free checks'));
+    assert(paid.includes('the final amount can differ from this estimate') && !paid.includes('30 credits in total'));
     assert(modal({ phase: 'quoting' }).includes('Getting the cost'));
   });
 
@@ -51,6 +53,7 @@ module.exports = ({ check, render, h, text, assertHonest, assert }) => {
     const quote = { scope: 'x', quote_id: 'quote-placeholder', credits: 120, base_credits: 60, providers: ['gemini'], product_count: 2, consumer_capture: { credits: 60, probe_count: 12 } };
     const after = modal({ request: req(['which serum is best?']), quote });
     assert(after.includes('120 credits in total') && after.includes('Diagnostics 60 · answer capture 60') && after.includes('Start check · 120 credits'));
+    assert(!after.includes('estimate'), 'a quote with shopper questions is binding');
     assert(after.includes('Unverified extra answers are refunded'));
   });
 
