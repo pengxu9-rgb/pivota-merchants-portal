@@ -118,12 +118,12 @@ check('i18n: recovery.* copy is translated in all six locales', () => {
   for (const item of [...nav.recoveryMainNav, ...nav.recoveryAccountNav]) assert(item.labelKey in recoveryV2EnMessages, item.labelKey);
   // Every locale map has exactly the English keys, the same {placeholders},
   // and is what the catalog serves. Text may equal English only where nothing
-  // is translatable (a bare placeholder, a sample URL) or the word is the same
-  // in that language (German loanwords, the product name).
-  const ALL_SAME = ['recovery.overview.scope.providers', 'recovery.start.links.placeholder'];
+  // is translatable (a bare placeholder, a sample URL, the product name, which
+  // stays English everywhere) or the word is the same in that language.
+  const ALL_SAME = ['recovery.product', 'recovery.overview.scope.providers', 'recovery.start.links.placeholder'];
   const SAME_AS_EN = {
-    'fr-FR': ['recovery.product', 'recovery.nav.sources', 'recovery.shell.menu', 'recovery.products.copy.descriptionField', 'recovery.sources.title', 'recovery.sources.col.site', 'recovery.sources.col.type', 'recovery.sources.citedIn', 'recovery.sources.citedInOne', 'recovery.sources.type.marketplace', 'recovery.dim.citation'],
-    'de-DE': ['recovery.product', 'recovery.nav.checkout', 'recovery.credits.title', 'recovery.reports.col.status', 'recovery.cost.scope.website', 'recovery.sources.col.outreach', 'recovery.sources.type.community', 'recovery.sources.type.creator'],
+    'fr-FR': ['recovery.nav.sources', 'recovery.shell.menu', 'recovery.products.copy.descriptionField', 'recovery.sources.title', 'recovery.sources.col.site', 'recovery.sources.col.type', 'recovery.sources.citedIn', 'recovery.sources.citedInOne', 'recovery.sources.type.marketplace', 'recovery.dim.citation'],
+    'de-DE': ['recovery.nav.checkout', 'recovery.credits.title', 'recovery.reports.col.status', 'recovery.cost.scope.website', 'recovery.sources.col.outreach', 'recovery.sources.type.community', 'recovery.sources.type.creator'],
   };
   const placeholders = (value) => (value.match(/\{\w+\}/g) || []).sort().join(' ');
   const others = SUPPORTED_PORTAL_LANGUAGES.filter((l) => l !== 'en');
