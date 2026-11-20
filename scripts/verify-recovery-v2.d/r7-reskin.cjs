@@ -65,7 +65,12 @@ module.exports = ({ check, render, h, text, assertHonest, assert }) => {
     // Global CSS from app/layout.tsx is only tokens + the scoped base file;
     // component styles load with the dynamically imported shell (P3-2).
     const layout = fs.readFileSync(path.join(root, 'app/layout.tsx'), 'utf8');
-    assert(!/recovery-v2\.css|recovery-v2-legacy\.css/.test(layout), 'component CSS is not global');
+    assert(!/recovery-v2\.css|recovery-v2-legacy\.css/.test(layout), 'component CSS is not a static global import');
+    // P3-5: the re-skin reaches the auth pages (flag on) via a client-side
+    // dynamic import; the v2 shell imports it for dashboard pages.
+    const auth = fs.readFileSync(path.join(root, 'components/auth/AuthShell.tsx'), 'utf8');
+    assert(/RecoveryLegacyStyles = \(process\.env\.NEXT_PUBLIC_FEATURE_RECOVERY_V2/.test(auth) && /<RecoveryLegacyStyles \/>/.test(auth), 'auth shell loads the re-skin, flag on only');
+    assert(/recovery-v2-legacy\.css/.test(fs.readFileSync(path.join(root, 'components/recovery-v2/RecoveryShell.tsx'), 'utf8')), 'v2 shell loads the re-skin');
     const v2 = fs.readFileSync(path.join(root, 'styles/recovery-v2.css'), 'utf8');
     assert(!/box-shadow:\s*(?!none)[^;]+;/.test(v2.replace(/\/\*[\s\S]*?\*\//g, '')), 'no shadows in v2 styles');
     assert(!/gradient\(/.test(v2), 'no gradients in v2 styles');

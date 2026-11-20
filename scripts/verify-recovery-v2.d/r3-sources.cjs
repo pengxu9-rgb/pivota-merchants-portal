@@ -33,6 +33,13 @@ module.exports = ({ check, render, h, fixture, text, assertHonest, assert }) => 
       { host: 'c.example', host_type: 'editorial', pitch_state: 'submission_only', pitch_submission_url: 'https://user:pw@c.example/form', losing_queries: ['q'] },
     ] });
     for (const r of unsafe) { assert.equal(r.submissionUrl, null, r.host); assert.equal(r.recipientEmail, null, r.host); }
+    const { safeHttpUrl, safeEmail } = require('@/lib/recovery-v2/sources');
+    // P3-4: https only; no loopback / private / local hosts.
+    for (const bad of ['http://form.example/x', 'https://localhost/x', 'https://127.0.0.1/x', 'https://10.0.0.5/x', 'https://192.168.1.1/x', 'https://172.20.0.1/x', 'https://169.254.169.254/latest', 'https://[::1]/x', 'https://[fd00::1]/x', 'https://printer.local/x', 'https://svc.internal/x', 'https://0.0.0.0/x']) assert.equal(safeHttpUrl(bad), null, bad);
+    assert.equal(safeHttpUrl('https://form.example/contact'), 'https://form.example/contact');
+    // P3-2: no % (or other specials) in the local part.
+    for (const bad of ['x%2Cattacker%40evil.example@site.example', 'a,b@site.example', 'a b@site.example', 'a@site', 'a@site.example?cc=b@c.example']) assert.equal(safeEmail(bad), null, bad);
+    assert.equal(safeEmail('editors@best-of-list.example'), 'editors@best-of-list.example');
   });
 
   check('sources view: labels, tabs, "Sources mention you", no "your link cited"', () => {

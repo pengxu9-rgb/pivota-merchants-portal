@@ -30,3 +30,28 @@ jobs:
           mapfile -t args < <(infra/gcp/docker-build-args.sh "${GITHUB_SHA}")
           # args end with the build context; stop at the builder stage (no push, no runner).
           docker "${args[@]:0:${#args[@]}-1}" --target builder "${args[-1]}"
+
+  # Unit tests (tests/*.test.mjs import .ts files directly, which needs Node's
+  # built-in type stripping — Node 24) and the offline render/contract
+  # verify scripts (no network: they render components against fixtures).
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Unit tests
+        run: node --test tests/*.test.mjs
+      - name: Verify scripts
+        run: |
+          set -e
+          for s in $(node -e 'for (const k of Object.keys(require("./package.json").scripts)) if (k.startsWith("verify:")) console.log(k)'); do
+            echo "::group::npm run $s"
+            npm run -s "$s"
+            echo "::endgroup::"
+          done
