@@ -4,7 +4,7 @@
  */
 export const recoveryV2JaJPMessages: Record<string, string> = {
   // Shell
-  "recovery.product": "AI 売上リカバリー",
+  "recovery.product": "AI Revenue Recovery",
   "recovery.nav.main": "メイン",
   "recovery.nav.overview": "概要",
   "recovery.nav.products": "商品",

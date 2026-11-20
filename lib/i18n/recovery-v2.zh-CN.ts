@@ -4,7 +4,7 @@
  */
 export const recoveryV2ZhCNMessages: Record<string, string> = {
   // Shell
-  "recovery.product": "AI 收入挽回",
+  "recovery.product": "AI Revenue Recovery",
   "recovery.nav.main": "主菜单",
   "recovery.nav.overview": "概览",
   "recovery.nav.products": "商品",

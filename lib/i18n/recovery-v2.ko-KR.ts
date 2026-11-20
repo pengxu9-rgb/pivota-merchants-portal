@@ -4,7 +4,7 @@
  */
 export const recoveryV2KoKRMessages: Record<string, string> = {
   // Shell
-  "recovery.product": "AI 매출 회복",
+  "recovery.product": "AI Revenue Recovery",
   "recovery.nav.main": "메인",
   "recovery.nav.overview": "개요",
   "recovery.nav.products": "상품",
