@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Print, one per line, the `docker` arguments infra/gcp/cloudbuild.yaml builds with, with
 # its substitutions resolved — so GitHub Actions builds EXACTLY the release recipe, and
-# cloudbuild.yaml stays the one place build args and the _CONSUMER_CAPTURE opt-in live.
+# cloudbuild.yaml stays the one place build args and the _CONSUMER_CAPTURE / _RECOVERY_V2
+# opt-ins live.
 #
 #   usage: infra/gcp/docker-build-args.sh <image-tag>
 #   docker $(...) is unsafe with spaces; read into an array:
@@ -18,9 +19,12 @@ cfg="$(dirname "$0")/cloudbuild.yaml"
 
 consumer=$(yq -r '.substitutions._CONSUMER_CAPTURE' "$cfg")
 [ "$consumer" != null ] || { echo "cloudbuild.yaml: no _CONSUMER_CAPTURE default" >&2; exit 1; }
+recovery_v2=$(yq -r '.substitutions._RECOVERY_V2' "$cfg")
+[ "$recovery_v2" != null ] || { echo "cloudbuild.yaml: no _RECOVERY_V2 default" >&2; exit 1; }
 
 yq -r '.steps[0].args[]' "$cfg" | while IFS= read -r arg; do
   arg=${arg//'${_CONSUMER_CAPTURE}'/$consumer}
+  arg=${arg//'${_RECOVERY_V2}'/$recovery_v2}
   arg=${arg//'$COMMIT_SHA'/$tag}
   case "$arg" in *'$'*) echo "cloudbuild.yaml: unresolved substitution in: $arg" >&2; exit 1 ;; esac
   printf '%s\n' "$arg"
