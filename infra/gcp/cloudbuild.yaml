@@ -1,6 +1,9 @@
 # Consumer capture is opt-in at build time, after compatible backend/gateway release.
+# _RECOVERY_V2 turns on the AI Revenue Recovery v2 portal. Keep it 'false' until
+# the v2 screens and all six locales are signed off; merges deploy.
 substitutions:
   _CONSUMER_CAPTURE: 'true'
+  _RECOVERY_V2: 'false'
 steps:
 - name: gcr.io/cloud-builders/docker
   args: ['build', '-f', 'infra/gcp/Dockerfile',
@@ -9,6 +12,7 @@ steps:
     '--build-arg', 'NEXT_PUBLIC_FEATURE_PLATFORM_ORDERS_V1=true',
     '--build-arg', 'NEXT_PUBLIC_FEATURE_AI_READINESS_HOME=true',
     '--build-arg', 'NEXT_PUBLIC_CONSUMER_ANSWER_ENABLED=${_CONSUMER_CAPTURE}',
+    '--build-arg', 'NEXT_PUBLIC_FEATURE_RECOVERY_V2=${_RECOVERY_V2}',
     '-t', 'us-west1-docker.pkg.dev/pivota-prod/cloud-run-source-deploy/merchants-portal:$COMMIT_SHA', '.']
 images:
 - 'us-west1-docker.pkg.dev/pivota-prod/cloud-run-source-deploy/merchants-portal:$COMMIT_SHA'
