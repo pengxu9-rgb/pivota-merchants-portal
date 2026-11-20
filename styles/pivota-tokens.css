@@ -1,0 +1,75 @@
+/*
+ * Pivota portal tokens — "quiet ledger", brand kit v2.0
+ * Version 2.0.0 · 2026-11-19 · source: Design canvas, Foundations board
+ *
+ * Plain custom properties, one copy per portal repo (the three portals run
+ * different Tailwind majors, so no shared package). Tailwind maps these via
+ * theme.extend in tailwind.config.ts.
+ *
+ * White-label: --accent is the ONLY value a partner replaces. Status colours,
+ * type and shape never change. --accent-hover / --accent-selected default to
+ * the brand values; a partner scope ([data-accent]) derives them from --accent.
+ *
+ * No shadows, no gradients. Fonts are self-hosted (@fontsource-variable/inter);
+ * nothing here fetches from the network.
+ */
+:root {
+  /* Accent (the one themeable token) */
+  --accent: #534AB7;
+  --accent-hover: #3C3489;
+  --accent-selected: #EEEDFE;
+  --accent-line: #C9C6EE;
+  --accent-wash: #FAFAFF;
+
+  /* Neutrals */
+  --ink: #2C2C2A;
+  --ink-soft: #4A4A46;
+  --muted: #6B6B67;
+  --disabled: #9A9A95;
+  --line: #E7E7E4;
+  --line-strong: #DCDCD8;
+  --divider: #F0F0EE;
+  --surface: #FFFFFF;
+  --surface-muted: #FAFAF8;
+  --sidebar: #F7F7F5;
+  --hover: #EBEBE8;
+  --field: #F4F4F2;
+
+  /* Status — small badges only */
+  --success: #0F6E56;
+  --success-soft: #E1F5EE;
+  --warning: #633806;
+  --warning-soft: #FAEEDA;
+  --error: #993C1D;
+  --error-soft: #FAECE7;
+  --neutral: #4A4A46;
+  --neutral-soft: #F0F0EE;
+
+  /* Type */
+  --font-sans: "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --text-base: 13px;
+  --text-label: 12px;
+  --text-card-title: 14px;
+  --text-page-title: 24px;
+
+  /* Shape */
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-badge: 4px;
+
+  /* Layout */
+  --sidebar-width: 224px;
+  --topbar-height: 56px;
+  --gutter: 24px;
+  --gutter-phone: 16px;
+  --content-max: 1200px;
+  --content-max-wide: 1280px;
+}
+
+[data-accent] {
+  --accent-hover: color-mix(in srgb, var(--accent) 72%, #000);
+  --accent-selected: color-mix(in srgb, var(--accent) 10%, #fff);
+  --accent-line: color-mix(in srgb, var(--accent) 30%, #fff);
+  --accent-wash: color-mix(in srgb, var(--accent) 3%, #fff);
+}

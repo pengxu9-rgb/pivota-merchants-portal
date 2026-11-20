@@ -6,6 +6,18 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "recovery-v2-mock-api",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/recovery-v2-mock-api.mjs"],
+      "port": 8787
+    },
+    {
+      "name": "recovery-v2-dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_FEATURE_RECOVERY_V2=true NEXT_PUBLIC_API_URL=http://127.0.0.1:8787 npx next dev -p 3100"],
+      "port": 3100
     }
   ]
 }

@@ -99,4 +99,10 @@ export const FEATURE_FLAGS = {
   // Wave-3 B2: read-only share links (needs backend AUDIT_SHARE_LINKS_ENABLED too).
   SHARE_LINK:
     (process.env.NEXT_PUBLIC_FEATURE_SHARE_LINK || 'false').toLowerCase() === 'true',
+  // AI Revenue Recovery v2: the quiet-ledger portal (new shell, Overview,
+  // Sources, Start, Products) with orders/analytics/integrations out of the
+  // nav. Build-time (Dockerfile ARG + cloudbuild _RECOVERY_V2), default off;
+  // when off the portal renders exactly as before.
+  RECOVERY_V2:
+    (process.env.NEXT_PUBLIC_FEATURE_RECOVERY_V2 || 'false').toLowerCase() === 'true',
 };

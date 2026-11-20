@@ -1,3 +1,5 @@
+import { recoveryV2EnMessages } from "./recovery-v2";
+
 export type MerchantPortalLanguage =
   | "en"
   | "zh-CN"
@@ -44,6 +46,9 @@ export function normalizePortalLanguage(value?: string | null): MerchantPortalLa
 }
 
 const enMessages: MessageCatalog = {
+  // AI Revenue Recovery v2 copy lives in ./recovery-v2 (English only for now;
+  // other locales fall back to it until translated).
+  ...recoveryV2EnMessages,
   "auth.shell.controlCenter": "Merchant control center",
   "auth.shell.needHelpTitle": "Need help?",
   "auth.shell.needHelpDescription": "If you need onboarding support, email {email}.",
@@ -1360,6 +1365,8 @@ Object.assign(enMessages, {
 
 const localeOverridesRaw: Record<Exclude<MerchantPortalLanguage, "en">, PartialLocaleCatalog> = {
   "zh-CN": {
+    // TODO(recovery-v2 i18n): add zh-CN for every `recovery.*` key in ./recovery-v2
+    // before NEXT_PUBLIC_FEATURE_RECOVERY_V2 turns on. Until then they fall back to English.
     "auth.shell.controlCenter": "商家控制中心",
     "auth.shell.needHelpTitle": "需要帮助？",
     "auth.shell.needHelpDescription": "如果你需要入驻协助，请发送邮件至 {email}。",
@@ -1623,6 +1630,8 @@ const localeOverridesRaw: Record<Exclude<MerchantPortalLanguage, "en">, PartialL
     "settings.saving": "保存中...",
   },
   "ja-JP": {
+    // TODO(recovery-v2 i18n): add ja-JP for every `recovery.*` key in ./recovery-v2
+    // before NEXT_PUBLIC_FEATURE_RECOVERY_V2 turns on. Until then they fall back to English.
     "auth.shell.controlCenter": "マーチャント管理センター",
     "auth.shell.needHelpTitle": "サポートが必要ですか？",
     "auth.shell.needHelpDescription": "オンボーディング支援が必要な場合は {email} までメールしてください。",
@@ -1788,6 +1797,8 @@ const localeOverridesRaw: Record<Exclude<MerchantPortalLanguage, "en">, PartialL
     "settings.saving": "保存中...",
   },
   "ko-KR": {
+    // TODO(recovery-v2 i18n): add ko-KR for every `recovery.*` key in ./recovery-v2
+    // before NEXT_PUBLIC_FEATURE_RECOVERY_V2 turns on. Until then they fall back to English.
     "auth.shell.controlCenter": "판매자 제어 센터",
     "auth.shell.needHelpTitle": "도움이 필요하신가요?",
     "auth.shell.needHelpDescription": "온보딩 지원이 필요하면 {email} 로 이메일을 보내주세요.",
@@ -1913,6 +1924,8 @@ const localeOverridesRaw: Record<Exclude<MerchantPortalLanguage, "en">, PartialL
     "settings.saving": "저장 중...",
   },
   "fr-FR": {
+    // TODO(recovery-v2 i18n): add fr-FR for every `recovery.*` key in ./recovery-v2
+    // before NEXT_PUBLIC_FEATURE_RECOVERY_V2 turns on. Until then they fall back to English.
     "auth.shell.controlCenter": "Centre de contrôle marchand",
     "auth.shell.needHelpTitle": "Besoin d'aide ?",
     "auth.shell.needHelpDescription": "Si vous avez besoin d'aide pour l'onboarding, écrivez à {email}.",
@@ -2031,6 +2044,8 @@ const localeOverridesRaw: Record<Exclude<MerchantPortalLanguage, "en">, PartialL
     "settings.saving": "Enregistrement...",
   },
   "de-DE": {
+    // TODO(recovery-v2 i18n): add de-DE for every `recovery.*` key in ./recovery-v2
+    // before NEXT_PUBLIC_FEATURE_RECOVERY_V2 turns on. Until then they fall back to English.
     "auth.shell.controlCenter": "Merchant-Kontrollzentrum",
     "auth.shell.needHelpTitle": "Brauchen Sie Hilfe?",
     "auth.shell.needHelpDescription": "Wenn Sie Unterstützung beim Onboarding benötigen, schreiben Sie an {email}.",
