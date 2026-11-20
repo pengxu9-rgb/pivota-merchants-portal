@@ -1,0 +1,120 @@
+/*
+ * Recovery v2 — re-skin of the pages that have no board (Plan & credits,
+ * Settings, Past orders & refunds, Checkout, the saved-report pages).
+ *
+ * Token-level: under `body.rv2` (flag on only) the legacy --merchant-* tokens
+ * point at the quiet-ledger tokens, and the legacy primitives lose their
+ * pill radii, drop shadows, blur and gradients. Flag off: nothing here
+ * matches, so those pages render exactly as before.
+ */
+body.rv2 {
+  --background: var(--surface);
+  --foreground: var(--ink);
+  --merchant-canvas: var(--surface);
+  --merchant-sidebar: var(--sidebar);
+  --merchant-surface: var(--surface);
+  --merchant-surface-strong: var(--surface);
+  --merchant-surface-muted: var(--neutral-soft);
+  --merchant-line: var(--line);
+  --merchant-line-strong: var(--line-strong);
+  --merchant-ink: var(--ink);
+  --merchant-muted-strong: var(--ink-soft);
+  --merchant-muted: var(--muted);
+  --merchant-brand: var(--accent);
+  --merchant-brand-strong: var(--accent-hover);
+  --merchant-brand-soft: var(--accent-selected);
+  --merchant-success: var(--success);
+  --merchant-success-soft: var(--success-soft);
+  --merchant-warning: var(--warning);
+  --merchant-warning-soft: var(--warning-soft);
+  --merchant-critical: var(--error);
+  --merchant-critical-soft: var(--error-soft);
+  --merchant-shadow-soft: none;
+  --merchant-shadow-panel: none;
+}
+
+body.rv2 .merchant-page {
+  max-width: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+body.rv2 .merchant-overline {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+body.rv2 .merchant-page-title {
+  font-size: var(--text-page-title);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+body.rv2 .merchant-section-title,
+body.rv2 .merchant-card-title {
+  font-size: var(--text-card-title);
+  letter-spacing: 0;
+}
+body.rv2 .merchant-panel,
+body.rv2 .merchant-panel-strong,
+body.rv2 .merchant-panel-muted {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+body.rv2 .merchant-button-primary,
+body.rv2 .merchant-button-secondary,
+body.rv2 .merchant-button-ghost {
+  border-radius: var(--radius-control);
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 32px;
+  padding: 0 12px;
+  box-shadow: none;
+  transform: none;
+}
+body.rv2 .merchant-button-primary:hover {
+  transform: none;
+}
+body.rv2 .merchant-button-secondary {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+}
+body.rv2 .merchant-status-badge {
+  border-radius: var(--radius-badge);
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+body.rv2 .merchant-icon-button,
+body.rv2 .merchant-search-pill {
+  border-radius: var(--radius-control);
+  box-shadow: none;
+}
+body.rv2 .merchant-table th {
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Common Tailwind decorations on those pages: no shadows, no gradients,
+   card-sized radii instead of pills/2xl. */
+body.rv2 .rv-legacy [class*="shadow"] {
+  box-shadow: none !important;
+}
+body.rv2 .rv-legacy [class*="bg-gradient"],
+body.rv2 .rv-legacy [class*="from-"][class*="to-"] {
+  background-image: none !important;
+}
+body.rv2 .rv-legacy .rounded-2xl,
+body.rv2 .rv-legacy .rounded-3xl,
+body.rv2 .rv-legacy .rounded-xl {
+  border-radius: var(--radius-card) !important;
+}
+body.rv2 .rv-legacy .font-serif {
+  font-family: var(--font-sans) !important;
+}

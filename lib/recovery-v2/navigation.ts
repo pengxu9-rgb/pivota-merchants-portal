@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { CreditCard, Globe, Home, Package, SlidersHorizontal } from "lucide-react";
+import { CreditCard, FileText, Globe, Home, Package, ShoppingCart, SlidersHorizontal } from "lucide-react";
 
 /** AI Revenue Recovery v2 nav. Labels are translation keys (`labelKey`) so all
  * six portal locales keep working. Orders, analytics and integrations are not
@@ -33,6 +33,18 @@ export const recoveryMainNav: RecoveryNavItem[] = [
     href: "/dashboard/sources",
     icon: Globe,
     matchPrefixes: ["/dashboard/sources"],
+  },
+  {
+    labelKey: "recovery.nav.checkout",
+    href: "/dashboard/checkout",
+    icon: ShoppingCart,
+    matchPrefixes: ["/dashboard/checkout"],
+  },
+  {
+    labelKey: "recovery.nav.reports",
+    href: "/dashboard/reports",
+    icon: FileText,
+    matchPrefixes: ["/dashboard/reports"],
   },
 ];
 

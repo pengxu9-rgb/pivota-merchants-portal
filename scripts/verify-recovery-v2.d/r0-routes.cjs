@@ -7,7 +7,8 @@ module.exports = ({ check, assert }) => {
   check('v2-only routes are rewritten to 404 when the flag is off', () => {
     const root = path.resolve(__dirname, '../..');
     const config = fs.readFileSync(path.join(root, 'next.config.mjs'), 'utf8');
-    const listed = JSON.parse((config.match(/RECOVERY_V2_ONLY_ROUTES = (\[[^\]]*\])/) || [])[1] || '[]');
+    const block = (config.match(/RECOVERY_V2_ONLY_ROUTES = \[([^\]]*)\]/) || [])[1] || '';
+    const listed = [...block.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
     const pages = [];
     const walk = (dir) => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

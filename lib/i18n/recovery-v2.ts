@@ -47,6 +47,37 @@ export const recoveryV2EnMessages: Record<string, string> = {
 
 
 
+
+  // Re-skinned pages + redirects (R7)
+  "recovery.checkout.note": "This is the storefront check: it looks for search, cart, shipping and checkout blockers on your store. The agent checkout test on the Overview stays \"Not run yet\" until domain verification exists.",
+  "recovery.reports.title": "Reports",
+  "recovery.reports.subtitle": "Your past checks, newest first.",
+  "recovery.reports.col.date": "Checked",
+  "recovery.reports.col.kind": "Kind",
+  "recovery.reports.col.products": "Products",
+  "recovery.reports.col.status": "Status",
+  "recovery.reports.kind.links": "Product links",
+  "recovery.reports.kind.catalog": "Catalog",
+  "recovery.reports.status.done": "Finished",
+  "recovery.reports.status.running": "Running",
+  "recovery.reports.status.failed": "Didn't finish",
+  "recovery.reports.open": "Open report",
+  "recovery.reports.openHint": "Opens the full saved report, in the check history of the existing report page.",
+  "recovery.reports.latestOnOverview": "The latest check is on your Overview.",
+  "recovery.reports.empty.title": "No checks yet",
+  "recovery.reports.empty.body": "Checks you run appear here. Product links work without a store.",
+  "recovery.reports.share": "Sharing a report link isn't available yet.",
+  "recovery.settings.title": "Account",
+  "recovery.settings.store": "Store connection",
+  "recovery.settings.storeManage": "Manage store connections",
+  "recovery.settings.storeNone": "No store connected. Product links work without one.",
+  "recovery.settings.storeConnect": "Connect a store",
+  "recovery.settings.orders": "Past orders & refunds",
+  "recovery.settings.ordersBody": "Orders placed through the earlier hosted checkout, and their refunds. New checkout runs at your store via UCP / ACP.",
+  "recovery.settings.ordersOpen": "Open",
+  "recovery.orders.back": "Settings",
+  "recovery.orders.title": "Past orders & refunds",
+
   // Products (R5)
   "recovery.products.title": "Products",
   "recovery.products.scope.connected": "{platform} connected · {count} products · last sync {when}",

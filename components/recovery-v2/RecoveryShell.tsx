@@ -213,7 +213,7 @@ export function RecoveryShellView({ pathname, user, mode, credits, linksCount, o
           <div style={{ flex: 1 }} />
           <AccountMenu user={user} onLogout={onLogout} />
         </header>
-        <main id="main" className={isRecoveryWidePage(pathname) ? "rv-content rv-wide" : "rv-content"}>
+        <main id="main" className={isRecoveryWidePage(pathname) ? "rv-content rv-wide rv-legacy" : "rv-content rv-legacy"}>
           {children}
         </main>
       </div>
