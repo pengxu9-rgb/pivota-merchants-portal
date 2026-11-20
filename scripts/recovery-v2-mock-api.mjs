@@ -65,7 +65,9 @@ const routes = [
   ['GET', /^\/api\/audits\/([^/]+)$/, (url, m) => {
     if (scenario === 'running') return { status: 202, body: { data: { status: 'running' } } };
     if (scenario === 'failed') return { status: 200, body: { data: { stage: 'failed', error_message: 'Placeholder failure for review.' } } };
-    const data = url.searchParams.get('audience') === 'revenue_recovery' ? recovery(m[1]) : load('url-run');
+    const data = url.searchParams.get('audience') === 'revenue_recovery'
+      ? recovery(m[1])
+      : load(m[1] === 'run-catalog-placeholder' ? 'catalog-run' : 'url-run');
     return data ? { data } : { status: 404, body: { detail: 'not found' } };
   }],
   ['GET', /^\/api\/merchant-center\/audit\/url-readiness\/([^/]+)$/, () => {
@@ -73,6 +75,8 @@ const routes = [
     return { data: load('url-run') ?? { status: 'succeeded' } };
   }],
   ['POST', /^\/api\/merchant-center\/audit\/url-readiness\/quote$/, () => ({ data: { status: 'quoted', quote_id: 'quote-placeholder', credits: 120, base_credits: 60, providers: ['gemini'], product_count: 3, consumer_capture: { credits: 60, probe_count: 12 } } })],
+  ['GET', /^\/api\/merchant-center\/audit\/tasks$/, () => load('tasks') ?? { tasks: [] }],
+  ['POST', /^\/api\/merchant-center\/audit\/actions\/start$|^\/api\/merchant-center\/audit\/start-action$/, () => ({ data: { status: 'success', task_id: 'task-placeholder-2', draft: '[PLACEHOLDER DRAFT] A short pitch the merchant edits before sending.', credits_charged: 2 } })],
   ['POST', /^\/api\/merchant-center\/audit\/tasks\/outreach-pitch$/, () => ({ status: 'success', task_id: 'task-placeholder', title: 'Pitch sent' })],
 ];
 

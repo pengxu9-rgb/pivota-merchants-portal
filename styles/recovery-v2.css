@@ -161,8 +161,16 @@ body.rv2 {
   display: none;
 }
 @media (max-width: 767px) {
-  .rv-desktop-only {
+  .rv-desktop-only,
+  .rv-tbl .rv-hide-phone {
     display: none;
+  }
+  .rv-tbl .rv-badge {
+    white-space: normal;
+    height: auto;
+    min-height: 20px;
+    padding-top: 2px;
+    padding-bottom: 2px;
   }
   .rv-phone-only {
     display: inline-flex;
@@ -393,6 +401,12 @@ body.rv2 {
 }
 .rv-scroll-x {
   overflow-x: auto;
+}
+.rv-tbl.rv-compact th,
+.rv-tbl.rv-compact td,
+.rv-tbl.rv-compact tbody th {
+  padding-left: 12px;
+  padding-right: 12px;
 }
 .rv-bar {
   height: 6px;

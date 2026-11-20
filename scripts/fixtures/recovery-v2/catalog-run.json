@@ -1,0 +1,104 @@
+{
+ "_comment": "Synthetic placeholder catalog run detail for Recovery v2 Sources.",
+ "stage": "succeeded",
+ "report_jsonb": {
+  "audit_run_id": "run-catalog-placeholder",
+  "audit_mode": "per_sku",
+  "per_sku_reports": [],
+  "win_plan": {
+   "available": true,
+   "note": null,
+   "sku_plans": [
+    {
+     "sku_key": "sku-1",
+     "sku_title": "Example Serum 30 ml",
+     "losing_queries": [
+      {
+       "query": "best vitamin c serum for sensitive skin",
+       "axis": "category",
+       "grounds_in": [
+        {
+         "host": "reseller-one.example",
+         "role": "retailer",
+         "tier": 2,
+         "applies_to_merchant_category": true,
+         "outreach": {
+          "state": "draft_ready",
+          "hint": "Retail buyer pitch.",
+          "cycle_weeks": [
+           2,
+           4
+          ],
+          "recipient": {
+           "email": "partners@reseller-one.example",
+           "submission_url": null,
+           "note": "Placeholder recipient note."
+          },
+          "pitch_draft": {
+           "subject": "[PLACEHOLDER] Example Serum for your vitamin C range",
+           "body": "[DRAFT PITCH \u2014 placeholder text: introduces Example Serum, explains why it fits the range, offers samples and a direct product link.]",
+           "channel": "email",
+           "recipient_email": "partners@reseller-one.example",
+           "recipient_note": null
+          }
+         }
+        },
+        {
+         "host": "skin-review.example",
+         "role": "editorial_review",
+         "tier": 1,
+         "applies_to_merchant_category": true,
+         "outreach": {
+          "state": "submission_only",
+          "hint": "Roundup submission form.",
+          "cycle_weeks": null,
+          "recipient": {
+           "email": null,
+           "submission_url": "https://skin-review.example/contact",
+           "note": null
+          },
+          "pitch_draft": null
+         }
+        },
+        {
+         "host": "marketplace.example",
+         "role": "marketplace",
+         "tier": 3,
+         "applies_to_merchant_category": null,
+         "outreach": {
+          "state": "target_only",
+          "hint": null,
+          "cycle_weeks": null,
+          "recipient": null,
+          "pitch_draft": null
+         }
+        }
+       ],
+       "competitor_benchmark": [],
+       "win_condition": null,
+       "limit": null
+      }
+     ],
+     "coverage": {
+      "losing_category_queries": 1,
+      "queries_with_grounded_target": 1,
+      "queries_with_draft_ready_target": 1
+     }
+    }
+   ],
+   "rollup": {
+    "losing_category_queries": 1,
+    "independent_hosts_to_win": [
+     "skin-review.example"
+    ],
+    "draft_ready_hosts": [
+     "reseller-one.example"
+    ],
+    "pitch_ready_hosts": [
+     "reseller-one.example"
+    ]
+   }
+  },
+  "outreach_outcomes": null
+ }
+}

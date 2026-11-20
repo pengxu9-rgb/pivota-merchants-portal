@@ -153,6 +153,7 @@ function NextActions({ mode, t, extra }: { mode: StoreMode; t: T; extra?: ReactN
     connected
       ? { title: t("recovery.next.review.title"), body: t("recovery.next.review.body"), href: "/dashboard/products", cta: t("recovery.next.review.cta"), primary: true }
       : { title: t("recovery.next.connect.title"), body: t("recovery.next.connect.body"), href: RECOVERY_CONNECT_HREF, cta: t("recovery.next.connect.cta"), primary: true },
+    { title: t("recovery.next.sources.title"), body: t("recovery.next.sources.body"), href: "/dashboard/sources", cta: t("recovery.next.sources.cta") },
     { title: t("recovery.next.rerun.title"), body: t("recovery.next.rerun.body"), href: RECOVERY_RUN_HREF, cta: t("recovery.next.rerun.cta") },
   ];
   return (
