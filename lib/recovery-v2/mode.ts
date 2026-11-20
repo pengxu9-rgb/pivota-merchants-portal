@@ -19,8 +19,8 @@ export type StoreMode =
   | { kind: "loading" }
   | { kind: "unknown" }
   | { kind: "links" }
-  | { kind: "first_sync"; platform: string; storeName: string }
-  | { kind: "connected"; platform: string; storeName: string; productCount: number; lastSync: string | null };
+  | { kind: "first_sync"; platform: string; platformKey?: string; storeName: string }
+  | { kind: "connected"; platform: string; platformKey?: string; storeName: string; productCount: number; lastSync: string | null };
 
 const PLATFORM_LABELS: Record<string, string> = {
   shopify: "Shopify",
@@ -44,7 +44,7 @@ export function deriveStoreMode(stores: StoreSummary[] | null | undefined): Stor
   if (active.length === 0) return { kind: "links" };
   const store = active.find((s) => s.is_primary) ?? active[0];
   const productCount = Number.isFinite(store.product_count) ? store.product_count : 0;
-  const base = { platform: platformLabel(store.platform), storeName: store.name };
+  const base = { platform: platformLabel(store.platform), platformKey: String(store.platform || "").toLowerCase(), storeName: store.name };
   if (!store.last_sync && productCount === 0) return { kind: "first_sync", ...base };
   return { kind: "connected", ...base, productCount, lastSync: store.last_sync };
 }

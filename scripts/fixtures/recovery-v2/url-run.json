@@ -8,7 +8,136 @@
   "is_paid": true,
   "store_connected": false
  },
- "per_sku_reports": [],
+ "per_sku_reports": [
+  {
+   "sku_key": "1001",
+   "product_key": "merchant-placeholder|shopify|1001",
+   "content_key": null,
+   "sku_title": "Example Serum 30 ml",
+   "identity": {
+    "name": "Example Serum 30 ml"
+   },
+   "scores": {
+    "identity": {
+     "score": 16,
+     "band": "blocked",
+     "band_label": "Not yet visible"
+    },
+    "content_richness": {
+     "score": 23,
+     "band": "blocked",
+     "band_label": "Not yet visible"
+    },
+    "routability": {
+     "score": 0,
+     "band": "unscored",
+     "band_label": "Not measured"
+    },
+    "citation": {
+     "score": 48,
+     "band": "partial",
+     "band_label": "Needs work"
+    }
+   },
+   "band": "blocked",
+   "primary_gaps": [
+    {
+     "label": "Name the exact product",
+     "why": "AI can't tell this serum apart from similar ones.",
+     "dimension": "identity",
+     "bucket": "x",
+     "gap": 1
+    },
+    {
+     "label": "Add key ingredients and size",
+     "why": "The page doesn't say what's in it or how much.",
+     "dimension": "identity",
+     "bucket": "x",
+     "gap": 1
+    }
+   ],
+   "verbatim_grounding_evidence": [],
+   "axis_coverage": {}
+  },
+  {
+   "sku_key": "1002",
+   "product_key": "merchant-placeholder|shopify|1002",
+   "content_key": null,
+   "sku_title": "Example Sunscreen SPF 50",
+   "identity": {
+    "name": "Example Sunscreen SPF 50"
+   },
+   "scores": {
+    "identity": {
+     "score": 45,
+     "band": "partial",
+     "band_label": "Needs work"
+    },
+    "content_richness": {
+     "score": 20,
+     "band": "blocked",
+     "band_label": "Not yet visible"
+    },
+    "routability": {
+     "score": 0,
+     "band": "unscored",
+     "band_label": "Not measured"
+    },
+    "citation": {
+     "score": 52,
+     "band": "partial",
+     "band_label": "Needs work"
+    }
+   },
+   "band": "blocked",
+   "primary_gaps": [
+    {
+     "label": "Describe who it's for",
+     "why": "No skin type or use case on the page.",
+     "dimension": "identity",
+     "bucket": "x",
+     "gap": 1
+    }
+   ],
+   "verbatim_grounding_evidence": [],
+   "axis_coverage": {}
+  },
+  {
+   "sku_key": "1003",
+   "product_key": "merchant-placeholder|shopify|1003",
+   "content_key": null,
+   "sku_title": "Example Night Cream",
+   "identity": {
+    "name": "Example Night Cream"
+   },
+   "scores": {
+    "identity": {
+     "score": 18,
+     "band": "blocked",
+     "band_label": "Not yet visible"
+    },
+    "content_richness": {
+     "score": 55,
+     "band": "partial",
+     "band_label": "Needs work"
+    },
+    "routability": {
+     "score": 0,
+     "band": "unscored",
+     "band_label": "Not measured"
+    },
+    "citation": {
+     "score": 78,
+     "band": "ready",
+     "band_label": "Ready"
+    }
+   },
+   "band": "blocked",
+   "primary_gaps": [],
+   "verbatim_grounding_evidence": [],
+   "axis_coverage": {}
+  }
+ ],
  "catalog_dimensions_available": false,
  "where_youre_losing": {
   "outreach_moves": [

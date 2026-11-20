@@ -78,6 +78,9 @@ const routes = [
     ? { status: 402, body: { detail: { code: 'free_audit_limit_reached', message: 'Placeholder: free checks used.' } } }
     : { data: { status: 'running', run_id: 'run-links-placeholder' } })],
   ['POST', /^\/api\/merchant-center\/audit\/url-readiness\/quote$/, () => ({ data: { status: 'quoted', quote_id: 'quote-placeholder', credits: 120, base_credits: 60, providers: ['gemini'], product_count: 3, consumer_capture: { credits: 60, probe_count: 12 } } })],
+  ['GET', /^\/merchant\/products\/shopify\/1001$/, () => load('product-detail')],
+  ['GET', /^\/merchant\/products\/[^/]+\/[^/]+$/, () => ({ platform: 'shopify', enrichment: {} })],
+  ['POST', /^\/merchant\/integrations\/shopify\/sync$/, () => ({ status: 'started' })],
   ['GET', /^\/api\/merchant-center\/audit\/tasks$/, () => load('tasks') ?? { tasks: [] }],
   ['POST', /^\/api\/merchant-center\/audit\/actions\/start$|^\/api\/merchant-center\/audit\/start-action$/, () => ({ data: { status: 'success', task_id: 'task-placeholder-2', draft: '[PLACEHOLDER DRAFT] A short pitch the merchant edits before sending.', credits_charged: 2 } })],
   ['POST', /^\/api\/merchant-center\/audit\/tasks\/outreach-pitch$/, () => ({ status: 'success', task_id: 'task-placeholder', title: 'Pitch sent' })],
