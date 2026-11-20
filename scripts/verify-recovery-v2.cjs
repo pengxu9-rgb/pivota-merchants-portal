@@ -105,9 +105,9 @@ check('shell: nav labels, store card states, credits shown separately', () => {
   assertHonest(links, 'shell');
 });
 
-check('i18n: recovery.* copy resolves in all six locales (English fallback)', () => {
+check('i18n: recovery.* copy is translated in all six locales', () => {
   const { translatePortalMessage, SUPPORTED_PORTAL_LANGUAGES } = require('@/lib/i18n/merchant-portal');
-  const { recoveryV2EnMessages } = require('@/lib/i18n/recovery-v2');
+  const { recoveryV2EnMessages, recoveryV2LocaleMessages } = require('@/lib/i18n/recovery-v2');
   const keys = Object.keys(recoveryV2EnMessages);
   assert(keys.length > 0 && keys.every((k) => k.startsWith('recovery.')));
   for (const lang of SUPPORTED_PORTAL_LANGUAGES) {
@@ -116,13 +116,33 @@ check('i18n: recovery.* copy resolves in all six locales (English fallback)', ()
   // Nav labelKeys must exist in the catalog.
   const nav = require('@/lib/recovery-v2/navigation');
   for (const item of [...nav.recoveryMainNav, ...nav.recoveryAccountNav]) assert(item.labelKey in recoveryV2EnMessages, item.labelKey);
-  const src = fs.readFileSync(path.join(root, 'lib/i18n/merchant-portal.ts'), 'utf8');
-  const pending = SUPPORTED_PORTAL_LANGUAGES.filter((l) => l !== 'en').map((l) => {
-    const translated = keys.filter((k) => translatePortalMessage(l, k) !== recoveryV2EnMessages[k]).length;
-    return `${l} ${translated}/${keys.length}`;
+  // Every locale map has exactly the English keys, the same {placeholders},
+  // and is what the catalog serves. Text may equal English only where nothing
+  // is translatable (a bare placeholder, a sample URL) or the word is the same
+  // in that language (German loanwords, the product name).
+  const ALL_SAME = ['recovery.overview.scope.providers', 'recovery.start.links.placeholder'];
+  const SAME_AS_EN = {
+    'fr-FR': ['recovery.product', 'recovery.nav.sources', 'recovery.shell.menu', 'recovery.products.copy.descriptionField', 'recovery.sources.title', 'recovery.sources.col.site', 'recovery.sources.col.type', 'recovery.sources.citedIn', 'recovery.sources.citedInOne', 'recovery.sources.type.marketplace', 'recovery.dim.citation'],
+    'de-DE': ['recovery.product', 'recovery.nav.checkout', 'recovery.credits.title', 'recovery.reports.col.status', 'recovery.cost.scope.website', 'recovery.sources.col.outreach', 'recovery.sources.type.community', 'recovery.sources.type.creator'],
+  };
+  const placeholders = (value) => (value.match(/\{\w+\}/g) || []).sort().join(' ');
+  const others = SUPPORTED_PORTAL_LANGUAGES.filter((l) => l !== 'en');
+  assert.deepEqual(Object.keys(recoveryV2LocaleMessages).sort(), [...others].sort(), 'one map per non-English locale');
+  const summary = others.map((l) => {
+    const map = recoveryV2LocaleMessages[l];
+    const extra = Object.keys(map).filter((k) => !(k in recoveryV2EnMessages));
+    assert.deepEqual(extra, [], `${l}: keys not in English`);
+    const translated = keys.filter((k) => typeof map[k] === 'string' && map[k].trim() !== '');
+    const missing = keys.filter((k) => !translated.includes(k));
+    assert.deepEqual(missing, [], `${l}: untranslated keys`);
+    for (const k of keys) {
+      assert.equal(placeholders(map[k]), placeholders(recoveryV2EnMessages[k]), `${l} ${k}: placeholders differ`);
+      assert.equal(translatePortalMessage(l, k), map[k], `${l} ${k}: catalog doesn't serve the translation`);
+      if (!ALL_SAME.includes(k) && !(SAME_AS_EN[l] || []).includes(k)) assert.notEqual(map[k], recoveryV2EnMessages[k], `${l} ${k}: still English`);
+    }
+    return `${l} ${translated.length}/${keys.length}`;
   });
-  assert((src.match(/TODO\(recovery-v2 i18n\)/g) || []).length >= 5, 'TODO marker per locale');
-  console.log(`  i18n translated (pending before the flag turns on): ${pending.join(' · ')}`);
+  console.log(`  i18n translated: ${summary.join(' · ')}`);
 });
 
 /* Later slices register their checks here. */

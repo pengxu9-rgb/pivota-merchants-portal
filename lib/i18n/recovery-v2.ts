@@ -1,14 +1,18 @@
+import { recoveryV2DeDEMessages } from "./recovery-v2.de-DE";
+import { recoveryV2FrFRMessages } from "./recovery-v2.fr-FR";
+import { recoveryV2JaJPMessages } from "./recovery-v2.ja-JP";
+import { recoveryV2KoKRMessages } from "./recovery-v2.ko-KR";
+import { recoveryV2ZhCNMessages } from "./recovery-v2.zh-CN";
+
 /**
- * AI Revenue Recovery v2 — English copy.
+ * AI Revenue Recovery v2 — English copy, plus the five translated locales.
  *
- * Merged into the merchant portal catalog (lib/i18n/merchant-portal.ts), so
- * every `recovery.*` key resolves in all six locales today: zh-CN, ja-JP,
- * ko-KR, fr-FR and de-DE fall back to this English text.
- *
- * TODO(recovery-v2 i18n): translate every `recovery.*` key into the five other
- * locales before NEXT_PUBLIC_FEATURE_RECOVERY_V2 is turned on in production
- * (build decision 2, 2026-11-19: "fill the other locales before the flag turns on").
- * `scripts/verify-recovery-v2.cjs` lists the keys still pending per locale.
+ * Merged into the merchant portal catalog (lib/i18n/merchant-portal.ts) only
+ * when NEXT_PUBLIC_FEATURE_RECOVERY_V2 is on. zh-CN, ja-JP, ko-KR, fr-FR and
+ * de-DE each have a full map in ./recovery-v2.<locale>.ts (build decision 2,
+ * 2026-11-19); any key missing there still falls back to this English text.
+ * `scripts/verify-recovery-v2.cjs` checks every locale has every key with the
+ * same `{placeholders}`. Add a key here → add it to all five locale files.
  *
  * Copy rules (audit contract): bands with n, unknowns left out (never counted
  * as misses), 95% ranges, "Sources mention you", Convert stays "Not run yet"
@@ -379,3 +383,12 @@ export const recoveryV2EnMessages: Record<string, string> = {
   "recovery.state.legacy.body": "Its report is still available. Run a new check to see bands with n and answer ranges here.",
   "recovery.state.legacy.cta": "Open the saved report",
 };
+
+/** Translated `recovery.*` copy per non-English portal locale. */
+export const recoveryV2LocaleMessages = {
+  "zh-CN": recoveryV2ZhCNMessages,
+  "ja-JP": recoveryV2JaJPMessages,
+  "ko-KR": recoveryV2KoKRMessages,
+  "fr-FR": recoveryV2FrFRMessages,
+  "de-DE": recoveryV2DeDEMessages,
+} satisfies Record<string, Record<string, string>>;
