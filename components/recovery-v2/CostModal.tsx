@@ -32,9 +32,10 @@ export type CostModalProps = {
 
 /** Run-cost modal. Every check is priced by the read-only quote route before it
  * can start ("Get the cost" is an explicit click; opening the modal calls
- * nothing), then runs with that accepted quote. The backend holds the quoted
- * price only when shopper questions are included; without them the quote is
- * shown as an estimate (review P3-3). */
+ * nothing), then runs with that accepted quote. The backend binds an accepted
+ * quote for every run (pivota-backend#2871): a matching run is charged exactly
+ * the quoted credits, and a changed scope or price is refused with 409
+ * quote_required — so the quote is shown as the price, not an estimate. */
 export function CostModal({ request, phase, quote, quoteStale, error, credits, elapsedSec, canPurchase, onGetQuote, onStart, onClose }: CostModalProps) {
   const { t, language } = useMerchantLanguage();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -74,10 +75,9 @@ export function CostModal({ request, phase, quote, quoteStale, error, credits, e
           {quote ? (
             <>
               <span style={{ fontSize: 16, fontWeight: 600 }} className="rv-num">
-                {t(questions > 0 ? "recovery.cost.quote.total" : "recovery.cost.quote.estimate", { credits: num(quote.credits) })}
+                {t("recovery.cost.quote.total", { credits: num(quote.credits) })}
               </span>
               {quote.credits === 0 ? <span className="rv-muted rv-small">{t("recovery.cost.quote.free")}</span> : null}
-              {questions === 0 ? <span className="rv-muted rv-small">{t("recovery.cost.quote.estimateNote")}</span> : null}
               {questions > 0 ? (
                 <span className="rv-muted rv-small rv-num">
                   {t("recovery.cost.quote.breakdown", {
@@ -127,7 +127,7 @@ export function CostModal({ request, phase, quote, quoteStale, error, credits, e
                 </button>
               ) : (
                 <button type="button" className="rv-btn rv-primary" onClick={onStart} disabled={busy}>
-                  {t(questions > 0 ? "recovery.cost.startCredits" : "recovery.cost.startEstimate", { credits: num(quote.credits) })}
+                  {t("recovery.cost.startCredits", { credits: num(quote.credits) })}
                 </button>
               )}
             </>
