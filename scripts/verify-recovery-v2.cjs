@@ -122,7 +122,7 @@ check('i18n: recovery.* copy is translated in all six locales', () => {
   // stays English everywhere) or the word is the same in that language.
   const ALL_SAME = ['recovery.product', 'recovery.overview.scope.providers', 'recovery.start.links.placeholder'];
   const SAME_AS_EN = {
-    'fr-FR': ['recovery.nav.sources', 'recovery.shell.menu', 'recovery.products.copy.descriptionField', 'recovery.sources.title', 'recovery.sources.col.site', 'recovery.sources.col.type', 'recovery.sources.citedIn', 'recovery.sources.citedInOne', 'recovery.sources.type.marketplace', 'recovery.dim.citation'],
+    'fr-FR': ['recovery.nav.sources', 'recovery.shell.menu', 'recovery.products.copy.descriptionField', 'recovery.sources.title', 'recovery.sources.col.site', 'recovery.sources.col.type', 'recovery.sources.citedIn', 'recovery.sources.citedInOne', 'recovery.sources.type.marketplace', 'recovery.dim.citation', 'recovery.stores.col.actions'],
     'de-DE': ['recovery.nav.checkout', 'recovery.credits.title', 'recovery.reports.col.status', 'recovery.cost.scope.website', 'recovery.sources.col.outreach', 'recovery.sources.type.community', 'recovery.sources.type.creator'],
   };
   const placeholders = (value) => (value.match(/\{\w+\}/g) || []).sort().join(' ');
