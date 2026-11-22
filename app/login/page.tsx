@@ -9,6 +9,9 @@ import { useMerchantLanguage } from '@/components/portal/merchant-language-provi
 import { apiClient } from '@/lib/api-client';
 import { sanitizeAuditFunnelPostLoginPath } from '@/lib/onboarding';
 
+// v2 (AI Revenue Recovery) describes the recovery product here; flag off keeps the earlier copy.
+const RECOVERY_V2 = (process.env.NEXT_PUBLIC_FEATURE_RECOVERY_V2 || 'false').toLowerCase() === 'true';
+
 function normalizeEmail(value: string) {
   return (value || '').trim().toLowerCase();
 }
@@ -58,23 +61,29 @@ export default function LoginPage() {
 
   const merchantHighlights = useMemo(
     () =>
-      [
-        {
-          title: t('auth.login.highlightReadyTitle'),
-          description: t('auth.login.highlightReadyDescription'),
-          icon: Sparkles,
-        },
-        {
-          title: t('auth.login.highlightCatalogTitle'),
-          description: t('auth.login.highlightCatalogDescription'),
-          icon: Store,
-        },
-        {
-          title: t('auth.login.highlightFlowTitle'),
-          description: t('auth.login.highlightFlowDescription'),
-          icon: ShoppingBag,
-        },
-      ] as const,
+      RECOVERY_V2
+        ? ([
+            { title: t('recovery.login.h1.title'), description: t('recovery.login.h1.body'), icon: Sparkles },
+            { title: t('recovery.login.h2.title'), description: t('recovery.login.h2.body'), icon: Store },
+            { title: t('recovery.login.h3.title'), description: t('recovery.login.h3.body'), icon: ShoppingBag },
+          ] as const)
+        : ([
+            {
+              title: t('auth.login.highlightReadyTitle'),
+              description: t('auth.login.highlightReadyDescription'),
+              icon: Sparkles,
+            },
+            {
+              title: t('auth.login.highlightCatalogTitle'),
+              description: t('auth.login.highlightCatalogDescription'),
+              icon: Store,
+            },
+            {
+              title: t('auth.login.highlightFlowTitle'),
+              description: t('auth.login.highlightFlowDescription'),
+              icon: ShoppingBag,
+            },
+          ] as const),
     [t],
   );
 
@@ -126,7 +135,7 @@ export default function LoginPage() {
 
   return (
       <AuthShell
-      eyebrow={t('auth.shell.controlCenter')}
+      eyebrow={RECOVERY_V2 ? t('recovery.product') : t('auth.shell.controlCenter')}
       title={t('auth.login.pageTitle')}
       description={t('auth.login.pageDescription')}
       highlights={merchantHighlights}
@@ -217,7 +226,7 @@ export default function LoginPage() {
         <div className="rounded-[20px] border border-[color:var(--merchant-line)] bg-[color:var(--merchant-surface-muted)] px-4 py-4">
           <p className="text-sm font-medium text-[color:var(--merchant-ink)]">{t('auth.login.newMerchantTitle')}</p>
           <p className="mt-1 text-sm leading-6 text-[color:var(--merchant-muted-strong)]">
-            {t('auth.login.newMerchantDescription')}
+            {RECOVERY_V2 ? t('recovery.login.newBody') : t('auth.login.newMerchantDescription')}
           </p>
           <Link
             href="/signup"

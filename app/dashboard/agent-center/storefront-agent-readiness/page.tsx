@@ -1,7 +1,6 @@
 'use client';
 
-import { StoreReadinessPanel } from '@/components/audit/StoreReadinessPanel';
-import { FunnelChecksPanel } from '@/components/audit/FunnelChecksPanel';
+import { StorefrontCheckPanels } from '@/components/audit/StorefrontCheckPanels';
 import { PageHeader } from '@/components/ui/merchant-primitives';
 
 export default function StorefrontAgentReadinessPage() {
@@ -13,8 +12,7 @@ export default function StorefrontAgentReadinessPage() {
         description="Test where an agent-driven sale breaks across store search, product detail, cart, shipping address, and checkout. The check uses synthetic details and stops before payment or order submission."
       />
 
-      <FunnelChecksPanel nextStep="storefront" />
-      <StoreReadinessPanel />
+      <StorefrontCheckPanels />
     </div>
   );
 }

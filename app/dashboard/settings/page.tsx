@@ -31,7 +31,7 @@ function validatePassword(
   return null;
 }
 
-function LegacySettingsPage() {
+function LegacySettingsPage({ v2 = false }: { v2?: boolean }) {
   const { t, language, setLanguage } = useMerchantLanguage();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -281,7 +281,7 @@ function LegacySettingsPage() {
     <div className="max-w-6xl space-y-6">
       <PageHeader
         eyebrow={t('settings.eyebrow')}
-        title={t('settings.title')}
+        title={v2 ? t('recovery.settings.pageTitle') : t('settings.title')}
         description={t('settings.description')}
       />
 
@@ -299,7 +299,7 @@ function LegacySettingsPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+      <div className={v2 ? 'grid gap-6' : 'grid gap-6 xl:grid-cols-[1.15fr_0.85fr]'}>
         <SurfaceCard
           title={t('settings.profileCardTitle')}
           description={t('settings.profileCardDescription')}
@@ -367,62 +367,68 @@ function LegacySettingsPage() {
           </div>
         </SurfaceCard>
 
-        <SurfaceCard
-          title={t('settings.notificationsCardTitle')}
-          description={t('settings.notificationsCardDescription')}
-          action={<StatusBadge tone="neutral" icon={Bell}>{t('settings.notificationsBadge')}</StatusBadge>}
-        >
-          <div className="space-y-3 p-5">
-            <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
-              <div>
-                <div className="font-medium text-[color:var(--merchant-ink)]">{t('settings.notificationOrdersTitle')}</div>
-                <div className="text-sm text-[color:var(--merchant-muted)]">{t('settings.notificationOrdersDescription')}</div>
-              </div>
-              <input
-                type="checkbox"
-                checked={notifications.email_orders}
-                onChange={(e) => setNotifications({ ...notifications, email_orders: e.target.checked })}
-                className="rounded"
-              />
-            </label>
-            <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
-              <div>
-                <div className="font-medium text-[color:var(--merchant-ink)]">{t('settings.notificationPaymentsTitle')}</div>
-                <div className="text-sm text-[color:var(--merchant-muted)]">{t('settings.notificationPaymentsDescription')}</div>
-              </div>
-              <input
-                type="checkbox"
-                checked={notifications.email_payments}
-                onChange={(e) => setNotifications({ ...notifications, email_payments: e.target.checked })}
-                className="rounded"
-              />
-            </label>
-            <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
-              <div>
-                <div className="font-medium text-[color:var(--merchant-ink)]">{t('settings.notificationInventoryTitle')}</div>
-                <div className="text-sm text-[color:var(--merchant-muted)]">{t('settings.notificationInventoryDescription')}</div>
-              </div>
-              <input
-                type="checkbox"
-                checked={notifications.email_inventory}
-                onChange={(e) => setNotifications({ ...notifications, email_inventory: e.target.checked })}
-                className="rounded"
-              />
-            </label>
-            <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
-              <div>
-                <div className="font-medium text-[color:var(--merchant-ink)]">{t('settings.notificationWeeklyTitle')}</div>
-                <div className="text-sm text-[color:var(--merchant-muted)]">{t('settings.notificationWeeklyDescription')}</div>
-              </div>
-              <input
-                type="checkbox"
-                checked={notifications.email_weekly}
-                onChange={(e) => setNotifications({ ...notifications, email_weekly: e.target.checked })}
-                className="rounded"
-              />
-            </label>
-          </div>
-        </SurfaceCard>
+        {/* v2: hidden. email_orders / email_payments / email_inventory / email_weekly are stored, but no
+            backend job reads them, so the toggles promised emails that never come. */}
+        {v2 ? null : (
+          <>
+          <SurfaceCard
+            title={t('settings.notificationsCardTitle')}
+            description={t('settings.notificationsCardDescription')}
+            action={<StatusBadge tone="neutral" icon={Bell}>{t('settings.notificationsBadge')}</StatusBadge>}
+          >
+            <div className="space-y-3 p-5">
+              <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
+                <div>
+                  <div className="font-medium text-[color:var(--merchant-ink)]">{t('settings.notificationOrdersTitle')}</div>
+                  <div className="text-sm text-[color:var(--merchant-muted)]">{t('settings.notificationOrdersDescription')}</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={notifications.email_orders}
+                  onChange={(e) => setNotifications({ ...notifications, email_orders: e.target.checked })}
+                  className="rounded"
+                />
+              </label>
+              <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
+                <div>
+                  <div className="font-medium text-[color:var(--merchant-ink)]">{t('settings.notificationPaymentsTitle')}</div>
+                  <div className="text-sm text-[color:var(--merchant-muted)]">{t('settings.notificationPaymentsDescription')}</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={notifications.email_payments}
+                  onChange={(e) => setNotifications({ ...notifications, email_payments: e.target.checked })}
+                  className="rounded"
+                />
+              </label>
+              <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
+                <div>
+                  <div className="font-medium text-[color:var(--merchant-ink)]">{t('settings.notificationInventoryTitle')}</div>
+                  <div className="text-sm text-[color:var(--merchant-muted)]">{t('settings.notificationInventoryDescription')}</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={notifications.email_inventory}
+                  onChange={(e) => setNotifications({ ...notifications, email_inventory: e.target.checked })}
+                  className="rounded"
+                />
+              </label>
+              <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
+                <div>
+                  <div className="font-medium text-[color:var(--merchant-ink)]">{t('settings.notificationWeeklyTitle')}</div>
+                  <div className="text-sm text-[color:var(--merchant-muted)]">{t('settings.notificationWeeklyDescription')}</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={notifications.email_weekly}
+                  onChange={(e) => setNotifications({ ...notifications, email_weekly: e.target.checked })}
+                  className="rounded"
+                />
+              </label>
+            </div>
+          </SurfaceCard>
+          </>
+        )}
       </div>
 
       <SurfaceCard
@@ -434,7 +440,17 @@ function LegacySettingsPage() {
           <label className="flex items-center justify-between rounded-[1rem] border border-[color:var(--merchant-line)] bg-white/65 px-4 py-3.5">
             <div>
               <div className="font-medium text-[color:var(--merchant-ink)]">{t('settings.autoExecuteTitle')}</div>
-              <div className="text-sm text-[color:var(--merchant-muted)]">{t('settings.autoExecuteDescription')}</div>
+              <div className="text-sm text-[color:var(--merchant-muted)]">
+                {v2 ? t('recovery.settings.autoRunBody') : t('settings.autoExecuteDescription')}
+              </div>
+              {v2 && !automation.executor_auto_execute ? (
+                <div className="mt-1 text-sm text-[color:var(--merchant-muted)]">
+                  {t('recovery.settings.autoRunWaiting')}{' '}
+                  <a href="/dashboard/agent-center/ai-readiness" className="underline">
+                    {t('recovery.settings.autoRunReview')}
+                  </a>
+                </div>
+              ) : null}
             </div>
             <input
               type="checkbox"
@@ -585,7 +601,7 @@ export default function SettingsPage() {
   return (
     <>
       <RecoverySettingsHeader />
-      <LegacySettingsPage />
+      <LegacySettingsPage v2 />
     </>
   );
 }

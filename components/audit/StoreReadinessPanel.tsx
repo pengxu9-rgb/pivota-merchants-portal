@@ -148,7 +148,7 @@ export function StoreReadinessPanel({ initialProductUrl }: { initialProductUrl?:
         ? 'The tested purchase journey needs attention'
         : isPending
           ? 'Checking the purchase journey'
-          : 'Test whether an agent can buy from your store';
+          : 'Find where a purchase breaks on your store';
 
   return (
     <section className="rounded-lg border border-[color:var(--merchant-line)] bg-white p-5">

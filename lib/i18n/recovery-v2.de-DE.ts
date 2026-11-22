@@ -33,7 +33,7 @@ export const recoveryV2DeDEMessages: Record<string, string> = {
   "recovery.credits.unavailable": "Credit-Guthaben nicht verfügbar",
 
   // Re-skinned pages + redirects (R7)
-  "recovery.checkout.note": "Dies ist die Storefront-Prüfung: Sie sucht in Ihrem Shop nach Hindernissen bei Suche, Warenkorb, Versand und Checkout. Der Agent-Checkout-Test in der Übersicht bleibt „Noch nicht ausgeführt“, bis es eine Domain-Verifizierung gibt.",
+  "recovery.checkout.note": "Das ist getrennt von „Konvertieren“ in der Übersicht, wo ein Shopping-Agent eine Testbestellung vollständig aufgibt. Dieser Schritt braucht eine Domain-Verifizierung, die es noch nicht gibt, daher steht dort „Noch nicht ausgeführt“.",
   "recovery.reports.title": "Berichte",
   "recovery.reports.subtitle": "Ihre bisherigen Prüfungen, neueste zuerst.",
   "recovery.reports.col.date": "Geprüft",
@@ -359,4 +359,24 @@ export const recoveryV2DeDEMessages: Record<string, string> = {
   "recovery.state.legacy.title": "Diese Prüfung stammt aus der Zeit vor den neuen Messungen",
   "recovery.state.legacy.body": "Ihr Bericht ist weiterhin verfügbar. Führen Sie eine neue Prüfung aus, um hier Bänder mit n und Antwortbereiche zu sehen.",
   "recovery.state.legacy.cta": "Gespeicherten Bericht öffnen",
+  // Login (v2): what AI Revenue Recovery does
+  "recovery.login.h1.title": "Sehen Sie, wie KI-Shopping-Agenten Ihre Produkte behandeln",
+  "recovery.login.h1.body": "Wir prüfen Ihre Produktseiten so, wie KI-Assistenten und Shopping-Agenten sie lesen: Erkennen sie das Produkt, können sie es beschreiben, finden sie Quellen, die Sie nennen.",
+  "recovery.login.h2.title": "Beheben, was Sie aus Antworten fernhält",
+  "recovery.login.h2.body": "Erhalten Sie einen Aktionsplan je Produkt, das schwächste zuerst, und die Websites, die KI statt Ihrer zitiert, samt Kontaktweg.",
+  "recovery.login.h3.title": "Produktlinks genügen",
+  "recovery.login.h3.body": "Starten Sie mit ein paar Produktlinks. Verbinden Sie Ihren Shop später für Katalog-Routing und Textvorschläge.",
+  "recovery.login.newBody": "Legen Sie Ihr Händlerkonto an und starten Sie dann Ihre erste Prüfung mit ein paar Produktlinks.",
+  // Credits: free link checks; Plan & credits page title
+  "recovery.credits.freeLeft": "Noch {count} kostenlose Link-Prüfungen",
+  "recovery.credits.freeLeftOne": "Noch 1 kostenlose Link-Prüfung",
+  "recovery.credits.freeUnmetered": "Link-Prüfungen sind derzeit kostenlos",
+  "recovery.plan.title": "Ihr Tarif, Ihre Credits und Abrechnungen",
+  // Checkout (v2): what the storefront check does
+  "recovery.checkout.subtitle": "Storefront-Prüfung: Wir führen ein Produkt mit erfundenen Lieferdaten durch Suche, Produktseite, Warenkorb, Versand und Checkout Ihres Shops und zeigen den ersten Schritt, der scheitert. Sie stoppt vor der Zahlung.",
+  // Settings (v2): page title and auto-run copy
+  "recovery.settings.pageTitle": "Ihr Unternehmensprofil, Ihre Sprache und Ihr Kontozugang.",
+  "recovery.settings.autoRunBody": "Nach jeder Prüfung kann Pivota Folgeaufgaben für Sie ausführen: Suchmaschinen bitten, Ihre aktualisierten Seiten zu indexieren, Pivotas Kopien Ihrer Produktseiten aktuell halten sowie Content-Briefings und Wettbewerbsnotizen entwerfen. Keine davon ändert Ihren Shop. Schalten Sie dies aus, um jede Aufgabe vor dem Start freizugeben.",
+  "recovery.settings.autoRunWaiting": "Aufgaben, die auf Ihre Freigabe warten, stehen im KI-Bereitschaftsbericht.",
+  "recovery.settings.autoRunReview": "Wartende Aufgaben prüfen",
 };

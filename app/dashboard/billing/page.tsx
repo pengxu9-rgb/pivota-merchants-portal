@@ -26,6 +26,9 @@ import {
   SurfaceCard,
 } from '@/components/ui/merchant-primitives';
 
+// v2 names this page after its nav item ("Plan & credits"); flag off keeps "Plan & billing".
+const RECOVERY_V2 = (process.env.NEXT_PUBLIC_FEATURE_RECOVERY_V2 || 'false').toLowerCase() === 'true';
+
 const ACTIVATION_POLL_MS = 3000;
 const ACTIVATION_MAX_ATTEMPTS = 10; // ~30s
 // Remembers the plan tier at checkout time so the post-return poll can detect
@@ -314,8 +317,8 @@ export default function BillingPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow={t('dashboard.billing.eyebrow')}
-        title={t('dashboard.billing.title')}
+        eyebrow={RECOVERY_V2 ? t('recovery.nav.plan') : t('dashboard.billing.eyebrow')}
+        title={RECOVERY_V2 ? t('recovery.plan.title') : t('dashboard.billing.title')}
         description={t('dashboard.billing.description')}
       />
 

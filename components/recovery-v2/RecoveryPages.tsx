@@ -12,11 +12,16 @@ import { isStoreConnected } from "@/lib/recovery-v2/mode";
 import { runPhase } from "@/lib/recovery-v2/overview";
 import type { AuditRunSummary } from "@/lib/types/ai-readiness";
 
-/** Checkout: the existing storefront check, with one line that keeps it apart
- * from the agent checkout test (which stays "Not run yet"). */
-export function RecoveryCheckoutNote() {
+/** Checkout: names the storefront check and keeps it apart from Convert, the
+ * agent checkout test on the Overview (which stays "Not run yet"). */
+export function RecoveryCheckoutHeader() {
   const { t } = useMerchantLanguage();
-  return <div className="rv-note">{t("recovery.checkout.note")}</div>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <PageHead title={t("recovery.nav.checkout")} subtitle={t("recovery.checkout.subtitle")} />
+      <div className="rv-note">{t("recovery.checkout.note")}</div>
+    </div>
+  );
 }
 
 export function RecoveryOrdersHeader() {
