@@ -168,6 +168,14 @@ export type RecoveryShellViewProps = {
 /** 224px sidebar + 56px top bar (Foundations board). Search, notifications and
  * the store switcher are hidden: none has a backend yet (review M7). On phones
  * the sidebar stacks above the content and its nav folds behind "Menu". */
+/** The account slot: the business name, else the connected store's name, else the sign-in email.
+ * "Your store" only when none is known (it showed for merchants who never set a business name). */
+export function accountName(user: { business_name?: string | null; email?: string | null } | null | undefined, mode: StoreMode): string | null {
+  const clean = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
+  const storeName = mode.kind === "connected" || mode.kind === "first_sync" ? clean(mode.storeName) : null;
+  return clean(user?.business_name) ?? storeName ?? clean(user?.email);
+}
+
 export function RecoveryShellView({ pathname, user, mode, credits, linksCount, onLogout, children }: RecoveryShellViewProps) {
   const { t } = useMerchantLanguage();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -180,7 +188,7 @@ export function RecoveryShellView({ pathname, user, mode, credits, linksCount, o
           <span className="rv-mark" aria-hidden="true" />
           <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.25, minWidth: 0 }}>
             <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {user?.business_name || t("recovery.shell.yourStore")}
+              {accountName(user, mode) || t("recovery.shell.yourStore")}
             </span>
             <span className="rv-muted rv-tiny">{t("recovery.product")}</span>
           </span>
