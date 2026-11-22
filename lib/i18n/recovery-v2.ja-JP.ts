@@ -33,7 +33,7 @@ export const recoveryV2JaJPMessages: Record<string, string> = {
   "recovery.credits.unavailable": "クレジット残高を取得できません",
 
   // Re-skinned pages + redirects (R7)
-  "recovery.checkout.note": "これはストアフロントのチェックです。ストアの検索、カート、配送、チェックアウトを妨げる問題を確認します。概要ページのエージェントによるチェックアウトテストは、ドメイン認証が利用可能になるまで「未実施」のままです。",
+  "recovery.checkout.note": "これは概要の「コンバージョン」とは別のものです。コンバージョンではショッピングエージェントがテスト注文を最後まで行います。コンバージョンにはドメイン認証が必要ですが、まだ利用できないため「未実施」のままです。",
   "recovery.reports.title": "レポート",
   "recovery.reports.subtitle": "過去のチェック（新しい順）です。",
   "recovery.reports.col.date": "チェック日",
@@ -359,4 +359,24 @@ export const recoveryV2JaJPMessages: Record<string, string> = {
   "recovery.state.legacy.title": "このチェックは新しい測定方式より前のものです",
   "recovery.state.legacy.body": "そのレポートは引き続き利用できます。新しいチェックを実行すると、n 付きのバンドと回答の範囲がここに表示されます。",
   "recovery.state.legacy.cta": "保存済みのレポートを開く",
+  // Login (v2): what AI Revenue Recovery does
+  "recovery.login.h1.title": "AI ショッピングエージェントが商品をどう扱うかを確認",
+  "recovery.login.h1.body": "AI アシスタントやショッピングエージェントと同じ読み方で商品ページをチェックします。どの商品かを判別できるか、説明できるか、あなたの名前を挙げる情報源が見つかるか。",
+  "recovery.login.h2.title": "回答に載らない原因を直す",
+  "recovery.login.h2.body": "商品ごとのアクションプラン（弱いものから順に）と、あなたの代わりに AI が引用するサイトとその連絡方法がわかります。",
+  "recovery.login.h3.title": "商品リンクだけで始められます",
+  "recovery.login.h3.body": "まずはいくつかの商品リンクから。カタログのルーティングや提案コピーが必要になったらストアを接続できます。",
+  "recovery.login.newBody": "マーチャントアカウントを作成し、いくつかの商品リンクで最初のチェックを実行しましょう。",
+  // Credits: free link checks; Plan & credits page title
+  "recovery.credits.freeLeft": "無料のリンクチェック残り {count} 回",
+  "recovery.credits.freeLeftOne": "無料のリンクチェック残り 1 回",
+  "recovery.credits.freeUnmetered": "現在、リンクチェックは無料です",
+  "recovery.plan.title": "プラン、クレジット、明細",
+  // Checkout (v2): what the storefront check does
+  "recovery.checkout.subtitle": "ストアフロントチェック：架空の配送情報を使い、1 つの商品でストアの検索、商品ページ、カート、配送、チェックアウトを順にたどり、最初に止まるステップを示します。支払いの前で停止します。",
+  // Settings (v2): page title and auto-run copy
+  "recovery.settings.pageTitle": "ビジネス情報、言語、アカウントアクセス。",
+  "recovery.settings.autoRunBody": "各チェックの後、Pivota がフォローアップのタスクを実行できます。更新したページのインデックス登録を検索エンジンに依頼し、Pivota 上の商品ページのコピーを最新に保ち、コンテンツブリーフと競合メモを作成します。いずれもストアは変更しません。オフにすると、各タスクを実行前に承認できます。",
+  "recovery.settings.autoRunWaiting": "承認待ちのタスクは AI 対応レポートに表示されます。",
+  "recovery.settings.autoRunReview": "承認待ちのタスクを確認",
 };

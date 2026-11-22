@@ -53,7 +53,7 @@ export const recoveryV2EnMessages: Record<string, string> = {
 
 
   // Re-skinned pages + redirects (R7)
-  "recovery.checkout.note": "This is the storefront check: it looks for search, cart, shipping and checkout blockers on your store. The agent checkout test on the Overview stays \"Not run yet\" until domain verification exists.",
+  "recovery.checkout.note": "This is separate from Convert on the Overview, where a shopping agent places a test order end to end. Convert needs domain verification, which isn't available yet, so it stays \"Not run yet\".",
   "recovery.reports.title": "Reports",
   "recovery.reports.subtitle": "Your past checks, newest first.",
   "recovery.reports.col.date": "Checked",
@@ -379,6 +379,26 @@ export const recoveryV2EnMessages: Record<string, string> = {
   "recovery.state.legacy.title": "This check predates the new measurements",
   "recovery.state.legacy.body": "Its report is still available. Run a new check to see bands with n and answer ranges here.",
   "recovery.state.legacy.cta": "Open the saved report",
+  // Login (v2): what AI Revenue Recovery does
+  "recovery.login.h1.title": "See how AI shopping agents treat your products",
+  "recovery.login.h1.body": "We check your product pages the way AI assistants and shopping agents read them: can they tell which product it is, describe it, and find sources that name you.",
+  "recovery.login.h2.title": "Fix what keeps you out of answers",
+  "recovery.login.h2.body": "Get an action plan for each product, weakest first, and the sites AI cites instead of you, with how to reach them.",
+  "recovery.login.h3.title": "Product links are enough",
+  "recovery.login.h3.body": "Start with a few product links. Connect your store later for catalog routing and suggested copy.",
+  "recovery.login.newBody": "Create your merchant account, then run your first check with a few product links.",
+  // Credits: free link checks; Plan & credits page title
+  "recovery.credits.freeLeft": "{count} free link checks left",
+  "recovery.credits.freeLeftOne": "1 free link check left",
+  "recovery.credits.freeUnmetered": "Link checks are free right now",
+  "recovery.plan.title": "Your plan, credits and statements",
+  // Checkout (v2): what the storefront check does
+  "recovery.checkout.subtitle": "Storefront check: we follow one product through your store's search, product page, cart, shipping and checkout, with made-up shipping details, and show the first step that breaks. It stops before payment.",
+  // Settings (v2): page title and auto-run copy
+  "recovery.settings.pageTitle": "Your business profile, language and account access.",
+  "recovery.settings.autoRunBody": "After each check, Pivota can run follow-up tasks for you: ask search engines to index your updated pages, keep Pivota's copies of your product pages current, and draft content briefs and competitor notes. None of them changes your store. Turn this off to approve each task before it runs.",
+  "recovery.settings.autoRunWaiting": "Tasks waiting for your approval are listed in the AI readiness report.",
+  "recovery.settings.autoRunReview": "Review waiting tasks",
 };
 
 /** Translated `recovery.*` copy per non-English portal locale. */

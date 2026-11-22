@@ -33,7 +33,7 @@ export const recoveryV2KoKRMessages: Record<string, string> = {
   "recovery.credits.unavailable": "크레딧 잔액을 확인할 수 없습니다",
 
   // Re-skinned pages + redirects (R7)
-  "recovery.checkout.note": "스토어프런트 점검입니다. 스토어의 검색, 장바구니, 배송, 결제를 막는 문제를 찾습니다. 개요의 에이전트 결제 테스트는 도메인 인증이 제공될 때까지 \"아직 실행 안 됨\"으로 유지됩니다.",
+  "recovery.checkout.note": "이는 개요의 '전환'과는 별개입니다. 전환에서는 쇼핑 에이전트가 테스트 주문을 끝까지 진행합니다. 전환에는 도메인 인증이 필요한데 아직 제공되지 않아 '아직 실행 안 됨'으로 표시됩니다.",
   "recovery.reports.title": "리포트",
   "recovery.reports.subtitle": "지난 점검 내역입니다. 최신순으로 표시됩니다.",
   "recovery.reports.col.date": "점검일",
@@ -359,4 +359,24 @@ export const recoveryV2KoKRMessages: Record<string, string> = {
   "recovery.state.legacy.title": "이 점검은 새 측정 방식 이전에 실행되었습니다",
   "recovery.state.legacy.body": "리포트는 계속 볼 수 있습니다. 새 점검을 실행하면 n이 포함된 밴드와 답변 범위를 여기에서 볼 수 있습니다.",
   "recovery.state.legacy.cta": "저장된 리포트 열기",
+  // Login (v2): what AI Revenue Recovery does
+  "recovery.login.h1.title": "AI 쇼핑 에이전트가 상품을 어떻게 다루는지 확인하세요",
+  "recovery.login.h1.body": "AI 어시스턴트와 쇼핑 에이전트가 읽는 방식으로 상품 페이지를 점검합니다. 어떤 상품인지 알아보는지, 설명할 수 있는지, 브랜드를 언급하는 출처를 찾는지 확인합니다.",
+  "recovery.login.h2.title": "답변에서 빠지는 원인을 해결하세요",
+  "recovery.login.h2.body": "상품별 실행 계획(가장 약한 것부터)과 AI가 대신 인용하는 사이트 및 연락 방법을 확인하세요.",
+  "recovery.login.h3.title": "상품 링크만으로 충분합니다",
+  "recovery.login.h3.body": "상품 링크 몇 개로 시작하세요. 카탈로그 라우팅과 추천 문구가 필요하면 나중에 스토어를 연결하세요.",
+  "recovery.login.newBody": "판매자 계정을 만든 뒤 상품 링크 몇 개로 첫 점검을 실행하세요.",
+  // Credits: free link checks; Plan & credits page title
+  "recovery.credits.freeLeft": "무료 링크 점검 {count}회 남음",
+  "recovery.credits.freeLeftOne": "무료 링크 점검 1회 남음",
+  "recovery.credits.freeUnmetered": "현재 링크 점검은 무료입니다",
+  "recovery.plan.title": "요금제, 크레딧, 명세서",
+  // Checkout (v2): what the storefront check does
+  "recovery.checkout.subtitle": "스토어프런트 점검: 가상의 배송 정보로 상품 하나를 스토어의 검색, 상품 페이지, 장바구니, 배송, 결제까지 따라가며 처음 막히는 단계를 보여 줍니다. 결제 전에 멈춥니다.",
+  // Settings (v2): page title and auto-run copy
+  "recovery.settings.pageTitle": "비즈니스 프로필, 언어, 계정 접근.",
+  "recovery.settings.autoRunBody": "각 점검 후 Pivota가 후속 작업을 실행할 수 있습니다. 업데이트된 페이지의 색인을 검색 엔진에 요청하고, Pivota에 있는 상품 페이지 사본을 최신으로 유지하며, 콘텐츠 브리프와 경쟁사 메모를 작성합니다. 어떤 작업도 스토어를 변경하지 않습니다. 끄면 각 작업을 실행 전에 승인할 수 있습니다.",
+  "recovery.settings.autoRunWaiting": "승인을 기다리는 작업은 AI 준비도 리포트에 표시됩니다.",
+  "recovery.settings.autoRunReview": "대기 중인 작업 검토",
 };

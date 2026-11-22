@@ -85,6 +85,20 @@ export function StoreStatusCard({ mode, linksCount }: { mode: StoreMode; linksCo
   );
 }
 
+/** "2 free link checks left": a merchant with 0 credits still has free link checks, and the card
+ * used to read as "pay first". Nothing when none are left or the backend didn't say. */
+function freeChecksLine(credits: CreditsSummary, t: (key: string, vars?: Record<string, string | number | undefined>) => string, language: string) {
+  const free = credits.freeLinkChecks;
+  if (!free) return null;
+  if (free.allowed === null) return <span className="rv-num">{t("recovery.credits.freeUnmetered")}</span>;
+  if (!free.remaining) return null;
+  return (
+    <span className="rv-num">
+      {free.remaining === 1 ? t("recovery.credits.freeLeftOne") : t("recovery.credits.freeLeft", { count: formatNumber(free.remaining, language) })}
+    </span>
+  );
+}
+
 export function CreditsCard({ credits }: { credits: CreditsSummary | null | "loading" }) {
   const { t, language } = useMerchantLanguage();
   if (credits === "loading") return null;
@@ -99,6 +113,7 @@ export function CreditsCard({ credits }: { credits: CreditsSummary | null | "loa
           {credits.allowance !== null ? (
             <span className="rv-muted rv-num">{t("recovery.credits.allowance", { count: formatNumber(credits.allowance, language) })}</span>
           ) : null}
+          {freeChecksLine(credits, t, language)}
         </>
       ) : (
         <span className="rv-muted">{t("recovery.credits.unavailable")}</span>

@@ -33,7 +33,7 @@ export const recoveryV2ZhCNMessages: Record<string, string> = {
   "recovery.credits.unavailable": "点数余额不可用",
 
   // Re-skinned pages + redirects (R7)
-  "recovery.checkout.note": "这是店铺前台检测：它会查找你店铺中搜索、购物车、配送和结账环节的阻碍。在域名验证上线之前，概览中的 agent 结账测试会一直显示“尚未运行”。",
+  "recovery.checkout.note": "这与概览中的“转化”不同：在“转化”中，购物代理会完整下一笔测试订单。“转化”需要域名验证，该功能尚未推出，因此显示为“尚未运行”。",
   "recovery.reports.title": "报告",
   "recovery.reports.subtitle": "你过去的检测，最新的在前。",
   "recovery.reports.col.date": "检测时间",
@@ -359,4 +359,24 @@ export const recoveryV2ZhCNMessages: Record<string, string> = {
   "recovery.state.legacy.title": "这次检测早于新的测量方式",
   "recovery.state.legacy.body": "它的报告仍然可用。运行新的检测，即可在这里看到带样本数 n 的区段和回答区间。",
   "recovery.state.legacy.cta": "打开已保存的报告",
+  // Login (v2): what AI Revenue Recovery does
+  "recovery.login.h1.title": "了解 AI 购物代理如何看待你的商品",
+  "recovery.login.h1.body": "我们按 AI 助手和购物代理读取页面的方式检查你的商品页：它们能否识别是哪个商品、能否描述它，以及能否找到提到你的来源。",
+  "recovery.login.h2.title": "修复让你被排除在回答之外的问题",
+  "recovery.login.h2.body": "为每个商品获得行动计划（最薄弱的排在最前），以及 AI 引用而非引用你的网站和联系方式。",
+  "recovery.login.h3.title": "有商品链接就够了",
+  "recovery.login.h3.body": "先用几个商品链接开始。之后再连接店铺，获得目录路由和建议文案。",
+  "recovery.login.newBody": "创建商家账号，然后用几个商品链接运行第一次检测。",
+  // Credits: free link checks; Plan & credits page title
+  "recovery.credits.freeLeft": "还剩 {count} 次免费链接检测",
+  "recovery.credits.freeLeftOne": "还剩 1 次免费链接检测",
+  "recovery.credits.freeUnmetered": "目前链接检测免费",
+  "recovery.plan.title": "你的套餐、点数和账单",
+  // Checkout (v2): what the storefront check does
+  "recovery.checkout.subtitle": "店面检测：我们用虚构的收货信息，让一个商品走完你店铺的搜索、商品页、购物车、配送和结账，并指出第一个出问题的步骤。检测在付款前停止。",
+  // Settings (v2): page title and auto-run copy
+  "recovery.settings.pageTitle": "你的商家资料、语言和账号访问。",
+  "recovery.settings.autoRunBody": "每次检测后，Pivota 可以为你运行后续任务：请求搜索引擎收录你更新的页面、保持 Pivota 上你的商品页副本为最新，并起草内容简报和竞品笔记。这些任务都不会改动你的店铺。关闭后，每个任务运行前都需要你批准。",
+  "recovery.settings.autoRunWaiting": "等待你批准的任务列在 AI 就绪报告中。",
+  "recovery.settings.autoRunReview": "查看待批准任务",
 };
