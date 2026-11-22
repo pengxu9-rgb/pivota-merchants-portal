@@ -82,7 +82,7 @@ import {
   PremiumProviderRequiredError,
   MissingVerifiedPaymentMethodError,
 } from './credit-errors';
-import { describeRequestError } from './api-error';
+import { describeRequestError, stripAuthFromError } from './api-error';
 
 function finiteNumberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
@@ -248,7 +248,7 @@ class ApiClient {
       (error) => {
         // Never the error object itself: it carries config.headers.Authorization (the bearer token).
         console.error(`❌ Request Error: ${describeRequestError(error)}`);
-        return Promise.reject(error);
+        return Promise.reject(stripAuthFromError(error));
       }
     );
 
@@ -259,6 +259,8 @@ class ApiClient {
         return response;
       },
       (error: AxiosError) => {
+        // First, before any caller can log it: 81 call sites log the error object itself.
+        stripAuthFromError(error);
         const detailCode =
           (error.response?.data as any)?.detail?.code ||
           (error.response?.data as any)?.code;

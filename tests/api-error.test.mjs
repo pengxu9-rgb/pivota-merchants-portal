@@ -49,3 +49,34 @@ test("describeRequestError never includes the request headers (bearer token) or 
   assert.equal(describeRequestError(new Error("Network Error")), "Network Error");
   assert.equal(describeRequestError(undefined), "request failed");
 });
+
+test("stripAuthFromError removes the bearer token from a real AxiosError, and a retry still authenticates", async () => {
+  const { stripAuthFromError } = await import("../lib/api-error.ts");
+  const { default: axios } = await import("axios");
+  const token = "Bearer eyJhbGciOiJIUzI1NiJ9.placeholder.signature";
+  const seen = [];
+  const client = axios.create({
+    adapter: async (config) => {
+      seen.push(config.headers.get("Authorization"));
+      const error = new axios.AxiosError("Request failed with status code 401", "ERR_BAD_REQUEST", config, {}, {
+        status: 401, statusText: "Unauthorized", headers: {}, config, data: { detail: "expired" },
+      });
+      throw error;
+    },
+  });
+  client.interceptors.request.use((config) => { config.headers.Authorization = token; return config; });
+  client.interceptors.response.use((r) => r, (error) => Promise.reject(stripAuthFromError(error)));
+
+  const caught = await client.get("/merchant/settings/preferences").catch((e) => e);
+  assert.ok(caught instanceof axios.AxiosError);
+  assert.equal(seen[0], token, "the request itself carried the token");
+  const dump = JSON.stringify({ config: caught.config, response: { config: caught.response?.config } });
+  assert.ok(!dump.includes("Bearer"), dump);
+  assert.equal(caught.config.headers.get("Authorization"), undefined);
+  assert.equal(caught.response.status, 401, "the rest of the error is intact");
+
+  await client.request(caught.config).catch(() => {});
+  assert.equal(seen[1], token, "a retry from the stripped config is re-authenticated by the request interceptor");
+  assert.equal(stripAuthFromError(undefined), undefined);
+  assert.deepEqual(stripAuthFromError({ config: { headers: { authorization: token, Accept: "x" } } }), { config: { headers: { Accept: "x" } } });
+});

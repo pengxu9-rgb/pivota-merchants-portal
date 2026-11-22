@@ -80,3 +80,29 @@ export function describeRequestError(error: unknown): string {
   if (message) parts.push(message);
   return parts.join(" · ") || "request failed";
 }
+
+/**
+ * Remove the bearer token from a request error before anyone sees it. Call sites across the portal
+ * log the AxiosError itself (`console.error('…', err)`), and its `config.headers.Authorization`
+ * (also reachable as `response.config`) is the merchant's token. Stripping it once, in the client's
+ * error interceptors, covers every one of them. Safe for retries: the request interceptor sets the
+ * header again on every request. Returns the same error.
+ */
+export function stripAuthFromError<T>(error: T): T {
+  const scrub = (headers: unknown) => {
+    if (!headers || typeof headers !== "object") return;
+    const h = headers as Record<string, unknown> & { delete?: (name: string) => unknown };
+    for (const name of ["Authorization", "authorization"]) {
+      if (typeof h.delete === "function") h.delete(name); // AxiosHeaders
+      delete h[name];
+    }
+  };
+  try {
+    const e = error as { config?: { headers?: unknown }; response?: { config?: { headers?: unknown } } } | null;
+    scrub(e?.config?.headers);
+    scrub(e?.response?.config?.headers);
+  } catch {
+    // never let scrubbing replace the real error
+  }
+  return error;
+}
