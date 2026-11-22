@@ -52,7 +52,7 @@ export function RecoverySettingsHeader() {
         )}
         <div className="rv-actions">
           {connected ? null : <ButtonLink href={RECOVERY_CONNECT_HREF} primary>{t("recovery.settings.storeConnect")}</ButtonLink>}
-          <ButtonLink href="/dashboard/integrations">{t("recovery.settings.storeManage")}</ButtonLink>
+          <ButtonLink href="/dashboard/settings/stores">{t("recovery.settings.storeManage")}</ButtonLink>
         </div>
       </section>
       <section className="rv-card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>

@@ -15,14 +15,14 @@ const RECOVERY_V2_ONLY_ROUTES = [
   "/dashboard/checkout",
   "/dashboard/reports",
   "/dashboard/settings/orders",
+  "/dashboard/settings/stores",
 ];
 
 // Flag on only (307, so nothing is cached as permanent while v2 is dark).
 // Pages that leave the v2 nav land on their new home. Held for now, on
 // purpose: /dashboard/agent-center/url-audit and /ai-readiness (saved reports
-// and the catalog-check run live there), /dashboard/integrations (store
-// connection management; disconnect has no backend route), /dev/* and
-// /payment-canary (delete once the flag has been on for a week).
+// and the catalog-check run live there), /dev/* and /payment-canary (delete
+// once the flag has been on for a week).
 const RECOVERY_V2_REDIRECTS = [
   ["/dashboard/analytics", "/dashboard"],
   ["/dashboard/agent-center/funnel", "/dashboard"],
@@ -33,6 +33,9 @@ const RECOVERY_V2_REDIRECTS = [
   ["/dashboard/agent-chat", "/dashboard/products"],
   ["/dashboard/agent-center/storefront-agent-readiness", "/dashboard/checkout"],
   ["/dashboard/orders", "/dashboard/settings/orders"],
+  // The legacy Integrations page led with payment processors and API credentials; store
+  // connections (sync, primary, disconnect) now live under Settings.
+  ["/dashboard/integrations", "/dashboard/settings/stores"],
   ["/change-password", "/dashboard/settings"],
 ];
 
