@@ -29,6 +29,9 @@ const REFUND_TONE_CLASSES: Record<string, string> = {
   info: 'bg-gray-100 text-gray-800',
 };
 
+// v2 shows this page as Settings → Past orders & refunds, under its own header (RecoveryOrdersHeader).
+const RECOVERY_V2 = (process.env.NEXT_PUBLIC_FEATURE_RECOVERY_V2 || 'false').toLowerCase() === 'true';
+
 export default function OrdersPage() {
   const { t } = useMerchantLanguage();
   const [orders, setOrders] = useState<any[]>([]);
@@ -319,21 +322,29 @@ export default function OrdersPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow={t('dashboard.orders.eyebrow')}
-        title={t('dashboard.orders.title')}
-        description={t('dashboard.orders.description')}
-        actions={
-          <MerchantButton
-            type="button"
-            onClick={handleExport}
-            disabled={exporting}
-            icon={Download}
-          >
+      {RECOVERY_V2 ? (
+        <div className="flex justify-end">
+          <MerchantButton type="button" onClick={handleExport} disabled={exporting} icon={Download}>
             {exporting ? t('dashboard.orders.exporting') : t('dashboard.orders.export')}
           </MerchantButton>
-        }
-      />
+        </div>
+      ) : (
+        <PageHeader
+          eyebrow={t('dashboard.orders.eyebrow')}
+          title={t('dashboard.orders.title')}
+          description={t('dashboard.orders.description')}
+          actions={
+            <MerchantButton
+              type="button"
+              onClick={handleExport}
+              disabled={exporting}
+              icon={Download}
+            >
+              {exporting ? t('dashboard.orders.exporting') : t('dashboard.orders.export')}
+            </MerchantButton>
+          }
+        />
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="merchant-panel p-5">
@@ -349,7 +360,7 @@ export default function OrdersPage() {
         </div>
         <div className="merchant-panel p-5">
           <p className="text-sm text-[color:var(--merchant-muted)]">
-            {t('dashboard.orders.stats.needsAction')}
+            {RECOVERY_V2 ? t('recovery.orders.stillOpen') : t('dashboard.orders.stats.needsAction')}
           </p>
           <div className="mt-1.5 text-[1.9rem] font-semibold tracking-[-0.05em] text-[color:var(--merchant-ink)]">
             {pendingCount + processingCount}
@@ -387,7 +398,7 @@ export default function OrdersPage() {
 
       <SurfaceCard
         title={t('dashboard.orders.filters.title')}
-        description={t('dashboard.orders.filters.description')}
+        description={RECOVERY_V2 ? undefined : t('dashboard.orders.filters.description')}
         action={
           <StatusBadge tone="neutral">
             {t('dashboard.orders.filters.visibleTotal', {
@@ -444,7 +455,7 @@ export default function OrdersPage() {
 
       <SurfaceCard
         title={t('dashboard.orders.table.title')}
-        description={t('dashboard.orders.table.description')}
+        description={RECOVERY_V2 ? undefined : t('dashboard.orders.table.description')}
         action={
           <StatusBadge tone="neutral">
             {t('dashboard.orders.table.pageOf', { page: currentPage, total: totalPages })}

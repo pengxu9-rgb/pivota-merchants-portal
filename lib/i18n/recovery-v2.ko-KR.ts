@@ -388,6 +388,11 @@ export const recoveryV2KoKRMessages: Record<string, string> = {
   "recovery.state.legacy.title": "이 점검은 새 측정 방식 이전에 실행되었습니다",
   "recovery.state.legacy.body": "리포트는 계속 볼 수 있습니다. 새 점검을 실행하면 n이 포함된 밴드와 답변 범위를 여기에서 볼 수 있습니다.",
   "recovery.state.legacy.cta": "저장된 리포트 열기",
+  // Second review: Settings card lines, Past orders
+  "recovery.settings.securityBody": "로그인 비밀번호를 변경하세요.",
+  "recovery.settings.languageBody": "로그인을 포함한 포털 전체의 언어입니다.",
+  "recovery.settings.autoRunCardBody": "각 점검 후 후속 작업을 자동으로 실행할지, 승인을 기다릴지 선택하세요.",
+  "recovery.orders.stillOpen": "미완료",
   // Login (v2): what AI Revenue Recovery does
   "recovery.login.h1.title": "AI 쇼핑 에이전트가 상품을 어떻게 다루는지 확인하세요",
   "recovery.login.h1.body": "AI 어시스턴트와 쇼핑 에이전트가 읽는 방식으로 상품 페이지를 점검합니다. 어떤 상품인지 알아보는지, 설명할 수 있는지, 브랜드를 언급하는 출처를 찾는지 확인합니다.",
@@ -402,7 +407,7 @@ export const recoveryV2KoKRMessages: Record<string, string> = {
   "recovery.credits.freeUnmetered": "현재 링크 점검은 무료입니다",
   "recovery.plan.title": "요금제, 크레딧, 명세서",
   // Checkout (v2): what the storefront check does
-  "recovery.checkout.subtitle": "스토어프런트 점검: 가상의 배송 정보로 상품 하나를 스토어의 검색, 상품 페이지, 장바구니, 배송, 결제까지 따라가며 처음 막히는 단계를 보여 줍니다. 결제 전에 멈춥니다.",
+  "recovery.checkout.subtitle": "스토어프런트 점검: 쇼핑 에이전트가 막히기 전에 내 스토어에서 구매가 어디서 끊기는지 확인하세요.",
   // Settings (v2): page title and auto-run copy
   "recovery.settings.pageTitle": "비즈니스 프로필, 언어, 계정 접근.",
   "recovery.settings.autoRunBody": "각 점검 후 Pivota가 후속 작업을 실행할 수 있습니다. 업데이트된 페이지의 색인을 검색 엔진에 요청하고, Pivota에 있는 상품 페이지 사본을 최신으로 유지하며, 콘텐츠 브리프와 경쟁사 메모를 작성합니다. 어떤 작업도 스토어를 변경하지 않습니다. 끄면 각 작업을 실행 전에 승인할 수 있습니다.",

@@ -26,7 +26,8 @@ module.exports = ({ check, render, h, text, assertHonest, assert }) => {
     const html = render(h(RecoveryCheckoutHeader));
     const plain = text(html);
     assertHonest(html, 'checkout header');
-    assert(plain.includes('Checkout') && plain.includes('Storefront check') && plain.includes('stops before payment'));
+    // One line in the header (the panel below carries "stops before payment" and the steps).
+    assert(plain.includes('Checkout') && plain.includes('Storefront check') && plain.includes('where a purchase breaks'));
     assert(plain.includes('separate from Convert') && plain.includes('Not run yet') && plain.includes('domain verification'));
     const page = read('app/dashboard/checkout/page.tsx');
     assert(page.includes('<StorefrontCheckPanels />') && !page.includes('StorefrontAgentReadinessPage'), 'v2 Checkout drops the "Storefront Revenue Recovery" header');

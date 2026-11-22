@@ -408,6 +408,11 @@ export const recoveryV2EnMessages: Record<string, string> = {
   "recovery.state.legacy.title": "This check predates the new measurements",
   "recovery.state.legacy.body": "Its report is still available. Run a new check to see bands with n and answer ranges here.",
   "recovery.state.legacy.cta": "Open the saved report",
+  // Second review: Settings card lines, Past orders
+  "recovery.settings.securityBody": "Change your sign-in password.",
+  "recovery.settings.languageBody": "The language for the whole portal, sign-in included.",
+  "recovery.settings.autoRunCardBody": "Choose whether follow-up tasks run on their own after each check, or wait for your approval.",
+  "recovery.orders.stillOpen": "Still open",
   // Login (v2): what AI Revenue Recovery does
   "recovery.login.h1.title": "See how AI shopping agents treat your products",
   "recovery.login.h1.body": "We check your product pages the way AI assistants and shopping agents read them: can they tell which product it is, describe it, and find sources that name you.",
@@ -422,7 +427,7 @@ export const recoveryV2EnMessages: Record<string, string> = {
   "recovery.credits.freeUnmetered": "Link checks are free right now",
   "recovery.plan.title": "Your plan, credits and statements",
   // Checkout (v2): what the storefront check does
-  "recovery.checkout.subtitle": "Storefront check: we follow one product through your store's search, product page, cart, shipping and checkout, with made-up shipping details, and show the first step that breaks. It stops before payment.",
+  "recovery.checkout.subtitle": "Storefront check: see where a purchase breaks on your own store, before a shopping agent hits it.",
   // Settings (v2): page title and auto-run copy
   "recovery.settings.pageTitle": "Your business profile, language and account access.",
   "recovery.settings.autoRunBody": "After each check, Pivota can run follow-up tasks for you: ask search engines to index your updated pages, keep Pivota's copies of your product pages current, and draft content briefs and competitor notes. None of them changes your store. Turn this off to approve each task before it runs.",

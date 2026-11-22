@@ -388,6 +388,11 @@ export const recoveryV2FrFRMessages: Record<string, string> = {
   "recovery.state.legacy.title": "Cette vérification est antérieure aux nouvelles mesures",
   "recovery.state.legacy.body": "Son rapport reste disponible. Lancez une nouvelle vérification pour voir ici les niveaux avec n et les intervalles de réponses.",
   "recovery.state.legacy.cta": "Ouvrir le rapport enregistré",
+  // Second review: Settings card lines, Past orders
+  "recovery.settings.securityBody": "Modifiez votre mot de passe de connexion.",
+  "recovery.settings.languageBody": "La langue de tout le portail, connexion comprise.",
+  "recovery.settings.autoRunCardBody": "Choisissez si les tâches de suivi se lancent seules après chaque vérification ou attendent votre accord.",
+  "recovery.orders.stillOpen": "Encore ouvertes",
   // Login (v2): what AI Revenue Recovery does
   "recovery.login.h1.title": "Voyez comment les agents d’achat IA traitent vos produits",
   "recovery.login.h1.body": "Nous vérifions vos fiches produit comme les assistants IA et les agents d’achat les lisent : savent-ils de quel produit il s’agit, peuvent-ils le décrire, trouvent-ils des sources qui vous citent.",
@@ -402,7 +407,7 @@ export const recoveryV2FrFRMessages: Record<string, string> = {
   "recovery.credits.freeUnmetered": "Les vérifications de liens sont gratuites pour le moment",
   "recovery.plan.title": "Votre offre, vos crédits et vos relevés",
   // Checkout (v2): what the storefront check does
-  "recovery.checkout.subtitle": "Vérification de la vitrine : nous suivons un produit dans la recherche, la fiche produit, le panier, la livraison et le paiement de votre boutique, avec des coordonnées de livraison fictives, et indiquons la première étape qui bloque. Elle s’arrête avant le paiement.",
+  "recovery.checkout.subtitle": "Vérification de la vitrine : voyez où un achat bloque sur votre propre boutique, avant qu’un agent d’achat ne s’y heurte.",
   // Settings (v2): page title and auto-run copy
   "recovery.settings.pageTitle": "Votre profil d’entreprise, votre langue et l’accès au compte.",
   "recovery.settings.autoRunBody": "Après chaque vérification, Pivota peut lancer des tâches de suivi pour vous : demander aux moteurs de recherche d’indexer vos pages mises à jour, tenir à jour les copies de vos fiches produit chez Pivota, et rédiger des briefs de contenu et des notes sur la concurrence. Aucune ne modifie votre boutique. Désactivez cette option pour approuver chaque tâche avant son lancement.",

@@ -388,6 +388,11 @@ export const recoveryV2ZhCNMessages: Record<string, string> = {
   "recovery.state.legacy.title": "这次检测早于新的测量方式",
   "recovery.state.legacy.body": "它的报告仍然可用。运行新的检测，即可在这里看到带样本数 n 的区段和回答区间。",
   "recovery.state.legacy.cta": "打开已保存的报告",
+  // Second review: Settings card lines, Past orders
+  "recovery.settings.securityBody": "更改你的登录密码。",
+  "recovery.settings.languageBody": "整个门户使用的语言，包括登录页。",
+  "recovery.settings.autoRunCardBody": "选择每次检测后的后续任务是自动运行，还是等待你的批准。",
+  "recovery.orders.stillOpen": "仍未完成",
   // Login (v2): what AI Revenue Recovery does
   "recovery.login.h1.title": "了解 AI 购物代理如何看待你的商品",
   "recovery.login.h1.body": "我们按 AI 助手和购物代理读取页面的方式检查你的商品页：它们能否识别是哪个商品、能否描述它，以及能否找到提到你的来源。",
@@ -402,7 +407,7 @@ export const recoveryV2ZhCNMessages: Record<string, string> = {
   "recovery.credits.freeUnmetered": "目前链接检测免费",
   "recovery.plan.title": "你的套餐、点数和账单",
   // Checkout (v2): what the storefront check does
-  "recovery.checkout.subtitle": "店面检测：我们用虚构的收货信息，让一个商品走完你店铺的搜索、商品页、购物车、配送和结账，并指出第一个出问题的步骤。检测在付款前停止。",
+  "recovery.checkout.subtitle": "店面检测：在购物代理遇到问题之前，先看清你店铺里的购买流程在哪一步中断。",
   // Settings (v2): page title and auto-run copy
   "recovery.settings.pageTitle": "你的商家资料、语言和账号访问。",
   "recovery.settings.autoRunBody": "每次检测后，Pivota 可以为你运行后续任务：请求搜索引擎收录你更新的页面、保持 Pivota 上你的商品页副本为最新，并起草内容简报和竞品笔记。这些任务都不会改动你的店铺。关闭后，每个任务运行前都需要你批准。",
