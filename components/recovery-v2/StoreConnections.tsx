@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
@@ -42,6 +42,7 @@ export function StoreConnectionsView({
   state,
   busy,
   confirming,
+  confirmArmed = false,
   notice,
   onSync,
   onMakePrimary,
@@ -52,6 +53,9 @@ export function StoreConnectionsView({
   state: StoreConnectionsState;
   busy: StoreAction;
   confirming: string | null;
+  /** False for CONFIRM_ARM_MS after the confirm appears: the second click of a double-click on
+   * "Disconnect" lands where "Yes, disconnect" now is, and must not disconnect the store. */
+  confirmArmed?: boolean;
   notice: StoreNotice;
   onSync: (store: ConnectedStore) => void;
   onMakePrimary: (store: ConnectedStore) => void;
@@ -152,7 +156,7 @@ export function StoreConnectionsView({
                       {confirming === store.id ? (
                         <div className="rv-actions" style={{ justifyContent: "flex-end" }}>
                           <span className="rv-small">{t("recovery.stores.disconnect.confirm")}</span>
-                          <button type="button" className="rv-btn rv-sm" disabled={anyBusy} onClick={() => onDisconnect(store)}>
+                          <button type="button" className="rv-btn rv-sm" disabled={anyBusy || !confirmArmed} onClick={() => onDisconnect(store)}>
                             {isBusy && busy?.kind === "disconnect" ? t("recovery.stores.working") : t("recovery.stores.disconnect.yes")}
                           </button>
                           <button type="button" className="rv-btn rv-sm" disabled={anyBusy} onClick={onCancelDisconnect}>
@@ -187,11 +191,59 @@ export function StoreConnectionsView({
   );
 }
 
+/** How long "Yes, disconnect" ignores clicks after the confirm appears (review of a208353: ~30% of the
+ * Disconnect button sat under "Yes, disconnect", so a double-click disconnected the store). */
+export const CONFIRM_ARM_MS = 600;
+
+export type DisconnectConfirm = { storeId: string; askedAt: number } | null;
+
+type ActKind = "sync" | "primary" | "disconnect";
+
+/** The page's handlers, without React, so the confirm rule can be tested by calling them. */
+export function storeActions(deps: {
+  act: (store: ConnectedStore, kind: ActKind, run: () => Promise<unknown>, okKey: string, errKey: string) => void;
+  api: { sync: (store: ConnectedStore) => Promise<unknown>; makePrimary: (storeId: string) => Promise<unknown>; disconnect: (storeId: string) => Promise<unknown> };
+  getConfirm: () => DisconnectConfirm;
+  setConfirm: (value: DisconnectConfirm) => void;
+  setNotice: (value: StoreNotice) => void;
+  now: () => number;
+}) {
+  return {
+    onSync: (store: ConnectedStore) => deps.act(store, "sync", () => deps.api.sync(store), "recovery.stores.sync.done", "recovery.stores.sync.failed"),
+    onMakePrimary: (store: ConnectedStore) =>
+      deps.act(store, "primary", () => deps.api.makePrimary(store.id), "recovery.stores.primary.done", "recovery.stores.primary.failed"),
+    onAskDisconnect: (store: ConnectedStore) => {
+      deps.setNotice(null);
+      deps.setConfirm({ storeId: store.id, askedAt: deps.now() });
+    },
+    onCancelDisconnect: () => deps.setConfirm(null),
+    onDisconnect: (store: ConnectedStore) => {
+      // Only an armed confirm for THIS store disconnects: never a click without one, never another
+      // row's, never inside the arm window.
+      const confirm = deps.getConfirm();
+      if (!confirm || confirm.storeId !== store.id || deps.now() - confirm.askedAt < CONFIRM_ARM_MS) return;
+      deps.act(store, "disconnect", () => deps.api.disconnect(store.id), "recovery.stores.disconnect.done", "recovery.stores.disconnect.failed");
+    },
+  };
+}
+
 export function StoreConnectionsPage() {
   const { merchantId, refresh } = useRecovery();
   const [state, setState] = useState<StoreConnectionsState>({ kind: "loading" });
   const [busy, setBusy] = useState<StoreAction>(null);
-  const [confirming, setConfirming] = useState<string | null>(null);
+  const [confirm, setConfirmState] = useState<DisconnectConfirm>(null);
+  const confirmRef = useRef<DisconnectConfirm>(null);
+  const [armed, setArmed] = useState(false);
+  const setConfirm = useCallback((value: DisconnectConfirm) => {
+    confirmRef.current = value;
+    setConfirmState(value);
+  }, []);
+  useEffect(() => {
+    setArmed(false);
+    if (!confirm) return;
+    const timer = setTimeout(() => setArmed(true), CONFIRM_ARM_MS);
+    return () => clearTimeout(timer);
+  }, [confirm]);
   const [notice, setNotice] = useState<StoreNotice>(null);
   const [tick, setTick] = useState(0);
   const reload = useCallback(() => setTick((value) => value + 1), []);
@@ -216,13 +268,13 @@ export function StoreConnectionsPage() {
     };
   }, [merchantId, tick, reload]);
 
-  const act = async (store: ConnectedStore, kind: "sync" | "primary" | "disconnect", run: () => Promise<unknown>, okKey: string, errKey: string) => {
+  const act = async (store: ConnectedStore, kind: ActKind, run: () => Promise<unknown>, okKey: string, errKey: string) => {
     setBusy({ storeId: store.id, kind });
     setNotice(null);
     try {
       await run();
       setNotice({ tone: "ok", key: okKey });
-      setConfirming(null);
+      setConfirm(null);
       reload();
       refresh(); // the shell's store card follows the connection
     } catch {
@@ -232,28 +284,27 @@ export function StoreConnectionsPage() {
     }
   };
 
+  const handlers = storeActions({
+    act: (store, kind, run, okKey, errKey) => void act(store, kind, run, okKey, errKey),
+    api: {
+      sync: (store) => (store.platform === "shopify" ? apiClient.syncShopifyProducts(merchantId as string) : apiClient.syncPlatformProducts(store.platform)),
+      makePrimary: (storeId) => apiClient.setPrimaryStore(storeId),
+      disconnect: (storeId) => apiClient.deleteStore(storeId),
+    },
+    getConfirm: () => confirmRef.current,
+    setConfirm,
+    setNotice,
+    now: () => Date.now(),
+  });
+
   return (
     <StoreConnectionsView
       state={state}
       busy={busy}
-      confirming={confirming}
+      confirming={confirm?.storeId ?? null}
+      confirmArmed={armed}
       notice={notice}
-      onSync={(store) =>
-        void act(
-          store,
-          "sync",
-          () => (store.platform === "shopify" ? apiClient.syncShopifyProducts(merchantId as string) : apiClient.syncPlatformProducts(store.platform)),
-          "recovery.stores.sync.done",
-          "recovery.stores.sync.failed",
-        )
-      }
-      onMakePrimary={(store) => void act(store, "primary", () => apiClient.setPrimaryStore(store.id), "recovery.stores.primary.done", "recovery.stores.primary.failed")}
-      onAskDisconnect={(store) => {
-        setNotice(null);
-        setConfirming(store.id);
-      }}
-      onCancelDisconnect={() => setConfirming(null)}
-      onDisconnect={(store) => void act(store, "disconnect", () => apiClient.deleteStore(store.id), "recovery.stores.disconnect.done", "recovery.stores.disconnect.failed")}
+      {...handlers}
     />
   );
 }

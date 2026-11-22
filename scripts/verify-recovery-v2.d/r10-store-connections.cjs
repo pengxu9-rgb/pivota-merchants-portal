@@ -33,6 +33,68 @@ module.exports = ({ check, render, h, text, assertHonest, assert }) => {
     assert.equal((asking.match(/Yes, disconnect/g) || []).length, 1, 'confirm only on the chosen row');
   });
 
+  check('store connections: a double-click on Disconnect never disconnects (confirm is armed first)', () => {
+    const { storeActions, CONFIRM_ARM_MS, StoreConnectionsView } = require('@/components/recovery-v2/StoreConnections');
+    assert(CONFIRM_ARM_MS >= 400, 'long enough to swallow the second click of a double-click');
+    const harness = () => {
+      let t = 1000;
+      let confirm = null;
+      const acted = [];
+      const handlers = storeActions({
+        act: (store, kind) => acted.push(`${kind}:${store.id}`),
+        api: { sync: async () => {}, makePrimary: async () => {}, disconnect: async () => {} },
+        getConfirm: () => confirm,
+        setConfirm: (v) => { confirm = v; },
+        setNotice() {},
+        now: () => t,
+      });
+      return { handlers, acted, advance: (ms) => { t += ms; }, confirm: () => confirm };
+    };
+    const s1 = store({}), s2 = store({ id: 's2', name: 'Second Store' });
+
+    // Without asking first, "Yes, disconnect" does nothing.
+    let hx = harness();
+    hx.handlers.onDisconnect(s1);
+    assert.deepEqual(hx.acted, [], 'no disconnect without a confirm');
+
+    // Double-click: ask, then the second click lands on "Yes" ~100 ms later.
+    hx = harness();
+    hx.handlers.onAskDisconnect(s1);
+    hx.advance(100);
+    hx.handlers.onDisconnect(s1);
+    assert.deepEqual(hx.acted, [], 'second click of a double-click is swallowed');
+    hx.advance(CONFIRM_ARM_MS - 101);
+    hx.handlers.onDisconnect(s1);
+    assert.deepEqual(hx.acted, [], 'still inside the arm window');
+    hx.advance(1);
+    hx.handlers.onDisconnect(s1);
+    assert.deepEqual(hx.acted, ['disconnect:s1'], 'a deliberate click after the window disconnects');
+
+    // The confirm belongs to one row.
+    hx = harness();
+    hx.handlers.onAskDisconnect(s1);
+    hx.advance(CONFIRM_ARM_MS * 2);
+    hx.handlers.onDisconnect(s2);
+    assert.deepEqual(hx.acted, [], "another row's Yes does nothing");
+    hx.handlers.onCancelDisconnect();
+    hx.handlers.onDisconnect(s1);
+    assert.deepEqual(hx.acted, [], 'Keep clears the confirm');
+    assert.equal(hx.confirm(), null);
+
+    // Sync / primary are single clicks.
+    hx = harness();
+    hx.handlers.onSync(s1);
+    hx.handlers.onMakePrimary(s2);
+    assert.deepEqual(hx.acted, ['sync:s1', 'primary:s2']);
+
+    // The view keeps "Yes, disconnect" disabled until armed.
+    const yesButton = (html) => (html.match(/<button[^>]*>Yes, disconnect<\/button>/) || [''])[0];
+    const unarmed = yesButton(render(h(StoreConnectionsView, view({ confirming: 's1' }))));
+    const armed = yesButton(render(h(StoreConnectionsView, view({ confirming: 's1', confirmArmed: true }))));
+    assert(unarmed && /disabled=""/.test(unarmed), 'unarmed Yes is disabled');
+    assert(armed && !/disabled=""/.test(armed), 'armed Yes is enabled');
+  });
+
   check('store connections: empty, error and notice states', () => {
     const { StoreConnectionsView } = require('@/components/recovery-v2/StoreConnections');
     const empty = text(render(h(StoreConnectionsView, view({ state: { kind: 'ready', stores: [] } }))));
