@@ -32,5 +32,12 @@ module.exports = ({ check, render, h, text, assert }) => {
       const line = src.split('\n').find((l) => l.includes(marker) && /console\.(error|warn)/.test(l));
       assert(line && line.includes('describeRequestError(') && !/,\s*(error|err)\)/.test(line), `${marker} logs no error object`);
     }
+    // And every request error is stripped of its bearer token before any caller can log it
+    // (81 call sites log the error object): both interceptors of both axios clients.
+    assert.equal((src.match(/stripAuthFromError\(error\)/g) || []).length, 2, 'api-client: request + response error interceptors');
+    const responseErr = src.slice(src.indexOf('interceptors.response.use'));
+    assert(responseErr.indexOf('stripAuthFromError(error)') < responseErr.indexOf('console.error'), 'stripped before the interceptor logs or rejects');
+    const legacy = fs.readFileSync(path.join(root, 'lib/api.ts'), 'utf8');
+    assert(/interceptors\.response\.use\([\s\S]*stripAuthFromError\(error\)/.test(legacy), 'lib/api.ts strips too');
   });
 };

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { API_CONFIG } from './config';
+import { stripAuthFromError } from './api-error';
 
 const API_BASE_URL = API_CONFIG.BASE_URL;
 
@@ -26,6 +27,12 @@ apiClient.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// Strip the bearer token from request errors before callers log them (lib/api-error).
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => Promise.reject(stripAuthFromError(error)),
+);
 
 export const onboardingApi = {
   register: async (data: any) => {
