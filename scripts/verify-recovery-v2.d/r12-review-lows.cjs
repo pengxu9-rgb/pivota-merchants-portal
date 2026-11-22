@@ -27,5 +27,10 @@ module.exports = ({ check, render, h, text, assert }) => {
       assert(line && line.includes('if (logTraffic)'), `${marker} is gated`);
     }
     assert(src.includes('❌ API Error'), 'errors are still logged');
+    // Request errors are logged as text, never as the error object (it carries the bearer token).
+    for (const marker of ['❌ Request Error', 'getProducts v2 failed']) {
+      const line = src.split('\n').find((l) => l.includes(marker) && /console\.(error|warn)/.test(l));
+      assert(line && line.includes('describeRequestError(') && !/,\s*(error|err)\)/.test(line), `${marker} logs no error object`);
+    }
   });
 };

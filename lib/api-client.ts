@@ -82,6 +82,7 @@ import {
   PremiumProviderRequiredError,
   MissingVerifiedPaymentMethodError,
 } from './credit-errors';
+import { describeRequestError } from './api-error';
 
 function finiteNumberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
@@ -245,7 +246,8 @@ class ApiClient {
         return config;
       },
       (error) => {
-        console.error('❌ Request Error:', error);
+        // Never the error object itself: it carries config.headers.Authorization (the bearer token).
+        console.error(`❌ Request Error: ${describeRequestError(error)}`);
         return Promise.reject(error);
       }
     );
@@ -475,7 +477,7 @@ class ApiClient {
 
       return products;
     } catch (err) {
-      console.warn('getProducts v2 failed, falling back to legacy /products', err);
+      console.warn(`getProducts v2 failed, falling back to legacy /products: ${describeRequestError(err)}`);
       const response = await this.client.get(`/products/${merchantId}`, {
         params: { limit: 250 },
       });

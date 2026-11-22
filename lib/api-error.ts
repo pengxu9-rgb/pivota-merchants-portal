@@ -54,3 +54,29 @@ export function formatApiError(error: unknown, fallback = "Request failed"): str
 
   return formatApiErrorPayload(error, fallback);
 }
+
+/**
+ * A request error for the browser console, WITHOUT the request config: an AxiosError (or anything
+ * shaped like one) carries `config.headers.Authorization`, so logging the error object itself put the
+ * merchant's bearer token in the console. Keeps only the message, code, status, method and path
+ * (the query string is dropped too).
+ */
+export function describeRequestError(error: unknown): string {
+  const e = (error ?? {}) as {
+    message?: unknown;
+    code?: unknown;
+    response?: { status?: unknown };
+    config?: { method?: unknown; url?: unknown };
+  };
+  const parts: string[] = [];
+  const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
+  const method = text(e.config?.method);
+  const url = text(e.config?.url)?.split("?")[0] ?? null;
+  if (method || url) parts.push([method?.toUpperCase(), url].filter(Boolean).join(" "));
+  if (typeof e.response?.status === "number") parts.push(String(e.response.status));
+  const code = text(e.code);
+  if (code) parts.push(code);
+  const message = text(e.message) ?? (typeof error === "string" ? error : null);
+  if (message) parts.push(message);
+  return parts.join(" · ") || "request failed";
+}
