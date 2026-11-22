@@ -229,6 +229,11 @@ class ApiClient {
       },
     });
 
+    // Every request and response used to be logged to the browser console in production too
+    // ("🔄 API Request: GET /merchant/…"). Development builds still log them; errors are logged
+    // in every build.
+    const logTraffic = process.env.NODE_ENV !== 'production';
+
     // Request interceptor to add auth token
     this.client.interceptors.request.use(
       (config) => {
@@ -236,7 +241,7 @@ class ApiClient {
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
-        console.log(`🔄 API Request: ${config.method?.toUpperCase()} ${config.url}`);
+        if (logTraffic) console.log(`🔄 API Request: ${config.method?.toUpperCase()} ${config.url}`);
         return config;
       },
       (error) => {
@@ -248,7 +253,7 @@ class ApiClient {
     // Response interceptor for error handling
     this.client.interceptors.response.use(
       (response) => {
-        console.log(`✅ API Response: ${response.status} ${response.config.url}`);
+        if (logTraffic) console.log(`✅ API Response: ${response.status} ${response.config.url}`);
         return response;
       },
       (error: AxiosError) => {
