@@ -388,6 +388,11 @@ export const recoveryV2DeDEMessages: Record<string, string> = {
   "recovery.state.legacy.title": "Diese Prüfung stammt aus der Zeit vor den neuen Messungen",
   "recovery.state.legacy.body": "Ihr Bericht ist weiterhin verfügbar. Führen Sie eine neue Prüfung aus, um hier Bänder mit n und Antwortbereiche zu sehen.",
   "recovery.state.legacy.cta": "Gespeicherten Bericht öffnen",
+  // Second review: Settings card lines, Past orders
+  "recovery.settings.securityBody": "Ändern Sie Ihr Anmeldepasswort.",
+  "recovery.settings.languageBody": "Die Sprache des gesamten Portals, einschließlich der Anmeldung.",
+  "recovery.settings.autoRunCardBody": "Legen Sie fest, ob Folgeaufgaben nach jeder Prüfung von selbst laufen oder auf Ihre Freigabe warten.",
+  "recovery.orders.stillOpen": "Noch offen",
   // Login (v2): what AI Revenue Recovery does
   "recovery.login.h1.title": "Sehen Sie, wie KI-Shopping-Agenten Ihre Produkte behandeln",
   "recovery.login.h1.body": "Wir prüfen Ihre Produktseiten so, wie KI-Assistenten und Shopping-Agenten sie lesen: Erkennen sie das Produkt, können sie es beschreiben, finden sie Quellen, die Sie nennen.",
@@ -402,7 +407,7 @@ export const recoveryV2DeDEMessages: Record<string, string> = {
   "recovery.credits.freeUnmetered": "Link-Prüfungen sind derzeit kostenlos",
   "recovery.plan.title": "Ihr Tarif, Ihre Credits und Abrechnungen",
   // Checkout (v2): what the storefront check does
-  "recovery.checkout.subtitle": "Storefront-Prüfung: Wir führen ein Produkt mit erfundenen Lieferdaten durch Suche, Produktseite, Warenkorb, Versand und Checkout Ihres Shops und zeigen den ersten Schritt, der scheitert. Sie stoppt vor der Zahlung.",
+  "recovery.checkout.subtitle": "Storefront-Prüfung: Sehen Sie, wo ein Kauf in Ihrem eigenen Shop scheitert, bevor ein Shopping-Agent darauf stößt.",
   // Settings (v2): page title and auto-run copy
   "recovery.settings.pageTitle": "Ihr Unternehmensprofil, Ihre Sprache und Ihr Kontozugang.",
   "recovery.settings.autoRunBody": "Nach jeder Prüfung kann Pivota Folgeaufgaben für Sie ausführen: Suchmaschinen bitten, Ihre aktualisierten Seiten zu indexieren, Pivotas Kopien Ihrer Produktseiten aktuell halten sowie Content-Briefings und Wettbewerbsnotizen entwerfen. Keine davon ändert Ihren Shop. Schalten Sie dies aus, um jede Aufgabe vor dem Start freizugeben.",

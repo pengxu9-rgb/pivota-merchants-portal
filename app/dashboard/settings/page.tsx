@@ -282,7 +282,7 @@ function LegacySettingsPage({ v2 = false }: { v2?: boolean }) {
       <PageHeader
         eyebrow={t('settings.eyebrow')}
         title={v2 ? t('recovery.settings.pageTitle') : t('settings.title')}
-        description={t('settings.description')}
+        description={v2 ? undefined : t('settings.description')}
       />
 
       {loadError ? (
@@ -433,7 +433,7 @@ function LegacySettingsPage({ v2 = false }: { v2?: boolean }) {
 
       <SurfaceCard
         title={t('settings.automationCardTitle')}
-        description={t('settings.automationCardDescription')}
+        description={v2 ? t('recovery.settings.autoRunCardBody') : t('settings.automationCardDescription')}
         action={<StatusBadge tone="neutral" icon={Zap}>{t('settings.automationBadge')}</StatusBadge>}
       >
         <div className="space-y-3 p-5">
@@ -464,7 +464,7 @@ function LegacySettingsPage({ v2 = false }: { v2?: boolean }) {
 
       <SurfaceCard
         title={t('settings.languageCardTitle')}
-        description={t('settings.languageCardDescription')}
+        description={v2 ? t('recovery.settings.languageBody') : t('settings.languageCardDescription')}
         action={<StatusBadge tone="brand" icon={Languages}>{t('settings.languageBadge')}</StatusBadge>}
       >
         <div className="space-y-4 p-5">
@@ -489,7 +489,7 @@ function LegacySettingsPage({ v2 = false }: { v2?: boolean }) {
       {/* Security */}
       <SurfaceCard
         title={t('settings.securityCardTitle')}
-        description={t('settings.securityCardDescription')}
+        description={v2 ? t('recovery.settings.securityBody') : t('settings.securityCardDescription')}
         action={<StatusBadge tone="warning" icon={Shield}>{t('settings.securityBadge')}</StatusBadge>}
       >
         <div className="space-y-4 p-5">

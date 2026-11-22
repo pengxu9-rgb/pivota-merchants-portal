@@ -388,6 +388,11 @@ export const recoveryV2JaJPMessages: Record<string, string> = {
   "recovery.state.legacy.title": "このチェックは新しい測定方式より前のものです",
   "recovery.state.legacy.body": "そのレポートは引き続き利用できます。新しいチェックを実行すると、n 付きのバンドと回答の範囲がここに表示されます。",
   "recovery.state.legacy.cta": "保存済みのレポートを開く",
+  // Second review: Settings card lines, Past orders
+  "recovery.settings.securityBody": "サインイン用のパスワードを変更します。",
+  "recovery.settings.languageBody": "ポータル全体（サインインを含む）の言語です。",
+  "recovery.settings.autoRunCardBody": "各チェック後のフォローアップタスクを自動で実行するか、承認を待つかを選びます。",
+  "recovery.orders.stillOpen": "未完了",
   // Login (v2): what AI Revenue Recovery does
   "recovery.login.h1.title": "AI ショッピングエージェントが商品をどう扱うかを確認",
   "recovery.login.h1.body": "AI アシスタントやショッピングエージェントと同じ読み方で商品ページをチェックします。どの商品かを判別できるか、説明できるか、あなたの名前を挙げる情報源が見つかるか。",
@@ -402,7 +407,7 @@ export const recoveryV2JaJPMessages: Record<string, string> = {
   "recovery.credits.freeUnmetered": "現在、リンクチェックは無料です",
   "recovery.plan.title": "プラン、クレジット、明細",
   // Checkout (v2): what the storefront check does
-  "recovery.checkout.subtitle": "ストアフロントチェック：架空の配送情報を使い、1 つの商品でストアの検索、商品ページ、カート、配送、チェックアウトを順にたどり、最初に止まるステップを示します。支払いの前で停止します。",
+  "recovery.checkout.subtitle": "ストアフロントチェック：ショッピングエージェントがつまずく前に、自分のストアで購入がどこで止まるかを確認します。",
   // Settings (v2): page title and auto-run copy
   "recovery.settings.pageTitle": "ビジネス情報、言語、アカウントアクセス。",
   "recovery.settings.autoRunBody": "各チェックの後、Pivota がフォローアップのタスクを実行できます。更新したページのインデックス登録を検索エンジンに依頼し、Pivota 上の商品ページのコピーを最新に保ち、コンテンツブリーフと競合メモを作成します。いずれもストアは変更しません。オフにすると、各タスクを実行前に承認できます。",
